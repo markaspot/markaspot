@@ -21,8 +21,13 @@ class FrontendUrlService {
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
+   * @param \Drupal\markaspot_nuxt\Service\PublicUrlValidator $publicUrlValidator
+   *   Validator for browser- and mail-facing public base URLs.
    */
-  public function __construct(ConfigFactoryInterface $config_factory) {
+  public function __construct(
+    ConfigFactoryInterface $config_factory,
+    protected PublicUrlValidator $publicUrlValidator,
+  ) {
     $this->configFactory = $config_factory;
   }
 
@@ -148,31 +153,19 @@ class FrontendUrlService {
    *   Normalized URL without trailing slash, or NULL for unsafe/internal URLs.
    */
   protected function normalizeFrontendBaseUrl(string $url): ?string {
-    $url = trim($url);
-    if ($url === '' || filter_var($url, FILTER_VALIDATE_URL) === FALSE) {
+    $url = $this->publicUrlValidator->normalizeBaseUrl($url);
+    if ($url === NULL) {
       return NULL;
     }
 
-    $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-    if (!in_array($scheme, ['http', 'https'], TRUE)) {
-      return NULL;
-    }
-
-    $host = rtrim(strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]')), '.');
-    if (in_array($host, ['default', 'localhost', '127.0.0.1', '0.0.0.0', '::1'], TRUE)) {
-      return NULL;
-    }
+    $host = trim((string) parse_url($url, PHP_URL_HOST), '[]');
+    // Frontend base URLs intentionally require DNS names. Browser-facing
+    // tenant links must not depend on a literal public IP address.
     if (filter_var($host, FILTER_VALIDATE_IP) !== FALSE) {
       return NULL;
     }
-    if (!str_contains($host, '.')) {
-      return NULL;
-    }
-    if (preg_match('/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+))*$/i', $host)) {
-      return NULL;
-    }
 
-    return rtrim($url, '/');
+    return $url;
   }
 
 }

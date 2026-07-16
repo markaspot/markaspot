@@ -15,6 +15,7 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Render\Markup;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\Url;
+use Drupal\markaspot_nuxt\Service\PublicUrlValidator;
 use enshrined\svgSanitize\Sanitizer;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -124,7 +125,52 @@ class MailBrandingService {
     private readonly ?ModuleExtensionList $moduleExtensionList = NULL,
     private readonly ?RequestStack $requestStack = NULL,
     private readonly ?FileSystemInterface $fileSystem = NULL,
+    private readonly ?PublicUrlValidator $publicUrlValidator = NULL,
   ) {}
+
+  /**
+   * Rewrites generated internal URLs in rendered mail and token output.
+   */
+  public function normalizeMailUrls(string $value): string {
+    $base = $this->resolveAbsoluteBaseUrl();
+    return $this->urlValidator()->rewriteNonPublicHttpUrls(
+      $value,
+      $base,
+      $base !== '' ? $this->requestLocalHosts() : [],
+    );
+  }
+
+  /**
+   * Rewrites URL-bearing string values before mail template rendering.
+   */
+  public function normalizeMailContent(array $content): array {
+    array_walk_recursive($content, function (&$value): void {
+      if (is_string($value)) {
+        $value = $this->normalizeMailUrls($value);
+      }
+      elseif ($value instanceof MarkupInterface) {
+        $value = Markup::create($this->normalizeMailUrls((string) $value));
+      }
+      elseif ($value instanceof \Stringable) {
+        $value = $this->normalizeMailUrls((string) $value);
+      }
+    });
+    return $content;
+  }
+
+  /**
+   * Returns whether a URL has a public HTTP(S) form for mail output.
+   */
+  public function isPublicHttpUrl(string $url): bool {
+    return $this->urlValidator()->isPublicHttpUrl($url);
+  }
+
+  /**
+   * Redacts secrets and path data before a URL is written to logs.
+   */
+  public function redactUrlForLog(string $url): string {
+    return $this->urlValidator()->redactForLog($url);
+  }
 
   /**
    * Returns the branding package for a given mail context.
@@ -554,7 +600,9 @@ class MailBrandingService {
         return NULL;
       }
       $mailUri = $this->preferRasterLogoUri($uri);
-      $url = $this->ensureAbsolute((string) $this->fileUrlGenerator->generateAbsoluteString($mailUri));
+      $url = $this->resolveGeneratedFileUrl(
+        (string) $this->fileUrlGenerator->generateAbsoluteString($mailUri),
+      );
       if ($url === NULL) {
         return NULL;
       }
@@ -573,16 +621,15 @@ class MailBrandingService {
   }
 
   /**
-   * Ensures a URL is absolute AND served from a publicly reachable host.
+   * Ensures a URL uses an absolute public-form host when configuration allows.
    *
    * Three-way handling:
-   *   1. Protocol-relative ("//host/path"): passed through unchanged so
-   *      downstream callers can decide. Avoids the classic
-   *      "https://base//host/path" double-slash bug.
+   *   1. Protocol-relative ("//host/path"): validated like an HTTPS URL.
    *   2. Absolute ("https?://host/path"): if the host looks like a
-   *      container-internal service name (no dot, localhost, docker
-   *      service hostname), the host is swapped for the configured
-   *      platform.backend_base_url. Otherwise the URL is returned as-is.
+   *      container-internal service name (no dot, localhost, loopback or
+   *      private IP, docker service hostname), the host is swapped for the
+   *      configured platform.backend_base_url. Otherwise the URL is returned
+   *      as-is.
    *      This defends against the common misconfiguration where
    *      Drupal trusts the Host header forwarded by an in-cluster
    *      reverse proxy (e.g. nginx sends Host: demo-nginx-1) and bakes
@@ -597,26 +644,22 @@ class MailBrandingService {
     if ($url === '') {
       return NULL;
     }
-    if (str_starts_with($url, '//')) {
-      return $url;
-    }
     $base = $this->resolveAbsoluteBaseUrl();
+    if (str_starts_with($url, '//')) {
+      return $this->urlValidator()->rebaseGeneratedUrl($url, $base);
+    }
     if (preg_match('~^(https?)://([^/?#]+)(.*)$~i', $url, $match) === 1) {
-      $host = $match[2];
-      if ($this->looksLikePublicHost($host)) {
+      if ($this->urlValidator()->isPublicHttpUrl($url)) {
         return $url;
       }
-      if ($base !== '') {
-        return rtrim($base, '/') . ($match[3] !== '' ? $match[3] : '/');
-      }
       $this->logger->warning('Mail asset URL resolved with a non-public host (@url). Set markaspot_mail.settings.platform.backend_base_url so mail clients can fetch it.', [
-        '@url' => $url,
+        '@url' => $this->redactUrlForLog($url),
       ]);
-      return $url;
+      return $this->urlValidator()->rebaseGeneratedUrl($url, $base);
     }
     if ($base === '') {
       $this->logger->warning('Mail asset URL resolved to a relative path (@url). Set markaspot_mail.settings.platform.backend_base_url to an absolute URL so mail clients can fetch it.', [
-        '@url' => $url,
+        '@url' => '[relative URL redacted]',
       ]);
       return $url;
     }
@@ -624,62 +667,42 @@ class MailBrandingService {
   }
 
   /**
+   * Resolves a local generated file URL against the authoritative mail host.
+   */
+  private function resolveGeneratedFileUrl(string $url): ?string {
+    return $this->ensureAbsolute($url);
+  }
+
+  /**
    * Resolves an absolute base URL for mail-embedded assets.
    *
-   * Priority:
-   *   1. markaspot_mail.settings.platform.backend_base_url — explicit
-   *      per-tenant override, typically wired via settings.php from an
-   *      environment variable in multi-tenant deployments. Authoritative
-   *      because operators know their public host; a request-driven
-   *      fallback can leak a container-internal hostname when the
-   *      reverse-proxy trust setup isn't tight.
-   *   2. Current HTTP request via RequestStack, but only when the host
-   *      looks like a real public FQDN (contains a dot, isn't localhost).
-   *      Useful on single-instance installs without reverse proxies.
-   *   3. Empty string — caller preserves the relative URL. Mail clients
-   *      will not load it, but delivery still succeeds; a warning is
-   *      logged so operators can diagnose.
+   * Only the explicit per-environment configuration is accepted. Request
+   * hosts are untrusted input and are used solely to identify local URLs that
+   * need replacement, never as the replacement authority.
    */
   private function resolveAbsoluteBaseUrl(): string {
     $configured = (string) ($this->configFactory
       ->get('markaspot_mail.settings')
       ->get('platform.backend_base_url') ?? '');
     if ($configured !== '') {
-      $validated = $this->validateHttpUrl($configured, '');
-      if ($validated !== '') {
-        return rtrim($validated, '/');
+      $validated = $this->urlValidator()->normalizeOrigin($configured);
+      if ($validated !== NULL) {
+        return $validated;
       }
       $this->logger->warning('Ignored invalid mail backend base URL from markaspot_mail.settings.platform.backend_base_url.');
-    }
-    if ($this->requestStack !== NULL) {
-      $request = $this->requestStack->getCurrentRequest();
-      if ($request !== NULL) {
-        $host = (string) $request->getHost();
-        if ($host !== '' && $this->looksLikePublicHost($host)) {
-          return (string) $request->getSchemeAndHttpHost();
-        }
-      }
     }
     return '';
   }
 
   /**
-   * Heuristic gate to keep container-internal hostnames out of mail bodies.
+   * Returns request hosts that must not remain in generated mail output.
    *
-   * Accepts anything with a dot in the hostname and rejects bare
-   * single-label hosts that point at service-discovery names (drupal,
-   * nginx, web, mailpit, localhost). Not a security boundary — operators
-   * still pin the safe value via backend_base_url config.
+   * @return string[]
+   *   Host names used only as local matching hints.
    */
-  private function looksLikePublicHost(string $host): bool {
-    if (!str_contains($host, '.')) {
-      return FALSE;
-    }
-    $lower = strtolower($host);
-    if ($lower === 'localhost' || str_ends_with($lower, '.localhost')) {
-      return FALSE;
-    }
-    return TRUE;
+  private function requestLocalHosts(): array {
+    $host = $this->requestStack?->getCurrentRequest()?->getHost();
+    return is_string($host) && $host !== '' ? [$host] : [];
   }
 
   /**
@@ -775,7 +798,9 @@ class MailBrandingService {
     $mailUri = $this->preferRasterLogoUri($uri);
 
     try {
-      $url = $this->ensureAbsolute((string) $this->fileUrlGenerator->generateAbsoluteString($mailUri));
+      $url = $this->resolveGeneratedFileUrl(
+        (string) $this->fileUrlGenerator->generateAbsoluteString($mailUri),
+      );
     }
     catch (\Throwable $e) {
       $this->logger->warning('Could not resolve jurisdiction mail logo from config: @msg', [
@@ -927,7 +952,7 @@ class MailBrandingService {
     if ($url === '') {
       return $fallback;
     }
-    if (preg_match('#^https?://#i', $url) !== 1) {
+    if (!$this->urlValidator()->isPublicHttpUrl($url)) {
       return $fallback;
     }
     try {
@@ -937,6 +962,13 @@ class MailBrandingService {
     catch (\Throwable) {
       return $fallback;
     }
+  }
+
+  /**
+   * Returns the shared public URL validator.
+   */
+  private function urlValidator(): PublicUrlValidator {
+    return $this->publicUrlValidator ?? new PublicUrlValidator();
   }
 
   /**

@@ -116,6 +116,95 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
+   * Normalizes generated internal URLs in HTML and plaintext output.
+   */
+  public function testAlterNormalizesGeneratedUrlsInBothMailParts(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'URL test',
+      variant: 'card_transactional',
+      content: ['headline' => 'URL test'],
+    ));
+    $renderer = $this->createMock(MailHtmlRenderer::class);
+    $renderer->method('render')->willReturn([
+      'html' => '<a href="http://127.0.0.1:8080/node/42">Open</a>',
+      'plain' => 'Open: http://127.0.0.1:8080/node/42',
+    ]);
+    $normalizer = static fn(string $value): string => str_replace(
+      'http://127.0.0.1:8080',
+      'https://management.example.com',
+      $value,
+    );
+
+    $message = $this->buildMessage();
+    $this->buildHook($builder, renderer: $renderer, urlNormalizer: $normalizer)
+      ->alter($message);
+
+    $this->assertStringContainsString('https://management.example.com/node/42', $message['body'][0]);
+    $this->assertStringContainsString('https://management.example.com/node/42', $message['params']['_plain_alt']);
+    $this->assertStringNotContainsString('127.0.0.1', $message['body'][0]);
+    $this->assertStringNotContainsString('127.0.0.1', $message['params']['_plain_alt']);
+  }
+
+  /**
+   * Token-generated CTA URLs are normalized before renderer validation.
+   */
+  public function testAlterNormalizesCtaBeforeRendering(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'CTA test',
+      variant: 'card_transactional',
+      content: [
+        'headline' => 'CTA test',
+        'cta_url' => 'http://127.0.0.1:8080/node/42?token=secret',
+      ],
+    ));
+    $renderer = $this->createMock(MailHtmlRenderer::class);
+    $renderer->expects($this->once())
+      ->method('render')
+      ->with(
+        'card_transactional',
+        $this->anything(),
+        $this->callback(static fn(array $content): bool => ($content['cta_url'] ?? '') === 'https://management.example.com/node/42?token=secret'),
+        'en',
+        NULL,
+      )
+      ->willReturn([
+        'html' => '<a href="https://management.example.com/node/42?token=secret">Open</a>',
+        'plain' => 'Open: https://management.example.com/node/42?token=secret',
+      ]);
+    $normalizer = static fn(string $value): string => str_replace(
+      'http://127.0.0.1:8080',
+      'https://management.example.com',
+      $value,
+    );
+
+    $message = $this->buildMessage();
+    $this->buildHook($builder, renderer: $renderer, urlNormalizer: $normalizer)
+      ->alter($message);
+
+    $this->assertStringContainsString('https://management.example.com/node/42?token=secret', $message['body'][0]);
+  }
+
+  /**
+   * Unbranded and blocklisted mail bodies still receive URL normalization.
+   */
+  public function testAlterNormalizesTokenUrlsInBlocklistedMail(): void {
+    $normalizer = static fn(string $value): string => str_replace(
+      'http://127.0.0.1:8080',
+      'https://management.example.com',
+      $value,
+    );
+    $message = $this->buildMessage(module: 'user', key: 'password_reset');
+    $message['body'] = ['Reset: http://127.0.0.1:8080/user/reset/42'];
+
+    $this->buildHook(NULL, urlNormalizer: $normalizer)->alter($message);
+
+    $this->assertSame(
+      ['Reset: https://management.example.com/user/reset/42'],
+      $message['body'],
+    );
+  }
+
+  /**
    * Skips hard-blocked modules.
    */
   public function testAlterSkipsBlocklistedModules(): void {
@@ -313,10 +402,27 @@ final class MailAlterHookTest extends UnitTestCase {
   /**
    * Builds a MailAlterHook with mocked dependencies and a stub builder.
    */
-  private function buildHook(?MailBuilderInterface $builder, ?string $plainOverride = NULL, ?MailHtmlRenderer $renderer = NULL): MailAlterHook {
+  private function buildHook(
+    ?MailBuilderInterface $builder,
+    ?string $plainOverride = NULL,
+    ?MailHtmlRenderer $renderer = NULL,
+    ?callable $urlNormalizer = NULL,
+  ): MailAlterHook {
     $registry = new MailBuilderRegistry($builder === NULL ? [] : [$builder]);
 
     $branding = $this->createMock(MailBrandingService::class);
+    $branding->method('normalizeMailUrls')
+      ->willReturnCallback($urlNormalizer ?? static fn(string $value): string => $value);
+    $branding->method('normalizeMailContent')
+      ->willReturnCallback(function (array $content) use ($urlNormalizer): array {
+        $normalizer = $urlNormalizer ?? static fn(string $value): string => $value;
+        array_walk_recursive($content, static function (&$value) use ($normalizer): void {
+          if (is_string($value)) {
+            $value = $normalizer($value);
+          }
+        });
+        return $content;
+      });
     $branding->method('getBranding')->willReturn([
       'mode' => 'jurisdiction',
       'platform_name' => 'Mark-a-Spot',

@@ -18,10 +18,13 @@ use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Render\Markup;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Tests transactional mail branding resolution.
@@ -92,7 +95,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    */
   public function testModuleLogoPathStaysRelativeForPhpmailerEmbedding(): void {
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
     $moduleList = $this->createMock(ModuleExtensionList::class);
     $moduleList->method('getPath')
       ->with('markaspot_mail')
@@ -154,13 +157,13 @@ final class MailBrandingServiceTest extends UnitTestCase {
    */
   public function testAbsoluteLogoPathStillPassesThrough(): void {
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.logo_path'] = 'https://assets.example.test/logo.png';
-    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $overrides['platform.logo_path'] = 'https://assets.example.com/logo.png';
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
     $service = $this->buildService(NULL, NULL, NULL, $overrides);
 
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
-    $this->assertSame('https://assets.example.test/logo.png', $branding['logo_url']);
+    $this->assertSame('https://assets.example.com/logo.png', $branding['logo_url']);
   }
 
   /**
@@ -183,7 +186,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
       ]),
     ]);
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
     $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
     $fileUrlGenerator->expects($this->once())
       ->method('generateAbsoluteString')
@@ -208,7 +211,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $branding = $service->getBranding(1, 'jurisdiction', 'en');
 
     $this->assertSame(
-      'https://management.example.test/sites/default/files/logos/kbk-logo-light.svg',
+      'https://management.example.com/sites/default/files/logos/kbk-logo-light.svg',
       $branding['logo_url'],
     );
     $this->assertNull($branding['logo_svg_inline']);
@@ -226,7 +229,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
       'field_logo_light' => ['uri' => 'public://jurisdictions/1/logos/kbk-logo-light.svg'],
     ]);
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
     $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
     $fileUrlGenerator->expects($this->once())
       ->method('generateAbsoluteString')
@@ -251,7 +254,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $branding = $service->getBranding(1, 'jurisdiction', 'en');
 
     $this->assertSame(
-      'https://management.example.test/sites/default/files/jurisdictions/1/logos/kbk-logo-light.png',
+      'https://management.example.com/sites/default/files/jurisdictions/1/logos/kbk-logo-light.png',
       $branding['logo_url'],
     );
     $this->assertNull($branding['logo_svg_inline']);
@@ -276,7 +279,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
       ]),
     ]);
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
     $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
     $fileUrlGenerator->expects($this->once())
       ->method('generateAbsoluteString')
@@ -301,10 +304,169 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $branding = $service->getBranding(1, 'jurisdiction', 'en');
 
     $this->assertSame(
-      'https://management.example.test/sites/default/files/logos/kbk-logo-light.png',
+      'https://management.example.com/sites/default/files/logos/kbk-logo-light.png',
       $branding['logo_url'],
     );
     $this->assertNull($branding['logo_svg_inline']);
+  }
+
+  /**
+   * Loopback file URLs are rewritten to the configured public mail host.
+   */
+  public function testJurisdictionLogoRewritesLoopbackFileUrl(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'WBD',
+      'field_slug' => 'duisburg',
+      'field_platform_name' => 'Mängelmelder',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'logos' => [
+            'light' => 'public://logos/wbd-logo-light.svg',
+          ],
+        ],
+      ]),
+    ]);
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://logos/wbd-logo-light.png')
+      ->willReturn('http://127.0.0.1:8080/sites/default/files/logos/wbd-logo-light.png');
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $fileSystem->expects($this->once())
+      ->method('realpath')
+      ->with('public://logos/wbd-logo-light.png')
+      ->willReturn(__FILE__);
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      NULL,
+      $overrides,
+      NULL,
+      $fileUrlGenerator,
+      $fileSystem,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'de');
+
+    $this->assertSame(
+      'https://management.example.com/sites/default/files/logos/wbd-logo-light.png',
+      $branding['logo_url'],
+    );
+    $this->assertNull($branding['logo_svg_inline']);
+  }
+
+  /**
+   * Public CDN and S3-style generated URLs remain on their original host.
+   */
+  public function testJurisdictionLogoPreservesPublicCdnFileUrl(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'WBD',
+      'field_slug' => 'duisburg',
+      'field_platform_name' => 'Mängelmelder',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'logos' => [
+            'light' => 'public://logos/wbd-logo-light.svg',
+          ],
+        ],
+      ]),
+    ]);
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
+    $cdnUrl = 'https://cdn.example.com/logos/wbd-logo-light.png?X-Amz-Signature=abc123';
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://logos/wbd-logo-light.png')
+      ->willReturn($cdnUrl);
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $fileSystem->expects($this->once())
+      ->method('realpath')
+      ->with('public://logos/wbd-logo-light.png')
+      ->willReturn(__FILE__);
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      NULL,
+      $overrides,
+      NULL,
+      $fileUrlGenerator,
+      $fileSystem,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'de');
+
+    $this->assertSame($cdnUrl, $branding['logo_url']);
+  }
+
+  /**
+   * A public request URL remains usable when no replacement origin exists.
+   */
+  public function testNormalizeMailUrlsPreservesPublicRequestHostWithoutBase(): void {
+    $requestStack = new RequestStack();
+    $requestStack->push(Request::create('https://attacker.example.net/'));
+    $overrides = self::PLATFORM_SETTINGS;
+    unset($overrides['platform.backend_base_url']);
+    $service = $this->buildService(
+      NULL,
+      settingsOverride: $overrides,
+      requestStack: $requestStack,
+    );
+
+    $this->assertSame(
+      '<a href="https://attacker.example.net/reset?token=secret">Reset</a>',
+      $service->normalizeMailUrls('<a href="https://attacker.example.net/reset?token=secret">Reset</a>'),
+    );
+  }
+
+  /**
+   * A request host is replaced only when an explicit public origin exists.
+   */
+  public function testNormalizeMailUrlsReplacesRequestHostWithConfiguredOrigin(): void {
+    $requestStack = new RequestStack();
+    $requestStack->push(Request::create('https://attacker.example.net/'));
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
+    $service = $this->buildService(
+      NULL,
+      settingsOverride: $overrides,
+      requestStack: $requestStack,
+    );
+
+    $this->assertSame(
+      '<a href="https://management.example.com/reset?token=secret">Reset</a>',
+      $service->normalizeMailUrls('<a href="https://attacker.example.net/reset?token=secret">Reset</a>'),
+    );
+  }
+
+  /**
+   * Nested token output is normalized before mail template validation.
+   */
+  public function testNormalizeMailContentRecursesThroughStringValues(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
+    $service = $this->buildService(NULL, settingsOverride: $overrides);
+
+    $normalized = $service->normalizeMailContent([
+      'cta_url' => 'http://127.0.0.1:8080/node/42',
+      'nested' => ['File: http://cloud-drupal/file/1'],
+      'markup' => Markup::create('<a href="http://127.0.0.1:8080/node/42">Open</a>'),
+      'count' => 2,
+    ]);
+
+    $this->assertSame('https://management.example.com/node/42', $normalized['cta_url']);
+    $this->assertSame(['File: https://management.example.com/file/1'], $normalized['nested']);
+    $this->assertInstanceOf(MarkupInterface::class, $normalized['markup']);
+    $this->assertSame('<a href="https://management.example.com/node/42">Open</a>', (string) $normalized['markup']);
+    $this->assertSame(2, $normalized['count']);
   }
 
   /**
@@ -320,7 +482,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
       'field_nuxt_config' => json_encode([
         'theme' => [
           'logos' => [
-            'light' => 'https://tracking.example.test/logo.png',
+            'light' => 'https://tracking.example.com/logo.png',
           ],
         ],
       ]),
@@ -444,7 +606,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     ]);
     $storage = $this->buildGroupStorageWithSingleJurisdictionId(68);
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $overrides['platform.backend_base_url'] = 'https://management.example.com';
     $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
     $fileUrlGenerator->expects($this->once())
       ->method('generateAbsoluteString')
@@ -472,7 +634,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('Maak et, Krefeld!', $branding['platform_name']);
     $this->assertSame('#276327', $branding['primary_color']);
     $this->assertSame(
-      'https://management.example.test/sites/default/files/logos/kbk-logo-light.png',
+      'https://management.example.com/sites/default/files/logos/kbk-logo-light.png',
       $branding['logo_url'],
     );
   }
@@ -594,7 +756,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    */
   public function testJurisdictionPathOnlyLegalFieldsUseFrontendRoot(): void {
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.test';
+    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.com';
     unset($overrides['platform.tenant_frontend_base_template']);
 
     $group = $this->buildGroup([
@@ -610,9 +772,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
 
     $branding = $service->getBranding(1, 'jurisdiction', 'de');
 
-    $this->assertSame('https://maengelmelder.example.test/impressum', $branding['legal_notice_url']);
-    $this->assertSame('https://maengelmelder.example.test/privacy', $branding['privacy_url']);
-    $this->assertSame('https://maengelmelder.example.test', $branding['frontend_base_url']);
+    $this->assertSame('https://maengelmelder.example.com/impressum', $branding['legal_notice_url']);
+    $this->assertSame('https://maengelmelder.example.com/privacy', $branding['privacy_url']);
+    $this->assertSame('https://maengelmelder.example.com', $branding['frontend_base_url']);
     $this->assertFalse($branding['frontend_uses_jurisdiction_path']);
   }
 
@@ -621,7 +783,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    */
   public function testJurisdictionPathOnlyLegalFieldsStaySlugScopedForMultiTenant(): void {
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.test';
+    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.com';
     unset($overrides['platform.tenant_frontend_base_template']);
 
     $group = $this->buildGroup([
@@ -637,8 +799,8 @@ final class MailBrandingServiceTest extends UnitTestCase {
 
     $branding = $service->getBranding(1, 'jurisdiction', 'de');
 
-    $this->assertSame('https://maengelmelder.example.test/wbd/impressum', $branding['legal_notice_url']);
-    $this->assertSame('https://maengelmelder.example.test/wbd/privacy', $branding['privacy_url']);
+    $this->assertSame('https://maengelmelder.example.com/wbd/impressum', $branding['legal_notice_url']);
+    $this->assertSame('https://maengelmelder.example.com/wbd/privacy', $branding['privacy_url']);
     $this->assertTrue($branding['frontend_uses_jurisdiction_path']);
   }
 
@@ -647,7 +809,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    */
   public function testJurisdictionPathOnlyLegalFieldsRejectControlCharacters(): void {
     $overrides = self::PLATFORM_SETTINGS;
-    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.test';
+    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.com';
     unset($overrides['platform.legal_notice_url']);
     unset($overrides['platform.tenant_frontend_base_template']);
 
@@ -1053,6 +1215,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     ?ModuleExtensionList $moduleExtensionList = NULL,
     ?FileUrlGeneratorInterface $fileUrlGenerator = NULL,
     ?FileSystemInterface $fileSystem = NULL,
+    ?RequestStack $requestStack = NULL,
   ): MailBrandingService {
     $storage = $storage ?? $this->createMock(EntityStorageInterface::class);
     if ($group !== NULL) {
@@ -1090,7 +1253,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
       $fileUrlGenerator,
       $logger,
       $moduleExtensionList,
-      NULL,
+      $requestStack,
       $fileSystem,
     );
   }

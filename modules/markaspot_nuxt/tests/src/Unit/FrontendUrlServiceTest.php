@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_nuxt\Unit;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
+use Drupal\markaspot_nuxt\Service\PublicUrlValidator;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -63,9 +64,18 @@ final class FrontendUrlServiceTest extends UnitTestCase {
    * @covers ::getFrontendBaseUrl
    */
   public function testReturnsNormalizedConfiguredFrontendBaseUrl(): void {
-    $service = $this->service(TRUE, 'https://bonn-mobility.example/');
+    $service = $this->service(TRUE, 'https://bonn-mobility.example.com/');
 
-    $this->assertSame('https://bonn-mobility.example', $service->getFrontendBaseUrl());
+    $this->assertSame('https://bonn-mobility.example.com', $service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getFrontendBaseUrl
+   */
+  public function testPreservesConfiguredFrontendDeploymentPath(): void {
+    $service = $this->service(TRUE, 'https://portal.example.com/maengelmelder/');
+
+    $this->assertSame('https://portal.example.com/maengelmelder', $service->getFrontendBaseUrl());
   }
 
   /**
@@ -110,11 +120,31 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   /**
    * @covers ::getFrontendBaseUrl
    */
+  public function testRejectsPublicIpv6LiteralFrontendEnvFallback(): void {
+    putenv('FRONTEND_BASE_URL=https://[2606:4700:4700::1111]/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertNull($service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getFrontendBaseUrl
+   */
   public function testRejectsSingleLabelFrontendEnvFallback(): void {
     putenv('FRONTEND_BASE_URL=http://cloud-drupal/');
     $service = $this->service(FALSE, '');
 
     $this->assertNull($service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getNotificationFrontendBaseUrl
+   */
+  public function testRejectsDottedInternalMailFrontendFallback(): void {
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=http://host.docker.internal/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertNull($service->getNotificationFrontendBaseUrl());
   }
 
   /**
@@ -141,17 +171,17 @@ final class FrontendUrlServiceTest extends UnitTestCase {
    * @covers ::getFrontendBaseUrl
    */
   public function testReturnsNormalizedFrontendEnvFallback(): void {
-    putenv('FRONTEND_BASE_URL=https://bonn-mobility.example/');
+    putenv('FRONTEND_BASE_URL=https://bonn-mobility.example.com/');
     $service = $this->service(FALSE, '');
 
-    $this->assertSame('https://bonn-mobility.example', $service->getFrontendBaseUrl());
+    $this->assertSame('https://bonn-mobility.example.com', $service->getFrontendBaseUrl());
   }
 
   /**
    * @covers ::getFrontendBaseUrl
    */
   public function testGenericFrontendBaseUrlIgnoresMailFrontendEnvFallback(): void {
-    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example/');
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example.com/');
     $service = $this->service(FALSE, '');
 
     $this->assertNull($service->getFrontendBaseUrl());
@@ -161,31 +191,31 @@ final class FrontendUrlServiceTest extends UnitTestCase {
    * @covers ::getNotificationFrontendBaseUrl
    */
   public function testReturnsNormalizedMailFrontendEnvFallbackForNotifications(): void {
-    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example/');
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example.com/');
     $service = $this->service(FALSE, '');
 
-    $this->assertSame('https://bonn-mobility.example', $service->getNotificationFrontendBaseUrl());
+    $this->assertSame('https://bonn-mobility.example.com', $service->getNotificationFrontendBaseUrl());
   }
 
   /**
    * @covers ::getNotificationFrontendBaseUrl
    */
   public function testMailFrontendEnvPrecedesConfiguredAndGenericFrontendForNotifications(): void {
-    putenv('FRONTEND_BASE_URL=https://generic.example/');
-    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://mail.example/');
-    $service = $this->service(TRUE, 'https://fastmap.example/');
+    putenv('FRONTEND_BASE_URL=https://generic.example.com/');
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://mail.example.com/');
+    $service = $this->service(TRUE, 'https://fastmap.example.com/');
 
-    $this->assertSame('https://mail.example', $service->getNotificationFrontendBaseUrl());
+    $this->assertSame('https://mail.example.com', $service->getNotificationFrontendBaseUrl());
   }
 
   /**
    * @covers ::getNotificationFrontendBaseUrl
    */
   public function testConfiguredFrontendRemainsNotificationFallbackWithoutMailOverride(): void {
-    putenv('FRONTEND_BASE_URL=https://generic.example/');
-    $service = $this->service(TRUE, 'https://configured.example/');
+    putenv('FRONTEND_BASE_URL=https://generic.example.com/');
+    $service = $this->service(TRUE, 'https://configured.example.com/');
 
-    $this->assertSame('https://configured.example', $service->getNotificationFrontendBaseUrl());
+    $this->assertSame('https://configured.example.com', $service->getNotificationFrontendBaseUrl());
   }
 
   /**
@@ -223,7 +253,7 @@ final class FrontendUrlServiceTest extends UnitTestCase {
       ->with('markaspot_nuxt.settings')
       ->willReturn($config);
 
-    return new FrontendUrlService($configFactory);
+    return new FrontendUrlService($configFactory, new PublicUrlValidator());
   }
 
 }

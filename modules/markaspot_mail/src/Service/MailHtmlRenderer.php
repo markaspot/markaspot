@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Drupal\markaspot_mail\Service;
 
 use Drupal\Core\Render\RendererInterface;
-use Drupal\Core\Url;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -60,7 +59,7 @@ class MailHtmlRenderer {
     if ($variant === 'card_transactional' && !empty($content['cta_url'])) {
       if (!$this->isSafeUrl((string) $content['cta_url'])) {
         $this->logger->warning('Unsafe CTA URL in transactional mail, rendering as plain text: @url', [
-          '@url' => $content['cta_url'],
+          '@url' => $this->branding->redactUrlForLog((string) $content['cta_url']),
         ]);
         $content['cta_url_is_safe'] = FALSE;
       }
@@ -76,7 +75,7 @@ class MailHtmlRenderer {
     $logoUrl = (string) ($branding['logo_url'] ?? '');
     if ($logoUrl !== '' && preg_match('/\.svg(?:$|[?#])/i', $logoUrl) === 1) {
       $this->logger->debug('Jurisdiction logo is SVG; mobile mail clients may not render it: @url', [
-        '@url' => $logoUrl,
+        '@url' => $this->branding->redactUrlForLog($logoUrl),
       ]);
     }
 
@@ -223,16 +222,7 @@ class MailHtmlRenderer {
    * data:, mailto: etc. when used as a button target) returns FALSE.
    */
   private function isSafeUrl(string $url): bool {
-    if (preg_match('#^https?://#i', $url) !== 1) {
-      return FALSE;
-    }
-    try {
-      Url::fromUri($url);
-      return TRUE;
-    }
-    catch (\Throwable) {
-      return FALSE;
-    }
+    return $this->branding->isPublicHttpUrl($url);
   }
 
 }

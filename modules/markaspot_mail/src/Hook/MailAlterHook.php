@@ -55,6 +55,20 @@ final class MailAlterHook {
    * Alter entry point, called from markaspot_mail_mail_alter().
    */
   public function alter(array &$message): void {
+    // Normalize token-generated URLs for every outgoing mail, including
+    // unbranded and hard-blocklisted messages. This is intentionally done
+    // before builder dispatch so fail-open plaintext also cannot retain a
+    // request, loopback or container authority.
+    if (isset($message['body']) && is_array($message['body'])) {
+      $message['body'] = $this->branding->normalizeMailContent($message['body']);
+    }
+    elseif (isset($message['body']) && is_string($message['body'])) {
+      $message['body'] = $this->branding->normalizeMailUrls($message['body']);
+    }
+    if (isset($message['params']['_plain_alt']) && is_string($message['params']['_plain_alt'])) {
+      $message['params']['_plain_alt'] = $this->branding->normalizeMailUrls($message['params']['_plain_alt']);
+    }
+
     $module = (string) ($message['module'] ?? '');
     $key = (string) ($message['key'] ?? '');
 
@@ -105,12 +119,16 @@ final class MailAlterHook {
 
     try {
       $brandingPackage = $this->branding->getBranding($msg->jurisdictionId, $msg->mode, $langcode);
+      $content = $this->branding->normalizeMailContent($msg->content);
+      $plainText = $msg->plainText !== NULL
+        ? $this->branding->normalizeMailUrls($msg->plainText)
+        : NULL;
       $rendered = $this->renderer->render(
         $msg->variant,
         $brandingPackage,
-        $msg->content,
+        $content,
         $langcode,
-        $msg->plainText,
+        $plainText,
       );
     }
     catch (\Throwable $e) {
@@ -139,6 +157,7 @@ final class MailAlterHook {
     // verbatim in Apple Mail's notification/plaintext view. Inline styles on
     // all elements are preserved, so the HTML part still renders correctly.
     $html = preg_replace('/<style[^>]*>.*?<\/style>/si', '', $rendered['html']);
+    $html = $this->branding->normalizeMailUrls((string) $html);
     $message['body'] = [$html];
     // Drupal's MailManager seeds every message with Content-Type: text/plain.
     // phpmailer_smtp reads that header in format() and, if not force_html,
@@ -175,7 +194,8 @@ final class MailAlterHook {
     // to LF + drop NUL as belt-and-suspenders: some pedantic MIME libs
     // truncate text parts at \0, and plugins building SMTP frames manually
     // could otherwise mis-read the text boundary.
-    $message['params']['_plain_alt'] = str_replace(["\r\n", "\r", "\0"], ["\n", "\n", ''], $rendered['plain']);
+    $plain = $this->branding->normalizeMailUrls($rendered['plain']);
+    $message['params']['_plain_alt'] = str_replace(["\r\n", "\r", "\0"], ["\n", "\n", ''], $plain);
 
     // Merge builder-supplied attachments into the phpmailer_smtp slot.
     // PhpMailerSmtp::addAttachments() reads params.attachments (and the

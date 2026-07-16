@@ -136,6 +136,35 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringNotContainsString('Open: javascript:alert(1)', $out['plain']);
   }
 
+  /**
+   * Private-network CTA URLs are not rendered into citizen mail.
+   */
+  public function testPrivateNetworkCtaUrlIsFlaggedAsUnsafe(): void {
+    $branding = $this->buildBranding();
+    $content = [
+      'headline' => 'Private target',
+      'cta_label' => 'Open',
+      'cta_url' => 'http://127.0.0.1:8080/node/42?token=secret',
+    ];
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->anything(),
+        $this->callback(static function (array $context): bool {
+          $logged = (string) ($context['@url'] ?? '');
+          return $logged === 'http://127.0.0.1:8080/[redacted]'
+            && !str_contains($logged, 'secret')
+            && !str_contains($logged, '/node/42');
+        }),
+      );
+
+    $out = $this->buildRenderer($logger)->render('card_transactional', $branding, $content, 'en');
+
+    $this->assertStringContainsString('cta_url_is_safe:0', $out['html']);
+    $this->assertStringNotContainsString('token=secret', $out['plain']);
+  }
+
   public function testFeaturesAndContactBlocksAppearInPlain(): void {
     $branding = $this->buildBranding();
     $content = [

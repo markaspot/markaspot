@@ -7,7 +7,6 @@ namespace Drupal\markaspot_mail\Commands;
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
-use Drupal\Core\Url;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailBuilderRegistry;
@@ -204,14 +203,20 @@ class MailRenderTestCommands extends DrushCommands {
     if (trim($message->subject) === '') {
       $problems[] = 'empty subject';
     }
-    $ctaUrl = trim((string) ($message->content['cta_url'] ?? ''));
+    $content = $this->brandingService->normalizeMailContent($message->content);
+    $plainText = $message->plainText !== NULL
+      ? $this->brandingService->normalizeMailUrls($message->plainText)
+      : NULL;
+    $ctaUrl = trim((string) ($content['cta_url'] ?? ''));
     if ($ctaUrl !== '' && !$this->isSafeCtaUrl($ctaUrl)) {
-      $problems[] = sprintf('unsafe cta_url "%s"', $ctaUrl);
+      $problems[] = sprintf('unsafe cta_url "%s"', $this->brandingService->redactUrlForLog($ctaUrl));
     }
 
     try {
       $branding = $this->brandingService->getBranding($message->jurisdictionId, $message->mode, $ctx->langcode);
-      $rendered = $this->renderer->render($message->variant, $branding, $message->content, $ctx->langcode, $message->plainText);
+      $rendered = $this->renderer->render($message->variant, $branding, $content, $ctx->langcode, $plainText);
+      $rendered['html'] = $this->brandingService->normalizeMailUrls($rendered['html']);
+      $rendered['plain'] = $this->brandingService->normalizeMailUrls($rendered['plain']);
     }
     catch (\Throwable $e) {
       return $this->row($check, $type, $class, 'FAIL', 'render() threw: ' . $e->getMessage());
@@ -264,24 +269,10 @@ class MailRenderTestCommands extends DrushCommands {
   }
 
   /**
-   * Validates a CTA URL the same way MailHtmlRenderer::isSafeUrl() does.
-   *
-   * MailHtmlRenderer's own isSafeUrl() is private (render-time defense in
-   * depth, not a public contract); this mirrors that exact http(s)-only +
-   * Url::fromUri() check so the drush gate gives an early, independent
-   * signal without changing the renderer's visibility.
+   * Validates a CTA URL through the shared mail output policy.
    */
   protected function isSafeCtaUrl(string $url): bool {
-    if (preg_match('#^https?://#i', $url) !== 1) {
-      return FALSE;
-    }
-    try {
-      Url::fromUri($url);
-      return TRUE;
-    }
-    catch (\Throwable) {
-      return FALSE;
-    }
+    return $this->brandingService->isPublicHttpUrl($url);
   }
 
   /**

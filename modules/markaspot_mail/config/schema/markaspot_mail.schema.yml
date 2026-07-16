@@ -38,7 +38,7 @@ markaspot_mail.settings:
           label: 'Tenant frontend base URL template (must contain the {slug} placeholder)'
         backend_base_url:
           type: string
-          label: 'Absolute URL of this Drupal install for mail-embedded assets. When empty, mails rendered in a request context infer the host from the request; mails rendered from CLI/queue fall back to a relative URL and mail clients will not load the image. Operators set this via settings.php from an environment variable.'
+          label: 'Public origin of this Drupal install for mail assets and generated URLs. When empty, already public URLs are preserved and internal URLs fall back to relative paths. Operators set this via settings.php from an environment variable.'
     features:
       type: mapping
       label: 'Feature flags'

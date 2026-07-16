@@ -1,10 +1,13 @@
 services:
+  markaspot_nuxt.public_url_validator:
+    class: Drupal\markaspot_nuxt\Service\PublicUrlValidator
+
   markaspot_nuxt.voting_api_controller:
     class: Drupal\markaspot_nuxt\Controller\VotingApiController
     arguments: ['@entity_type.manager']
   markaspot_nuxt.frontend_url:
     class: Drupal\markaspot_nuxt\Service\FrontendUrlService
-    arguments: ['@config.factory']
+    arguments: ['@config.factory', '@markaspot_nuxt.public_url_validator']
   markaspot_nuxt.feature_flag_checker:
     class: Drupal\markaspot_nuxt\Service\FeatureFlagChecker
   markaspot_nuxt.feature_scope_resolver:
