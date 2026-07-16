@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\Field\Attribute\FieldWidget;
 use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\json_form_widget\FormBuilder;
@@ -100,6 +101,158 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       $container->get('config.factory'),
       $container->get('logger.factory')->get('markaspot_nuxt'),
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function extractFormValues(FieldItemListInterface $items, array $form, FormStateInterface $form_state): void {
+    $original_value = $items->getValue()[0]['value'] ?? NULL;
+    $existing = [];
+    if (is_string($original_value) && $original_value !== '') {
+      $decoded = json_decode($original_value, TRUE);
+      if (is_array($decoded)) {
+        $existing = $decoded;
+      }
+    }
+
+    $this->currentEntity = $items->getEntity();
+
+    // Recover parents for inline entity forms, as done by the base widget.
+    if ($this->currentEntity) {
+      $storage_key = 'json_schema_widget_parents_' . $this->getPluginId();
+      $storage = $form_state->get($storage_key) ?? [];
+      if (isset($storage[$this->currentEntity->uuid()])) {
+        $this->fieldParents = $storage[$this->currentEntity->uuid()];
+      }
+    }
+
+    $schema = $this->resolveSchema($form_state);
+    $this->builder->setSchema($schema);
+
+    $field_name = $this->fieldDefinition->getName();
+    $path = $this->fieldParents;
+    $path[] = $field_name;
+
+    $values = $form_state->getValue($path);
+    if ($values === NULL) {
+      $values = $form_state->getValue($field_name);
+    }
+
+    if (!isset($values[0]['value']) || !is_array($values[0]['value'])) {
+      return;
+    }
+
+    $form_data = $this->collectSchemaFormData($values[0]['value'], $schema);
+    $data = self::mergePreservingUnknownKeys($existing, $form_data, $schema);
+
+    $items->setValue([['value' => json_encode($data)]]);
+  }
+
+  /**
+   * Merges submitted schema values into existing configuration.
+   *
+   * Existing keys not described by the schema are preserved recursively.
+   * Submitted schema keys are authoritative, including empty values that
+   * remove known non-boolean keys. A submitted FALSE is persisted only when
+   * the key already existed; otherwise it remains absent. This means the UI
+   * cannot distinguish and persist an explicit FALSE for a previously absent
+   * key, which avoids materializing every unchecked boolean option.
+   *
+   * @param array $existing
+   *   Existing decoded configuration.
+   * @param array $form_data
+   *   Flattened values submitted by the schema form.
+   * @param object $schema
+   *   JSON schema describing the submitted values.
+   *
+   * @return array
+   *   The merged configuration.
+   */
+  public static function mergePreservingUnknownKeys(array $existing, array $form_data, object $schema): array {
+    $merged = $existing;
+    $properties = (array) ($schema->properties ?? new \stdClass());
+
+    foreach ($properties as $property => $property_schema) {
+      if (!array_key_exists($property, $form_data)) {
+        continue;
+      }
+
+      $value = $form_data[$property];
+      $type = $property_schema->type ?? NULL;
+
+      if ($type === 'object' && is_array($value)) {
+        $existing_value = isset($existing[$property]) && is_array($existing[$property])
+          ? $existing[$property]
+          : [];
+        $object_value = self::mergePreservingUnknownKeys($existing_value, $value, $property_schema);
+
+        if ($object_value === []) {
+          unset($merged[$property]);
+        }
+        else {
+          $merged[$property] = $object_value;
+        }
+        continue;
+      }
+
+      if ($type === 'boolean') {
+        // The contrib form builder does not render boolean properties, so a
+        // non-scalar submission is an artifact of unsupported rendering and
+        // must never overwrite existing data.
+        if (!is_scalar($value)) {
+          continue;
+        }
+        $submitted = (bool) $value;
+        if ($submitted || array_key_exists($property, $existing)) {
+          $merged[$property] = $submitted;
+        }
+        continue;
+      }
+
+      if ($value === NULL || $value === '' || $value === FALSE) {
+        unset($merged[$property]);
+      }
+      else {
+        $merged[$property] = $value;
+      }
+    }
+
+    return $merged;
+  }
+
+  /**
+   * Collects submitted values while retaining empty and boolean values.
+   *
+   * @param array $raw_values
+   *   Raw values for one schema object.
+   * @param object $schema
+   *   Schema for the object.
+   *
+   * @return array
+   *   Flattened submitted values keyed by schema property.
+   */
+  private function collectSchemaFormData(array $raw_values, object $schema): array {
+    $data = [];
+    $properties = (array) ($schema->properties ?? new \stdClass());
+
+    foreach ($properties as $property => $property_schema) {
+      if (!array_key_exists($property, $raw_values)) {
+        continue;
+      }
+
+      if (($property_schema->type ?? NULL) === 'object') {
+        $object_values = $raw_values[$property][$property] ?? [];
+        $data[$property] = is_array($object_values)
+          ? $this->collectSchemaFormData($object_values, $property_schema)
+          : [];
+        continue;
+      }
+
+      $data[$property] = $this->valueHandler->flattenValues($raw_values, $property, $property_schema);
+    }
+
+    return $data;
   }
 
   /**
