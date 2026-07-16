@@ -40,10 +40,23 @@ final class MaintenanceBrandingResolver implements MaintenanceBrandingResolverIn
         return NULL;
       }
 
+      $theme = is_array($nuxtConfig['theme'] ?? NULL)
+        ? $nuxtConfig['theme']
+        : [];
+      $logos = is_array($theme['logos'] ?? NULL)
+        ? $theme['logos']
+        : [];
+      $logoLight = $this->filePath($group, 'field_logo_light');
+      $logoDark = $this->filePath($group, 'field_logo_dark');
+
       return [
         'tenantName' => $tenantName,
-        'logoLight' => $this->filePath($group, 'field_logo_light'),
-        'logoDark' => $this->filePath($group, 'field_logo_dark'),
+        'logoLight' => $logoLight !== ''
+          ? $logoLight
+          : $this->publicAssetPath($logos['light'] ?? $theme['logoLight'] ?? ''),
+        'logoDark' => $logoDark !== ''
+          ? $logoDark
+          : $this->publicAssetPath($logos['dark'] ?? $theme['logoDark'] ?? ''),
         'defaultLocale' => $this->defaultLocale($nuxtConfig),
       ];
     }
@@ -115,16 +128,47 @@ final class MaintenanceBrandingResolver implements MaintenanceBrandingResolverIn
       return '';
     }
 
-    $uri = (string) $file->getFileUri();
-    $scheme = StreamWrapperManager::getScheme($uri);
-    if ($scheme === 'public') {
-      $target = ltrim((string) StreamWrapperManager::getTarget($uri), '/');
-      return '/' . trim(PublicStream::basePath(), '/') . '/' . $target;
+    return $this->publicAssetPath((string) $file->getFileUri());
+  }
+
+  /**
+   * Normalizes a public logo URI without exposing arbitrary external paths.
+   */
+  private function publicAssetPath(mixed $value): string {
+    if (!is_string($value)) {
+      return '';
     }
 
-    // The anonymous endpoint must never reveal private or implementation-
-    // specific storage paths. Tenant logos are supported only on public://.
-    return '';
+    $value = trim($value);
+    if ($value === '' || str_contains($value, "\0") || str_contains($value, '\\')) {
+      return '';
+    }
+
+    $publicBasePath = trim(PublicStream::basePath(), '/');
+    if (StreamWrapperManager::getScheme($value) === 'public') {
+      $target = ltrim((string) StreamWrapperManager::getTarget($value), '/');
+    }
+    elseif (str_starts_with($value, '/' . $publicBasePath . '/')) {
+      if (strpbrk($value, '?#') !== FALSE) {
+        return '';
+      }
+      $target = substr($value, strlen('/' . $publicBasePath . '/'));
+    }
+    else {
+      return '';
+    }
+
+    $decodedTarget = rawurldecode($target);
+    if (
+      $target === ''
+      || str_contains($target, '%')
+      || preg_match('@(^|/)\.\.(/|$)@', $decodedTarget) === 1
+      || preg_match('/\.(?:svg|png|jpe?g|webp)$/i', $decodedTarget) !== 1
+    ) {
+      return '';
+    }
+
+    return '/' . $publicBasePath . '/' . ltrim($target, '/');
   }
 
   /**

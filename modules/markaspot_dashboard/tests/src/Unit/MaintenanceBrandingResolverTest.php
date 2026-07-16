@@ -70,6 +70,122 @@ final class MaintenanceBrandingResolverTest extends UnitTestCase {
   /**
    * @covers ::resolve
    */
+  public function testNuxtConfigProvidesPublicSvgFallbacks(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('label')->willReturn('Fallback label');
+    $group->method('hasField')->willReturnCallback(
+      static fn(string $name): bool => in_array($name, [
+        'field_nuxt_config',
+        'field_logo_light',
+        'field_logo_dark',
+      ], TRUE),
+    );
+
+    $nuxtConfig = $this->fieldList('value', json_encode([
+      'client' => ['name' => 'WBD-Mängelmelder'],
+      'theme' => [
+        'logos' => [
+          'light' => '/sites/default/files/logos/wbd-logo-light.svg',
+          'dark' => 'public://logos/wbd-logo-dark.svg',
+        ],
+      ],
+      'languages' => ['default' => 'de'],
+    ], JSON_THROW_ON_ERROR));
+    $empty = $this->emptyFieldList();
+    $group->method('get')->willReturnCallback(
+      static fn(string $name): FieldItemListInterface => match ($name) {
+        'field_nuxt_config' => $nuxtConfig,
+        'field_logo_light', 'field_logo_dark' => $empty,
+      },
+    );
+
+    self::assertSame([
+      'tenantName' => 'WBD-Mängelmelder',
+      'logoLight' => '/sites/default/files/logos/wbd-logo-light.svg',
+      'logoDark' => '/sites/default/files/logos/wbd-logo-dark.svg',
+      'defaultLocale' => 'de',
+    ], $this->resolver([1], $group)->resolve('1'));
+  }
+
+  /**
+   * @covers ::resolve
+   */
+  public function testNuxtConfigRejectsExternalAndTraversalLogoPaths(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('label')->willReturn('WBD-Mängelmelder');
+    $group->method('hasField')->willReturnCallback(
+      static fn(string $name): bool => in_array($name, [
+        'field_nuxt_config',
+        'field_logo_light',
+        'field_logo_dark',
+      ], TRUE),
+    );
+
+    $nuxtConfig = $this->fieldList('value', json_encode([
+      'theme' => [
+        'logos' => [
+          'light' => 'https://example.com/logo.svg',
+          'dark' => '/sites/default/files/../private/logo.svg',
+        ],
+      ],
+    ], JSON_THROW_ON_ERROR));
+    $empty = $this->emptyFieldList();
+    $group->method('get')->willReturnCallback(
+      static fn(string $name): FieldItemListInterface => match ($name) {
+        'field_nuxt_config' => $nuxtConfig,
+        'field_logo_light', 'field_logo_dark' => $empty,
+      },
+    );
+
+    self::assertSame([
+      'tenantName' => 'WBD-Mängelmelder',
+      'logoLight' => '',
+      'logoDark' => '',
+      'defaultLocale' => 'de',
+    ], $this->resolver([1], $group)->resolve('1'));
+  }
+
+  /**
+   * @covers ::resolve
+   */
+  public function testNuxtConfigRejectsEncodedLogoPaths(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('label')->willReturn('WBD-Mängelmelder');
+    $group->method('hasField')->willReturnCallback(
+      static fn(string $name): bool => in_array($name, [
+        'field_nuxt_config',
+        'field_logo_light',
+        'field_logo_dark',
+      ], TRUE),
+    );
+
+    $nuxtConfig = $this->fieldList('value', json_encode([
+      'theme' => [
+        'logos' => [
+          'light' => '/sites/default/files/%252e%252e/private/logo.svg',
+          'dark' => '/sites/default/files/logos/logo%00.svg',
+        ],
+      ],
+    ], JSON_THROW_ON_ERROR));
+    $empty = $this->emptyFieldList();
+    $group->method('get')->willReturnCallback(
+      static fn(string $name): FieldItemListInterface => match ($name) {
+        'field_nuxt_config' => $nuxtConfig,
+        'field_logo_light', 'field_logo_dark' => $empty,
+      },
+    );
+
+    self::assertSame([
+      'tenantName' => 'WBD-Mängelmelder',
+      'logoLight' => '',
+      'logoDark' => '',
+      'defaultLocale' => 'de',
+    ], $this->resolver([1], $group)->resolve('1'));
+  }
+
+  /**
+   * @covers ::resolve
+   */
   public function testAmbiguousFallbackReturnsNoBranding(): void {
     $resolver = $this->resolver([1, 2]);
 
@@ -131,6 +247,15 @@ final class MaintenanceBrandingResolverTest extends UnitTestCase {
     $field->method('__get')->willReturnCallback(
       static fn(string $name): mixed => $name === $property ? $value : NULL,
     );
+    return $field;
+  }
+
+  /**
+   * Creates an empty field list.
+   */
+  private function emptyFieldList(): FieldItemListInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn(TRUE);
     return $field;
   }
 
