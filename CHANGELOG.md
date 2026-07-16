@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.159](https://github.com/markaspot/markaspot/compare/11.9.158...11.9.159) (2026-07-16)
+
+### Bug Fixes
+
+* **maintenance:** use public tenant logo fallbacks ([9482cf9](https://github.com/markaspot/markaspot/commit/9482cf9839a6ab10b67309117073e7f8ba8e4749))
+
 ## [11.9.158](https://github.com/markaspot/markaspot/compare/11.9.157...11.9.158) (2026-07-15)
 
 ### Bug Fixes
