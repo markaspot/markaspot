@@ -132,7 +132,7 @@ content:
     settings:
       maplibre: '1'
       mapboxStyle: 'https://tiles.openfreemap.org/styles/liberty'
-      addressFormat: '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}'
+      addressFormat: '${address.road} ${address.house_number}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.postcode} ${address.city}'
       serviceUrl: 'https://nominatim.openstreetmap.org/'
       LocationIQToken: ''
     third_party_settings: {  }

@@ -44,7 +44,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
-      'addressFormat' => '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}',
+      'addressFormat' => '${address.road} ${address.house_number}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.postcode} ${address.city}',
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
       'LocationIQToken' => '',
       'dragging' => TRUE,

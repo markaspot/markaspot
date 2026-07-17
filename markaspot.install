@@ -4291,6 +4291,38 @@ function markaspot_update_11930(): string {
 }
 
 /**
+ * Converts the default Nominatim address format to German ordering.
+ */
+function markaspot_update_11931(): string {
+  $old = '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}';
+  $new = '${address.road} ${address.house_number}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.postcode} ${address.city}';
+  $updated = [];
+  $storage = \Drupal::entityTypeManager()->getStorage('entity_form_display');
+  foreach ($storage->loadMultiple() as $display) {
+    if ($display->getTargetEntityTypeId() !== 'node') {
+      continue;
+    }
+    $changed = FALSE;
+    foreach ($display->getComponents() as $name => $component) {
+      // Only rewrite widgets still on the shipped default; customized
+      // formats stay untouched.
+      if (($component['settings']['addressFormat'] ?? NULL) === $old) {
+        $component['settings']['addressFormat'] = $new;
+        $display->setComponent($name, $component);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $display->save();
+      $updated[] = $display->id();
+    }
+  }
+  return $updated
+    ? 'German address format applied to: ' . implode(', ', $updated) . '.'
+    : 'No form displays were using the old default address format.';
+}
+
+/**
  * Places field_request_attributes in the Administration field group.
  */
 function _markaspot_update_11923_place_request_attributes_in_management_group(EntityFormDisplay $display): bool {
