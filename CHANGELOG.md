@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.162](https://github.com/markaspot/markaspot/compare/11.9.161...11.9.162) (2026-07-17)
+
+### Bug Fixes
+
+* use german address ordering in nominatim widget default ([883e9b1](https://github.com/markaspot/markaspot/commit/883e9b1f27a92a2b02ee9de7008a3fea364d0012))
+
 ## [11.9.161](https://github.com/markaspot/markaspot/compare/11.9.160...11.9.161) (2026-07-17)
 
 ### Features
