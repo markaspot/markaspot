@@ -134,9 +134,14 @@
         formattedAddress = formattedAddress.replace(new RegExp(`\\$\{address.${key}\}`, 'g'), placeholders[key]);
       });
 
-      // Clean up the address
-      formattedAddress = formattedAddress.replace(/\s*,\s*/g, ', ').trim();
-      formattedAddress = formattedAddress.replace(/\s{2,}/g, ' ');
+      // Clean up the address: missing fields leave empty segments behind
+      // ("17, Heemstedestraat, , , Zuid, , Amsterdam"), so split on commas,
+      // drop the empties and rejoin instead of only normalizing spacing.
+      formattedAddress = formattedAddress
+        .split(',')
+        .map(part => part.trim().replace(/\s{2,}/g, ' '))
+        .filter(part => part.length > 0)
+        .join(', ');
 
       return formattedAddress;
     }
