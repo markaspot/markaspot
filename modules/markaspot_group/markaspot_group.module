@@ -5233,3 +5233,23 @@ function markaspot_group_taxonomy_term_access(EntityInterface $entity, string $o
 
   return AccessResult::neutral();
 }
+
+/**
+ * Implements hook_views_data_alter().
+ *
+ * Views resolves filter handlers through views data, not through the
+ * plugin_id stored in a view's configuration. The Search API index declares
+ * its numeric group fields with the generic search_api_numeric filter, so the
+ * labelled Group filter has to be wired in here to take effect.
+ */
+function markaspot_group_views_data_alter(array &$data): void {
+  $table = 'search_api_index_service_requests';
+  if (!isset($data[$table])) {
+    return;
+  }
+  foreach (['field_organisation', 'field_jurisdiction'] as $field) {
+    if (isset($data[$table][$field]['filter'])) {
+      $data[$table][$field]['filter']['id'] = 'markaspot_group_label';
+    }
+  }
+}

@@ -3,6 +3,8 @@ status: true
 dependencies:
   config:
     - field.storage.node.field_address
+    - field.storage.node.field_jurisdiction
+    - field.storage.node.field_organisation
     - field.storage.node.field_status
     - field.storage.taxonomy_term.field_status_hex
     - image.style.thumbnail
@@ -12,13 +14,18 @@ dependencies:
     - taxonomy.vocabulary.service_status
   module:
     - address
+    - better_exposed_filters
     - color_field
     - image
+    - markaspot_group
     - markaspot_open311
+    - markaspot_request_id
     - media
     - search_api
     - taxonomy
     - user
+    - views_bulk_edit
+    - views_bulk_operations
   enforced:
     module:
       - service_request
@@ -38,6 +45,43 @@ display:
     display_options:
       title: 'Service Requests'
       fields:
+        views_bulk_operations_bulk_form:
+          id: views_bulk_operations_bulk_form
+          table: views
+          field: views_bulk_operations_bulk_form
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: views_bulk_operations_bulk_form
+          label: 'Bulk operations'
+          exclude: false
+          batch: true
+          batch_size: 100
+          form_step: true
+          ajax_loader: false
+          buttons: false
+          action_title: Action
+          clear_on_exposed: true
+          show_multipage_selection_box: default
+          show_select_all: default
+          selected_actions:
+            - action_id: views_bulk_edit
+              preconfiguration:
+                label_override: ''
+                message_override: ''
+                get_bundles_from_results: true
+            - action_id: 'entity:publish_action:node'
+              preconfiguration:
+                label_override: ''
+                message_override: ''
+                add_confirmation: true
+                confirm_help_text: ''
+            - action_id: 'entity:unpublish_action:node'
+              preconfiguration:
+                label_override: ''
+                message_override: ''
+                add_confirmation: true
+                confirm_help_text: ''
         nid:
           id: nid
           table: search_api_index_service_requests
@@ -119,6 +163,76 @@ display:
             format_plural_values:
               - '1'
               - '@count'
+        request_id:
+          id: request_id
+          table: search_api_index_service_requests
+          field: request_id
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: search_api_field
+          label: 'Request ID'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          click_sort_column: value
+          type: string
+          settings:
+            link_to_entity: false
+          group_column: value
+          group_columns: {  }
+          group_rows: true
+          delta_limit: 0
+          delta_offset: 0
+          delta_reversed: false
+          delta_first_last: false
+          multi_type: separator
+          separator: ', '
+          field_api_classes: false
+          field_rendering: true
+          fallback_handler: search_api
+          fallback_options:
+            link_to_item: false
+            use_highlighting: false
+            multi_type: separator
+            multi_separator: ', '
         title:
           id: title
           table: search_api_index_service_requests
@@ -127,7 +241,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: search_api_field
-          label: ''
+          label: Title
           exclude: false
           alter:
             alter_text: false
@@ -411,7 +525,7 @@ display:
           admin_label: ''
           entity_type: node
           plugin_id: search_api_field
-          label: ''
+          label: Created
           exclude: false
           alter:
             alter_text: false
@@ -559,6 +673,81 @@ display:
             multi_separator: ', '
             display_methods:
               organisation:
+                display_method: label
+                view_mode: default
+        field_jurisdiction:
+          id: field_jurisdiction
+          table: search_api_datasource_service_requests_entity_node
+          field: field_jurisdiction
+          relationship: none
+          group_type: group
+          admin_label: ''
+          entity_type: node
+          plugin_id: search_api_field
+          label: Jurisdiction
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          click_sort_column: target_id
+          type: entity_reference_label
+          settings:
+            link: true
+          group_column: target_id
+          group_columns: {  }
+          group_rows: true
+          delta_limit: 0
+          delta_offset: 0
+          delta_reversed: false
+          delta_first_last: false
+          multi_type: separator
+          separator: ', '
+          field_api_classes: false
+          field_rendering: true
+          fallback_handler: search_api_entity
+          fallback_options:
+            link_to_item: false
+            use_highlighting: false
+            multi_type: separator
+            multi_separator: ', '
+            display_methods:
+              group:
                 display_method: label
                 view_mode: default
         changed:
@@ -810,7 +999,7 @@ display:
           group_type: group
           admin_label: ''
           plugin_id: search_api_entity_operations
-          label: ''
+          label: Operations
           exclude: false
           alter:
             alter_text: false
@@ -865,24 +1054,128 @@ display:
             first: '« First'
             last: 'Last »'
           expose:
-            items_per_page: false
-            items_per_page_label: 'Elemente per page'
-            items_per_page_options: '5, 10, 25, 50'
+            items_per_page: true
+            items_per_page_label: 'Items per page'
+            items_per_page_options: '25, 50, 100'
             items_per_page_options_all: false
             items_per_page_options_all_label: '- All -'
             offset: false
             offset_label: Offset
           quantity: 9
       exposed_form:
-        type: basic
+        type: bef
         options:
           submit_button: Apply
           reset_button: true
           reset_button_label: Reset
-          exposed_sorts_label: Sort
+          exposed_sorts_label: 'Sort by'
           expose_sort_order: true
-          sort_asc_label: ASC
-          sort_desc_label: DSC
+          sort_asc_label: Asc
+          sort_desc_label: Desc
+          text_input_required: 'Select any filter and click on Apply to see results'
+          text_input_required_format: basic_html
+          bef:
+            general:
+              autosubmit: true
+              auto_submit_sort_only: false
+              autosubmit_breakpoint: ''
+              autosubmit_exclude_textfield: true
+              autosubmit_textfield_delay: 500
+              autosubmit_textfield_minimum_length: 3
+              autosubmit_hide: false
+              input_required: false
+              allow_secondary: false
+              secondary_label: 'Advanced options'
+              secondary_open: false
+              reset_button_always_show: false
+            sort:
+              plugin_id: default
+              advanced:
+                combine: false
+                combine_rewrite: ''
+                combine_param: sort_bef_combine
+                reset: false
+                reset_label: ''
+                collapsible: false
+                collapsible_label: ''
+                is_secondary: false
+            pager:
+              plugin_id: default
+              advanced:
+                is_secondary: false
+            filter:
+              search_api_fulltext:
+                plugin_id: default
+                advanced:
+                  placeholder_text: ''
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: false
+                  hide_label: false
+                  field_classes: ''
+              field_category:
+                plugin_id: bef_select2
+                advanced:
+                  sort_options: false
+                  rewrite:
+                    filter_rewrite_values: ''
+                    filter_rewrite_values_key: false
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: false
+                  hide_label: false
+                  field_classes: ''
+              field_status:
+                plugin_id: bef_select2
+                advanced:
+                  sort_options: false
+                  rewrite:
+                    filter_rewrite_values: ''
+                    filter_rewrite_values_key: false
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: false
+                  hide_label: false
+                  field_classes: ''
+              field_organisation:
+                plugin_id: default
+                advanced:
+                  sort_options: false
+                  rewrite:
+                    filter_rewrite_values: ''
+                    filter_rewrite_values_key: false
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: false
+                  hide_label: false
+                  field_classes: ''
+              field_jurisdiction:
+                plugin_id: default
+                advanced:
+                  sort_options: false
+                  rewrite:
+                    filter_rewrite_values: ''
+                    filter_rewrite_values_key: false
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: false
+                  hide_label: false
+                  field_classes: ''
+              created:
+                plugin_id: bef_datepicker
+                advanced:
+                  placeholder_text: ''
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: false
+                  hide_label: false
+                  field_classes: ''
       access:
         type: perm
         options:
@@ -902,19 +1195,32 @@ display:
           empty: true
           content: '<span class="result-total"><span class="badge">@total</span> Results</span>'
       sorts:
-        nid:
-          id: nid
+        created:
+          id: created
           table: search_api_index_service_requests
-          field: nid
+          field: created
           relationship: none
           group_type: group
           admin_label: ''
           plugin_id: search_api
           order: DESC
           expose:
-            label: ''
-            field_identifier: nid
-          exposed: false
+            label: Created
+            field_identifier: created
+          exposed: true
+        changed:
+          id: changed
+          table: search_api_index_service_requests
+          field: changed
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: search_api
+          order: DESC
+          expose:
+            label: Changed
+            field_identifier: changed
+          exposed: true
       arguments: {  }
       filters:
         search_api_fulltext:
@@ -980,7 +1286,7 @@ display:
             identifier: field_category
             required: false
             remember: false
-            multiple: false
+            multiple: true
             remember_roles:
               authenticated: authenticated
             reduce: false
@@ -1066,7 +1372,7 @@ display:
             identifier: field_status
             required: false
             remember: false
-            multiple: false
+            multiple: true
             remember_roles:
               authenticated: authenticated
             reduce: false
@@ -1095,7 +1401,7 @@ display:
           relationship: none
           group_type: group
           admin_label: ''
-          plugin_id: search_api_numeric
+          plugin_id: markaspot_group_label
           operator: '='
           value:
             min: ''
@@ -1111,7 +1417,7 @@ display:
             operator: field_organisation_op
             operator_limit_selection: false
             operator_list: {  }
-            identifier: gid
+            identifier: organisation
             required: false
             remember: false
             multiple: false
@@ -1119,6 +1425,97 @@ display:
               authenticated: authenticated
             min_placeholder: ''
             max_placeholder: ''
+            placeholder: ''
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          group_bundle: org
+        field_jurisdiction:
+          id: field_jurisdiction
+          table: search_api_index_service_requests
+          field: field_jurisdiction
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: markaspot_group_label
+          operator: '='
+          value:
+            min: ''
+            max: ''
+            value: ''
+          group: 1
+          exposed: true
+          expose:
+            operator_id: field_jurisdiction_op
+            label: Jurisdiction
+            description: ''
+            use_operator: false
+            operator: field_jurisdiction_op
+            operator_limit_selection: false
+            operator_list: {  }
+            identifier: jurisdiction
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+            min_placeholder: ''
+            max_placeholder: ''
+            placeholder: ''
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          group_bundle: jur
+        created:
+          id: created
+          table: search_api_index_service_requests
+          field: created
+          relationship: none
+          group_type: group
+          admin_label: ''
+          plugin_id: search_api_date
+          operator: between
+          value:
+            min: ''
+            max: ''
+            value: ''
+            type: date
+          group: 1
+          exposed: true
+          expose:
+            operator_id: created_op
+            label: Created
+            description: ''
+            use_operator: false
+            operator: created_op
+            operator_limit_selection: false
+            operator_list: {  }
+            identifier: created
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+            min_placeholder: From
+            max_placeholder: To
             placeholder: ''
           is_grouped: false
           group_info:
@@ -1195,6 +1592,7 @@ display:
         - user.roles
       tags:
         - 'config:field.storage.node.field_address'
+        - 'config:field.storage.node.field_jurisdiction'
         - 'config:field.storage.node.field_organisation'
         - 'config:field.storage.node.field_status'
         - 'config:field.storage.taxonomy_term.field_status_hex'
@@ -1215,22 +1613,35 @@ display:
           row_class: ''
           default_row_class: true
           columns:
+            views_bulk_operations_bulk_form: views_bulk_operations_bulk_form
             nid: nid
+            request_id: request_id
             title: title
             uid: uid
-            field_category: field_category
-            body: body
             field_address: field_address
+            thumbnail: thumbnail
             created: created
+            field_organisation: field_organisation
+            field_jurisdiction: field_jurisdiction
             changed: changed
-            field_e_mail: field_e_mail
-            field_status_term: field_status_term
-            nothing: nothing
-          default: nid
+            field_status_hex: field_status_hex
+            field_status: field_status
+            search_api_operations: search_api_operations
+          default: '-1'
           info:
+            views_bulk_operations_bulk_form:
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
             nid:
-              sortable: true
-              default_sort_order: desc
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: ''
+            request_id:
+              sortable: false
+              default_sort_order: asc
               align: ''
               separator: ''
               empty_column: false
@@ -1247,48 +1658,49 @@ display:
               separator: ''
               empty_column: false
               responsive: ''
-            field_category:
-              align: ''
-              separator: ''
-              empty_column: false
-              responsive: ''
-            body:
-              sortable: false
-              default_sort_order: asc
-              align: ''
-              separator: ''
-              empty_column: false
-              responsive: ''
             field_address:
               align: ''
               separator: ''
               empty_column: false
-              responsive: ''
+              responsive: priority-low
+            thumbnail:
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: priority-low
             created:
               align: ''
               separator: ''
               empty_column: false
-              responsive: ''
+              responsive: priority-medium
+            field_organisation:
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: priority-medium
+            field_jurisdiction:
+              align: ''
+              separator: ''
+              empty_column: false
+              responsive: priority-medium
             changed:
               align: ''
               separator: ''
               empty_column: false
               responsive: ''
-            field_e_mail:
+            field_status_hex:
               align: ''
               separator: ''
               empty_column: false
-              responsive: ''
-            field_status_term:
+              responsive: priority-low
+            field_status:
               sortable: false
               default_sort_order: asc
               align: ''
               separator: ''
               empty_column: false
               responsive: ''
-            nothing:
-              sortable: false
-              default_sort_order: asc
+            search_api_operations:
               align: ''
               separator: ''
               empty_column: false
@@ -1297,7 +1709,7 @@ display:
           sticky: true
           summary: ''
           empty_table: false
-          caption: 'Manage Service Request'
+          caption: 'Manage service requests'
           description: ''
       row:
         type: search_api
@@ -1334,8 +1746,8 @@ display:
         - user.roles
       tags:
         - 'config:field.storage.node.field_address'
+        - 'config:field.storage.node.field_jurisdiction'
         - 'config:field.storage.node.field_organisation'
         - 'config:field.storage.node.field_status'
         - 'config:field.storage.taxonomy_term.field_status_hex'
         - 'config:search_api.index.service_requests'
-

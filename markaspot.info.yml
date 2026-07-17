@@ -55,6 +55,9 @@ dependencies:
   - restui
   - search_api
   - search_api_db
+  - better_exposed_filters
+  - views_bulk_operations
+  - views_bulk_edit
   - system
   - taxonomy
   - text
@@ -69,6 +72,7 @@ dependencies:
   - markaspot_bbox_cache
   - markaspot_media
   - markaspot_nuxt
+  - markaspot_ui
   - markaspot_token
   - markaspot_request_id
   - markaspot_icons

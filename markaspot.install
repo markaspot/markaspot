@@ -1302,6 +1302,7 @@ function markaspot_install() {
   _markaspot_ensure_category_jurisdiction();
   _markaspot_ensure_text_formats();
   _markaspot_ensure_organisation_in_management_form();
+  _markaspot_ensure_management_operational_fields();
   _markaspot_import_shipped_module_translations();
 }
 
@@ -1338,6 +1339,96 @@ function _markaspot_ensure_organisation_in_management_form(): void {
   if (function_exists('_markaspot_group_add_organisation_to_field_group')) {
     _markaspot_group_add_organisation_to_field_group();
   }
+}
+
+/**
+ * Ensures operational fields are visible on the management form display.
+ *
+ * @return bool
+ *   TRUE when the management form display was changed.
+ */
+function _markaspot_ensure_management_operational_fields(): bool {
+  $display = EntityFormDisplay::load('node.service_request.management');
+  if (!$display || !$display->status()) {
+    return FALSE;
+  }
+
+  $changed = FALSE;
+  $components = [
+    'field_priority' => [
+      'type' => 'boolean_checkbox',
+      'weight' => 24,
+      'region' => 'content',
+      'settings' => ['display_label' => TRUE],
+      'third_party_settings' => [],
+    ],
+    'field_internal_remark' => [
+      'type' => 'paragraphs',
+      'weight' => 25,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ],
+  ];
+  foreach ($components as $field_name => $component) {
+    if (!FieldConfig::loadByName('node', 'service_request', $field_name)
+      || $display->getComponent($field_name)) {
+      continue;
+    }
+    $display->setComponent($field_name, $component);
+    $changed = TRUE;
+  }
+
+  $available_children = array_values(array_filter(
+    array_keys($components),
+    static fn(string $field_name): bool => FieldConfig::loadByName('node', 'service_request', $field_name) !== NULL,
+  ));
+  if ($available_children !== []) {
+    $internal_group = $display->getThirdPartySetting('field_group', 'group_internal', []);
+    if (!is_array($internal_group) || $internal_group === []) {
+      $internal_group = [
+        'children' => $available_children,
+        'parent_name' => 'group_administration',
+        'weight' => 20,
+        'format_type' => 'details',
+        'format_settings' => [
+          'classes' => '',
+          'show_empty_fields' => FALSE,
+          'id' => '',
+          'open' => FALSE,
+          'description' => '',
+          'required_fields' => TRUE,
+        ],
+        'label' => 'Internal',
+      ];
+      $changed = TRUE;
+    }
+    else {
+      $children = $internal_group['children'] ?? [];
+      $merged_children = array_values(array_unique(array_merge($children, $available_children)));
+      if ($merged_children !== $children) {
+        $internal_group['children'] = $merged_children;
+        $changed = TRUE;
+      }
+    }
+    $display->setThirdPartySetting('field_group', 'group_internal', $internal_group);
+
+    $administration_group = $display->getThirdPartySetting('field_group', 'group_administration', []);
+    if (is_array($administration_group) && $administration_group !== []) {
+      $children = $administration_group['children'] ?? [];
+      if (!in_array('group_internal', $children, TRUE)) {
+        $children[] = 'group_internal';
+        $administration_group['children'] = $children;
+        $display->setThirdPartySetting('field_group', 'group_administration', $administration_group);
+        $changed = TRUE;
+      }
+    }
+  }
+
+  if ($changed) {
+    $display->save();
+  }
+  return $changed;
 }
 
 /**
@@ -4114,6 +4205,89 @@ function markaspot_update_11926(): string {
  */
 function markaspot_update_11927(): string {
   return _markaspot_repair_config_entity_uuid_drift();
+}
+
+/**
+ * Installs and configures the management View package.
+ */
+function markaspot_update_11930(): string {
+  $changes = [];
+  $module_handler = \Drupal::moduleHandler();
+  $modules = [
+    'markaspot_ui',
+    'better_exposed_filters',
+    'views_bulk_operations',
+    'views_bulk_edit',
+  ];
+  $install = array_values(array_filter(
+    $modules,
+    static fn(string $module): bool => !$module_handler->moduleExists($module),
+  ));
+  if ($install !== []) {
+    \Drupal::service('module_installer')->install($install);
+    $changes[] = 'enabled ' . implode(', ', $install);
+  }
+
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $source = new FileStorage($profile_path . '/config/optional');
+  $updated_config = [];
+  foreach (['search_api.index.service_requests', 'views.view.management'] as $config_name) {
+    $shipped = $source->read($config_name);
+    if (!is_array($shipped)) {
+      throw new \RuntimeException("Could not read $config_name from profile config/optional.");
+    }
+
+    $config = \Drupal::configFactory()->getEditable($config_name);
+    $active = $config->getRawData();
+    foreach (['uuid', '_core'] as $preserved_key) {
+      if (isset($active[$preserved_key]) && !isset($shipped[$preserved_key])) {
+        $shipped[$preserved_key] = $active[$preserved_key];
+      }
+    }
+    if ($active !== $shipped) {
+      $config->setData($shipped)->save(TRUE);
+      $updated_config[] = $config_name;
+    }
+  }
+  if ($updated_config !== []) {
+    $changes[] = 'updated ' . implode(', ', $updated_config);
+  }
+
+  if (in_array('search_api.index.service_requests', $updated_config, TRUE)) {
+    $index_storage = \Drupal::entityTypeManager()->getStorage('search_api_index');
+    $index_storage->resetCache(['service_requests']);
+    $index = $index_storage->load('service_requests');
+    if ($index) {
+      $index->reindex();
+      $changes[] = 'queued service_requests for reindexing';
+    }
+  }
+
+  $permission = 'use service request management form';
+  $granted = [];
+  foreach (['moderator', 'editorial_board', 'administrator'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role || $role->hasPermission($permission)) {
+      continue;
+    }
+    $role->grantPermission($permission)->save();
+    $granted[] = $role_id;
+  }
+  if ($granted !== []) {
+    $changes[] = 'granted management form access to ' . implode(', ', $granted);
+  }
+
+  if (_markaspot_ensure_management_operational_fields()) {
+    $changes[] = 'exposed priority and internal notes on the management form';
+  }
+
+  if (in_array('views.view.management', $updated_config, TRUE)) {
+    \Drupal::service('router.builder')->rebuild();
+  }
+
+  return $changes
+    ? implode('; ', $changes) . '.'
+    : 'Management View package already enabled and configured.';
 }
 
 /**

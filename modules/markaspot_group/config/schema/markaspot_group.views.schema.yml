@@ -1,0 +1,7 @@
+views.filter.markaspot_group_label:
+  type: views.filter.search_api_numeric
+  label: 'Mark-a-Spot Group label filter'
+  mapping:
+    group_bundle:
+      type: string
+      label: 'Group bundle'

@@ -1,0 +1,4 @@
+use service request management form:
+  title: 'Use service request management form'
+  description: 'Use the management form display when editing service requests.'
+  restrict access: true

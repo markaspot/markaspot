@@ -6,8 +6,11 @@
  */
 
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
+use Drupal\views\ViewExecutable;
 
 /**
  * Implements hook_help().
@@ -72,6 +75,35 @@ function markaspot_ui_theme() {
       ],
     ],
   ];
+}
+
+/**
+ * Implements hook_entity_prepare_form().
+ */
+function markaspot_ui_entity_prepare_form(EntityInterface $entity, $operation, FormStateInterface $form_state): void {
+  /** @var \Drupal\markaspot_ui\Service\ManagementFormDisplaySwitcher $switcher */
+  $switcher = \Drupal::service('markaspot_ui.management_form_display_switcher');
+  $switcher->prepareForm($entity, (string) $operation, $form_state);
+}
+
+/**
+ * Implements hook_views_pre_view().
+ *
+ * On SaaS instances the Drupal management view stays a read/single-edit
+ * surface for tenant-facing roles: mass mutation across all tenants via bulk
+ * operations is removed unless the account is a trusted operator. Self-hosted
+ * installations are single tenant and keep the bulk field. The handler is only
+ * dropped from the in-memory display, nothing is written to configuration.
+ */
+function markaspot_ui_views_pre_view(ViewExecutable $view, string $display_id, array &$args): void {
+  if ($view->id() !== 'management') {
+    return;
+  }
+  /** @var \Drupal\markaspot_ui\Service\ManagementAccessGate $gate */
+  $gate = \Drupal::service('markaspot_ui.management_access_gate');
+  if (!$gate->allowFullManagement()) {
+    $view->removeHandler($display_id, 'field', 'views_bulk_operations_bulk_form');
+  }
 }
 
 /**
