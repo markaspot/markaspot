@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.161](https://github.com/markaspot/markaspot/compare/11.9.160...11.9.161) (2026-07-17)
+
+### Features
+
+* add bulk operations and improved filters to management view ([ee67aeb](https://github.com/markaspot/markaspot/commit/ee67aeb1d0480993a9ad2b5ec346b438bcf7c328))
+
+### Bug Fixes
+
+* drop empty segments from formatted nominatim addresses ([f9a8943](https://github.com/markaspot/markaspot/commit/f9a8943eedfc7a779abf4b6f47dfb5b21363ebec))
+* preserve unknown keys and explicit false values in nuxt config widget ([b9c0d6e](https://github.com/markaspot/markaspot/commit/b9c0d6e80ff24173c789553e3a5f02850004e69f))
+* render and save crashes in nuxt config widget ([a463621](https://github.com/markaspot/markaspot/commit/a463621b6741ad70999f96b0fbd8ff8ba95f7896))
+
 ## [11.9.160](https://github.com/markaspot/markaspot/compare/11.9.159...11.9.160) (2026-07-16)
 
 ### Bug Fixes
