@@ -509,9 +509,7 @@
     "ui:options": {
       "title": "Translation Overrides",
       "description": "Override individual translation keys",
-      "weight": 120,
-      "widget": "textarea",
-      "rows": 10
+      "weight": 120
     }
   },
 

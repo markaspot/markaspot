@@ -33,6 +33,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
 
   /**
+   * Form-data marker for a rendered dynamic-property editor.
+   */
+  private const ADDITIONAL_PROPERTIES_KEY = '__markaspot_additional_properties';
+
+  /**
    * The module handler service.
    *
    * @var string
@@ -188,7 +193,12 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
         $object_value = self::mergePreservingUnknownKeys($existing_value, $value, $property_schema);
 
         if ($object_value === []) {
-          unset($merged[$property]);
+          // An empty submitted object means "nothing set here": preserve a
+          // compact scalar form (e.g. formFirst: false) instead of dropping
+          // it, and remove the key only when it never existed as an object.
+          if (!array_key_exists($property, $existing) || is_array($existing[$property])) {
+            unset($merged[$property]);
+          }
         }
         else {
           $merged[$property] = $object_value;
@@ -197,14 +207,19 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       }
 
       if ($type === 'boolean') {
-        // The contrib form builder does not render boolean properties, so a
+        // ExtendedValueHandler yields booleans for rendered checkboxes; any
         // non-scalar submission is an artifact of unsupported rendering and
         // must never overwrite existing data.
         if (!is_scalar($value)) {
           continue;
         }
         $submitted = (bool) $value;
-        if ($submitted || array_key_exists($property, $existing)) {
+        if (array_key_exists($property, $existing)) {
+          $merged[$property] = $submitted;
+        }
+        elseif ($submitted !== (bool) ($property_schema->default ?? FALSE)) {
+          // Only a value differing from the rendered schema default proves
+          // user intent; untouched defaults must not materialize.
           $merged[$property] = $submitted;
         }
         continue;
@@ -213,8 +228,42 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       if ($value === NULL || $value === '' || $value === FALSE) {
         unset($merged[$property]);
       }
-      else {
+      elseif (array_key_exists($property, $existing)) {
         $merged[$property] = $value;
+      }
+      elseif (!(is_array($value) && $value === [])
+        && !(isset($property_schema->default) && $value == $property_schema->default)
+        && !(($property_schema->type ?? NULL) === 'integer' && !isset($property_schema->default) && (int) $value === 0)) {
+        // For keys the tenant never stored, persist only values differing
+        // from the rendered schema default: everything else is form noise
+        // and would materialize defaults into the stored configuration.
+        $merged[$property] = $value;
+      }
+    }
+
+    if (array_key_exists(self::ADDITIONAL_PROPERTIES_KEY, $form_data)
+      && isset($schema->additionalProperties)
+      && is_object($schema->additionalProperties)) {
+      // The dynamic-property editor (ExtendedObjectHelper) lists every
+      // existing entry, so a rendered and submitted editor is authoritative
+      // for all non-static keys of this level.
+      $known = array_fill_keys(array_keys($properties), TRUE);
+      foreach (array_keys(array_diff_key($existing, $known)) as $dynamic_key) {
+        unset($merged[$dynamic_key]);
+      }
+      $submitted = $form_data[self::ADDITIONAL_PROPERTIES_KEY];
+      foreach (is_array($submitted) ? $submitted : [] as $key => $entry_data) {
+        $existing_entry = isset($existing[$key]) && is_array($existing[$key])
+          ? $existing[$key]
+          : [];
+        $entry = self::mergePreservingUnknownKeys(
+          $existing_entry,
+          is_array($entry_data) ? $entry_data : [],
+          $schema->additionalProperties,
+        );
+        if ($entry !== []) {
+          $merged[$key] = $entry;
+        }
       }
     }
 
@@ -250,6 +299,30 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       }
 
       $data[$property] = $this->valueHandler->flattenValues($raw_values, $property, $property_schema);
+    }
+
+    // Dynamic key-value entries rendered by ExtendedObjectHelper. The marker
+    // is only set when the editor was actually part of the submitted form,
+    // which makes it authoritative during the merge; unrendered dynamic data
+    // (e.g. i18n.overrides, whose additionalProperties has no properties)
+    // never gets a marker and is preserved from the stored value.
+    if (isset($schema->additionalProperties)
+      && is_object($schema->additionalProperties)
+      && !empty((array) ($schema->additionalProperties->properties ?? new \stdClass()))
+      && isset($raw_values['__additional']['items'])
+      && is_array($raw_values['__additional']['items'])) {
+      $entries = [];
+      foreach ($raw_values['__additional']['items'] as $entry) {
+        if (!is_array($entry)) {
+          continue;
+        }
+        $key = trim((string) ($entry['_key'] ?? ''));
+        if ($key === '') {
+          continue;
+        }
+        $entries[$key] = $this->collectSchemaFormData($entry, $schema->additionalProperties);
+      }
+      $data[self::ADDITIONAL_PROPERTIES_KEY] = $entries;
     }
 
     return $data;
@@ -306,7 +379,53 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       }
     }
 
+    self::flattenOneOfNodes($cleaned_schema);
+
     return $cleaned_schema;
+  }
+
+  /**
+   * Replaces oneOf-only nodes with their object branch, recursively.
+   *
+   * Json_form_widget knows no oneOf: a property without a top-level type
+   * falls back to the string path, which puts stored objects into a
+   * textfield #value and crashes Twig's Attribute rendering. Polymorphic
+   * properties (formFirst, offline, pwaInstallPrompt: boolean|object) are
+   * therefore pinned to their object branch; boolean data is expanded to
+   * {enabled: bool} by ExtendedFieldTypeRouter::normalizeObjectData().
+   *
+   * @param object $schema
+   *   A schema node whose properties are flattened in place.
+   */
+  public static function flattenOneOfNodes(object $schema): void {
+    if (!isset($schema->properties) || !is_object($schema->properties)) {
+      return;
+    }
+    foreach ($schema->properties as $property) {
+      if (!is_object($property)) {
+        continue;
+      }
+      if (!isset($property->type) && isset($property->oneOf) && is_array($property->oneOf)) {
+        $branch = NULL;
+        foreach ($property->oneOf as $candidate) {
+          if (is_object($candidate) && ($candidate->type ?? NULL) === 'object') {
+            $branch = $candidate;
+            break;
+          }
+        }
+        $branch ??= is_object($property->oneOf[0] ?? NULL) ? $property->oneOf[0] : NULL;
+        if ($branch !== NULL) {
+          foreach (get_object_vars($branch) as $key => $value) {
+            $property->{$key} = $value;
+          }
+        }
+        unset($property->oneOf);
+      }
+      self::flattenOneOfNodes($property);
+      if (isset($property->additionalProperties) && is_object($property->additionalProperties)) {
+        self::flattenOneOfNodes($property->additionalProperties);
+      }
+    }
   }
 
   /**

@@ -170,6 +170,110 @@ final class NuxtConfigJsonFormWidgetTest extends UnitTestCase {
   }
 
   /**
+   * Tests that a rendered dynamic-property editor is authoritative.
+   */
+  public function testSubmittedAdditionalPropertiesReplaceDynamicKeys(): void {
+    $schema = $this->conditionalFieldsSchema();
+    $existing = [
+      'field_priority' => ['categories' => [1, 2]],
+      'field_old' => ['categories' => [9]],
+    ];
+    $form_data = [
+      '__markaspot_additional_properties' => [
+        'field_priority' => ['categories' => [1, 2, 3]],
+      ],
+    ];
+
+    $merged = NuxtConfigJsonFormWidget::mergePreservingUnknownKeys($existing, $form_data, $schema);
+
+    $this->assertSame([1, 2, 3], $merged['field_priority']['categories']);
+    $this->assertArrayNotHasKey('field_old', $merged);
+  }
+
+  /**
+   * Tests that dynamic keys survive when no editor was rendered.
+   */
+  public function testDynamicKeysPreservedWithoutEditorMarker(): void {
+    $schema = $this->conditionalFieldsSchema();
+    $existing = ['field_priority' => ['categories' => [1]]];
+
+    $merged = NuxtConfigJsonFormWidget::mergePreservingUnknownKeys($existing, [], $schema);
+
+    $this->assertSame($existing, $merged);
+  }
+
+  /**
+   * Tests that an empty submitted object keeps a compact scalar original.
+   */
+  public function testEmptySubmittedObjectPreservesScalarOriginal(): void {
+    $schema = (object) [
+      'type' => 'object',
+      'properties' => (object) [
+        'formFirst' => (object) [
+          'type' => 'object',
+          'properties' => (object) [
+            'mobileLayout' => (object) ['type' => 'string'],
+          ],
+        ],
+      ],
+    ];
+    $existing = ['formFirst' => FALSE];
+    $form_data = ['formFirst' => ['mobileLayout' => '']];
+
+    $merged = NuxtConfigJsonFormWidget::mergePreservingUnknownKeys($existing, $form_data, $schema);
+
+    $this->assertFalse($merged['formFirst']);
+  }
+
+  /**
+   * Tests that oneOf-only nodes are pinned to their object branch.
+   */
+  public function testFlattenOneOfNodesPinsObjectBranch(): void {
+    $schema = (object) [
+      'type' => 'object',
+      'properties' => (object) [
+        'features' => (object) [
+          'type' => 'object',
+          'properties' => (object) [
+            'formFirst' => (object) [
+              'oneOf' => [
+                (object) ['type' => 'boolean'],
+                (object) [
+                  'type' => 'object',
+                  'properties' => (object) ['mobileLayout' => (object) ['type' => 'string']],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ];
+
+    NuxtConfigJsonFormWidget::flattenOneOfNodes($schema);
+
+    $flattened = $schema->properties->features->properties->formFirst;
+    $this->assertSame('object', $flattened->type);
+    $this->assertTrue(isset($flattened->properties->mobileLayout));
+    $this->assertFalse(isset($flattened->oneOf));
+  }
+
+  /**
+   * Builds a schema with a dynamic-property (additionalProperties) section.
+   */
+  private function conditionalFieldsSchema(): object {
+    return (object) [
+      'type' => 'object',
+      'properties' => new \stdClass(),
+      'additionalProperties' => (object) [
+        'type' => 'object',
+        'properties' => (object) [
+          'categories' => (object) ['type' => 'array'],
+        ],
+      ],
+    ];
+  }
+
+  /**
    * Returns a minimal schema used by the merge tests.
    */
   private function schema(): object {
