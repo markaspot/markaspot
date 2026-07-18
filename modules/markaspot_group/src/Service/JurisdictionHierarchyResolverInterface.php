@@ -78,6 +78,21 @@ interface JurisdictionHierarchyResolverInterface {
   public function getTermJurisdictionIds(int $groupId): array;
 
   /**
+   * Gets validated jurisdiction IDs for a jurisdiction and its descendants.
+   *
+   * Validates that the group is a jurisdiction bundle and that its parent
+   * hierarchy has a valid root before returning the requested subtree.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return int[]
+   *   The jurisdiction group ID and descendant IDs, or an empty array when
+   *   the group or hierarchy is invalid.
+   */
+  public function getScopeJurisdictionIds(int $groupId): array;
+
+  /**
    * Gets node IDs belonging to a jurisdiction and its descendants.
    *
    * Validates that the group is a 'jur' bundle before querying. Returns empty

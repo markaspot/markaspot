@@ -2117,6 +2117,108 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   /**
    * @covers ::createNodeQuery
    */
+  public function testCreateNodeQueryFiltersByJurisdictionScope(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $this->nodeStorage->method('getQuery')->willReturn($query);
+
+    $conditions = [];
+    $query->method('condition')
+      ->willReturnCallback(
+        function (
+          $field,
+          $value = NULL,
+          $operator = NULL,
+        ) use ($query, &$conditions) {
+          $conditions[] = [
+            'field' => $field,
+            'value' => $value,
+            'operator' => $operator,
+          ];
+          return $query;
+        }
+      );
+    $query->method('accessCheck')->willReturnSelf();
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('id')->willReturn(5);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $this->mockJurisdictionGroupLoad(
+      42,
+      $this->createJurisdictionGroup(42)
+    );
+    $this->hierarchyResolver->expects($this->once())
+      ->method('getScopeJurisdictionIds')
+      ->with(42)
+      ->willReturn([42, 43]);
+
+    $this->processor->createNodeQuery(['jurisdiction_id' => '42'], $user);
+
+    $this->assertContains(
+      [
+        'field' => 'field_jurisdiction',
+        'value' => [42, 43],
+        'operator' => 'IN',
+      ],
+      $conditions
+    );
+  }
+
+  /**
+   * @covers ::createNodeQuery
+   */
+  public function testCreateNodeQueryDeniesEmptyJurisdictionScope(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $this->nodeStorage->method('getQuery')->willReturn($query);
+
+    $conditions = [];
+    $query->method('condition')
+      ->willReturnCallback(
+        function (
+          $field,
+          $value = NULL,
+          $operator = NULL,
+        ) use ($query, &$conditions) {
+          $conditions[] = [
+            'field' => $field,
+            'value' => $value,
+            'operator' => $operator,
+          ];
+          return $query;
+        }
+      );
+    $query->method('accessCheck')->willReturnSelf();
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('id')->willReturn(5);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $this->mockJurisdictionGroupLoad(
+      42,
+      $this->createJurisdictionGroup(42)
+    );
+    $this->hierarchyResolver->expects($this->once())
+      ->method('getScopeJurisdictionIds')
+      ->with(42)
+      ->willReturn([]);
+
+    $this->processor->createNodeQuery(['jurisdiction_id' => '42'], $user);
+
+    $this->assertContains(
+      [
+        'field' => 'nid',
+        'value' => [0],
+        'operator' => 'IN',
+      ],
+      $conditions
+    );
+  }
+
+  /**
+   * @covers ::createNodeQuery
+   */
   public function testCreateNodeQueryCanonicalZeroDoesNotFallBackToGid(): void {
     $query = $this->createMock(QueryInterface::class);
     $this->nodeStorage->method('getQuery')->willReturn($query);
@@ -2161,6 +2263,28 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $conditions,
       'Canonical jurisdiction_id=0 must not fall back to deprecated gid.'
     );
+  }
+
+  /**
+   * @covers ::getInitialStatusTid
+   */
+  public function testGetInitialStatusTidMemoizesNullResult(): void {
+    $this->hierarchyResolver->expects($this->once())
+      ->method('getRootJurisdictionId')
+      ->with(42)
+      ->willReturn(42);
+    $this->termStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with([
+        'vid' => 'service_status',
+        'status' => 1,
+        'field_open311_mapping' => 'initial',
+        'field_jurisdiction' => 42,
+      ])
+      ->willReturn([]);
+
+    $this->assertNull($this->processor->getInitialStatusTid(42));
+    $this->assertNull($this->processor->getInitialStatusTid(42));
   }
 
   /**

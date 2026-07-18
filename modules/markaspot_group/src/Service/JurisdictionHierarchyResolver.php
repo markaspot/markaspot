@@ -133,7 +133,7 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
   /**
    * {@inheritdoc}
    */
-  public function getNodeIdsInJurisdiction(int $groupId): array {
+  public function getScopeJurisdictionIds(int $groupId): array {
     // Validate that the group is a jurisdiction type.
     // Prevents cross-type data leakage (e.g. org group ID returning org nodes).
     $group = $this->entityTypeManager->getStorage('group')->load($groupId);
@@ -149,7 +149,17 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
       return [];
     }
 
-    $jurisdictionIds = $this->getDescendantIds($groupId);
+    return array_map('intval', $this->getDescendantIds($groupId));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getNodeIdsInJurisdiction(int $groupId): array {
+    $jurisdictionIds = $this->getScopeJurisdictionIds($groupId);
+    if ($jurisdictionIds === []) {
+      return [];
+    }
 
     $result = $this->database->select('group_relationship_field_data', 'gr')
       ->fields('gr', ['entity_id'])

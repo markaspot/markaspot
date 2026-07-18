@@ -599,9 +599,8 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     // slugs, numeric IDs, and deprecated aliases).
     $jurisdictionId = $resolvedJurisdictionId;
 
-    // Jurisdiction node filtering is already handled in createNodeQuery()
-    // via resolveJurisdictionId() + getNodeIdsInJurisdiction(), which correctly
-    // resolves both root and child jurisdictions through group membership.
+    // Jurisdiction filtering is already handled in createNodeQuery() via
+    // resolveJurisdictionId() and the validated field_jurisdiction scope.
     // Handle status filtering (jurisdiction-aware).
     if (isset($parameters['status'])) {
       $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status'], $jurisdictionId);
@@ -945,18 +944,21 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       return;
     }
 
-    $nodeIds = [];
+    $scopeJurisdictionIds = [];
     foreach ($allowedJurisdictionIds as $jurisdictionId) {
-      $nodeIds = array_merge(
-        $nodeIds,
+      $scopeJurisdictionIds = array_merge(
+        $scopeJurisdictionIds,
         $this->hierarchyResolver
-          ? $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdictionId)
+          ? $this->hierarchyResolver->getScopeJurisdictionIds($jurisdictionId)
           : []
       );
     }
 
-    $nodeIds = array_values(array_unique(array_map('intval', $nodeIds)));
-    $query->condition('nid', $nodeIds ?: [0], 'IN');
+    $scopeJurisdictionIds = array_values(array_unique(array_map(
+      'intval',
+      $scopeJurisdictionIds
+    )));
+    $query->condition('field_jurisdiction', $scopeJurisdictionIds ?: [0], 'IN');
   }
 
   /**

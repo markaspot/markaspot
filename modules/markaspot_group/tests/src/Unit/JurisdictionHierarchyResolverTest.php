@@ -817,6 +817,83 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   }
 
   /**
+   * GetScopeJurisdictionIds() tests.
+   */
+
+  /**
+   * @covers ::getScopeJurisdictionIds
+   */
+  public function testGetScopeJurisdictionIdsWithDescendants(): void {
+    $group = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($group);
+    $this->mockChildQuery(10, [20, 30]);
+
+    $this->assertSame(
+      [10, 20, 30],
+      $this->resolver->getScopeJurisdictionIds(10)
+    );
+  }
+
+  /**
+   * @covers ::getScopeJurisdictionIds
+   */
+  public function testGetScopeJurisdictionIdsRejectsWrongBundle(): void {
+    $group = $this->createMockGroup(10, 'org');
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($group);
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(
+          fn(array $context): bool => $context['@id'] === 10
+            && $context['@bundle'] === 'org'
+        )
+      );
+
+    $this->assertSame([], $this->resolver->getScopeJurisdictionIds(10));
+  }
+
+  /**
+   * @covers ::getScopeJurisdictionIds
+   */
+  public function testGetScopeJurisdictionIdsRejectsMissingGroup(): void {
+    $this->groupStorage->method('load')
+      ->with(999)
+      ->willReturn(NULL);
+
+    $this->assertSame([], $this->resolver->getScopeJurisdictionIds(999));
+  }
+
+  /**
+   * @covers ::getScopeJurisdictionIds
+   */
+  public function testGetScopeJurisdictionIdsRejectsMissingRoot(): void {
+    $groupA = $this->createMockGroup(1, 'jur', 2);
+    $groupB = $this->createMockGroup(2, 'jur', 1);
+    $this->groupStorage->method('load')
+      ->willReturnMap([
+        [1, $groupA],
+        [2, $groupB],
+      ]);
+
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with(
+        $this->stringContains('Circular parent reference'),
+        $this->anything()
+      );
+    $this->database->expects($this->never())
+      ->method('select');
+
+    $this->assertSame([], $this->resolver->getScopeJurisdictionIds(1));
+  }
+
+  /**
    * GetNodeIdsInJurisdiction() tests.
    */
 

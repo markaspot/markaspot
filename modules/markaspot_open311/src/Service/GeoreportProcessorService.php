@@ -246,6 +246,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected array $nodeJurisdictionIdCache = [];
 
   /**
+   * Per-request memo of initial status term IDs, keyed by jurisdiction ID.
+   *
+   * @var array<int, int|null>
+   */
+  private array $initialStatusTidCache = [];
+
+  /**
    * Memoized result of the "any jurisdiction groups exist" install check.
    *
    * In long-running PHP runtimes (FrankenPHP worker mode, RoadRunner) this
@@ -1730,15 +1737,24 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $has_jurisdiction_filter = $this->hasJurisdictionFilterParameter($parameters);
     $jurisdiction_gid = $this->resolveJurisdictionId($parameters);
     if ($jurisdiction_gid) {
-      $node_ids = $this->hierarchyResolver
-        ? $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdiction_gid)
-        : $this->getNodeIdsInGroup($jurisdiction_gid);
-      if (!empty($node_ids)) {
-        $query->condition('nid', $node_ids, 'IN');
+      if ($this->hierarchyResolver) {
+        $scope_gids = $this->hierarchyResolver
+          ->getScopeJurisdictionIds($jurisdiction_gid);
+        if (!empty($scope_gids)) {
+          $query->condition('field_jurisdiction', $scope_gids, 'IN');
+        }
+        else {
+          $query->condition('nid', [0], 'IN');
+        }
       }
       else {
-        // No nodes in this jurisdiction - return empty results.
-        $query->condition('nid', [0], 'IN');
+        $node_ids = $this->getNodeIdsInGroup($jurisdiction_gid);
+        if (!empty($node_ids)) {
+          $query->condition('nid', $node_ids, 'IN');
+        }
+        else {
+          $query->condition('nid', [0], 'IN');
+        }
       }
     }
     elseif ($has_jurisdiction_filter) {
@@ -2682,6 +2698,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The taxonomy term ID for the initial status, or NULL if not found.
    */
   public function getInitialStatusTid(?int $jurisdictionId = NULL): ?int {
+    $cacheKey = (int) ($jurisdictionId ?? 0);
+    if (array_key_exists($cacheKey, $this->initialStatusTidCache)) {
+      return $this->initialStatusTidCache[$cacheKey];
+    }
+
     $properties = [
       'vid' => 'service_status',
       'status' => 1,
@@ -2691,7 +2712,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
       $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
       if ($effectiveId === NULL) {
-        return NULL;
+        return $this->initialStatusTidCache[$cacheKey] = NULL;
       }
       $properties['field_jurisdiction'] = $effectiveId;
     }
@@ -2700,12 +2721,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     if (!empty($terms)) {
       $term = reset($terms);
-      return (int) $term->id();
+      return $this->initialStatusTidCache[$cacheKey] = (int) $term->id();
     }
 
     // Fallback to config.
     $startStatus = $this->configFactory->get('markaspot_open311.settings')->get('status_open_start');
-    return $startStatus ? (int) $startStatus : NULL;
+    $initialStatusTid = $startStatus ? (int) $startStatus : NULL;
+    return $this->initialStatusTidCache[$cacheKey] = $initialStatusTid;
   }
 
   /**
