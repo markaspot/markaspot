@@ -567,6 +567,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       // could be mass-assigned by citizens.
       unset($extendedDrupal['field_request_attributes']);
 
+      // field_jurisdiction is the read-scope boundary; jurisdiction moves must
+      // go through the validated jurisdiction_id path, never raw field writes.
+      unset($extendedDrupal['field_jurisdiction']);
+
       $values += $this->handleExtendedAttributes($extendedDrupal);
 
       if (array_key_exists('media', $requestData['extended_attributes'])) {
