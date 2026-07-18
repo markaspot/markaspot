@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.163](https://github.com/markaspot/markaspot/compare/11.9.162...11.9.163) (2026-07-18)
+
+### Bug Fixes
+
+* exclude field_jurisdiction from extended attribute updates ([78eadc8](https://github.com/markaspot/markaspot/commit/78eadc85c6ee82b96bdbbac712f69e78ccd275aa))
+
+### Performance
+
+* filter georeport jurisdiction read scope by field_jurisdiction ([9452698](https://github.com/markaspot/markaspot/commit/9452698981f614637bfb7e35aeff937422e4a0e2))
+
 ## [11.9.162](https://github.com/markaspot/markaspot/compare/11.9.161...11.9.162) (2026-07-17)
 
 ### Bug Fixes
