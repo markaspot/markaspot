@@ -400,7 +400,23 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
           $shippedData[$preservedKey] = $activeData[$preservedKey];
         }
       }
-      $importStorage->write($name, $shippedData);
+
+      // Config comparison is order-sensitive. Reapply the active entity's
+      // canonical top-level key order so preserved metadata is not appended
+      // after the shipped definition and reported as perpetual drift. New
+      // shipped keys that active does not know yet are appended afterwards.
+      $orderedData = [];
+      foreach (array_keys($activeData) as $key) {
+        if (array_key_exists($key, $shippedData)) {
+          $orderedData[$key] = $shippedData[$key];
+        }
+      }
+      foreach ($shippedData as $key => $value) {
+        if (!array_key_exists($key, $orderedData)) {
+          $orderedData[$key] = $value;
+        }
+      }
+      $importStorage->write($name, $orderedData);
     }
   }
 

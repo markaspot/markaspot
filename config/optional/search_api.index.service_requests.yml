@@ -125,14 +125,6 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_e_mail
-  field_organisation:
-    label: Dienststelle
-    datasource_id: 'entity:node'
-    property_path: field_organisation
-    type: integer
-    dependencies:
-      config:
-        - field.storage.node.field_organisation
   field_jurisdiction:
     label: Jurisdiction
     datasource_id: 'entity:node'
@@ -141,6 +133,14 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_jurisdiction
+  field_organisation:
+    label: Dienststelle
+    datasource_id: 'entity:node'
+    property_path: field_organisation
+    type: integer
+    dependencies:
+      config:
+        - field.storage.node.field_organisation
   field_status:
     label: Status
     datasource_id: 'entity:node'

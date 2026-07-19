@@ -9,7 +9,7 @@ use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\Extension\ProfileExtensionList;
 use Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber;
-use PHPUnit\Framework\TestCase;
+use Drupal\Tests\UnitTestCase;
 use Psr\Log\NullLogger;
 
 require_once dirname(__DIR__, 3) . '/src/EventSubscriber/ProfileConfigGuardSubscriber.php';
@@ -20,7 +20,22 @@ require_once dirname(__DIR__, 3) . '/src/EventSubscriber/ProfileConfigGuardSubsc
  * @group markaspot
  * @coversDefaultClass \Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber
  */
-final class ManagementPackageConfigGuardTest extends TestCase {
+final class ManagementPackageConfigGuardTest extends UnitTestCase {
+
+  /**
+   * Tests that the shipped Search API fields use export-stable ordering.
+   */
+  public function testShippedSearchApiFieldsUseCanonicalOrder(): void {
+    $profilePath = dirname(__DIR__, 3);
+    $source = new FileStorage($profilePath . '/config/optional');
+    $index = $source->read('search_api.index.service_requests');
+
+    $actual = array_keys($index['field_settings']);
+    $expected = $actual;
+    sort($expected);
+
+    $this->assertSame($expected, $actual);
+  }
 
   /**
    * Tests that shipped management config replaces stale import copies.
@@ -31,8 +46,12 @@ final class ManagementPackageConfigGuardTest extends TestCase {
     $profilePath = dirname(__DIR__, 3);
     $source = new FileStorage($profilePath . '/config/optional');
     $active = new MemoryStorage();
-    $active->write('views.view.management', ['uuid' => 'view-uuid', 'display' => ['active']]);
-    $active->write('search_api.index.service_requests', ['uuid' => 'index-uuid', 'field_settings' => []]);
+    $activeView = ['uuid' => 'view-uuid'] + $source->read('views.view.management');
+    $activeView['display'] = ['active'];
+    $activeIndex = ['uuid' => 'index-uuid'] + $source->read('search_api.index.service_requests');
+    $activeIndex['field_settings'] = [];
+    $active->write('views.view.management', $activeView);
+    $active->write('search_api.index.service_requests', $activeIndex);
 
     $import = new MemoryStorage();
     $import->write('views.view.management', ['display' => ['old']]);
@@ -52,10 +71,8 @@ final class ManagementPackageConfigGuardTest extends TestCase {
     $method->setAccessible(TRUE);
     $method->invoke($subscriber, $import);
 
-    $expectedView = $source->read('views.view.management');
-    $expectedView['uuid'] = 'view-uuid';
-    $expectedIndex = $source->read('search_api.index.service_requests');
-    $expectedIndex['uuid'] = 'index-uuid';
+    $expectedView = ['uuid' => 'view-uuid'] + $source->read('views.view.management');
+    $expectedIndex = ['uuid' => 'index-uuid'] + $source->read('search_api.index.service_requests');
     $this->assertSame($expectedView, $import->read('views.view.management'));
     $this->assertSame($expectedIndex, $import->read('search_api.index.service_requests'));
     $this->assertSame(['display' => ['custom']], $import->read('views.view.tenant_custom'));
