@@ -1,5 +1,14 @@
 # Changelog
 
+## [11.9.164](https://github.com/markaspot/markaspot/compare/11.9.163...11.9.164) (2026-07-19)
+
+### Bug Fixes
+
+* **config:** keep management imports canonical ([1fada8c](https://github.com/markaspot/markaspot/commit/1fada8c3cd6d4c3c44f0b9767310481d543129c5))
+* **group:** align moderator role defaults ([8122e8b](https://github.com/markaspot/markaspot/commit/8122e8b2b2460e093beaf6bc51f6adccbf08a50b))
+* **group:** define numeric filter value schema ([d17acdd](https://github.com/markaspot/markaspot/commit/d17acdd6b74316205694460a19f649db908db5de))
+* **mail:** warn only when asset rebasing fails ([9e5c84c](https://github.com/markaspot/markaspot/commit/9e5c84c7d943d2ffb14175477acc2cd55815b7d0))
+
 ## [11.9.163](https://github.com/markaspot/markaspot/compare/11.9.162...11.9.163) (2026-07-18)
 
 ### Bug Fixes
