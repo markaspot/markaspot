@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.165](https://github.com/markaspot/markaspot/compare/11.9.164...11.9.165) (2026-07-19)
+
+### Bug Fixes
+
+* **config:** stabilize nested management imports ([8984c74](https://github.com/markaspot/markaspot/commit/8984c743003609e61b0a6a8d52fdd92786b6155b))
+
 ## [11.9.164](https://github.com/markaspot/markaspot/compare/11.9.163...11.9.164) (2026-07-19)
 
 ### Bug Fixes
