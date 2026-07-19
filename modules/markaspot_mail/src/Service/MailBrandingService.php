@@ -652,10 +652,13 @@ class MailBrandingService {
       if ($this->urlValidator()->isPublicHttpUrl($url)) {
         return $url;
       }
-      $this->logger->warning('Mail asset URL resolved with a non-public host (@url). Set markaspot_mail.settings.platform.backend_base_url so mail clients can fetch it.', [
-        '@url' => $this->redactUrlForLog($url),
-      ]);
-      return $this->urlValidator()->rebaseGeneratedUrl($url, $base);
+      $rebased = $this->urlValidator()->rebaseGeneratedUrl($url, $base);
+      if (!$this->urlValidator()->isPublicHttpUrl($rebased)) {
+        $this->logger->warning('Mail asset URL resolved with a non-public host (@url). Set markaspot_mail.settings.platform.backend_base_url so mail clients can fetch it.', [
+          '@url' => $this->redactUrlForLog($url),
+        ]);
+      }
+      return $rebased;
     }
     if ($base === '') {
       $this->logger->warning('Mail asset URL resolved to a relative path (@url). Set markaspot_mail.settings.platform.backend_base_url to an absolute URL so mail clients can fetch it.', [

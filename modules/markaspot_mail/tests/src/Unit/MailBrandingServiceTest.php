@@ -340,11 +340,18 @@ final class MailBrandingServiceTest extends UnitTestCase {
       ->method('realpath')
       ->with('public://logos/wbd-logo-light.png')
       ->willReturn(__FILE__);
+    $warnings = [];
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->method('warning')->willReturnCallback(
+      static function (string $message) use (&$warnings): void {
+        $warnings[] = $message;
+      },
+    );
 
     $service = $this->buildService(
       $group,
       NULL,
-      NULL,
+      $logger,
       $overrides,
       NULL,
       $fileUrlGenerator,
@@ -358,6 +365,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
       $branding['logo_url'],
     );
     $this->assertNull($branding['logo_svg_inline']);
+    $this->assertNotContains(
+      'Mail asset URL resolved with a non-public host (@url). Set markaspot_mail.settings.platform.backend_base_url so mail clients can fetch it.',
+      $warnings,
+    );
   }
 
   /**
@@ -424,6 +435,33 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame(
       '<a href="https://attacker.example.net/reset?token=secret">Reset</a>',
       $service->normalizeMailUrls('<a href="https://attacker.example.net/reset?token=secret">Reset</a>'),
+    );
+  }
+
+  /**
+   * A loopback URL still warns when no public replacement origin exists.
+   */
+  public function testEnsureAbsoluteWarnsForLoopbackWithoutBase(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    unset($overrides['platform.backend_base_url']);
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        'Mail asset URL resolved with a non-public host (@url). Set markaspot_mail.settings.platform.backend_base_url so mail clients can fetch it.',
+        ['@url' => 'http://127.0.0.1:8080/[redacted]'],
+      );
+    $service = $this->buildService(
+      NULL,
+      logger: $logger,
+      settingsOverride: $overrides,
+    );
+    $method = new \ReflectionMethod($service, 'ensureAbsolute');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame(
+      '/node/42',
+      $method->invoke($service, 'http://127.0.0.1:8080/node/42'),
     );
   }
 
