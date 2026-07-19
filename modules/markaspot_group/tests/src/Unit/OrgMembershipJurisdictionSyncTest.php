@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_group\Unit;
 
 use Drupal\Tests\UnitTestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Tests organisation membership jurisdiction sync wiring.
@@ -62,6 +63,22 @@ class OrgMembershipJurisdictionSyncTest extends UnitTestCase {
 
     $this->assertStringContainsString('id: jur-moderator', $role_config);
     $this->assertStringContainsString("'view group_node:boilerplate entity'", $role_config);
+  }
+
+  /**
+   * Tests fresh moderator roles match the scoped update-hook baseline.
+   */
+  public function testModeratorRoleDefaultsMatchUpdateHookBaseline(): void {
+    $module_root = dirname(__DIR__, 3);
+
+    foreach (['jur', 'org'] as $group_type) {
+      $role = Yaml::parseFile($module_root . "/config/install/group.role.$group_type-moderator.yml");
+
+      $this->assertSame('Moderation', $role['label']);
+      $this->assertSame('individual', $role['scope']);
+      $this->assertNull($role['global_role']);
+      $this->assertNotContains('user.role.moderator', $role['dependencies']['config']);
+    }
   }
 
   /**

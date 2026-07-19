@@ -3,13 +3,12 @@ status: true
 dependencies:
   config:
     - group.type.org
-    - user.role.moderator
 id: org-moderator
-label: 'Moderator External'
+label: Moderation
 weight: 1
 admin: false
-scope: outsider
-global_role: moderator
+scope: individual
+global_role: null
 group_type: org
 permissions:
   - 'access group_node overview'

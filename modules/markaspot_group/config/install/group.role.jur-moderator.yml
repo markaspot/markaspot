@@ -3,13 +3,12 @@ status: true
 dependencies:
   config:
     - group.type.jur
-    - user.role.moderator
 id: jur-moderator
-label: Moderator
+label: Moderation
 weight: 1
 admin: false
-scope: outsider
-global_role: moderator
+scope: individual
+global_role: null
 group_type: jur
 permissions:
   - 'create group_node:page entity'
