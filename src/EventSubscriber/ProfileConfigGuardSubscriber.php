@@ -401,23 +401,65 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
         }
       }
 
-      // Config comparison is order-sensitive. Reapply the active entity's
-      // canonical top-level key order so preserved metadata is not appended
-      // after the shipped definition and reported as perpetual drift. New
-      // shipped keys that active does not know yet are appended afterwards.
-      $orderedData = [];
-      foreach (array_keys($activeData) as $key) {
-        if (array_key_exists($key, $shippedData)) {
-          $orderedData[$key] = $shippedData[$key];
-        }
-      }
-      foreach ($shippedData as $key => $value) {
-        if (!array_key_exists($key, $orderedData)) {
-          $orderedData[$key] = $value;
-        }
-      }
+      // Config comparison is order-sensitive at every nesting level. Reapply
+      // the active entity's canonical key order recursively while retaining
+      // the shipped values. Config entities can reorder nested plugin options
+      // when saved; aligning only UUID/_core at the top level would therefore
+      // plan the same View update on every subsequent config import.
+      $orderedData = self::orderConfigKeysLike($shippedData, $activeData);
       $importStorage->write($name, $orderedData);
     }
+  }
+
+  /**
+   * Recursively orders config keys like an active reference array.
+   *
+   * Values always come from the shipped config. The active array is used only
+   * as an ordering template for keys present in both structures. Sequential
+   * lists retain shipped item order while their matching array items are
+   * normalized recursively.
+   *
+   * @param array<mixed> $data
+   *   Shipped config data whose values remain authoritative.
+   * @param array<mixed> $reference
+   *   Active config data providing canonical key order.
+   *
+   * @return array<mixed>
+   *   The shipped data with recursively stabilized key order.
+   */
+  private static function orderConfigKeysLike(array $data, array $reference): array {
+    $dataIsList = array_is_list($data);
+    if ($dataIsList !== array_is_list($reference)) {
+      return $data;
+    }
+
+    if ($dataIsList) {
+      foreach ($data as $index => $value) {
+        if (is_array($value) && isset($reference[$index]) && is_array($reference[$index])) {
+          $data[$index] = self::orderConfigKeysLike($value, $reference[$index]);
+        }
+      }
+      return $data;
+    }
+
+    $ordered = [];
+    foreach (array_keys($reference) as $key) {
+      if (!array_key_exists($key, $data)) {
+        continue;
+      }
+      $value = $data[$key];
+      if (is_array($value) && isset($reference[$key]) && is_array($reference[$key])) {
+        $value = self::orderConfigKeysLike($value, $reference[$key]);
+      }
+      $ordered[$key] = $value;
+    }
+    foreach ($data as $key => $value) {
+      if (!array_key_exists($key, $ordered)) {
+        $ordered[$key] = $value;
+      }
+    }
+
+    return $ordered;
   }
 
   /**

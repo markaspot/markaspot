@@ -78,4 +78,48 @@ final class ManagementPackageConfigGuardTest extends UnitTestCase {
     $this->assertSame(['display' => ['custom']], $import->read('views.view.tenant_custom'));
   }
 
+  /**
+   * Tests nested plugin option order follows the active config entity.
+   *
+   * @covers ::protectManagementPackageConfig
+   * @covers ::orderConfigKeysLike
+   */
+  public function testNestedManagementConfigOrderIsStable(): void {
+    $profilePath = dirname(__DIR__, 3);
+    $source = new FileStorage($profilePath . '/config/optional');
+    $shippedView = $source->read('views.view.management');
+    $activeView = ['uuid' => 'view-uuid'] + $shippedView;
+    $path = &$activeView['display']['default']['display_options']['fields']['views_bulk_operations_bulk_form']['selected_actions'][1]['preconfiguration'];
+    $path = [
+      'add_confirmation' => $path['add_confirmation'],
+      'confirm_help_text' => $path['confirm_help_text'],
+      'label_override' => $path['label_override'],
+      'message_override' => $path['message_override'],
+    ];
+
+    $active = new MemoryStorage();
+    $active->write('views.view.management', $activeView);
+    $active->write('search_api.index.service_requests', $source->read('search_api.index.service_requests'));
+    $import = new MemoryStorage();
+    $import->write('views.view.management', ['display' => ['old']]);
+    $import->write('search_api.index.service_requests', ['field_settings' => []]);
+
+    $profileExtensionList = $this->createMock(ProfileExtensionList::class);
+    $profileExtensionList->method('getPath')->with('markaspot')->willReturn($profilePath);
+    $subscriber = new ProfileConfigGuardSubscriber(
+      $this->createMock(ModuleExtensionList::class),
+      $active,
+      'markaspot',
+      new NullLogger(),
+      $profileExtensionList,
+    );
+    $method = new \ReflectionMethod($subscriber, 'protectManagementPackageConfig');
+    $method->setAccessible(TRUE);
+    $method->invoke($subscriber, $import);
+
+    $expected = ['uuid' => 'view-uuid'] + $shippedView;
+    $expected['display']['default']['display_options']['fields']['views_bulk_operations_bulk_form']['selected_actions'][1]['preconfiguration'] = $path;
+    $this->assertSame($expected, $import->read('views.view.management'));
+  }
+
 }
