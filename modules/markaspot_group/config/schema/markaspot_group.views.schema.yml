@@ -5,3 +5,7 @@ views.filter.markaspot_group_label:
     group_bundle:
       type: string
       label: 'Group bundle'
+
+views.filter_value.markaspot_group_label:
+  type: views.filter_value.numeric
+  label: 'Mark-a-Spot Group label filter value'
