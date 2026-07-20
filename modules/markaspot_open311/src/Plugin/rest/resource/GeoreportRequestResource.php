@@ -131,11 +131,11 @@ class GeoreportRequestResource extends ResourceBase {
   /**
    * The flood control service.
    *
-   * Consumed by Open311RateLimitTrait::checkRateLimit() to gate POST
-   * traffic on the UPDATE endpoint per-IP / per-UID. Without it, an
-   * authenticated api-key consumer with `access open311 advanced
-   * properties` could flood the endpoint and amplify watchdog writes
-   * during a broken-mail outage (security review of 100ebc2 finding 7).
+   * Consumed by Open311RateLimitTrait::checkRateLimit() to gate GET traffic
+   * and POST traffic on the UPDATE endpoint per-IP / per-UID. Without it, an
+   * authenticated api-key consumer with `access open311 advanced properties`
+   * could flood the endpoint and amplify watchdog writes during a broken-mail
+   * outage (security review of 100ebc2 finding 7).
    *
    * @var \Drupal\Core\Flood\FloodInterface
    */
@@ -327,6 +327,10 @@ class GeoreportRequestResource extends ResourceBase {
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function get(string $id) {
+    // Apply rate limiting to protect against DoS attacks.
+    // Moderation, editorial, and admin users are exempt.
+    $this->checkRateLimit('georeport_api_get');
+
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
 
     // Internal markers set further down; never accept them from the wire.
@@ -576,6 +580,15 @@ class GeoreportRequestResource extends ResourceBase {
         ->resolveJurisdictionId($parameters);
       if (!$jurisdictionId || !$this->isJurisdictionGroupId($jurisdictionId)) {
         if (!$this->currentUser->isAnonymous()) {
+          if ($this->jurisdictionScopeValidator) {
+            $this->jurisdictionScopeValidator->logViolation(
+              (int) $this->currentUser->id(),
+              NULL,
+              $this->jurisdictionScopeValidator->getAllowedJurisdictionIds($this->currentUser),
+              400,
+              'invalid_claim'
+            );
+          }
           throw new BadRequestHttpException('Invalid jurisdiction_id.');
         }
 

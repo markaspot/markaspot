@@ -29,6 +29,44 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 final class GeoreportRequestResourceScopeTest extends UnitTestCase {
 
   /**
+   * Single-request reads use the same GET flood event as index reads.
+   *
+   * @covers ::get
+   */
+  public function testSingleRequestReadChecksGetRateLimit(): void {
+    $resource = $this->resource([], [], []);
+
+    try {
+      $resource->get('REQ-101');
+      $this->fail('The test resource must stop after the rate-limit check.');
+    }
+    catch (\LogicException $exception) {
+      $this->assertSame('georeport_api_get', $exception->getMessage());
+    }
+  }
+
+  /**
+   * Authenticated invalid claims are recorded before the existing 400.
+   *
+   * @covers ::resolveSingleRequestJurisdictionScope
+   */
+  public function testAuthenticatedInvalidClaimIsLogged(): void {
+    $validator = $this->createMock(JurisdictionScopeValidator::class);
+    $validator->expects($this->once())
+      ->method('getAllowedJurisdictionIds')
+      ->with($this->isInstanceOf(AccountInterface::class))
+      ->willReturn([1, 4]);
+    $validator->expects($this->once())
+      ->method('logViolation')
+      ->with(7, NULL, [1, 4], 400, 'invalid_claim');
+    $resource = $this->resource([], [], [], TRUE, FALSE, [1, 4], $validator);
+
+    $this->expectException(BadRequestHttpException::class);
+    $this->expectExceptionMessage('Invalid jurisdiction_id.');
+    $resource->loadForRead('REQ-101', ['jurisdiction_id' => 999]);
+  }
+
+  /**
    * Multi-scope API keys can find a request without claiming a jurisdiction.
    *
    * @covers ::loadScopedRequestNode
@@ -160,6 +198,8 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
    *   Whether the current user is anonymous.
    * @param int[] $validJurisdictionIds
    *   Existing jurisdiction IDs.
+   * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null $validator
+   *   Optional validator used to assert audit-log calls.
    */
   private function resource(
     array $allowedJurisdictionIds,
@@ -168,6 +208,7 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
     bool $usesApiKey = TRUE,
     bool $anonymous = FALSE,
     array $validJurisdictionIds = [1, 4],
+    ?JurisdictionScopeValidator $validator = NULL,
   ): ScopeTestGeoreportRequestResource {
     $account = $this->createMock(AccountProxyInterface::class);
     $account->method('id')->willReturn($anonymous ? 0 : 7);
@@ -204,7 +245,7 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
       $config,
       $entityTypeManager,
       $processor,
-      $this->validatorWithAllowed($allowedJurisdictionIds),
+      $validator ?? $this->validatorWithAllowed($allowedJurisdictionIds),
       $usesApiKey,
       $nodeJurisdictionIds,
       $validJurisdictionIds,
@@ -260,6 +301,13 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
  * Exposes the scoped request loader with deterministic jurisdiction mapping.
  */
 final class ScopeTestGeoreportRequestResource extends GeoreportRequestResource {
+
+  /**
+   * Stops full GET execution after recording the flood event.
+   */
+  protected function checkRateLimit(string $name): void {
+    throw new \LogicException($name);
+  }
 
   /**
    * Constructs the scoped test resource.
