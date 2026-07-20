@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.166](https://github.com/markaspot/markaspot/compare/11.9.165...11.9.166) (2026-07-20)
+
+### Features
+
+* add extensions summary mode to requests index ([0aeeeb4](https://github.com/markaspot/markaspot/commit/0aeeeb47614f8dbb6be713f7e962e9ced0614fd0))
+
+### Bug Fixes
+
+* allow api key reads across granted jurisdiction scope ([f229552](https://github.com/markaspot/markaspot/commit/f229552435b05cb81648ca3ff55202f354dd3063))
+* expose top level status icon and stable status notes shape ([b3c93e1](https://github.com/markaspot/markaspot/commit/b3c93e1631909ef7b51a09a5da965b31b7753246))
+* rate limit and audit logging for single request reads ([3e191a1](https://github.com/markaspot/markaspot/commit/3e191a180b6a8c7ccbb85aad786834a148858dac))
+
 ## [11.9.165](https://github.com/markaspot/markaspot/compare/11.9.164...11.9.165) (2026-07-19)
 
 ### Bug Fixes
