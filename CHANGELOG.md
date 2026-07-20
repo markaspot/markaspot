@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.167](https://github.com/markaspot/markaspot/compare/11.9.166...11.9.167) (2026-07-20)
+
+### Performance
+
+* restore candidate query index walk and widen jsonapi shortfall window ([7e94324](https://github.com/markaspot/markaspot/commit/7e943245c8849f0d0a99cef774a59f8628b3709b))
+
 ## [11.9.166](https://github.com/markaspot/markaspot/compare/11.9.165...11.9.166) (2026-07-20)
 
 ### Features
