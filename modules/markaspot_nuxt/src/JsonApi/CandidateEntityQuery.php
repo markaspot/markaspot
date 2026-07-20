@@ -54,7 +54,6 @@ use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
  * @phpstan-ignore classExtendsInternalClass.classExtendsInternalClass
  */
 final class CandidateEntityQuery extends SqlQuery {
-
   /**
    * The range from the original (source) query, captured before construction.
    *
@@ -114,6 +113,111 @@ final class CandidateEntityQuery extends SqlQuery {
    */
   protected function isSimpleQuery(): bool {
     return TRUE;
+  }
+
+  /**
+   * Consolidates ORDER BY aliases after Core has compiled the query.
+   *
+   * {@inheritdoc}
+   */
+  protected function finish() {
+    parent::finish();
+    $this->remapSortToPrimaryDataTableAlias();
+    return $this;
+  }
+
+  /**
+   * Rewrites ORDER BY expressions to reuse the first data-table join alias.
+   *
+   * Core joins the data table TWICE: condition compilation and addSort() each
+   * construct their own Tables helper, and the join-dedup cache lives on the
+   * Tables instance, not on the Select query. The condition side registers
+   * "node_field_data" (INNER) first; addSort() later registers a second
+   * instance "node_field_data_2" (LEFT) with an identical join condition and
+   * sorts on that one:
+   *
+   *   INNER JOIN node_field_data ON node_field_data.nid = base_table.nid
+   *   LEFT JOIN node_field_data node_field_data_2
+   *     ON node_field_data_2.nid = base_table.nid
+   *   ...ORDER BY node_field_data_2.created DESC
+   *
+   * MariaDB cannot drive an ORDER BY ... LIMIT index walk through the
+   * LEFT-joined duplicate: the optimizer does not recognise the two aliases as
+   * the same row source, so it falls back to scanning all rows of the base
+   * table and filesorting (measured: 660ms on a 152k-node tenant). Rewriting
+   * the ORDER BY onto the first alias lets the optimizer pick node_field_data
+   * as the driving table via the created index and stop after LIMIT rows
+   * (measured: 121 index entries read instead of 152k).
+   *
+   * Semantics are unchanged: aliases are only consolidated when they join the
+   * SAME physical table with a textually identical join condition (after
+   * normalising the alias itself), so both aliases resolve to the same row
+   * set per base-table row. For rows removed by an INNER primary alias the
+   * duplicate's sort value is irrelevant because the row is not in the result.
+   * A langcode-restricted join condition differs textually and is therefore
+   * never merged. Known limitation: node base fields (including 'created')
+   * ARE translatable, so on a multilingual site where translations carry
+   * DIVERGING sort values AND a condition filters per-langcode rows on the
+   * primary alias, the post-remap ranking aggregates over the surviving rows
+   * only and can under-rank a node out of the candidate window. The wrapper's
+   * shortfall widening/fallback absorbs underfill; a silently displaced row
+   * requires that narrow combination, which does not occur in Mark-a-Spot
+   * tenants (untranslated service_request content).
+   *
+   * Only ORDER BY is rewritten. The duplicate join itself and its SELECT
+   * expression stay in place; after the rewrite the duplicate degrades to a
+   * cheap eq_ref lookup on the LIMIT-sized result.
+   */
+  private function remapSortToPrimaryDataTableAlias(): void {
+    $data_table = $this->entityType->getDataTable();
+    if (!$data_table) {
+      return;
+    }
+
+    // Group all joins of the data table by their normalised join condition.
+    // The first alias registered for a given condition becomes the canonical
+    // one; later duplicates are remapped onto it. Join conditions reference
+    // the alias in bracketed form ("[node_field_data_2].[nid] =
+    // [base_table].[nid]"); normalise both the bracketed and the bare form so
+    // a formatting change in Core cannot silently disable the consolidation.
+    $tables = $this->sqlQuery->getTables();
+    $condition_groups = [];
+    foreach ($tables as $alias => $info) {
+      $table = $info['table'] ?? NULL;
+      if (!is_string($table) || $table !== $data_table) {
+        continue;
+      }
+      $join_condition = (string) ($info['condition'] ?? '');
+      $normalized = str_replace('[' . $alias . ']', '%', $join_condition);
+      $normalized = preg_replace(
+            '/\b' . preg_quote((string) $alias, '/') . '\./',
+            '%.',
+            $normalized
+        );
+      $condition_groups[$normalized][] = (string) $alias;
+    }
+
+    $alias_map = [];
+    foreach ($condition_groups as $aliases) {
+      $primary = array_shift($aliases);
+      foreach ($aliases as $duplicate) {
+        $alias_map[$duplicate] = $primary;
+      }
+    }
+    if (!$alias_map) {
+      return;
+    }
+
+    $order_by = &$this->sqlQuery->getOrderBy();
+    $remapped = [];
+    foreach ($order_by as $expression => $direction) {
+      $parts = explode('.', (string) $expression, 2);
+      if (count($parts) === 2 && isset($alias_map[$parts[0]])) {
+        $expression = $alias_map[$parts[0]] . '.' . $parts[1];
+      }
+      $remapped[$expression] = $direction;
+    }
+    $order_by = $remapped;
   }
 
   /**
@@ -199,13 +303,13 @@ final class CandidateEntityQuery extends SqlQuery {
     $original_sort = self::readSort($source);
 
     $instance = new static(
-      $source->entityType,
-      $source->conjunction,
-      $source->connection,
-      $source->namespaces,
-      $original_range,
-      $original_sort,
-    );
+          $source->entityType,
+          $source->conjunction,
+          $source->connection,
+          $source->namespaces,
+          $original_range,
+          $original_sort,
+      );
 
     // Copy conditions: clone so we do not accidentally mutate the source when
     // we later add the nid-IN condition in Phase 2. The condition object

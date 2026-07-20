@@ -49,16 +49,39 @@ use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
  * @internal This class is part of the markaspot_nuxt module internals.
  */
 final class DeferredAccessQueryWrapper implements QueryInterface {
-
   /**
    * Maximum offset + length for which the two-phase path is attempted.
    *
    * Beyond 2048 rows, IN-list overhead could exceed the savings from the simple
    * Phase 1 query. For large offsets the original query is used unchanged.
+   * Not to be confused with MAX_CANDIDATE_WINDOW: this constant bounds the
+   * REQUESTED page depth (offset + length) at entry; the candidate window that
+   * the widening loop may grow to is bounded separately below.
    *
    * @var int
    */
   private const MAX_TWO_PHASE_RANGE = 2048;
+
+  /**
+   * Multiplier applied to the candidate window on each widening step.
+   *
+   * @var int
+   */
+  private const WINDOW_WIDEN_FACTOR = 4;
+
+  /**
+   * Upper bound for the Phase-1 candidate window.
+   *
+   * With the ORDER BY alias remap in CandidateEntityQuery, Phase 1 is an
+   * index walk whose cost is proportional to the window, so even this widest
+   * window costs single-digit milliseconds plus one IN-list Phase 2 — orders
+   * of magnitude cheaper than one run of the aggregate-sort inner query.
+   * Once the window exceeds this cap without filling the page, the wrapper
+   * gives up and runs the unmodified inner query.
+   *
+   * @var int
+   */
+  private const MAX_CANDIDATE_WINDOW = 8192;
 
   /**
    * Whether execute() was called after count() was chained on this wrapper.
@@ -80,7 +103,8 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    */
   public function __construct(
     private readonly SqlQuery $inner,
-  ) {}
+  ) {
+  }
 
   /**
    * {@inheritdoc}
@@ -145,8 +169,8 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
     // because the PK is implicitly part of every secondary index
     // (~1ms on a 155k-node database).
     $tiebreak_direction = $has_nid_sort
-      ? NULL
-      : (string) ($inner_sort[0]['direction'] ?? 'ASC');
+        ? NULL
+        : (string) ($inner_sort[0]['direction'] ?? 'ASC');
 
     return $this->executeTwoPhase($offset, $length, $tiebreak_direction);
   }
@@ -154,10 +178,18 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
   /**
    * Runs the two-phase logic and returns the Phase 2 result.
    *
-   * Attempts the initial candidate window and, on shortfall, retries EXACTLY
-   * once with a 4x window. If the retry still cannot fill the page while
-   * Phase 1 is not exhausted, the original inner query is executed unchanged
-   * (correctness over speed). There is no unbounded widening.
+   * Starts with the initial candidate window and, while the page cannot be
+   * filled and Phase 1 is not exhausted, widens the window by
+   * WINDOW_WIDEN_FACTOR up to MAX_CANDIDATE_WINDOW. On moderation-heavy
+   * tenants where only a small fraction of the newest rows is visible to the
+   * requesting account (measured: 7 of the newest 105 nodes published on a
+   * 152k-node tenant), the page typically fills after two or three widenings
+   * at a few milliseconds each. This deliberately encodes NO assumption
+   * about WHY rows are invisible — it behaves identically for status,
+   * group-based access, or any future access layer, so it cannot silently
+   * omit rows the way an access-specific candidate pre-filter could.
+   * Only when the capped widening still cannot fill the page is the original
+   * inner query executed unchanged (correctness over speed).
    *
    * @param int $offset
    *   The page offset from the inner query's range.
@@ -173,8 +205,13 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
   private function executeTwoPhase(int $offset, int $length, ?string $tiebreak_direction): array {
     $initial_window = $offset + max(100, 5 * $length);
 
-    // Exactly two attempts: the initial window and ONE 4x-widened retry.
-    foreach ([$initial_window, $initial_window * 4] as $window) {
+    // The first attempt always runs, even if the initial window already
+    // exceeds the cap; the cap only limits how far widening may go. Widening
+    // clamps to the cap so the ladder always includes one attempt AT the cap
+    // before giving up (a straight multiplication could jump past it and
+    // skip a cheap final attempt for deep pages).
+    $window = $initial_window;
+    while (TRUE) {
       // Phase 1: fast candidate query without access checks.
       $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
       if ($tiebreak_direction !== NULL) {
@@ -212,14 +249,19 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
 
       // Done when the page is full, or when Phase 1 already saw every
       // matching row (nothing beyond the window could add results). A
-      // shortfall while more rows exist beyond the window loops into the
-      // single widened retry.
+      // shortfall while more rows exist beyond the window widens and
+      // retries.
       if ($exhausted || count($phase2_result) >= $length) {
         return $phase2_result;
       }
+
+      if ($window >= self::MAX_CANDIDATE_WINDOW) {
+        break;
+      }
+      $window = min($window * self::WINDOW_WIDEN_FACTOR, self::MAX_CANDIDATE_WINDOW);
     }
 
-    // Still in shortfall after the single 4x retry: fall back to the
+    // The capped widening could not fill the page: fall back to the
     // unmodified inner query. Correctness over speed.
     return $this->inner->execute();
   }

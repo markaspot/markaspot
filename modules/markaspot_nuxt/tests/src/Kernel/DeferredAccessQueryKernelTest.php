@@ -38,7 +38,6 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  */
 #[RunTestsInSeparateProcesses]
 final class DeferredAccessQueryKernelTest extends KernelTestBase {
-
   use NodeCreationTrait {
     createNode as drupalCreateNode;
   }
@@ -179,10 +178,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $direct_result = $inner_clone->execute();
 
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Wrapper result must equal direct inner query result for authenticated user.'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper result must equal direct inner query result for authenticated user.'
+      );
   }
 
   /**
@@ -209,10 +208,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $direct_result = $inner_clone->execute();
 
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Wrapper result must equal direct inner query result for anonymous user.'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper result must equal direct inner query result for anonymous user.'
+      );
   }
 
   /**
@@ -289,16 +288,16 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
 
     // The core invariant: wrapper == direct query, regardless of access level.
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Wrapper must produce the same result as the direct inner query.'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper must produce the same result as the direct inner query.'
+      );
     // With bypass node access, all 7 nodes are visible.
     $this->assertCount(
-      7,
-      $wrapper_result,
-      'All 7 nodes must be returned with bypass node access.'
-    );
+          7,
+          $wrapper_result,
+          'All 7 nodes must be returned with bypass node access.'
+      );
   }
 
   /**
@@ -324,10 +323,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $direct_result = $inner_clone->execute();
 
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Wrapper result with offset paging must match direct query.'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper result with offset paging must match direct query.'
+      );
   }
 
   /**
@@ -364,10 +363,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $direct_result = $dotted_inner_clone->execute();
 
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Dotted sort guard must produce result identical to the direct inner query (passthrough).'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Dotted sort guard must produce result identical to the direct inner query (passthrough).'
+      );
   }
 
   /**
@@ -400,10 +399,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $wrapper_count = $wrapper->execute();
 
     $this->assertSame(
-      $expected_count,
-      $wrapper_count,
-      'Count mode must return the same integer as the inner count query.'
-    );
+          $expected_count,
+          $wrapper_count,
+          'Count mode must return the same integer as the inner count query.'
+      );
     $this->assertIsInt($wrapper_count, 'Count result must be an integer.');
     $this->assertSame(5, $wrapper_count, 'Count must equal the number of published nodes.');
   }
@@ -444,8 +443,8 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     // users) returns all 5 nodes.  Phase 1 (no access) also returns all 5.
     // This validates: candidate count >= access-checked count (superset).
     $admin = $this->drupalCreateUser(
-      ['access content', 'bypass node access']
-    );
+          ['access content', 'bypass node access']
+      );
     $this->setCurrentUser($admin);
 
     $inner = $this->buildInnerQuery(0, 11);
@@ -461,28 +460,28 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
 
     // Both Phase 1 and the direct query must return all 5 nodes.
     $this->assertCount(
-      5,
-      $candidate_nids,
-      'Phase-1 candidate query must return all 5 nodes (no access filter).'
-    );
+          5,
+          $candidate_nids,
+          'Phase-1 candidate query must return all 5 nodes (no access filter).'
+      );
     $this->assertCount(
-      5,
-      $direct_nids,
-      'Access-checked bypass query must also return all 5 nodes.'
-    );
+          5,
+          $direct_nids,
+          'Access-checked bypass query must also return all 5 nodes.'
+      );
     foreach ($all_nids as $nid) {
       $this->assertContains(
-        $nid,
-        $candidate_nids,
-        "Nid $nid must be in the candidate set."
-      );
+            $nid,
+            $candidate_nids,
+            "Nid $nid must be in the candidate set."
+        );
     }
 
     // Candidate set is a superset of (or equal to) the access-checked set.
     $this->assertEmpty(
-      array_diff($direct_nids, $candidate_nids),
-      'Every nid in the access-checked result must also be in the candidate set.'
-    );
+          array_diff($direct_nids, $candidate_nids),
+          'Every nid in the access-checked result must also be in the candidate set.'
+      );
   }
 
   /**
@@ -516,10 +515,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     sort($candidate_nids);
     sort($direct_nids);
     $this->assertSame(
-      $direct_nids,
-      $candidate_nids,
-      'CandidateEntityQuery must cover the same set of nids as the source query.'
-    );
+          $direct_nids,
+          $candidate_nids,
+          'CandidateEntityQuery must cover the same set of nids as the source query.'
+      );
   }
 
   /**
@@ -538,10 +537,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $candidate = CandidateEntityQuery::fromQuery($inner, 100);
 
     $this->assertSame(
-      ['start' => 5, 'length' => 25],
-      $candidate->getOriginalRange(),
-      'getOriginalRange() must return the source query range.'
-    );
+          ['start' => 5, 'length' => 25],
+          $candidate->getOriginalRange(),
+          'getOriginalRange() must return the source query range.'
+      );
 
     $original_sort = $candidate->getOriginalSort();
     $this->assertCount(1, $original_sort, 'Original sort must have one entry.');
@@ -565,9 +564,9 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
 
     $method = new \ReflectionMethod($candidate, 'isSimpleQuery');
     $this->assertTrue(
-      $method->invoke($candidate),
-      'CandidateEntityQuery::isSimpleQuery() must return TRUE unconditionally.'
-    );
+          $method->invoke($candidate),
+          'CandidateEntityQuery::isSimpleQuery() must return TRUE unconditionally.'
+      );
   }
 
   /**
@@ -616,33 +615,33 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $expected = array_slice(array_keys($created_by_nid), 0, 11);
 
     $this->assertSame(
-      $expected,
-      array_map('intval', array_values($wrapper_result)),
-      'Wrapper first page must be exactly the 11 newest nodes.'
-    );
+          $expected,
+          array_map('intval', array_values($wrapper_result)),
+          'Wrapper first page must be exactly the 11 newest nodes.'
+      );
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Wrapper must match the direct inner query beyond the candidate window.'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper must match the direct inner query beyond the candidate window.'
+      );
   }
 
   /**
-   * Test: shortfall widening happens exactly once and fills the page.
+   * Test: a single widening step suffices when it exhausts the data set.
    *
    * Uses core's node_access_test grants: a user WITHOUT the
    * 'node test view' permission only matches the author realm and thus only
    * sees nodes they own. 120 newer foreign nodes fill the initial candidate
    * window (100) completely with inaccessible rows; the 5 accessible nodes
-   * are older and only enter the candidate set after the single 4x widening
-   * retry.
+   * enter the candidate set with the first 4x widening, which exhausts the
+   * 125-row data set and stops the widening loop.
    *
    * Query-count assertion: Phase 1 + Phase 2 (initial window) plus
-   * Phase 1 + Phase 2 (widened window) = 4 entity queries. A fallback to
-   * the unmodified inner query would add a 5th query; no widening at all
-   * would stop at 2.
+   * Phase 1 + Phase 2 (first widened window) = 4 entity queries. A fallback
+   * to the unmodified inner query or a superfluous further widening would
+   * add more; no widening at all would stop at 2.
    */
-  public function testShortfallWidensExactlyOnce(): void {
+  public function testShortfallStopsWideningOnceExhausted(): void {
     $this->enableModules(['node_access_test']);
 
     $other = $this->drupalCreateUser(['access content']);
@@ -700,15 +699,15 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $direct_result = $inner_clone->execute();
 
     $this->assertSame(
-      array_values($direct_result),
-      array_values($wrapper_result),
-      'Wrapper must match the direct query under shortfall conditions.'
-    );
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper must match the direct query under shortfall conditions.'
+      );
     $this->assertSame(
-      [$own_nids[4], $own_nids[3], $own_nids[2]],
-      array_map('intval', array_values($wrapper_result)),
-      'Page must contain the 3 newest accessible nodes.'
-    );
+          [$own_nids[4], $own_nids[3], $own_nids[2]],
+          array_map('intval', array_values($wrapper_result)),
+          'Page must contain the 3 newest accessible nodes.'
+      );
 
     // Count the entity queries that hit the node data table. Phase 1 and
     // Phase 2 for the initial window plus Phase 1 and Phase 2 for the single
@@ -720,10 +719,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
       }
     }
     $this->assertSame(
-      4,
-      $entity_query_count,
-      'Exactly one widening retry: 2 phases x 2 attempts = 4 queries, no fallback.'
-    );
+          4,
+          $entity_query_count,
+          'One widening step exhausts the set: 2 phases x 2 attempts = 4 queries, no further widening, no fallback.'
+      );
   }
 
   /**
@@ -783,10 +782,10 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $first_result = array_map('intval', array_values($wrapper->execute()));
 
     $this->assertSame(
-      $expected,
-      $first_result,
-      'Ties must resolve to (created DESC, nid DESC) deterministically.'
-    );
+          $expected,
+          $first_result,
+          'Ties must resolve to (created DESC, nid DESC) deterministically.'
+      );
 
     // A second, independently built wrapper must return the same order.
     $inner_repeat = $this->buildInnerQuery(0, 11);
@@ -794,10 +793,147 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $second_result = array_map('intval', array_values($wrapper_repeat->execute()));
 
     $this->assertSame(
-      $first_result,
-      $second_result,
-      'Tie order must be stable across two independent wrapper calls.'
-    );
+          $first_result,
+          $second_result,
+          'Tie order must be stable across two independent wrapper calls.'
+      );
+  }
+
+  /**
+   * Test: Phase-1 ORDER BY is remapped onto the primary data-table alias.
+   *
+   * Core compiles conditions and sorts with separate Tables helpers, so the
+   * data table is joined twice and the ORDER BY lands on the second (LEFT)
+   * alias "node_field_data_2". That alias placement makes an
+   * ORDER BY ... LIMIT index walk impossible (the optimizer cannot use the
+   * created index through the LEFT-joined duplicate) and is the reason the
+   * candidate query degraded to a full scan + filesort on large tenants.
+   * CandidateEntityQuery::finish() must rewrite the ORDER BY onto the first
+   * alias. Reflection is needed because the compiled Select is protected.
+   */
+  public function testCandidateQuerySortUsesPrimaryDataTableAlias(): void {
+    $this->createPublishedNodes(5);
+
+    $account = $this->drupalCreateUser(['access content']);
+    $this->setCurrentUser($account);
+
+    $inner = $this->buildInnerQuery(0, 11);
+    $candidate = CandidateEntityQuery::fromQuery($inner, 20);
+    // Mirror the wrapper's deterministic nid tiebreaker.
+    $candidate->sort('nid', 'DESC');
+    $result = $candidate->execute();
+    $this->assertCount(5, $result, 'Candidate query must return all 5 nodes.');
+
+    $property = new \ReflectionProperty(Query::class, 'sqlQuery');
+    /** @var \Drupal\Core\Database\Query\SelectInterface $select */
+    $select = $property->getValue($candidate);
+    $order_by = $select->getOrderBy();
+
+    $this->assertArrayHasKey(
+          'node_field_data.created',
+          $order_by,
+          'The created sort must reference the primary data-table alias.'
+      );
+    foreach (array_keys($order_by) as $expression) {
+      $this->assertStringStartsNotWith(
+            'node_field_data_2.',
+            (string) $expression,
+            'No ORDER BY expression may reference the duplicate data-table alias.'
+        );
+    }
+  }
+
+  /**
+   * Test: deep widening fills the page without the aggregate fallback.
+   *
+   * Reproduces the moderation-heavy tenant profile that starved the candidate
+   * window in production: the 500 NEWEST nodes are unpublished (invisible to
+   * anonymous), the 30 published nodes are older. The initial window (105)
+   * and the first widening (420) contain only unpublished rows; the second
+   * widening (1680) exhausts the data set (530 rows) and fills the page from
+   * the published pool. That is exactly 3 attempts x 2 phases = 6 queries —
+   * and, crucially, NO seventh query from the aggregate-sort inner fallback,
+   * which is the expensive path this widening exists to avoid. The widening
+   * makes no assumption about WHY rows are invisible, so this works for any
+   * access layer (status, grants, group) alike.
+   *
+   * Grant setup: node_access_test with the 'private' state flag writes NO
+   * records for regular nodes, so Core's default (realm 'all') view grant is
+   * written for published nodes only and unpublished nodes carry no grants
+   * at all — anonymous therefore sees exactly the published pool.
+   */
+  public function testDeepWideningFillsPageWithoutAggregateFallback(): void {
+    $this->enableModules(['node_access_test']);
+    // Only nodes with a "private" property get module records; all others
+    // fall through to Core's default grant, which is published-only.
+    \Drupal::state()->set('node_access_test.private', TRUE);
+
+    $this->config('user.role.' . RoleInterface::ANONYMOUS_ID)
+      ->set('permissions', ['access content'])
+      ->save();
+
+    $base = 1600000000;
+    $published_nids = [];
+    for ($i = 0; $i < 30; $i++) {
+      $node = Node::create([
+        'type' => 'service_request',
+        'title' => "Published $i",
+        'status' => 1,
+        'uid' => 1,
+        'created' => $base + $i,
+      ]);
+      $node->save();
+      $published_nids[] = (int) $node->id();
+    }
+    for ($i = 0; $i < 500; $i++) {
+      $node = Node::create([
+        'type' => 'service_request',
+        'title' => "Moderated $i",
+        'status' => 0,
+        'uid' => 1,
+        'created' => $base + 1000 + $i,
+      ]);
+      $node->save();
+    }
+
+    // Rewrite grants with the grants module enabled: published nodes get the
+    // default (realm 'all') row, unpublished nodes get none, and the global
+    // view-all row from setUp() is removed.
+    node_access_rebuild();
+
+    $this->setCurrentUser(new AnonymousUserSession());
+
+    $inner = $this->buildInnerQuery(0, 21);
+    $inner_clone = clone $inner;
+    $wrapper = new DeferredAccessQueryWrapper($inner);
+
+    Database::startLog('deep_widening');
+    $wrapper_result = $wrapper->execute();
+    $log = Database::getLog('deep_widening');
+
+    $direct_result = $inner_clone->execute();
+
+    $this->assertSame(
+          array_values($direct_result),
+          array_values($wrapper_result),
+          'Wrapper must match the direct query for anonymous users.'
+      );
+    $this->assertCount(21, $wrapper_result, 'Page must be filled from the published pool.');
+    foreach (array_map('intval', array_values($wrapper_result)) as $nid) {
+      $this->assertContains($nid, $published_nids, "Nid $nid must be a published node.");
+    }
+
+    $entity_query_count = 0;
+    foreach ($log as $entry) {
+      if (str_contains((string) $entry['query'], 'node_field_data')) {
+        $entity_query_count++;
+      }
+    }
+    $this->assertSame(
+          6,
+          $entity_query_count,
+          'Deep widening must fill the page in 3 attempts (6 queries) without the aggregate inner fallback.'
+      );
   }
 
 }
