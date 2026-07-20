@@ -92,6 +92,38 @@ class JurisdictionScopeValidator {
   }
 
   /**
+   * Resolves the jurisdiction scope for an API-key read.
+   *
+   * @return int[]
+   *   Jurisdiction IDs that the read may search.
+   */
+  public function resolveReadScope(?int $claimedJurisdictionId, AccountInterface $account): array {
+    $allowed = $this->getAllowedJurisdictionIds($account);
+    $uid = (int) $account->id();
+
+    if ($uid <= 0) {
+      $this->logViolation($uid, $claimedJurisdictionId, $allowed, 401, 'missing_api_key_owner');
+      throw new UnauthorizedHttpException('api_key', 'API key authentication required.');
+    }
+
+    if ($allowed === []) {
+      $this->logViolation($uid, $claimedJurisdictionId, $allowed, 403, 'empty_scope');
+      throw new AccessDeniedHttpException('key has no jurisdiction scope');
+    }
+
+    if ($claimedJurisdictionId !== NULL) {
+      if (!in_array($claimedJurisdictionId, $allowed, TRUE)) {
+        $this->logViolation($uid, $claimedJurisdictionId, $allowed, 403, 'foreign_scope');
+        throw new AccessDeniedHttpException('key not authorized for jur ' . $claimedJurisdictionId);
+      }
+
+      return [$claimedJurisdictionId];
+    }
+
+    return $allowed;
+  }
+
+  /**
    * Logs a scope violation in the canonical audit format.
    *
    * @param int $callerUid

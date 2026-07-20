@@ -508,7 +508,7 @@ class GeoreportRequestResource extends ResourceBase {
       return NULL;
     }
 
-    $scopeJurisdictionId = $this->resolveSingleRequestJurisdictionScope($parameters, $enforceMembership);
+    $scopeJurisdictionIds = $this->resolveSingleRequestJurisdictionScope($parameters, $enforceMembership);
     $query = $this->georeportProcessor->createNodeQuery(
       $this->stripJurisdictionClaims($parameters),
       $this->currentUser
@@ -529,7 +529,7 @@ class GeoreportRequestResource extends ResourceBase {
       if (!$node instanceof ContentEntityInterface) {
         continue;
       }
-      if (!$this->requestNodeMatchesScope($node, $scopeJurisdictionId)) {
+      if (!$this->requestNodeMatchesScope($node, $scopeJurisdictionIds)) {
         continue;
       }
       $matches[(int) $node->id()] = $node;
@@ -547,7 +547,7 @@ class GeoreportRequestResource extends ResourceBase {
     if ($enforceMembership
       && !$this->currentUser->isAnonymous()
       && !$this->currentRequestUsesApiKey()
-      && $scopeJurisdictionId === NULL) {
+      && $scopeJurisdictionIds === NULL) {
       $this->validateScopedRequestAccess($node);
     }
 
@@ -565,8 +565,12 @@ class GeoreportRequestResource extends ResourceBase {
    *   (markaspot-ui#427): the claim is still resolved and validated for
    *   existence (400 on invalid claims) and API-key scoping still applies,
    *   but non-membership no longer denies access.
+   *
+   * @return int[]|null
+   *   Jurisdiction IDs that the request lookup may search, or NULL when the
+   *   lookup is not jurisdiction-scoped.
    */
-  protected function resolveSingleRequestJurisdictionScope(array $parameters, bool $enforceMembership = TRUE): ?int {
+  protected function resolveSingleRequestJurisdictionScope(array $parameters, bool $enforceMembership = TRUE): ?array {
     if ($this->hasJurisdictionClaim($parameters)) {
       $jurisdictionId = $this->georeportProcessor
         ->resolveJurisdictionId($parameters);
@@ -577,30 +581,41 @@ class GeoreportRequestResource extends ResourceBase {
 
         // Anonymous callers get an empty scoped result instead of an existence
         // oracle for numeric tenant IDs.
-        return 0;
+        return [0];
       }
 
       if ($this->currentRequestUsesApiKey()
         && $this->jurisdictionScopeValidator
         && !$this->currentUser->isAnonymous()) {
-        $this->jurisdictionScopeValidator
-          ->resolveSubmissionJurisdiction($jurisdictionId, $this->currentUser);
+        if ($enforceMembership) {
+          $jurisdictionId = $this->jurisdictionScopeValidator
+            ->resolveSubmissionJurisdiction($jurisdictionId, $this->currentUser);
+        }
+        else {
+          return $this->jurisdictionScopeValidator
+            ->resolveReadScope($jurisdictionId, $this->currentUser);
+        }
       }
       elseif (!$this->currentUser->isAnonymous() && $enforceMembership) {
         $this->georeportProcessor
           ->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
       }
 
-      return $jurisdictionId;
+      return [$jurisdictionId];
     }
 
     if ($this->currentRequestUsesApiKey()
       && $this->jurisdictionScopeValidator
       && !$this->currentUser->isAnonymous()) {
-      // Single-scope API keys can omit jurisdiction_id. Multi-scope keys must
-      // disambiguate explicitly.
+      if ($enforceMembership) {
+        return [
+          $this->jurisdictionScopeValidator
+            ->resolveSubmissionJurisdiction(NULL, $this->currentUser),
+        ];
+      }
+
       return $this->jurisdictionScopeValidator
-        ->resolveSubmissionJurisdiction(NULL, $this->currentUser);
+        ->resolveReadScope(NULL, $this->currentUser);
     }
 
     return NULL;
@@ -617,7 +632,7 @@ class GeoreportRequestResource extends ResourceBase {
   /**
    * Checks whether a loaded request node matches the resolved scope.
    */
-  protected function requestNodeMatchesScope(ContentEntityInterface $node, ?int $scopeJurisdictionId): bool {
+  protected function requestNodeMatchesScope(ContentEntityInterface $node, ?array $scopeJurisdictionIds): bool {
     $jurisdictionId = $this->resolveNodeJurisdictionId($node);
     if ($this->currentUser->isAnonymous()
       && $this->workspaceVisibility
@@ -632,8 +647,14 @@ class GeoreportRequestResource extends ResourceBase {
       return FALSE;
     }
 
-    if ($scopeJurisdictionId !== NULL) {
-      return $this->nodeBelongsToJurisdiction($node, $scopeJurisdictionId);
+    if ($scopeJurisdictionIds !== NULL) {
+      foreach ($scopeJurisdictionIds as $scopeJurisdictionId) {
+        if ($this->nodeBelongsToJurisdiction($node, $scopeJurisdictionId)) {
+          return TRUE;
+        }
+      }
+
+      return FALSE;
     }
 
     return TRUE;

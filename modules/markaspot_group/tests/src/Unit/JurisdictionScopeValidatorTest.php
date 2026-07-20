@@ -9,6 +9,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\UserSession;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
 use Drupal\Tests\UnitTestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -71,13 +72,65 @@ class JurisdictionScopeValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Tests that an unclaimed read gets the complete granted scope.
+   *
+   * @covers ::resolveReadScope
+   */
+  public function testReadWithoutClaimReturnsGrantedScopeWithoutLogging(): void {
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->never())->method('warning');
+    $validator = $this->validatorWithAllowed([11, 12], $logger);
+
+    $this->assertSame([11, 12], $validator->resolveReadScope(NULL, $this->account(7)));
+  }
+
+  /**
+   * Tests that a claimed read is narrowed to the allowed jurisdiction.
+   *
+   * @covers ::resolveReadScope
+   */
+  public function testReadClaimNarrowsGrantedScope(): void {
+    $validator = $this->validatorWithAllowed([11, 12]);
+
+    $this->assertSame([12], $validator->resolveReadScope(12, $this->account(7)));
+  }
+
+  /**
+   * Tests that a foreign read claim remains forbidden.
+   *
+   * @covers ::resolveReadScope
+   */
+  public function testForeignReadClaimIsDenied(): void {
+    $validator = $this->validatorWithAllowed([11, 12]);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('key not authorized for jur 13');
+    $validator->resolveReadScope(13, $this->account(7));
+  }
+
+  /**
+   * Tests that an API key with no read scope remains forbidden.
+   *
+   * @covers ::resolveReadScope
+   */
+  public function testEmptyReadScopeIsDenied(): void {
+    $validator = $this->validatorWithAllowed([]);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('key has no jurisdiction scope');
+    $validator->resolveReadScope(NULL, $this->account(7));
+  }
+
+  /**
    * Creates a validator with controlled allowed jurisdiction IDs.
    *
    * @param int[] $allowed
    *   Allowed jurisdiction IDs.
+   * @param \Psr\Log\LoggerInterface|null $logger
+   *   Optional logger mock.
    */
-  protected function validatorWithAllowed(array $allowed): JurisdictionScopeValidator {
-    return new class($allowed, $this->createMock(Connection::class)) extends JurisdictionScopeValidator {
+  protected function validatorWithAllowed(array $allowed, ?LoggerInterface $logger = NULL): JurisdictionScopeValidator {
+    return new class($allowed, $this->createMock(Connection::class), $logger ?? new NullLogger()) extends JurisdictionScopeValidator {
 
       /**
        * Constructs the test validator.
@@ -86,12 +139,15 @@ class JurisdictionScopeValidatorTest extends UnitTestCase {
        *   Allowed jurisdiction IDs.
        * @param \Drupal\Core\Database\Connection $database
        *   The database connection mock.
+       * @param \Psr\Log\LoggerInterface $logger
+       *   Logger mock.
        */
       public function __construct(
         protected array $allowed,
         Connection $database,
+        LoggerInterface $logger,
       ) {
-        parent::__construct($database, new NullLogger());
+        parent::__construct($database, $logger);
       }
 
       /**
