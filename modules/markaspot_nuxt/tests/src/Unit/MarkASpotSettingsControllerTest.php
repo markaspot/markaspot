@@ -391,6 +391,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(50.9, $data['center_lat']);
     $this->assertEquals(6.9, $data['center_lng']);
     $this->assertEquals('DE', $data['geocoding_country']);
+    $this->assertSame('self_hosted', $data['operatingMode']);
     $this->assertContains(
       'config:markaspot_sso.settings',
       $response->getCacheableMetadata()->getCacheTags()
@@ -559,6 +560,73 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(50.73, $data['center_lat']);
     $this->assertEquals(7.1, $data['center_lng']);
     $this->assertEquals(14, $data['zoom_initial']);
+  }
+
+  /**
+   * Tests operating mode normalization from deployment settings.
+   *
+   * @param mixed $configuredMode
+   *   The configured operating mode.
+   * @param string $expectedMode
+   *   The expected public operating mode.
+   *
+   * @dataProvider operatingModeProvider
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOperatingModeIsNormalized(mixed $configuredMode, string $expectedMode): void {
+    new Settings(['markaspot_operating_mode' => $configuredMode]);
+
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('sort')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('execute')->willReturn([]);
+    $this->groupStorage->method('getQuery')->willReturn($query);
+
+    $request = Request::create('/api/mark-a-spot-settings', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame($expectedMode, $data['operatingMode']);
+  }
+
+  /**
+   * Provides configured and expected operating modes.
+   *
+   * @return array<string, array{mixed, string}>
+   *   Operating mode test cases.
+   */
+  public static function operatingModeProvider(): array {
+    return [
+      'saas' => ['saas', 'saas'],
+      'self hosted' => ['self_hosted', 'self_hosted'],
+      'unknown string' => ['managed', 'self_hosted'],
+      'non-string value' => [TRUE, 'self_hosted'],
+    ];
+  }
+
+  /**
+   * Tests tenant config cannot override the deployment operating mode.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOperatingModeCannotBeOverriddenByTenantConfig(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'operatingMode' => 'self_hosted',
+        'features' => ['voting' => TRUE],
+      ]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame('saas', $data['operatingMode']);
   }
 
   /**

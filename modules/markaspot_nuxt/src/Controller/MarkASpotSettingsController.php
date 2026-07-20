@@ -733,6 +733,19 @@ class MarkASpotSettingsController extends ControllerBase {
     // response.
     $this->moduleHandler()->alter('markaspot_nuxt_settings', $settings, $group, $cache_metadata);
 
+    // Frontend contract: fail closed unless this value is exactly "saas".
+    // Only "saas" and "self_hosted" are emitted; deployment behaviour is
+    // server-owned and therefore cannot be overridden by tenant configuration.
+    // Note the default direction: a MISSING setting yields 'self_hosted',
+    // the permissive value for the jurisdiction-filter omission. Multi-tenant
+    // SaaS deployments MUST pin MARKASPOT_OPERATING_MODE=saas in the env (see
+    // the operating-mode gate in the release-deploy runbook); the omission's
+    // catalog-equality and proxy-scope checks remain as inner defenses either
+    // way.
+    $settings['operatingMode'] = Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas'
+      ? 'saas'
+      : 'self_hosted';
+
     // Return the configuration as a cacheable JSON response.
     $response = new CacheableJsonResponse($settings);
     $response->addCacheableDependency($cache_metadata);
