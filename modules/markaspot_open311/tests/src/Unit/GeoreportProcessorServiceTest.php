@@ -2914,7 +2914,10 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     $this->assertSame('Resolved by the city', $full['status_notes']);
     $this->assertSame($full['status_notes'], $summary['status_notes']);
+    $this->assertSame('check-circle', $full['extended_attributes']['markaspot']['status_icon']);
+    $this->assertSame('check-circle', $summary['extended_attributes']['markaspot']['status_icon']);
     $this->assertArrayHasKey('status_notes', $full['extended_attributes']['markaspot']);
+    $this->assertSame('clock', $full['extended_attributes']['markaspot']['status_notes'][0]['status_icon']);
     $this->assertArrayNotHasKey('status_notes', $summary['extended_attributes']['markaspot']);
 
     unset($full['extended_attributes']['markaspot']['status_notes']);
@@ -2922,6 +2925,30 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertSame(1, $statusNotesField->referencedEntityLoads);
     $this->assertSame(2, $statusNotesField->iterations);
     $this->assertSame(2, $statusNotesField->latestItemLoads);
+  }
+
+  /**
+   * Full extensions expose an empty status-note history consistently.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testExtensionsTrueIncludesEmptyStatusNoteHistory(): void {
+    [$node] = $this->buildMappedNodeWithStatusNotes(5102, FALSE);
+
+    $full = $this->processor->mapNodeToServiceRequest($node, 'user', [
+      'langcode' => 'en',
+      'extensions' => 'true',
+    ]);
+    $summary = $this->processor->mapNodeToServiceRequest($node, 'user', [
+      'langcode' => 'en',
+      'extensions' => 'summary',
+      '_extensions_summary' => TRUE,
+    ]);
+
+    $this->assertSame('check-circle', $full['extended_attributes']['markaspot']['status_icon']);
+    $this->assertSame([], $full['extended_attributes']['markaspot']['status_notes']);
+    $this->assertSame('check-circle', $summary['extended_attributes']['markaspot']['status_icon']);
+    $this->assertArrayNotHasKey('status_notes', $summary['extended_attributes']['markaspot']);
   }
 
   /**
@@ -4437,12 +4464,17 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
-   * Builds a mapped request node with one complete status-note paragraph.
+   * Builds a mapped request node with an optional status-note paragraph.
+   *
+   * @param int $nid
+   *   The node ID.
+   * @param bool $withStatusNotes
+   *   Whether the node has a complete status-note paragraph.
    *
    * @return array{0: \Drupal\node\NodeInterface, 1: object}
    *   The mocked node and the observable status-notes field stub.
    */
-  protected function buildMappedNodeWithStatusNotes(int $nid): array {
+  protected function buildMappedNodeWithStatusNotes(int $nid, bool $withStatusNotes = TRUE): array {
     $fieldValue = static function (mixed $value, ?int $targetId = NULL) {
       return new class($value, $targetId) {
 
@@ -4474,12 +4506,37 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       };
     };
 
+    $statusIconField = $this->createMock(FieldItemListInterface::class);
+    $statusIconField->method('isEmpty')->willReturn(FALSE);
+    $statusIconField->method('__isset')->with('value')->willReturn(TRUE);
+    $statusIconField->method('__get')->with('value')->willReturn('check-circle');
+    $historyStatusIconField = $this->createMock(FieldItemListInterface::class);
+    $historyStatusIconField->method('isEmpty')->willReturn(FALSE);
+    $historyStatusIconField->method('__isset')->with('value')->willReturn(TRUE);
+    $historyStatusIconField->method('__get')->with('value')->willReturn('clock');
+
     $statusTerm = $this->createMock(TermInterface::class);
     $statusTerm->method('hasTranslation')->willReturn(FALSE);
     $statusTerm->method('getName')->willReturn('Resolved');
-    $statusTerm->method('hasField')->willReturn(FALSE);
-    $this->termStorage->method('loadMultiple')->willReturn([77 => $statusTerm]);
-    $this->termStorage->method('load')->with(77)->willReturn($statusTerm);
+    $statusTerm->method('hasField')->willReturnCallback(
+      static fn (string $fieldName): bool => $fieldName === 'field_status_icon',
+    );
+    $statusTerm->method('get')->with('field_status_icon')->willReturn($statusIconField);
+    $historyStatusTerm = $this->createMock(TermInterface::class);
+    $historyStatusTerm->method('hasTranslation')->willReturn(FALSE);
+    $historyStatusTerm->method('getName')->willReturn('In progress');
+    $historyStatusTerm->method('hasField')->willReturnCallback(
+      static fn (string $fieldName): bool => $fieldName === 'field_status_icon',
+    );
+    $historyStatusTerm->method('get')->with('field_status_icon')->willReturn($historyStatusIconField);
+    $terms = [
+      77 => $statusTerm,
+      78 => $historyStatusTerm,
+    ];
+    $this->termStorage->method('loadMultiple')->willReturn($terms);
+    $this->termStorage->method('load')->willReturnCallback(
+      static fn (int $termId): ?TermInterface => $terms[$termId] ?? NULL,
+    );
     $this->termStorage->method('loadByProperties')->willReturn([]);
 
     $note = $this->createMock(Paragraph::class);
@@ -4492,7 +4549,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $note->method('get')->willReturnCallback(
       static fn (string $fieldName): object => match ($fieldName) {
         'field_status_note' => $fieldValue('Resolved by the city'),
-        'field_status_term' => $fieldValue(NULL, 77),
+        'field_status_term' => $fieldValue(NULL, 78),
         'created' => $fieldValue(1717500000),
       },
     );
@@ -4513,7 +4570,8 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       public function __construct(public ?Paragraph $entity) {}
 
     };
-    $statusNotesField = new class([$statusNoteItem, $danglingStatusNoteItem]) implements \Countable, \IteratorAggregate {
+    $statusNoteItems = $withStatusNotes ? [$statusNoteItem, $danglingStatusNoteItem] : [];
+    $statusNotesField = new class($statusNoteItems) implements \Countable, \IteratorAggregate {
 
       /**
        * Complete-chain entity load count.
@@ -4539,7 +4597,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
        * Field emptiness.
        */
       public function isEmpty(): bool {
-        return FALSE;
+        return $this->items === [];
       }
 
       /**
@@ -4586,13 +4644,17 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $node->method('isPublished')->willReturn(TRUE);
     $node->method('access')->willReturn(FALSE);
     $node->method('hasField')->willReturnCallback(
-      static fn (string $fieldName): bool => $fieldName === 'field_status_notes',
+      static fn (string $fieldName): bool => in_array($fieldName, [
+        'field_status',
+        'field_status_notes',
+      ], TRUE),
     );
     $node->method('get')->willReturnCallback(
       static fn (string $fieldName): object => match ($fieldName) {
         'request_id' => $fieldValue('REQ-5101'),
         'created' => $fieldValue(1717400000),
         'changed' => $fieldValue(1717500000),
+        'field_status' => $fieldValue(NULL, 77),
         'field_status_notes' => $statusNotesField,
         default => $emptyField,
       },

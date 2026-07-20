@@ -3595,6 +3595,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Process status information.
+    $extendedAttributes['status_icon'] = '';
     if ($node->hasField('field_status') && !$node->get('field_status')->isEmpty()) {
       $statusId = $node->get('field_status')->target_id;
       if (isset($terms[$statusId])) {
@@ -3606,6 +3607,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $extendedAttributes['status_hex'] = ($term->hasField('field_status_hex') && !$term->get('field_status_hex')->isEmpty())
           ? $term->get('field_status_hex')->color
           : '';
+        $extendedAttributes['status_icon'] = ($term->hasField('field_status_icon') && !$term->get('field_status_icon')->isEmpty())
+          ? $term->get('field_status_icon')->value ?? ''
+          : '';
       }
       else {
         $extendedAttributes['status_descriptive_name'] = '';
@@ -3614,6 +3618,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Process status notes with preloaded terms.
+    if ($includeStatusNotes) {
+      $extendedAttributes['status_notes'] = [];
+    }
     if ($includeStatusNotes && $node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
       $statusNotes = [];
       $logCount = -1;
