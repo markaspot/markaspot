@@ -34,6 +34,7 @@ use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\ClientInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -2894,6 +2895,36 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * Summary extensions omit only the full status-note history.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testExtensionsSummaryOmitsStatusNoteHistory(): void {
+    [$node, $statusNotesField] = $this->buildMappedNodeWithStatusNotes(5101);
+
+    $full = $this->processor->mapNodeToServiceRequest($node, 'user', [
+      'langcode' => 'en',
+      'extensions' => 'true',
+    ]);
+    $summary = $this->processor->mapNodeToServiceRequest($node, 'user', [
+      'langcode' => 'en',
+      'extensions' => 'summary',
+      '_extensions_summary' => TRUE,
+    ]);
+
+    $this->assertSame('Resolved by the city', $full['status_notes']);
+    $this->assertSame($full['status_notes'], $summary['status_notes']);
+    $this->assertArrayHasKey('status_notes', $full['extended_attributes']['markaspot']);
+    $this->assertArrayNotHasKey('status_notes', $summary['extended_attributes']['markaspot']);
+
+    unset($full['extended_attributes']['markaspot']['status_notes']);
+    $this->assertSame($full, $summary);
+    $this->assertSame(1, $statusNotesField->referencedEntityLoads);
+    $this->assertSame(2, $statusNotesField->iterations);
+    $this->assertSame(2, $statusNotesField->latestItemLoads);
+  }
+
+  /**
    * Managers see the latest revision author as last_editor / last_edited.
    *
    * Asserts the keys are exposed under extended_attributes.markaspot, reflect
@@ -4403,6 +4434,171 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       });
 
     return $node;
+  }
+
+  /**
+   * Builds a mapped request node with one complete status-note paragraph.
+   *
+   * @return array{0: \Drupal\node\NodeInterface, 1: object}
+   *   The mocked node and the observable status-notes field stub.
+   */
+  protected function buildMappedNodeWithStatusNotes(int $nid): array {
+    $fieldValue = static function (mixed $value, ?int $targetId = NULL) {
+      return new class($value, $targetId) {
+
+        /**
+         * Constructs a field value stub.
+         */
+        public function __construct(
+          public mixed $value,
+          // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
+          public ?int $target_id = NULL,
+        ) {}
+
+        /**
+         * Field emptiness.
+         */
+        public function isEmpty(): bool {
+          return $this->value === NULL && $this->target_id === NULL;
+        }
+
+        /**
+         * Raw field values.
+         */
+        public function getValue(): array {
+          return $this->target_id === NULL
+            ? [['value' => $this->value]]
+            : [['target_id' => $this->target_id]];
+        }
+
+      };
+    };
+
+    $statusTerm = $this->createMock(TermInterface::class);
+    $statusTerm->method('hasTranslation')->willReturn(FALSE);
+    $statusTerm->method('getName')->willReturn('Resolved');
+    $statusTerm->method('hasField')->willReturn(FALSE);
+    $this->termStorage->method('loadMultiple')->willReturn([77 => $statusTerm]);
+    $this->termStorage->method('load')->with(77)->willReturn($statusTerm);
+    $this->termStorage->method('loadByProperties')->willReturn([]);
+
+    $note = $this->createMock(Paragraph::class);
+    $note->method('hasField')->willReturnCallback(
+      static fn (string $fieldName): bool => in_array($fieldName, [
+        'field_status_note',
+        'field_status_term',
+      ], TRUE),
+    );
+    $note->method('get')->willReturnCallback(
+      static fn (string $fieldName): object => match ($fieldName) {
+        'field_status_note' => $fieldValue('Resolved by the city'),
+        'field_status_term' => $fieldValue(NULL, 77),
+        'created' => $fieldValue(1717500000),
+      },
+    );
+
+    $statusNoteItem = new class($note) {
+
+      /**
+       * Constructs a paragraph reference item stub.
+       */
+      public function __construct(public ?Paragraph $entity) {}
+
+    };
+    $danglingStatusNoteItem = new class(NULL) {
+
+      /**
+       * Constructs a paragraph reference item stub.
+       */
+      public function __construct(public ?Paragraph $entity) {}
+
+    };
+    $statusNotesField = new class([$statusNoteItem, $danglingStatusNoteItem]) implements \Countable, \IteratorAggregate {
+
+      /**
+       * Complete-chain entity load count.
+       */
+      public int $referencedEntityLoads = 0;
+
+      /**
+       * Full-history iteration count.
+       */
+      public int $iterations = 0;
+
+      /**
+       * Latest-item lookup count.
+       */
+      public int $latestItemLoads = 0;
+
+      /**
+       * Constructs a status-notes field stub.
+       */
+      public function __construct(private array $items) {}
+
+      /**
+       * Field emptiness.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+      /**
+       * Loads the complete referenced paragraph chain.
+       */
+      public function referencedEntities(): array {
+        $this->referencedEntityLoads++;
+        return array_values(array_filter(array_map(
+          static fn (object $item): ?Paragraph => $item->entity,
+          $this->items,
+        )));
+      }
+
+      /**
+       * Counts the paragraph reference items.
+       */
+      public function count(): int {
+        return count($this->items);
+      }
+
+      /**
+       * Returns one reference item without loading the chain.
+       */
+      public function get(int $delta): ?object {
+        $this->latestItemLoads++;
+        return $this->items[$delta] ?? NULL;
+      }
+
+      /**
+       * Iterates the full status-note history.
+       */
+      public function getIterator(): \Traversable {
+        $this->iterations++;
+        yield from $this->items;
+      }
+
+    };
+
+    $emptyField = $fieldValue(NULL);
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn($nid);
+    $node->method('hasTranslation')->willReturn(FALSE);
+    $node->method('getTitle')->willReturn('Request with status history');
+    $node->method('isPublished')->willReturn(TRUE);
+    $node->method('access')->willReturn(FALSE);
+    $node->method('hasField')->willReturnCallback(
+      static fn (string $fieldName): bool => $fieldName === 'field_status_notes',
+    );
+    $node->method('get')->willReturnCallback(
+      static fn (string $fieldName): object => match ($fieldName) {
+        'request_id' => $fieldValue('REQ-5101'),
+        'created' => $fieldValue(1717400000),
+        'changed' => $fieldValue(1717500000),
+        'field_status_notes' => $statusNotesField,
+        default => $emptyField,
+      },
+    );
+
+    return [$node, $statusNotesField];
   }
 
   /**

@@ -406,6 +406,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     // Internal markers set further down; never accept them from the wire.
     unset(
       $parameters['_jurisdiction_read_scope'],
+      $parameters['_extensions_summary'],
       $parameters['_request_list_sort'],
       $parameters['_request_list_pagination'],
       $parameters['_request_list_total']
@@ -416,6 +417,13 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
     // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+
+    // The summary extension mode is exclusive to this index resource. Keep
+    // the public extensions parameter permissive for legacy clients and pass
+    // an internal serialization marker only for the exact new mode.
+    if (($parameters['extensions'] ?? NULL) === 'summary') {
+      $parameters['_extensions_summary'] = TRUE;
+    }
 
     // Jurisdiction isolation for dashboard-level users (tenant admins,
     // moderators, editorial) reading foreign jurisdictions follows a

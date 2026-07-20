@@ -53,6 +53,7 @@ class GeoreportCacheSubscriber implements EventSubscriberInterface {
     if ($response instanceof CacheableResponseInterface) {
       $response->getCacheableMetadata()->addCacheContexts([
         'languages:language_content',
+        'url.query_args:extensions',
         'url.query_args:langcode',
       ]);
     }

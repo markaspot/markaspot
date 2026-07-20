@@ -332,6 +332,7 @@ class GeoreportRequestResource extends ResourceBase {
     // Internal markers set further down; never accept them from the wire.
     unset(
       $parameters['_jurisdiction_read_scope'],
+      $parameters['_extensions_summary'],
       $parameters['_request_list_sort'],
       $parameters['_request_list_pagination'],
       $parameters['_request_list_total']

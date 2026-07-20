@@ -164,6 +164,7 @@ class GeoreportCacheSubscriberTest extends UnitTestCase {
 
     $contexts = $response->getCacheableMetadata()->getCacheContexts();
     $this->assertContains('languages:language_content', $contexts);
+    $this->assertContains('url.query_args:extensions', $contexts);
     $this->assertContains('url.query_args:langcode', $contexts);
   }
 

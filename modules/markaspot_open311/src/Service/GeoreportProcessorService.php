@@ -2207,7 +2207,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Add status_notes if available (standard optional field per GeoReport v2 spec)
     // Note: spec uses 'status_notes' not 'status_note'.
-    $statusNote = $this->getStatusNote($node);
+    $statusNote = $this->getStatusNote(
+      $node,
+      !empty($parameters['_extensions_summary']),
+    );
     if (!empty($statusNote)) {
       $request['status_notes'] = $statusNote;
     }
@@ -2342,7 +2345,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       // Merge rather than overwrite so any manager-gated keys already set on
       // extended_attributes.markaspot (e.g. last_editor / last_edited) survive.
       $request['extended_attributes']['markaspot'] = ($request['extended_attributes']['markaspot'] ?? [])
-        + $this->getExtendedAttributes($node, $langcode);
+        + $this->getExtendedAttributes(
+          $node,
+          $langcode,
+          empty($parameters['_extensions_summary']),
+        );
 
       // Add permissions - checks what operations the current user can perform.
       // We avoid using $node->access() as it triggers Group module's
@@ -3474,18 +3481,31 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param object $node
    *   The node object.
+   * @param bool $latestOnly
+   *   Whether to load only the latest referenced paragraph.
    *
    * @return string
    *   The latest status note text.
    */
-  private function getStatusNote(object $node): string {
+  private function getStatusNote(object $node, bool $latestOnly = FALSE): string {
     if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
-      $statusNotes = $node->get('field_status_notes')->referencedEntities();
-      if (!empty($statusNotes)) {
-        $latestNote = end($statusNotes);
-        if ($latestNote instanceof Paragraph && $latestNote->hasField('field_status_note')) {
-          return $latestNote->get('field_status_note')->value ?? '';
+      if ($latestOnly) {
+        $statusNotesField = $node->get('field_status_notes');
+        $latestNote = NULL;
+        for ($delta = $statusNotesField->count() - 1; $delta >= 0; $delta--) {
+          $candidate = $statusNotesField->get($delta)?->entity;
+          if ($candidate instanceof Paragraph) {
+            $latestNote = $candidate;
+            break;
+          }
         }
+      }
+      else {
+        $statusNotes = $node->get('field_status_notes')->referencedEntities();
+        $latestNote = !empty($statusNotes) ? end($statusNotes) : NULL;
+      }
+      if ($latestNote instanceof Paragraph && $latestNote->hasField('field_status_note')) {
+        return $latestNote->get('field_status_note')->value ?? '';
       }
     }
     return '';
@@ -3498,13 +3518,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The node object.
    * @param string $langcode
    *   The language code for translations.
+   * @param bool $includeStatusNotes
+   *   Whether to load and include the complete status-note history.
    *
    * @return array
    *   An associative array of extended attributes.
    */
-  private function getExtendedAttributes(object $node, string $langcode): array {
+  private function getExtendedAttributes(object $node, string $langcode, bool $includeStatusNotes = TRUE): array {
     static $extendedAttributesCache = [];
-    $cacheKey = $node->id() . '_' . $langcode;
+    $cacheKey = $node->id() . '_' . $langcode . '_' . (int) $includeStatusNotes;
 
     // Return from cache if available.
     if (isset($extendedAttributesCache[$cacheKey])) {
@@ -3534,7 +3556,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Also collect status note term IDs.
     $statusNoteTermIds = [];
-    if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
+    if ($includeStatusNotes && $node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
       foreach ($node->get('field_status_notes') as $note) {
         if ($note->entity && $note->entity->hasField('field_status_term') && !$note->entity->get('field_status_term')->isEmpty()) {
           $statusNoteTermIds[] = $note->entity->get('field_status_term')->target_id;
@@ -3592,7 +3614,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Process status notes with preloaded terms.
-    if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
+    if ($includeStatusNotes && $node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
       $statusNotes = [];
       $logCount = -1;
 
