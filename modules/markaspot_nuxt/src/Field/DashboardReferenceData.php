@@ -136,7 +136,6 @@ final class DashboardReferenceData {
         'alt' => trim((string) ($image->alt ?? '')),
       ];
       if ($media->hasField('field_ai_hazard_category')
-        && self::sparseFieldRequested('field_hazard_category')
         && !$media->get('field_ai_hazard_category')->isEmpty()
         && $media->get('field_ai_hazard_category')->access('view', $account)) {
         $items[array_key_last($items)]['hazard_category'] = (string) $media->get('field_ai_hazard_category')->value;
@@ -283,22 +282,6 @@ final class DashboardReferenceData {
       static fn (NodeInterface $node): bool => $node->hasField($field_name)
         && $node->get($field_name)->access('view', $account)
     ));
-  }
-
-  /**
-   * Checks whether a node field is present in the active sparse fieldset.
-   */
-  private static function sparseFieldRequested(string $field_name): bool {
-    $request = \Drupal::requestStack()->getCurrentRequest();
-    if ($request === NULL) {
-      return FALSE;
-    }
-    $fieldsets = $request->query->all('fields');
-    if (!isset($fieldsets['node--service_request'])) {
-      return TRUE;
-    }
-    $requested = array_map('trim', explode(',', (string) $fieldsets['node--service_request']));
-    return in_array($field_name, $requested, TRUE);
   }
 
   /**

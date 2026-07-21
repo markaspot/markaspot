@@ -9,6 +9,7 @@ use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\Core\Database\Database;
 use Drupal\file\Entity\File;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_nuxt\Field\DashboardReferenceData;
 use Drupal\media\Entity\Media;
 use Drupal\media\Entity\MediaType;
 use Drupal\node\Entity\Node;
@@ -178,6 +179,51 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
       'field_request_media' => [['target_id' => 999999]],
     ]);
     $this->assertTrue($missing->get('dashboard_media')->isEmpty());
+  }
+
+  /**
+   * Hazard metadata does not vary with the node sparse fieldset.
+   */
+  public function testDashboardMediaHazardCategoryIgnoresSparseFieldset(): void {
+    $file = File::create([
+      'uri' => 'public://hazard-dashboard-photo.jpg',
+      'status' => 1,
+    ]);
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'request_image',
+      'name' => 'Hazard dashboard photo',
+      'status' => 1,
+      'field_ai_hazard_category' => 'fire',
+      'field_media_image' => ['target_id' => $file->id()],
+    ]);
+    $media->save();
+    $node = $this->createRequest([
+      'field_request_media' => [$media->id()],
+    ]);
+    $viewer = $this->createUser(['access content', 'view media', 'view field_request_media']);
+    $this->container->get('current_user')->setAccount($viewer);
+    $request_stack = $this->container->get('request_stack');
+    $values = [];
+
+    $requests = [
+      Request::create('/jsonapi/node/service_request'),
+      Request::create('/jsonapi/node/service_request', 'GET', [
+        'fields' => ['node--service_request' => 'dashboard_media'],
+      ]),
+    ];
+    foreach ($requests as $request) {
+      $request_stack->push($request);
+      try {
+        $values[] = DashboardReferenceData::media($node, $viewer);
+      }
+      finally {
+        $request_stack->pop();
+      }
+    }
+
+    $this->assertSame($values[0], $values[1]);
+    $this->assertSame('fire', $values[0][0]['hazard_category']);
   }
 
   /**
