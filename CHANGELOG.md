@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.168](https://github.com/markaspot/markaspot/compare/11.9.167...11.9.168) (2026-07-21)
+
+### Features
+
+* expose operating mode in settings ([c732133](https://github.com/markaspot/markaspot/commit/c732133addd6f6a877a336f26275ba82382fe457))
+
 ## [11.9.167](https://github.com/markaspot/markaspot/compare/11.9.166...11.9.167) (2026-07-20)
 
 ### Performance
