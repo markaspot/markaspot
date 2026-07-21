@@ -7,10 +7,14 @@
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\file\Entity\File;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Field\DashboardMediaItemList;
+use Drupal\markaspot_nuxt\Field\DashboardReferenceData;
+use Drupal\markaspot_nuxt\Field\DashboardStatusNotesItemList;
 use Drupal\node\NodeInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
@@ -202,9 +206,95 @@ function markaspot_nuxt_user_access(UserInterface $user, $operation, AccountInte
 }
 
 /**
+ * Implements hook_entity_bundle_field_info().
+ */
+function markaspot_nuxt_entity_bundle_field_info(\Drupal\Core\Entity\EntityTypeInterface $entity_type, string $bundle, array $base_field_definitions): array {
+  if ($entity_type->id() !== 'node' || $bundle !== 'service_request') {
+    return [];
+  }
+
+  $fields['dashboard_media'] = BaseFieldDefinition::create('string_long')
+    ->setLabel(t('Dashboard media'))
+    ->setComputed(TRUE)
+    ->setClass(DashboardMediaItemList::class)
+    ->setReadOnly(TRUE)
+    ->setTranslatable(FALSE);
+
+  $fields['dashboard_status_notes'] = BaseFieldDefinition::create('string_long')
+    ->setLabel(t('Dashboard status notes'))
+    ->setComputed(TRUE)
+    ->setClass(DashboardStatusNotesItemList::class)
+    ->setReadOnly(TRUE)
+    ->setTranslatable(FALSE);
+
+  return $fields;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_load() for node entities.
+ */
+function markaspot_nuxt_node_load(array $nodes): void {
+  $request = \Drupal::requestStack()->getCurrentRequest();
+  $route_name = $request?->attributes->get('_route');
+  if (!is_string($route_name) || !str_starts_with($route_name, 'jsonapi.node--service_request.collection')) {
+    return;
+  }
+
+  $fieldsets = $request->query->all('fields');
+  $requested_fields = array_filter(array_map(
+    'trim',
+    explode(',', (string) ($fieldsets['node--service_request'] ?? ''))
+  ));
+  $computed_fields = array_values(array_intersect(
+    ['dashboard_media', 'dashboard_status_notes', 'assignee_label'],
+    $requested_fields
+  ));
+  if ($computed_fields === []) {
+    return;
+  }
+
+  $service_requests = array_filter(
+    $nodes,
+    static fn (NodeInterface $node): bool => $node->bundle() === 'service_request'
+  );
+  DashboardReferenceData::preload($service_requests, $computed_fields);
+}
+
+/**
  * Implements hook_entity_field_access().
  */
 function markaspot_nuxt_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResultInterface {
+  if ($field_definition->getTargetEntityTypeId() === 'node'
+    && $field_definition->getTargetBundle() === 'service_request'
+    && in_array($field_definition->getName(), ['dashboard_media', 'dashboard_status_notes'], TRUE)) {
+    $field_name = $field_definition->getName();
+    if ($operation === 'edit') {
+      return AccessResult::forbidden(sprintf('%s is computed and read-only.', $field_name));
+    }
+    if ($operation !== 'view') {
+      return AccessResult::neutral();
+    }
+
+    $node = $items?->getEntity();
+    if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+      return AccessResult::forbidden(sprintf('Service request context is required for %s access.', $field_name))
+        ->cachePerPermissions()
+        ->addCacheContexts(['user']);
+    }
+
+    $source_field = $field_name === 'dashboard_media'
+      ? 'field_request_media'
+      : 'field_status_notes';
+    if (!$node->hasField($source_field)) {
+      return AccessResult::neutral()->addCacheableDependency($node);
+    }
+
+    $result = $node->get($source_field)->access('view', $account, TRUE);
+    return DashboardReferenceData::addCacheability($result, $node, $account, $source_field)
+      ->cachePerPermissions()
+      ->addCacheableDependency($node);
+  }
+
   if ($operation === 'view' && $account->isAnonymous() && markaspot_nuxt_is_user_reference_field($field_definition)) {
     return AccessResult::forbidden()
       ->addCacheContexts(['user.roles:anonymous']);
@@ -239,20 +329,11 @@ function markaspot_nuxt_is_user_reference_field(FieldDefinitionInterface $field_
  * Implements hook_file_access().
  */
 function markaspot_nuxt_file_access(File $file, $operation, AccountInterface $account) {
-  $uri = $file->getFileUri();
-
-  // Log all access attempts for debugging.
-  \Drupal::logger('markaspot_nuxt')->notice('S3 File access: URI=@uri Op=@op User=@uid', [
-    '@uri' => $uri,
-    '@op' => $operation,
-    '@uid' => $account->id(),
-  ]);
-
   // Always allow access to files.
   // This is more permissive - adjust based on your security needs.
   return AccessResult::allowed()
     ->addCacheableDependency($file)
-    ->addCacheableDependency($account);
+    ->cachePerUser();
 }
 
 /**

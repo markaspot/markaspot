@@ -45,6 +45,7 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
     $this->assertIsString($install);
     $this->assertStringContainsString('function markaspot_nuxt_update_11907(): string', $install);
     $this->assertStringContainsString('function markaspot_nuxt_update_11909(): string', $install);
+    $this->assertStringContainsString('function markaspot_nuxt_update_11910(): string', $install);
     $this->assertStringContainsString("hasDefinition('jsonapi_resource_config')", $install);
     $this->assertStringContainsString('$resource = $storage->create($seed);', $install);
     $this->assertStringContainsString('$hardeningPolicies = [', $install);
@@ -58,6 +59,24 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
       ));
       $this->assertSame($resourceId, $config['id']);
       $this->assertFalse($config['disabled']);
+    }
+  }
+
+  /**
+   * Ensures zero-include list fields ship and are backfilled for tenants.
+   */
+  public function testDashboardComputedFieldsAreShippedAndBackfilled(): void {
+    $moduleRoot = dirname(__DIR__, 3);
+    $config = Yaml::decode((string) file_get_contents(
+      $moduleRoot . '/config/optional/jsonapi_extras.jsonapi_resource_config.node--service_request.yml'
+    ));
+    $install = file_get_contents($moduleRoot . '/markaspot_nuxt.install');
+
+    $this->assertIsString($install);
+    foreach (['dashboard_media', 'dashboard_status_notes'] as $fieldName) {
+      $this->assertFalse($config['resourceFields'][$fieldName]['disabled']);
+      $this->assertSame($fieldName, $config['resourceFields'][$fieldName]['fieldName']);
+      $this->assertStringContainsString("'" . $fieldName . "'", $install);
     }
   }
 

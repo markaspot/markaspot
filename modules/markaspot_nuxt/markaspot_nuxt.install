@@ -837,3 +837,39 @@ function markaspot_nuxt_update_11909(): string {
 
   return 'Enabled field_slug on the group--jur JSON:API resource.';
 }
+
+/**
+ * Exposes computed dashboard list fields through JSON:API.
+ */
+function markaspot_nuxt_update_11910(): string {
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  \Drupal::service('cache_tags.invalidator')->invalidateTags(['entity_field_info']);
+
+  $config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.node--service_request');
+  if ($config->isNew()) {
+    return 'Skipped dashboard list fields: the service request JSON:API resource is not installed.';
+  }
+
+  $resource_fields = $config->get('resourceFields') ?: [];
+  $changed = [];
+  foreach (['dashboard_media', 'dashboard_status_notes'] as $field_name) {
+    if (isset($resource_fields[$field_name]) && empty($resource_fields[$field_name]['disabled'])) {
+      continue;
+    }
+    $resource_fields[$field_name] = [
+      'disabled' => FALSE,
+      'fieldName' => $field_name,
+      'publicName' => $field_name,
+      'enhancer' => ['id' => ''],
+    ];
+    $changed[] = $field_name;
+  }
+
+  if ($changed === []) {
+    return 'Dashboard list fields are already enabled on JSON:API.';
+  }
+
+  $config->set('resourceFields', $resource_fields)->save(TRUE);
+  return 'Enabled dashboard JSON:API fields: ' . implode(', ', $changed) . '.';
+}

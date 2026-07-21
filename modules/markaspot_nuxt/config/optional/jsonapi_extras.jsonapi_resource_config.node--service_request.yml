@@ -182,6 +182,18 @@ resourceFields:
     publicName: assignee_label
     enhancer:
       id: ''
+  dashboard_media:
+    disabled: false
+    fieldName: dashboard_media
+    publicName: dashboard_media
+    enhancer:
+      id: ''
+  dashboard_status_notes:
+    disabled: false
+    fieldName: dashboard_status_notes
+    publicName: dashboard_status_notes
+    enhancer:
+      id: ''
   field_attachment:
     disabled: false
     fieldName: field_attachment
