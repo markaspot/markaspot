@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - image_effects
+name: markaspot_dashboard_media
+label: 'Dashboard Media (480)'
+effects:
+  c113fbfb-fa1f-4030-886d-a148db781053:
+    uuid: c113fbfb-fa1f-4030-886d-a148db781053
+    id: image_effects_auto_orient
+    weight: -10
+    data:
+      scan_exif: true
+  4b9b639d-5ad1-4392-b4e0-c8d62bf383cd:
+    uuid: 4b9b639d-5ad1-4392-b4e0-c8d62bf383cd
+    id: image_scale
+    weight: -9
+    data:
+      width: 480
+      height: 480
+      upscale: false
