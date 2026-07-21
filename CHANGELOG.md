@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.169](https://github.com/markaspot/markaspot/compare/11.9.168...11.9.169) (2026-07-21)
+
+### Bug Fixes
+
+* preserve deep pagination through access probes ([83ef7cc](https://github.com/markaspot/markaspot/commit/83ef7cccde6696955a8c47172ef8a498436313cd))
+* protect dashboard status note summaries ([2940513](https://github.com/markaspot/markaspot/commit/2940513ef8db8ed62ba56ee5e85ad9fd41b0bb6e))
+* stabilize dashboard hazard metadata ([7f3f631](https://github.com/markaspot/markaspot/commit/7f3f631354d524c081d8a26456cc9b5dda2fad5a))
+
+### Performance
+
+* eliminate dashboard list includes ([96b5a1b](https://github.com/markaspot/markaspot/commit/96b5a1b29f5f813e421b18ddacd1d52e6714a42f))
+
 ## [11.9.168](https://github.com/markaspot/markaspot/compare/11.9.167...11.9.168) (2026-07-21)
 
 ### Features
