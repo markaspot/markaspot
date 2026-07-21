@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.170](https://github.com/markaspot/markaspot/compare/11.9.169...11.9.170) (2026-07-21)
+
+### Bug Fixes
+
+* preserve dashboard media aspect ratio ([f62cdf2](https://github.com/markaspot/markaspot/commit/f62cdf2c63f0ebdd062ae46e65010ade930d6ed2))
+
+### Performance
+
+* preload computed fields when no sparse fieldset is given ([c802b57](https://github.com/markaspot/markaspot/commit/c802b572db53e0eb104074bd41b4792ce8ac891f))
+
 ## [11.9.169](https://github.com/markaspot/markaspot/compare/11.9.168...11.9.169) (2026-07-21)
 
 ### Bug Fixes
