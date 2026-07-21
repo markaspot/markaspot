@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_nuxt\Kernel;
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Config\FileStorage;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\Core\Database\Database;
 use Drupal\file\Entity\File;
+use Drupal\image\Entity\ImageStyle;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_nuxt\Field\DashboardReferenceData;
 use Drupal\media\Entity\Media;
@@ -45,7 +48,11 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
     'filter',
     'text',
     'file',
+    'file_mdm',
+    'file_mdm_exif',
+    'file_mdm_font',
     'image',
+    'image_effects',
     'node',
     'taxonomy',
     'media',
@@ -79,6 +86,11 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
     $this->installSchema('node', ['node_access']);
     $this->installSchema('file', ['file_usage']);
     $this->installConfig(['system', 'user', 'field', 'filter', 'node', 'image']);
+
+    $source = new FileStorage(dirname(__DIR__, 3) . '/config/install');
+    $style_config = $source->read('image.style.markaspot_dashboard_media');
+    $this->assertIsArray($style_config);
+    ImageStyle::create($style_config)->save();
 
     User::create(['uid' => 0, 'name' => '', 'status' => 0])->save();
     User::create([
@@ -123,7 +135,7 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
   }
 
   /**
-   * The media field returns thumbnail metadata and handles missing targets.
+   * The media field uses the dashboard style and handles missing targets.
    */
   public function testDashboardMediaValueAndMissingReferences(): void {
     $file = File::create([
@@ -162,7 +174,7 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
       $request_stack->pop();
     }
     $this->assertSame($media->uuid(), $value[0]['uuid']);
-    $this->assertStringContainsString('/styles/thumbnail/public/dashboard-photo.jpg', $value[0]['url']);
+    $this->assertStringContainsString('/styles/markaspot_dashboard_media/public/dashboard-photo.jpg', $value[0]['url']);
     $this->assertSame($file->uuid(), $value[0]['cache_key']);
     $this->assertSame('Broken streetlight', $value[0]['alt']);
     $this->assertSame('fire', $value[0]['hazard_category']);
@@ -179,6 +191,65 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
       'field_request_media' => [['target_id' => 999999]],
     ]);
     $this->assertTrue($missing->get('dashboard_media')->isEmpty());
+  }
+
+  /**
+   * The media field falls back to thumbnail before the update hook has run.
+   */
+  public function testDashboardMediaFallsBackWhenDashboardStyleIsMissing(): void {
+    $style = ImageStyle::load('markaspot_dashboard_media');
+    $this->assertNotNull($style);
+    $style->delete();
+
+    $file = File::create([
+      'uri' => 'public://fallback-dashboard-photo.jpg',
+      'status' => 1,
+    ]);
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'request_image',
+      'name' => 'Fallback dashboard photo',
+      'status' => 1,
+      'field_media_image' => ['target_id' => $file->id()],
+    ]);
+    $media->save();
+    $node = $this->createRequest([
+      'field_request_media' => [$media->id()],
+    ]);
+    $viewer = $this->createUser(['access content', 'view media', 'view field_request_media']);
+
+    $value = DashboardReferenceData::media($node, $viewer);
+    $access = DashboardReferenceData::addCacheability(
+      AccessResult::allowed(),
+      $node,
+      $viewer,
+      'field_request_media'
+    );
+
+    $this->assertStringContainsString('/styles/thumbnail/public/fallback-dashboard-photo.jpg', $value[0]['url']);
+    $this->assertContains('config:image.style.markaspot_dashboard_media', $access->getCacheTags());
+  }
+
+  /**
+   * The dashboard image style scales without cropping.
+   */
+  public function testDashboardMediaStyleHasNoCropEffect(): void {
+    $style = ImageStyle::load('markaspot_dashboard_media');
+    $this->assertNotNull($style);
+    $effects = array_values($style->getEffects()->getConfiguration());
+
+    $this->assertCount(2, $effects);
+    $this->assertSame('image_effects_auto_orient', $effects[0]['id']);
+    $this->assertSame(-10, $effects[0]['weight']);
+    $this->assertTrue($effects[0]['data']['scan_exif']);
+    $this->assertSame('image_scale', $effects[1]['id']);
+    $this->assertSame(-9, $effects[1]['weight']);
+    $this->assertSame(480, $effects[1]['data']['width']);
+    $this->assertSame(480, $effects[1]['data']['height']);
+    $this->assertFalse($effects[1]['data']['upscale']);
+    foreach ($effects as $effect) {
+      $this->assertStringNotContainsString('crop', $effect['id']);
+    }
   }
 
   /**

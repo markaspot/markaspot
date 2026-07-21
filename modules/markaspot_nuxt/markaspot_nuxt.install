@@ -873,3 +873,25 @@ function markaspot_nuxt_update_11910(): string {
   $config->set('resourceFields', $resource_fields)->save(TRUE);
   return 'Enabled dashboard JSON:API fields: ' . implode(', ', $changed) . '.';
 }
+
+/**
+ * Creates the crop-free image style used by dashboard media previews.
+ */
+function markaspot_nuxt_update_11911(): string {
+  $style_storage = \Drupal::entityTypeManager()->getStorage('image_style');
+  if ($style_storage->load('markaspot_dashboard_media')) {
+    \Drupal::logger('markaspot_nuxt')->notice('Skipped dashboard media image style creation: markaspot_dashboard_media already exists.');
+    return 'Skipped dashboard media image style creation: markaspot_dashboard_media already exists.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
+  $source = new FileStorage($module_path . '/config/install');
+  $config_data = $source->read('image.style.markaspot_dashboard_media');
+  if (empty($config_data)) {
+    \Drupal::logger('markaspot_nuxt')->warning('Could not create dashboard media image style: install config is missing.');
+    throw new \RuntimeException('Could not create dashboard media image style: install config is missing.');
+  }
+
+  $style_storage->create($config_data)->save();
+  return 'Created the markaspot_dashboard_media image style.';
+}

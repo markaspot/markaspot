@@ -21,6 +21,16 @@ use Drupal\taxonomy\TermInterface;
 final class DashboardReferenceData {
 
   /**
+   * Image style used for dashboard media previews.
+   */
+  private const DASHBOARD_IMAGE_STYLE = 'markaspot_dashboard_media';
+
+  /**
+   * Image style used until the dashboard style update has run.
+   */
+  private const FALLBACK_IMAGE_STYLE = 'thumbnail';
+
+  /**
    * Preloads all entities used by computed list fields in bounded queries.
    *
    * @param \Drupal\node\NodeInterface[] $nodes
@@ -53,7 +63,7 @@ final class DashboardReferenceData {
       if ($file_ids !== []) {
         $entity_type_manager->getStorage('file')->loadMultiple(array_unique($file_ids));
       }
-      $entity_type_manager->getStorage('image_style')->load('thumbnail');
+      self::dashboardImageStyle();
     }
 
     if (in_array('dashboard_status_notes', $requested_fields, TRUE)) {
@@ -92,7 +102,7 @@ final class DashboardReferenceData {
   }
 
   /**
-   * Returns access-filtered thumbnail data.
+   * Returns access-filtered dashboard media data.
    *
    * @return array<int, array<string, string>>
    *   At most one item for each referenced media entity.
@@ -102,7 +112,7 @@ final class DashboardReferenceData {
       return [];
     }
 
-    $style = \Drupal::entityTypeManager()->getStorage('image_style')->load('thumbnail');
+    $style = self::dashboardImageStyle();
     if (!$style instanceof ImageStyleInterface) {
       return [];
     }
@@ -241,7 +251,8 @@ final class DashboardReferenceData {
     }
 
     if ($source_field === 'field_request_media') {
-      $style = \Drupal::entityTypeManager()->getStorage('image_style')->load('thumbnail');
+      $result->addCacheableDependency(\Drupal::config('image.style.' . self::DASHBOARD_IMAGE_STYLE));
+      $style = self::dashboardImageStyle();
       if ($style instanceof ImageStyleInterface) {
         $result->addCacheableDependency($style);
       }
@@ -258,6 +269,20 @@ final class DashboardReferenceData {
     foreach (['field_media_image', 'thumbnail'] as $field_name) {
       if ($media->hasField($field_name) && !$media->get($field_name)->isEmpty()) {
         return $media->get($field_name);
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Loads the dashboard image style with a migration-safe fallback.
+   */
+  private static function dashboardImageStyle(): ?ImageStyleInterface {
+    $storage = \Drupal::entityTypeManager()->getStorage('image_style');
+    foreach ([self::DASHBOARD_IMAGE_STYLE, self::FALLBACK_IMAGE_STYLE] as $style_id) {
+      $style = $storage->load($style_id);
+      if ($style instanceof ImageStyleInterface) {
+        return $style;
       }
     }
     return NULL;
