@@ -275,6 +275,15 @@ function markaspot_nuxt_entity_field_access(string $operation, FieldDefinitionIn
       return AccessResult::neutral();
     }
 
+    // Status-note summaries are dashboard-only data. Some legacy tenant
+    // configurations grant anonymous users access to field_status_notes, so
+    // mirroring the source field alone is not sufficient to protect the
+    // computed field when Drupal is exposed without the Nuxt proxy.
+    if ($field_name === 'dashboard_status_notes' && $account->isAnonymous()) {
+      return AccessResult::forbidden('Dashboard status notes require an authenticated account.')
+        ->addCacheContexts(['user.roles:anonymous']);
+    }
+
     $node = $items?->getEntity();
     if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
       return AccessResult::forbidden(sprintf('Service request context is required for %s access.', $field_name))

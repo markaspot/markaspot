@@ -19,6 +19,8 @@ use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\Tests\user\Traits\UserCreationTrait;
 use Drupal\user\Entity\User;
+use Drupal\user\Entity\Role;
+use Drupal\user\RoleInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -360,6 +362,21 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
       $node->get('dashboard_status_notes')->access('view', $denied)
     );
     $this->assertFalse($node->get('dashboard_status_notes')->access('view', $denied));
+  }
+
+  /**
+   * Anonymous source access never exposes the dashboard status summary.
+   */
+  public function testDashboardStatusNotesRejectsAnonymousSourceAccess(): void {
+    $node = $this->createRequest();
+    $anonymous_role = Role::load(RoleInterface::ANONYMOUS_ID);
+    $this->assertNotNull($anonymous_role);
+    $anonymous_role->grantPermission('view field_status_notes')->save();
+    $anonymous = User::load(0);
+    $this->assertNotNull($anonymous);
+
+    $this->assertTrue($node->get('field_status_notes')->access('view', $anonymous));
+    $this->assertFalse($node->get('dashboard_status_notes')->access('view', $anonymous));
   }
 
   /**
