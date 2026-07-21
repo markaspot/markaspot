@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_nuxt\JsonApi;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
 
@@ -54,6 +55,17 @@ use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
  * @phpstan-ignore classExtendsInternalClass.classExtendsInternalClass
  */
 final class CandidateEntityQuery extends SqlQuery {
+  /**
+   * Number of SQL rows fetched by the most recent execution.
+   *
+   * Entity-query results are keyed by revision ID and therefore collapse
+   * duplicate SQL rows. The wrapper needs the pre-collapse count to determine
+   * whether the SQL range exhausted the candidate superset.
+   *
+   * @var int
+   */
+  private int $resultRowCount = 0;
+
   /**
    * The range from the original (source) query, captured before construction.
    *
@@ -124,6 +136,25 @@ final class CandidateEntityQuery extends SqlQuery {
     parent::finish();
     $this->remapSortToPrimaryDataTableAlias();
     return $this;
+  }
+
+  /**
+   * Captures the SQL row count before returning the keyed entity result.
+   *
+   * {@inheritdoc}
+   */
+  protected function result() {
+    if ($this->count) {
+      return parent::result();
+    }
+
+    $rows = $this->sqlQuery->execute()->fetchAll(FetchAs::List);
+    $this->resultRowCount = count($rows);
+    $result = [];
+    foreach ($rows as $row) {
+      $result[$row[0]] = $row[1];
+    }
+    return $result;
   }
 
   /**
@@ -238,6 +269,16 @@ final class CandidateEntityQuery extends SqlQuery {
    */
   public function getOriginalSort(): array {
     return $this->originalSort;
+  }
+
+  /**
+   * Returns the SQL row count from the most recent execution.
+   *
+   * @return int
+   *   The row count before entity-query key deduplication.
+   */
+  public function getResultRowCount(): int {
+    return $this->resultRowCount;
   }
 
   /**

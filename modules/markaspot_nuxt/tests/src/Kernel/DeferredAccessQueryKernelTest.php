@@ -8,6 +8,7 @@ use Drupal\Core\Database\Database;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\Entity\Query\Sql\Query;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\markaspot_nuxt\JsonApi\CandidateEntityQuery;
 use Drupal\markaspot_nuxt\JsonApi\DeferredAccessQueryWrapper;
 use Drupal\node\Entity\Node;
@@ -217,18 +218,21 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
   /**
    * Test: wrapper correctly excludes nodes the user cannot see.
    *
-   * Creates 7 nodes: 3 accessible (grant gid=1) and 4 restricted (grant
-   * gid=2). A user with gid=1 realm access must only see the 3 accessible
-   * nodes via both the direct query and the wrapper. Phase 1 (no access check)
-   * sees all 7; Phase 2 filters using the same node_access grants as the
-   * direct query, so the outputs must be identical.
-   *
-   * We control access via direct writes to node_access, bypassing the
-   * complexity of hook_node_access_records() registration in a kernel test.
+   * Creates 7 nodes: 3 owned by the acting user and 4 owned by another user.
+   * Core's node_access_test author realm lets the acting user see only their
+   * own nodes. Phase 1 sees all 7 without access checks, while Phase 2 and the
+   * direct query must both return only the 3 accessible nodes.
    */
   public function testWrapperExcludesInaccessibleNodes(): void {
+    $this->enableModules(['node_access_test']);
+
+    // Remove the global view-all row written before the grants module was
+    // enabled. Nodes saved below receive per-node author grants.
+    \Drupal::database()->delete('node_access')->execute();
+
+    $account = $this->drupalCreateUser(['access content']);
+    $other = $this->drupalCreateUser(['access content']);
     $accessible_nids = [];
-    $restricted_nids = [];
 
     // Distinct created timestamps keep the wrapper-vs-direct comparison
     // well-defined (SQL tie order is undefined; see the dedicated tie test).
@@ -238,7 +242,7 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
         'type' => 'service_request',
         'title' => "Accessible $i",
         'status' => 1,
-        'uid' => 1,
+        'uid' => $account->id(),
         'created' => $base + $i,
       ]);
       $node->save();
@@ -249,34 +253,12 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
         'type' => 'service_request',
         'title' => "Restricted $i",
         'status' => 1,
-        'uid' => 1,
+        'uid' => $other->id(),
         'created' => $base + 100 + $i,
       ]);
       $node->save();
-      $restricted_nids[] = (int) $node->id();
     }
 
-    // Write node_access grants: accessible nodes get gid=1, restricted get
-    // gid=2. The test user will only hold gid=1 realm so restricted nodes
-    // are blocked at the query access-tag level.
-    $db = \Drupal::database();
-    $db->delete('node_access')->execute();
-    foreach ($accessible_nids as $nid) {
-      $db->insert('node_access')
-        ->fields(['nid', 'langcode', 'fallback', 'gid', 'realm', 'grant_view', 'grant_update', 'grant_delete'])
-        ->values([$nid, 'en', 1, 1, 'node_access_test_realm', 1, 0, 0])
-        ->execute();
-    }
-    foreach ($restricted_nids as $nid) {
-      $db->insert('node_access')
-        ->fields(['nid', 'langcode', 'fallback', 'gid', 'realm', 'grant_view', 'grant_update', 'grant_delete'])
-        ->values([$nid, 'en', 1, 2, 'node_access_test_realm', 1, 0, 0])
-        ->execute();
-    }
-
-    // Use 'bypass node access' to avoid complex hook registration.
-    // The invariant under test is wrapper == direct query, not access rules.
-    $account = $this->drupalCreateUser(['access content', 'bypass node access']);
     $this->setCurrentUser($account);
 
     $inner = $this->buildInnerQuery(0, 26);
@@ -286,17 +268,20 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $wrapper_result = $wrapper->execute();
     $direct_result = $inner_clone->execute();
 
-    // The core invariant: wrapper == direct query, regardless of access level.
     $this->assertSame(
-          array_values($direct_result),
-          array_values($wrapper_result),
+          $direct_result,
+          $wrapper_result,
           'Wrapper must produce the same result as the direct inner query.'
       );
-    // With bypass node access, all 7 nodes are visible.
     $this->assertCount(
-          7,
+          3,
           $wrapper_result,
-          'All 7 nodes must be returned with bypass node access.'
+          'Only the 3 nodes owned by the acting user must be returned.'
+      );
+    $this->assertSame(
+          array_reverse($accessible_nids),
+          array_map('intval', array_values($wrapper_result)),
+          'The wrapper must exclude every node owned by the other user.'
       );
   }
 
@@ -323,9 +308,83 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
     $direct_result = $inner_clone->execute();
 
     $this->assertSame(
-          array_values($direct_result),
-          array_values($wrapper_result),
+          $direct_result,
+          $wrapper_result,
           'Wrapper result with offset paging must match direct query.'
+      );
+  }
+
+  /**
+   * Test: deep offset with low visibility uses the observed hit ratio.
+   *
+   * The newest 1,300 nodes are only visible to the acting user at roughly a
+   * 4.2% rate. Another 221 older nodes are visible, so offset 200 with length
+   * 21 has a complete page. The initial 305-row window contains visible hits,
+   * but fewer than the requested 221-row prefix. The hit-ratio estimate must
+   * jump directly to an exhausting second window instead of following the old
+   * blind 305, 1,220, 4,880 ladder.
+   */
+  public function testDeepOffsetWithLowVisibilityMatchesDirectQuery(): void {
+    $this->enableModules(['node_access_test']);
+    \Drupal::database()->delete('node_access')->execute();
+
+    $other = $this->drupalCreateUser(['access content']);
+    $account = $this->drupalCreateUser(['access content']);
+    $base = 1600000000;
+
+    // Make the older tail fully visible so the requested deep page exists.
+    for ($i = 0; $i < 221; $i++) {
+      $node = Node::create([
+        'type' => 'service_request',
+        'title' => "Older visible $i",
+        'status' => 1,
+        'uid' => $account->id(),
+        'created' => $base + $i,
+      ]);
+      $node->save();
+    }
+
+    // Only every 24th node in the newer prefix is visible to the account.
+    for ($i = 0; $i < 1300; $i++) {
+      $node = Node::create([
+        'type' => 'service_request',
+        'title' => "Newer sparse $i",
+        'status' => 1,
+        'uid' => $i % 24 === 0 ? $account->id() : $other->id(),
+        'created' => $base + 1000 + $i,
+      ]);
+      $node->save();
+    }
+
+    $this->setCurrentUser($account);
+
+    $inner = $this->buildInnerQuery(200, 21);
+    $inner_clone = clone $inner;
+    $wrapper = new DeferredAccessQueryWrapper($inner);
+
+    Database::startLog('deep_offset_low_visibility');
+    $wrapper_result = $wrapper->execute();
+    $log = Database::getLog('deep_offset_low_visibility');
+
+    $direct_result = $inner_clone->execute();
+
+    $this->assertSame(
+          $direct_result,
+          $wrapper_result,
+          'Deep wrapper result and entity-query keys must match the direct query.'
+      );
+    $this->assertCount(21, $wrapper_result, 'The deep page must be complete.');
+
+    $entity_query_count = 0;
+    foreach ($log as $entry) {
+      if (str_contains((string) $entry['query'], 'node_field_data')) {
+        $entity_query_count++;
+      }
+    }
+    $this->assertSame(
+          4,
+          $entity_query_count,
+          'The hit-ratio estimate must complete in 2 attempts and 4 entity queries.'
       );
   }
 
@@ -722,6 +781,90 @@ final class DeferredAccessQueryKernelTest extends KernelTestBase {
           4,
           $entity_query_count,
           'One widening step exhausts the set: 2 phases x 2 attempts = 4 queries, no further widening, no fallback.'
+      );
+  }
+
+  /**
+   * Test: duplicate candidate rows do not signal false exhaustion.
+   *
+   * Translations make the simple Phase-1 SQL return repeated revision/entity
+   * keys. The first 100 SQL rows therefore collapse to fewer than 100 keyed
+   * candidates and contain only inaccessible newer nodes. Exhaustion must use
+   * the pre-collapse SQL row count, widen once, and find the older visible
+   * nodes instead of returning an incorrect empty page.
+   */
+  public function testDuplicateCandidateRowsDoNotCauseFalseExhaustion(): void {
+    $this->enableModules(['language', 'node_access_test']);
+    ConfigurableLanguage::createFromLangcode('de')->save();
+    \Drupal::database()->delete('node_access')->execute();
+
+    $other = $this->drupalCreateUser(['access content']);
+    $account = $this->drupalCreateUser(['access content']);
+    $base = 1600000000;
+
+    $own_nids = [];
+    for ($i = 0; $i < 5; $i++) {
+      $node = Node::create([
+        'type' => 'service_request',
+        'title' => "Own $i",
+        'status' => 1,
+        'uid' => $account->id(),
+        'created' => $base + $i,
+      ]);
+      $node->save();
+      $own_nids[] = (int) $node->id();
+    }
+
+    for ($i = 0; $i < 60; $i++) {
+      $node = Node::create([
+        'type' => 'service_request',
+        'title' => "Foreign $i",
+        'status' => 1,
+        'uid' => $other->id(),
+        'created' => $base + 1000 + $i,
+      ]);
+      $node->addTranslation('de', [
+        'title' => "Fremd $i",
+        'status' => 1,
+        'uid' => $other->id(),
+        'created' => $base + 1000 + $i,
+      ]);
+      $node->save();
+    }
+
+    $this->setCurrentUser($account);
+
+    $inner = $this->buildInnerQuery(0, 3);
+    $inner_clone = clone $inner;
+    $wrapper = new DeferredAccessQueryWrapper($inner);
+
+    Database::startLog('duplicate_candidate_rows');
+    $wrapper_result = $wrapper->execute();
+    $log = Database::getLog('duplicate_candidate_rows');
+
+    $direct_result = $inner_clone->execute();
+
+    $this->assertSame(
+          $direct_result,
+          $wrapper_result,
+          'Duplicate candidate rows must not change the wrapper page.'
+      );
+    $this->assertSame(
+          [$own_nids[4], $own_nids[3], $own_nids[2]],
+          array_map('intval', array_values($wrapper_result)),
+          'The page must contain the newest accessible nodes after widening.'
+      );
+
+    $entity_query_count = 0;
+    foreach ($log as $entry) {
+      if (str_contains((string) $entry['query'], 'node_field_data')) {
+        $entity_query_count++;
+      }
+    }
+    $this->assertSame(
+          4,
+          $entity_query_count,
+          'A full duplicate SQL window must widen once before exhaustion.'
       );
   }
 

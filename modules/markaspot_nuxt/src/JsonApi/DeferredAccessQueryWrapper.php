@@ -63,11 +63,35 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
   private const MAX_TWO_PHASE_RANGE = 2048;
 
   /**
-   * Multiplier applied to the candidate window on each widening step.
+   * Safety factor numerator for hit-ratio-based window estimates.
    *
    * @var int
    */
-  private const WINDOW_WIDEN_FACTOR = 4;
+  private const WINDOW_SAFETY_NUMERATOR = 5;
+
+  /**
+   * Safety factor denominator for hit-ratio-based window estimates.
+   *
+   * Together with WINDOW_SAFETY_NUMERATOR this adds 25% headroom for uneven
+   * visibility distributions between candidate windows.
+   *
+   * @var int
+   */
+  private const WINDOW_SAFETY_DENOMINATOR = 4;
+
+  /**
+   * Conservative widening factor when a probe has no access-checked hits.
+   *
+   * @var int
+   */
+  private const ZERO_HIT_WIDEN_FACTOR = 4;
+
+  /**
+   * Hard bound on two-phase attempts before the direct-query fallback.
+   *
+   * @var int
+   */
+  private const MAX_TWO_PHASE_ROUNDS = 4;
 
   /**
    * Upper bound for the Phase-1 candidate window.
@@ -178,18 +202,17 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
   /**
    * Runs the two-phase logic and returns the Phase 2 result.
    *
-   * Starts with the initial candidate window and, while the page cannot be
-   * filled and Phase 1 is not exhausted, widens the window by
-   * WINDOW_WIDEN_FACTOR up to MAX_CANDIDATE_WINDOW. On moderation-heavy
-   * tenants where only a small fraction of the newest rows is visible to the
-   * requesting account (measured: 7 of the newest 105 nodes published on a
-   * 152k-node tenant), the page typically fills after two or three widenings
-   * at a few milliseconds each. This deliberately encodes NO assumption
-   * about WHY rows are invisible — it behaves identically for status,
-   * group-based access, or any future access layer, so it cannot silently
-   * omit rows the way an access-specific candidate pre-filter could.
-   * Only when the capped widening still cannot fill the page is the original
-   * inner query executed unchanged (correctness over speed).
+   * Starts with the initial candidate window and probes the access-checked
+   * prefix needed for the requested page. When that prefix is short, the next
+   * candidate window is estimated from the observed hit ratio with 25%
+   * headroom. A zero-hit probe widens conservatively by 4x without dividing.
+   * Every step is monotonically increasing, capped by MAX_CANDIDATE_WINDOW,
+   * and the loop is also bounded by MAX_TWO_PHASE_ROUNDS. This deliberately
+   * encodes NO assumption about WHY rows are invisible — it behaves
+   * identically for status, group-based access, or any future access layer,
+   * so it cannot silently omit rows the way an access-specific candidate
+   * pre-filter could. Only when the bounded widening cannot fill the page is
+   * the original inner query executed unchanged (correctness over speed).
    *
    * @param int $offset
    *   The page offset from the inner query's range.
@@ -203,38 +226,36 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    *   Entity query result in [revision_id => entity_id] format.
    */
   private function executeTwoPhase(int $offset, int $length, ?string $tiebreak_direction): array {
-    $initial_window = $offset + max(100, 5 * $length);
+    $required_rows = $offset + $length;
+    $window = min(
+          $offset + max(100, 5 * $length),
+          self::MAX_CANDIDATE_WINDOW,
+      );
 
-    // The first attempt always runs, even if the initial window already
-    // exceeds the cap; the cap only limits how far widening may go. Widening
-    // clamps to the cap so the ladder always includes one attempt AT the cap
-    // before giving up (a straight multiplication could jump past it and
-    // skip a cheap final attempt for deep pages).
-    $window = $initial_window;
-    while (TRUE) {
+    for ($round = 0; $round < self::MAX_TWO_PHASE_ROUNDS; $round++) {
       // Phase 1: fast candidate query without access checks.
       $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
       if ($tiebreak_direction !== NULL) {
         $candidate_query->sort('nid', $tiebreak_direction);
       }
-      $raw_result = $candidate_query->execute();
+      $candidate_result = $candidate_query->execute();
 
       // No candidates at all: the access-checked result is empty too, because
       // Phase 1 operates on a superset of the rows visible to the user.
-      if (empty($raw_result)) {
+      if (empty($candidate_result)) {
         return [];
       }
 
       // Exhausted = Phase 1 returned fewer rows than the window (there is
-      // nothing beyond this set). Use the RAW result count before dedupe for
-      // this check: if the DB returned < $window rows, there are no more
-      // rows to fetch.
-      $exhausted = count($raw_result) < $window;
+      // nothing beyond this set). CandidateEntityQuery records the SQL row
+      // count before fetchAllKeyed-style deduplication, so joins or translated
+      // data rows cannot create a false exhaustion signal.
+      $exhausted = $candidate_query->getResultRowCount() < $window;
 
       // Deduplicate while preserving insertion order. Duplicates arise from
       // multi-value fields or translated data-table rows when the simple
       // query joins against node_field_data. The window has slack for this.
-      $candidates = array_values(array_unique($raw_result));
+      $candidates = array_values(array_unique($candidate_result));
 
       // Phase 2: the original access-checked query, narrowed to candidates.
       // The same nid tiebreaker is appended so ties resolve identically in
@@ -245,20 +266,48 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
         $phase2->sort('nid', $tiebreak_direction);
       }
       $phase2->condition('nid', $candidates, 'IN');
+      // Probe the full access-checked prefix needed to produce the requested
+      // page. Keeping the original offset here would hide early hits from the
+      // widening logic and require offset + length visible candidates before
+      // Phase 2 could return even one row.
+      $phase2->range(0, $required_rows);
       $phase2_result = $phase2->execute();
+      $access_checked_count = count($phase2_result);
 
-      // Done when the page is full, or when Phase 1 already saw every
-      // matching row (nothing beyond the window could add results). A
-      // shortfall while more rows exist beyond the window widens and
-      // retries.
-      if ($exhausted || count($phase2_result) >= $length) {
-        return $phase2_result;
+      // The Phase-2 query is the sole visibility authority. Once it contains
+      // the complete requested prefix, or Phase 1 has exhausted its superset,
+      // slicing that ordered access-checked result is equivalent to applying
+      // the original SQL range. Preserve keys to retain the entity-query
+      // [revision_id => entity_id] result shape.
+      if ($exhausted || $access_checked_count >= $required_rows) {
+        return array_slice($phase2_result, $offset, $length, TRUE);
       }
 
       if ($window >= self::MAX_CANDIDATE_WINDOW) {
         break;
       }
-      $window = min($window * self::WINDOW_WIDEN_FACTOR, self::MAX_CANDIDATE_WINDOW);
+
+      if ($access_checked_count === 0) {
+        $estimated_window = $window * self::ZERO_HIT_WIDEN_FACTOR;
+      }
+      else {
+        // ceil(1.25 * window * required_rows / access_checked_count),
+        // expressed as integer arithmetic to avoid rounding down.
+        $numerator = self::WINDOW_SAFETY_NUMERATOR
+          * $window
+          * $required_rows;
+        $denominator = self::WINDOW_SAFETY_DENOMINATOR
+          * $access_checked_count;
+        $estimated_window = intdiv(
+              $numerator + $denominator - 1,
+              $denominator,
+          );
+      }
+
+      $window = min(
+          max($window + 1, $estimated_window),
+          self::MAX_CANDIDATE_WINDOW,
+      );
     }
 
     // The capped widening could not fill the page: fall back to the
