@@ -241,16 +241,21 @@ function markaspot_nuxt_node_load(array $nodes): void {
   }
 
   $fieldsets = $request->query->all('fields');
-  $requested_fields = array_filter(array_map(
-    'trim',
-    explode(',', (string) ($fieldsets['node--service_request'] ?? ''))
-  ));
-  $computed_fields = array_values(array_intersect(
-    ['dashboard_media', 'dashboard_status_notes', 'assignee_label'],
-    $requested_fields
-  ));
-  if ($computed_fields === []) {
-    return;
+  $computed_fields = ['dashboard_media', 'dashboard_status_notes', 'assignee_label'];
+  // Absent and empty sparse fieldsets are opposites, not synonyms. Without the
+  // parameter JSON:API serializes every field, so all computed fields are about
+  // to be built and preloading them pays off. An explicitly empty fieldset
+  // serializes no attributes at all, so the intersection below is empty and we
+  // bail out exactly as we do for a fieldset naming no computed field.
+  if (array_key_exists('node--service_request', $fieldsets)) {
+    $requested_fields = array_filter(array_map(
+      'trim',
+      explode(',', (string) $fieldsets['node--service_request'])
+    ));
+    $computed_fields = array_values(array_intersect($computed_fields, $requested_fields));
+    if ($computed_fields === []) {
+      return;
+    }
   }
 
   $service_requests = array_filter(
