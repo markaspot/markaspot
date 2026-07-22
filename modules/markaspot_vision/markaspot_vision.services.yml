@@ -21,5 +21,6 @@ services:
       - '@flood'
       - '@markaspot_nuxt.feature_scope_resolver'
       - '@markaspot_vision.media_analysis_access_guard'
+      - '@config.factory'
     tags:
       - { name: controller.service_arguments }

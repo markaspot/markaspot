@@ -51,6 +51,22 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('require_ai_screening') ?? TRUE,
     ];
 
+    $form['rate_limit'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Vision Request Rate Limit'),
+      '#description' => $this->t('Limits analysis requests per upload session. Set the maximum to 0 to disable this limiter completely.'),
+    ];
+
+    $form['rate_limit']['rate_limit_max'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Maximum requests per hour'),
+      '#default_value' => $config->get('rate_limit_max') ?? 10,
+      '#min' => 0,
+      '#step' => 1,
+      '#required' => TRUE,
+      '#description' => $this->t('Use 0 for no Drupal-side Vision rate limit. Cloud deployments can override this with MARKASPOT_VISION_RATE_LIMIT_MAX.'),
+    ];
+
     $form['blur'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Blur Preprocessing'),
@@ -271,6 +287,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
     // Save basic settings.
     $config
       ->set('multiple_uploads', $form_state->getValue('multiple_uploads'))
+      ->set('rate_limit_max', max(0, (int) $form_state->getValue('rate_limit_max')))
       ->set('require_ai_screening', $form_state->getValue('require_ai_screening'))
       ->set('enable_blur_preprocessing', (bool) $form_state->getValue('enable_blur_preprocessing'))
       ->set('blur_service_url', $form_state->getValue('blur_service_url'))

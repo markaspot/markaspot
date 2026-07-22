@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\markaspot_vision\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
@@ -65,6 +67,16 @@ class ImageProcessingControllerTest extends UnitTestCase {
   protected bool $allowMediaAnalysis = TRUE;
 
   /**
+   * Rate limit used by the mocked Vision configuration.
+   */
+  protected mixed $rateLimitMax = 10;
+
+  /**
+   * Private upload-session identifier returned by the access guard.
+   */
+  protected ?string $rateLimitIdentifier = 'csrf:test-fingerprint';
+
+  /**
    * Mocked logger.
    *
    * @var \Psr\Log\LoggerInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -125,6 +137,14 @@ class ImageProcessingControllerTest extends UnitTestCase {
       ->with('markaspot_vision')
       ->willReturn($this->logger);
 
+    $visionConfig = $this->createMock(ImmutableConfig::class);
+    $visionConfig->method('get')
+      ->willReturnCallback(fn ($key) => $key === 'rate_limit_max' ? $this->rateLimitMax : NULL);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_vision.settings')
+      ->willReturn($visionConfig);
+
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')
       ->willReturnMap([
@@ -138,6 +158,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $this->flood,
       $featureScopeResolver,
       $this->mediaAnalysisAccessGuard,
+      $configFactory,
     );
 
     // Inject entityTypeManager via reflection (ControllerBase stores it
@@ -162,6 +183,8 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $this->mediaAnalysisAccessGuard->method('canAnalyze')
       ->willReturnCallback(fn () => $this->allowMediaAnalysis);
+    $this->mediaAnalysisAccessGuard->method('getRateLimitIdentifier')
+      ->willReturnCallback(fn () => $this->rateLimitIdentifier);
   }
 
   /**
@@ -280,7 +303,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
    */
   public function testRateLimitExceededReturns429(): void {
     $this->flood->method('isAllowed')
-      ->with('markaspot_vision.analyze', 10, 3600, '127.0.0.1')
+      ->with('markaspot_vision.analyze', 10, 3600, 'csrf:test-fingerprint')
       ->willReturn(FALSE);
 
     $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
@@ -299,7 +322,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->flood->method('isAllowed')->willReturn(TRUE);
     $this->flood->expects($this->once())
       ->method('register')
-      ->with('markaspot_vision.analyze', 3600, '127.0.0.1');
+      ->with('markaspot_vision.analyze', 3600, 'csrf:test-fingerprint');
 
     // Request will fail at media loading, but register should still be called.
     $this->mediaStorage->method('loadByProperties')->willReturn([]);
@@ -309,17 +332,74 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests rate limiting uses the request client IP.
+   * Tests rate limiting falls back to the request client IP.
    */
-  public function testRateLimitUsesClientIp(): void {
+  public function testRateLimitFallsBackToClientIp(): void {
+    $this->rateLimitIdentifier = NULL;
     $this->flood->expects($this->once())
       ->method('isAllowed')
-      ->with('markaspot_vision.analyze', 10, 3600, '10.0.0.5')
+      ->with('markaspot_vision.analyze', 10, 3600, 'ip:10.0.0.5')
       ->willReturn(FALSE);
 
     $request = $this->createJsonRequest(['media_ids' => ['uuid-1']], '10.0.0.5');
     $response = $this->controller->getAIResults($request);
 
+    $this->assertEquals(429, $response->getStatusCode());
+  }
+
+  /**
+   * Tests a zero maximum disables the Drupal-side limiter completely.
+   */
+  public function testZeroRateLimitDisablesFloodChecks(): void {
+    $this->rateLimitMax = 0;
+    $this->flood->expects($this->never())->method('isAllowed');
+    $this->flood->expects($this->never())->method('register');
+
+    $response = $this->controller->getAIResults($this->createJsonRequest([]));
+
+    $this->assertEquals(400, $response->getStatusCode());
+  }
+
+  /**
+   * Tests a configured positive maximum is passed to the flood service.
+   */
+  public function testConfiguredRateLimitMaximumIsUsed(): void {
+    $this->rateLimitMax = 25;
+    $this->flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('markaspot_vision.analyze', 25, 3600, 'csrf:test-fingerprint')
+      ->willReturn(FALSE);
+
+    $response = $this->controller->getAIResults($this->createJsonRequest([]));
+
+    $this->assertEquals(429, $response->getStatusCode());
+  }
+
+  /**
+   * Tests invalid active configuration fails closed to the protected default.
+   */
+  public function testInvalidRateLimitConfigurationUsesProtectedDefault(): void {
+    $this->rateLimitMax = -1;
+    $this->flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('markaspot_vision.analyze', 10, 3600, 'csrf:test-fingerprint')
+      ->willReturn(FALSE);
+
+    $response = $this->controller->getAIResults($this->createJsonRequest([]));
+    $this->assertEquals(429, $response->getStatusCode());
+  }
+
+  /**
+   * Tests nonnumeric active configuration also keeps the protected default.
+   */
+  public function testNonnumericRateLimitConfigurationUsesProtectedDefault(): void {
+    $this->rateLimitMax = 'invalid';
+    $this->flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('markaspot_vision.analyze', 10, 3600, 'csrf:test-fingerprint')
+      ->willReturn(FALSE);
+
+    $response = $this->controller->getAIResults($this->createJsonRequest([]));
     $this->assertEquals(429, $response->getStatusCode());
   }
 

@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_vision\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
@@ -66,6 +67,11 @@ class ImageProcessingController extends ControllerBase {
   protected MediaAnalysisAccessGuard $mediaAnalysisAccessGuard;
 
   /**
+   * Vision configuration factory.
+   */
+  protected ConfigFactoryInterface $visionConfigFactory;
+
+  /**
    * Constructs a new ImageProcessingController object.
    *
    * @param \Drupal\markaspot_vision\Service\ImageProcessingService $image_processing_service
@@ -78,6 +84,8 @@ class ImageProcessingController extends ControllerBase {
    *   The effective feature scope resolver.
    * @param \Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard $media_analysis_access_guard
    *   Guards access to media analysis.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
    */
@@ -87,6 +95,7 @@ class ImageProcessingController extends ControllerBase {
     FloodInterface $flood,
     FeatureScopeResolver $feature_scope_resolver,
     MediaAnalysisAccessGuard $media_analysis_access_guard,
+    ConfigFactoryInterface $config_factory,
     ?TierConfigService $tier_config = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
@@ -94,6 +103,7 @@ class ImageProcessingController extends ControllerBase {
     $this->flood = $flood;
     $this->featureScopeResolver = $feature_scope_resolver;
     $this->mediaAnalysisAccessGuard = $media_analysis_access_guard;
+    $this->visionConfigFactory = $config_factory;
     $this->tierConfig = $tier_config;
   }
 
@@ -108,6 +118,7 @@ class ImageProcessingController extends ControllerBase {
       $container->get('flood'),
       $container->get('markaspot_nuxt.feature_scope_resolver'),
       $container->get('markaspot_vision.media_analysis_access_guard'),
+      $container->get('config.factory'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
@@ -125,14 +136,24 @@ class ImageProcessingController extends ControllerBase {
    */
   // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public function getAIResults(Request $request): JsonResponse {
-    // Rate limiting: 10 requests per IP per hour.
-    $ip = $request->getClientIp();
-    if (!$this->flood->isAllowed('markaspot_vision.analyze', 10, 3600, $ip)) {
-      return new JsonResponse([
-        'error' => $this->t('Too many requests. Please try again later.'),
-      ], 429);
+    $rate_limit_max = $this->getRateLimitMax();
+
+    // A zero limit is an explicit operational kill switch for this limiter.
+    if ($rate_limit_max > 0) {
+      // Bind anonymous traffic to the same private upload-session fingerprint
+      // used by the media access guard. Falling back to the client IP keeps
+      // non-browser integrations protected without grouping all users behind
+      // the Nuxt or Kubernetes proxy into one shared bucket.
+      $identifier = $this->mediaAnalysisAccessGuard->getRateLimitIdentifier($request)
+        ?? 'ip:' . ($request->getClientIp() ?? 'unknown');
+
+      if (!$this->flood->isAllowed('markaspot_vision.analyze', $rate_limit_max, 3600, $identifier)) {
+        return new JsonResponse([
+          'error' => $this->t('Too many requests. Please try again later.'),
+        ], 429);
+      }
+      $this->flood->register('markaspot_vision.analyze', 3600, $identifier);
     }
-    $this->flood->register('markaspot_vision.analyze', 3600, $ip);
 
     // Decode request body once for all subsequent checks.
     $data = json_decode($request->getContent(), TRUE);
@@ -534,6 +555,25 @@ class ImageProcessingController extends ControllerBase {
       $this->logger->error('Error in getAIResults: @message', ['@message' => $e->getMessage()]);
       return new JsonResponse(['error' => $this->t('An error occurred during image analysis.')], 500);
     }
+  }
+
+  /**
+   * Returns a fail-safe configured maximum for the hourly Vision limiter.
+   */
+  protected function getRateLimitMax(): int {
+    $configured = $this->visionConfigFactory
+      ->get('markaspot_vision.settings')
+      ->get('rate_limit_max');
+
+    if (is_int($configured)) {
+      return $configured >= 0 ? $configured : 10;
+    }
+
+    if (is_string($configured) && ctype_digit($configured)) {
+      return (int) $configured;
+    }
+
+    return 10;
   }
 
   /**

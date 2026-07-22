@@ -5,6 +5,9 @@ markaspot_vision.settings:
     multiple_uploads:
       type: boolean
       label: 'Allow multiple file uploads'
+    rate_limit_max:
+      type: integer
+      label: 'Maximum vision analysis requests per hour'
     auth_type:
       type: string
       label: 'Authentication Type'

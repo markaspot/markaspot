@@ -1,4 +1,5 @@
 multiple_uploads: 1
+rate_limit_max: 10
 enable_blur_preprocessing: false
 blur_service_url: 'http://markaspot-vision:8200/blur'
 auth_type: 'bearer'

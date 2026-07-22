@@ -89,6 +89,13 @@ class MediaAnalysisAccessGuard {
   }
 
   /**
+   * Returns the private upload-session identifier used for rate limiting.
+   */
+  public function getRateLimitIdentifier(Request $request): ?string {
+    return $this->getRequestFingerprint($request);
+  }
+
+  /**
    * Determines whether the request carries a real authenticated user session.
    */
   protected function hasAuthenticatedSession(Request $request): bool {

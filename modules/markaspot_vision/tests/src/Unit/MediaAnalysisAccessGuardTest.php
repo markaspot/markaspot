@@ -136,6 +136,27 @@ class MediaAnalysisAccessGuardTest extends UnitTestCase {
   }
 
   /**
+   * Tests rate limiting uses stable, non-reversible upload identifiers.
+   */
+  public function testRateLimitIdentifierUsesHashedCsrfToken(): void {
+    $guard = $this->createGuard($this->createMemoryStore());
+
+    $identifier = $guard->getRateLimitIdentifier($this->createRequest('csrf-token'));
+
+    $this->assertNotNull($identifier);
+    $this->assertStringStartsWith('csrf:', $identifier);
+    $this->assertStringNotContainsString('csrf-token', $identifier);
+    $this->assertSame(
+      $identifier,
+      $guard->getRateLimitIdentifier($this->createRequest('csrf-token')),
+    );
+    $this->assertNotSame(
+      $identifier,
+      $guard->getRateLimitIdentifier($this->createRequest('different-token')),
+    );
+  }
+
+  /**
    */
   public function testAuthenticatedSessionUpdateAccessAllowsAnalysis(): void {
     $store = $this->createMock(KeyValueStoreExpirableInterface::class);
