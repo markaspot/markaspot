@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.171](https://github.com/markaspot/markaspot/compare/11.9.170...11.9.171) (2026-07-22)
+
+### Bug Fixes
+
+* **vision:** make analysis rate limit proxy-safe ([8ce0411](https://github.com/markaspot/markaspot/commit/8ce0411816cc91774a6905e3656fcfb7be4f4556))
+
 ## [11.9.170](https://github.com/markaspot/markaspot/compare/11.9.169...11.9.170) (2026-07-21)
 
 ### Bug Fixes
