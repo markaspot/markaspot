@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.172](https://github.com/markaspot/markaspot/compare/11.9.171...11.9.172) (2026-07-23)
+
+### Bug Fixes
+
+* return 409 instead of 503 when no public frontend URL is configured ([97c395b](https://github.com/markaspot/markaspot/commit/97c395bfde8c6088865b9b71ba0e5e0b59cd77b1))
+
 ## [11.9.171](https://github.com/markaspot/markaspot/compare/11.9.170...11.9.171) (2026-07-22)
 
 ### Bug Fixes
