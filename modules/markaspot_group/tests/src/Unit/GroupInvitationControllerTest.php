@@ -493,7 +493,10 @@ class GroupInvitationControllerTest extends UnitTestCase {
 
     $response = $controller->invite($request);
 
-    $this->assertSame(503, $response->getStatusCode());
+    // 409, not 503: a durable configuration gap, not a transient outage. The
+    // Nuxt proxy replaces every 5xx body with a generic text, so a 5xx here
+    // would hide the reason from the operator.
+    $this->assertSame(409, $response->getStatusCode());
     $this->assertSame(
       ['error' => 'Invitation email delivery is temporarily unavailable.'],
       json_decode((string) $response->getContent(), TRUE)

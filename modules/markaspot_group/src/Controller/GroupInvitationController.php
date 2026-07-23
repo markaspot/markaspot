@@ -249,12 +249,15 @@ class GroupInvitationController extends ControllerBase {
 
     // Invitations carry a bearer token. Never create one unless a validated
     // public frontend URL is configured for the claim link.
+    // 409, not 503: this is a durable configuration gap that retrying never
+    // clears. It also keeps the message readable, because the Nuxt proxy
+    // replaces every 5xx body with a generic text to avoid leaking internals.
     $frontendBase = $this->resolveInvitationFrontendBase();
     if ($frontendBase === NULL) {
       $this->logger->error('Cannot create group invitation: no public frontend URL is configured for invitation emails.');
       return new JsonResponse([
         'error' => 'Invitation email delivery is temporarily unavailable.',
-      ], 503);
+      ], 409);
     }
 
     // Check for duplicate pending invitation.
