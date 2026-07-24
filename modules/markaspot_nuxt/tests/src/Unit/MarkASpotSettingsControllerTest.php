@@ -531,6 +531,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $group = $this->createMockGroup([
       'field_nuxt_config' => $nuxtJson,
       'field_slug' => 'bonn',
+      'field_visibility' => 'authenticated',
     ]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
@@ -544,6 +545,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(14, $data['jurisdiction']['id']);
     $this->assertEquals('Test Jurisdiction', $data['jurisdiction']['name']);
     $this->assertEquals('bonn', $data['jurisdiction']['slug']);
+    $this->assertEquals('authenticated', $data['jurisdiction']['visibility']);
 
     // Merged config keys.
     $this->assertEquals('Stadt Bonn', $data['client']['name']);
@@ -560,6 +562,25 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(50.73, $data['center_lat']);
     $this->assertEquals(7.1, $data['center_lng']);
     $this->assertEquals(14, $data['zoom_initial']);
+  }
+
+  /**
+   * Tests legacy jurisdictions without a workspace field remain public.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsDefaultsLegacyVisibilityToPublic(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => ['voting' => TRUE]]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertEquals('public', $data['jurisdiction']['visibility']);
   }
 
   /**
