@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\Component\Serialization\Yaml;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -381,8 +383,8 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
 function _markaspot_fastmap_replace_default_welcome_wording(string $body, string $langcode, array $params): string {
   $preset = $params['wording_preset'] ?? NULL;
   $templateLangcode = _markaspot_fastmap_shipped_welcome_body_langcode($body, $langcode);
-  if (!\Drupal\markaspot_nuxt\Service\CitizenWordingResolver::isSupportedPreset($preset)
-    || $preset === \Drupal\markaspot_nuxt\Service\CitizenWordingResolver::DEFAULT_PRESET
+  if (!CitizenWordingResolver::isSupportedPreset($preset)
+    || $preset === CitizenWordingResolver::DEFAULT_PRESET
     || $templateLangcode === NULL) {
     return $body;
   }
@@ -468,7 +470,7 @@ function _markaspot_fastmap_shipped_welcome_body_langcode(string $body, string $
     $cache[$safeLangcode] = [];
     foreach ($paths as $templateLangcode => $path) {
       $contents = is_file($path) ? file_get_contents($path) : FALSE;
-      $decoded = $contents === FALSE ? NULL : \Drupal\Component\Serialization\Yaml::decode($contents);
+      $decoded = $contents === FALSE ? NULL : Yaml::decode($contents);
       $candidate = is_array($decoded) ? ($decoded['workspace_welcome']['body'] ?? NULL) : NULL;
       if (is_string($candidate) && $candidate !== '') {
         $cache[$safeLangcode][$candidate] = $templateLangcode;
@@ -552,7 +554,7 @@ function _markaspot_fastmap_shipped_mail_template(string $key): array {
   if ($shipped === NULL) {
     $path = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap')
       . '/config/install/markaspot_fastmap.mail.yml';
-    $decoded = is_file($path) ? \Drupal\Component\Serialization\Yaml::decode(file_get_contents($path)) : NULL;
+    $decoded = is_file($path) ? Yaml::decode(file_get_contents($path)) : NULL;
     $shipped = is_array($decoded) ? $decoded : [];
   }
 
