@@ -9,5 +9,6 @@ dependencies:
   - markaspot_passwordless
   - field_permissions:field_permissions
   - drupal:group
+  - drupal:file
   - drupal:taxonomy
   - drupal:system

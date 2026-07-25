@@ -122,7 +122,6 @@ class BillingControllerTOFUTest extends KernelTestBase {
 
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')
-      ->with('markaspot_fastmap.settings')
       ->willReturn($fastmapConfig);
 
     $groupStorage = $this->createMock(EntityStorageInterface::class);
@@ -182,6 +181,7 @@ class BillingControllerTOFUTest extends KernelTestBase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('getRevisionId')->willReturn('140');
     $group->method('language')->willReturn($language);
     $group->method('hasField')->willReturn(TRUE);

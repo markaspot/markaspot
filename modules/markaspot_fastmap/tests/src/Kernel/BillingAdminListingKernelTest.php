@@ -35,6 +35,7 @@ class BillingAdminListingKernelTest extends KernelTestBase {
     'system',
     'user',
     'field',
+    'file',
     'options',
     'taxonomy',
     'group',

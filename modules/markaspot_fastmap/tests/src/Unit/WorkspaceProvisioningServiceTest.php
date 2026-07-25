@@ -15,12 +15,18 @@ use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\File\FileExists;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\file\FileInterface;
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\file\FileRepositoryInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
+use Drupal\markaspot_fastmap\Service\PlaceholderSignetGenerator;
+use Drupal\markaspot_fastmap\Service\PlaceholderSignetGeneratorInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\node\NodeInterface;
@@ -111,6 +117,39 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * Inspectable lock backend used by the service.
    */
   protected LockBackendInterface $lock;
+
+  /**
+   * The placeholder signet generator.
+   */
+  protected PlaceholderSignetGeneratorInterface $placeholderSignetGenerator;
+
+  /**
+   * The mocked file repository.
+   *
+   * @var \Drupal\file\FileRepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FileRepositoryInterface $fileRepository;
+
+  /**
+   * Managed files written during provisioning.
+   *
+   * @var array<int, array{data: string, destination: string, behavior: mixed}>
+   */
+  protected array $writtenFiles = [];
+
+  /**
+   * Directories the service asked to prepare, in order.
+   *
+   * @var array<int, array{directory: string, options: int}>
+   */
+  protected array $preparedDirectories = [];
+
+  /**
+   * The mocked file system.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FileSystemInterface $fileSystem;
 
   /**
    * The service under test.
@@ -252,6 +291,26 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     };
 
+    $this->placeholderSignetGenerator = new PlaceholderSignetGenerator();
+    $signetFile = $this->createMock(FileInterface::class);
+    $signetFile->method('id')->willReturn(123);
+    $this->fileRepository = $this->createMock(FileRepositoryInterface::class);
+    $this->fileRepository->method('writeData')
+      ->willReturnCallback(function (string $data, string $destination, mixed $behavior) use ($signetFile) {
+        $this->writtenFiles[] = [
+          'data' => $data,
+          'destination' => $destination,
+          'behavior' => $behavior,
+        ];
+        return $signetFile;
+      });
+    $this->fileSystem = $this->createMock(FileSystemInterface::class);
+    $this->fileSystem->method('prepareDirectory')
+      ->willReturnCallback(function (string &$directory, int $options): bool {
+        $this->preparedDirectories[] = ['directory' => $directory, 'options' => $options];
+        return TRUE;
+      });
+
     \Drupal::setContainer($container);
 
     $this->service = new WorkspaceProvisioningService(
@@ -262,6 +321,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       $configFactory,
       $time,
       $this->lock,
+      $this->placeholderSignetGenerator,
+      $this->fileRepository,
+      $this->fileSystem,
     );
   }
 
@@ -298,11 +360,19 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    *   The user ID to assign.
    * @param array|null $createdGroupFields
    *   Receives the group create values for assertions.
+   * @param array|null $setGroupFields
+   *   Receives the fields set on the group entity after creation.
+   * @param array $existingFields
+   *   Field names the group mock reports via hasField().
    */
   protected function setupSuccessfulProvisioning(
     int $groupId = 42,
     int $userId = 10,
     ?array &$createdGroupFields = NULL,
+    ?array &$setGroupFields = NULL,
+    // Mirrors the shipped profile: field_favicon exists on no install, so the
+    // default here is the configuration the code actually meets.
+    array $existingFields = ['field_logo_light', 'field_logo_dark'],
   ): void {
     // Group storage: slug not taken.
     $this->groupStorage->method('loadByProperties')
@@ -311,7 +381,14 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // Group entity mock.
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($groupId);
-    $group->method('set')->willReturnSelf();
+    $group->method('hasField')
+      ->willReturnCallback(static fn (string $name): bool => in_array($name, $existingFields, TRUE));
+    $setGroupFields = [];
+    $group->method('set')
+      ->willReturnCallback(function (string $name, $value) use ($group, &$setGroupFields) {
+        $setGroupFields[$name] = $value;
+        return $group;
+      });
     $group->method('save')->willReturn(1);
 
     $membership = $this->createMock(GroupRelationshipInterface::class);
@@ -565,7 +642,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    */
   public function testProvisionWorkspaceSuccess(): void {
     $createdGroupFields = NULL;
-    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
+    $setGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields, $setGroupFields);
 
     $result = $this->service->provisionWorkspace($this->validData());
 
@@ -583,6 +661,139 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // field_tier is NEVER set in the create() payload. Stripe webhook is the
     // only path that activates a tier.
     $this->assertArrayNotHasKey('field_tier', $createdGroupFields);
+
+    $this->assertCount(1, $this->writtenFiles);
+    $this->assertSame(
+      'public://jurisdictions/42/logos/signet.svg',
+      $this->writtenFiles[0]['destination'],
+    );
+    // writeData() throws when the directory is missing, so the destination has
+    // to be prepared with CREATE_DIRECTORY first or the feature is dead on any
+    // instance whose files directory was never prepared by hand.
+    $this->assertSame(
+      'public://jurisdictions/42/logos',
+      $this->preparedDirectories[0]['directory'],
+    );
+    $this->assertSame(
+      FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
+      $this->preparedDirectories[0]['options'],
+    );
+    $this->assertSame(FileExists::Replace, $this->writtenFiles[0]['behavior']);
+    $this->assertStringContainsString('fill="#3b82f6"', $this->writtenFiles[0]['data']);
+    $this->assertStringContainsString('data-generated="placeholder"', $this->writtenFiles[0]['data']);
+    // The signet is set on the entity, not passed through the create payload,
+    // so each target field can be guarded by hasField().
+    $this->assertSame(['target_id' => 123], $setGroupFields['field_logo_light']);
+    $this->assertSame($setGroupFields['field_logo_light'], $setGroupFields['field_logo_dark']);
+    // field_favicon does not exist on the shipped profile: assigning it anyway
+    // would make entity creation throw and abort the whole provisioning run.
+    $this->assertArrayNotHasKey('field_favicon', $setGroupFields);
+  }
+
+  /**
+   * Tests that the signet also reaches field_favicon where that field exists.
+   *
+   * @covers ::attachPlaceholderSignet
+   */
+  public function testPlaceholderSignetUsesFaviconFieldWhenPresent(): void {
+    $createdGroupFields = NULL;
+    $setGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(
+      42,
+      10,
+      $createdGroupFields,
+      $setGroupFields,
+      ['field_logo_light', 'field_logo_dark', 'field_favicon'],
+    );
+
+    $this->service->provisionWorkspace($this->validData());
+
+    $this->assertSame($setGroupFields['field_logo_light'], $setGroupFields['field_favicon']);
+  }
+
+  /**
+   * Tests all supported Tailwind names and both fallback paths.
+   *
+   * @covers ::resolvePrimaryHex
+   * @dataProvider primaryColorProvider
+   */
+  public function testPrimaryColorResolution(string $input, string $expected): void {
+    $method = new \ReflectionMethod($this->service, 'resolvePrimaryHex');
+
+    $this->assertSame($expected, $method->invoke($this->service, $input));
+  }
+
+  /**
+   * Data provider for primary theme color resolution.
+   *
+   * @return array<string, array{string, string}>
+   *   Color input and expected hex value.
+   */
+  public static function primaryColorProvider(): array {
+    return [
+      'red' => ['red', '#ef4444'],
+      'blue' => ['blue', '#3b82f6'],
+      'amber' => ['amber', '#f59e0b'],
+      'violet' => ['violet', '#8b5cf6'],
+      'orange' => ['orange', '#f97316'],
+      'green' => ['green', '#22c55e'],
+      'emerald' => ['emerald', '#10b981'],
+      'cyan' => ['cyan', '#06b6d4'],
+      'yellow' => ['yellow', '#eab308'],
+      'unknown name' => ['purple', '#3b82f6'],
+      'six-digit hex unchanged' => ['#AbC123', '#AbC123'],
+      'three-digit hex unchanged' => ['#0aF', '#0aF'],
+    ];
+  }
+
+  /**
+   * Tests that signet failures do not abort workspace provisioning.
+   *
+   * @covers ::attachPlaceholderSignet
+   * @covers ::provisionWorkspace
+   */
+  public function testPlaceholderSignetFailureDoesNotAbortProvisioning(): void {
+    $createdGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
+
+    $generator = $this->createMock(PlaceholderSignetGeneratorInterface::class);
+    $generator->method('generate')
+      ->willThrowException(new \RuntimeException('Generation failed'));
+
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with(
+        $this->stringContains('Placeholder signet creation failed'),
+        $this->callback(
+          static fn(array $context): bool => $context['@slug'] === 'test-ws'
+            && $context['@message'] === 'Generation failed',
+        ),
+      );
+
+    /** @var \Drupal\Core\Config\ConfigFactoryInterface $configFactory */
+    $configFactory = \Drupal::getContainer()->get('config.factory');
+    /** @var \Drupal\Component\Datetime\TimeInterface $time */
+    $time = \Drupal::getContainer()->get('datetime.time');
+    $service = new WorkspaceProvisioningService(
+      $this->entityTypeManager,
+      $this->database,
+      $this->logger,
+      $this->languageManager,
+      $configFactory,
+      $time,
+      $this->lock,
+      $generator,
+      $this->fileRepository,
+      $this->fileSystem,
+    );
+
+    $result = $service->provisionWorkspace($this->validData());
+
+    $this->assertSame(42, $result['group_id']);
+    $this->assertArrayNotHasKey('field_logo_light', $createdGroupFields);
+    $this->assertArrayNotHasKey('field_logo_dark', $createdGroupFields);
+    $this->assertArrayNotHasKey('field_favicon', $createdGroupFields);
+    $this->assertSame([], $this->writtenFiles);
   }
 
   /**
@@ -1641,6 +1852,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       $configFactory,
       $time,
       $this->lock,
+      $this->placeholderSignetGenerator,
+      $this->fileRepository,
+      $this->fileSystem,
       NULL,
       new CitizenWordingResolver(),
     );
@@ -1724,6 +1938,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $configFactory,
         $this->createMock(TimeInterface::class),
         $this->lock,
+        $this->placeholderSignetGenerator,
+        $this->fileRepository,
+        $this->fileSystem,
         $aiClient,
       );
 
@@ -1794,6 +2011,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $configFactory,
         $this->createMock(TimeInterface::class),
         $this->lock,
+        $this->placeholderSignetGenerator,
+        $this->fileRepository,
+        $this->fileSystem,
         $aiClient,
         new CitizenWordingResolver(),
       );
@@ -1856,6 +2076,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $configFactory,
         $this->createMock(TimeInterface::class),
         $this->lock,
+        $this->placeholderSignetGenerator,
+        $this->fileRepository,
+        $this->fileSystem,
         $aiClient,
       );
 
@@ -1910,6 +2133,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $configFactory,
         $this->createMock(TimeInterface::class),
         $this->lock,
+        $this->placeholderSignetGenerator,
+        $this->fileRepository,
+        $this->fileSystem,
         $aiClient,
       );
 
@@ -2122,7 +2348,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       ],
     ]));
 
-    // Only 2 status terms are created (index 0 and 2), each with a German translation.
+    // Only indexes 0 and 2 get terms and German translations.
     $statusTranslations = array_filter($translationCalls, fn($c) => in_array($c['original_name'], ['Open', 'Closed']));
     $this->assertCount(2, $statusTranslations);
 
@@ -2134,10 +2360,11 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that availableLanguages guard prevents translations for non-installed languages.
+   * Tests the language guard for status translations.
    *
    * When status_translations include a language not in the workspace's
-   * available languages, addTranslation() should not be called for that language.
+   * available languages, addTranslation() should not be called for that
+   * language.
    *
    * @covers ::provisionWorkspace
    */
@@ -2192,7 +2419,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $statusQuery->method('execute')->willReturn([]);
     $this->termStorage->method('getQuery')->willReturn($statusQuery);
 
-    // Categories only define 'en' and 'de', so availableLanguages = ['en', 'de'].
+    // Categories only define 'en' and 'de'.
     // Translations include 'fr' which is NOT in availableLanguages.
     $this->service->provisionWorkspace($this->validData([
       'categories' => [
@@ -2410,7 +2637,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that start page availableLanguages guard blocks non-workspace languages.
+   * Tests the language guard for start page translations.
    *
    * When start_page_translations include a language not in the workspace's
    * available languages, addTranslation() should not be called for it.
@@ -2485,7 +2712,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       ],
     ]));
 
-    // No translations should be created since only 'en' is in availableLanguages.
+    // No translations should be created because only 'en' is available.
     $langs = array_unique(array_column($nodeTranslations, 'lang'));
     $this->assertNotContains('de', $langs, 'German translation should be blocked by availableLanguages guard.');
   }

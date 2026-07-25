@@ -251,9 +251,8 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     // Without resetCache, the cached value would still be returned.
     $newGroup = $this->createMockGroup('public');
 
-    // We need a new service instance because PHPUnit mocks are fixed once configured.
-    // Instead, verify that resetCache allows a fresh load by creating a new service
-    // with a storage that returns the updated group.
+    // Use a new service because configured PHPUnit mocks are fixed.
+    // Its storage returns the updated group after resetCache().
     $newStorage = $this->createMock(EntityStorageInterface::class);
     $newStorage->method('load')->willReturn($newGroup);
     $newEntityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
@@ -266,7 +265,7 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
 
     // Verify resetCache doesn't throw and clears internal state.
     $newService->resetCache();
-    // After reset, next call re-loads from storage (still returns 'public' in this mock).
+    // The next call reloads the mocked 'public' value.
     $this->assertEquals('public', $newService->getVisibility(10));
   }
 
