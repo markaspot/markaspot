@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Unit;
 
-use Drupal;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\Tests\UnitTestCase;
@@ -31,6 +30,9 @@ class WorkspaceVisibilityCacheInvalidationTest extends UnitTestCase {
        */
       public array $resetCalls = [];
 
+      /**
+       * Records one cache reset.
+       */
       public function resetCache(?int $groupId = NULL): void {
         $this->resetCalls[] = $groupId;
       }
@@ -39,7 +41,7 @@ class WorkspaceVisibilityCacheInvalidationTest extends UnitTestCase {
 
     $container = new ContainerBuilder();
     $container->set('markaspot_fastmap.workspace_visibility', $visibilityService);
-    Drupal::setContainer($container);
+    \Drupal::setContainer($container);
 
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn(42);
