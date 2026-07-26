@@ -13,7 +13,9 @@ use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\file\FileInterface;
 use Drupal\file\FileRepositoryInterface;
+use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
@@ -339,6 +341,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     protected readonly FileSystemInterface $fileSystem,
     protected readonly ?AiClientService $aiClient = NULL,
     protected readonly ?CitizenWordingResolver $citizenWordingResolver = NULL,
+    protected readonly ?FileUsageInterface $fileUsage = NULL,
   ) {}
 
   /**
@@ -634,10 +637,58 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
       }
 
-      // 5. Delete group entity.
+      // 5. Collect branding files before the group goes away.
+      // The group is the only reference to them, so once it is deleted the
+      // files become unreachable orphans: permanent entities with empty
+      // file.usage plus the bytes on disk. Every provisioned workspace carries
+      // a generated signet, so without this step each torn-down demo leaves
+      // one behind. Collect first, delete after the group save, otherwise a
+      // failed group deletion would leave fields pointing at missing files.
+      $brandingFiles = $this->collectBrandingFiles($group);
+
+      // 6. Delete group entity.
       $group->delete();
 
-      $this->logger->info('Workspace torn down: group @id', ['@id' => $groupId]);
+      // 7. Delete every branding file nobody else holds any more.
+      // Deleting the group already cleared its own file.usage records, so an
+      // empty usage list here means the file is now unreachable. Checking
+      // instead of deleting blindly matters because a tenant may have pointed
+      // another entity at the same upload.
+      // The dependency is optional only to keep the constructor signature
+      // backwards compatible. Without it the files cannot be checked, and
+      // deleting them unchecked could take away a file another entity still
+      // uses, so the safe move is to keep them and say so.
+      $deleted = 0;
+      if ($this->fileUsage === NULL) {
+        if ($brandingFiles !== []) {
+          $this->logger->warning('Branding files of group @id were kept: no file.usage service available to verify they are unreferenced.', [
+            '@id' => $groupId,
+          ]);
+        }
+        $brandingFiles = [];
+      }
+      foreach ($brandingFiles as $file) {
+        try {
+          if (!empty($this->fileUsage->listUsage($file))) {
+            continue;
+          }
+          $file->delete();
+          $deleted++;
+        }
+        catch (\Exception $e) {
+          // A stuck file must not roll back an otherwise complete teardown.
+          $this->logger->warning('Could not delete branding file @fid of torn-down group @id: @msg', [
+            '@fid' => $file->id(),
+            '@id' => $groupId,
+            '@msg' => $e->getMessage(),
+          ]);
+        }
+      }
+
+      $this->logger->info('Workspace torn down: group @id, @files branding files removed', [
+        '@id' => $groupId,
+        '@files' => count($brandingFiles),
+      ]);
     }
     catch (\Exception $e) {
       $transaction->rollBack();
@@ -647,6 +698,39 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       ]);
       throw new \RuntimeException('Workspace teardown failed: ' . $e->getMessage(), 0, $e);
     }
+  }
+
+  /**
+   * Collects the branding files a group holds, each file only once.
+   *
+   * The generated signet is written to every field in SIGNET_TARGET_FIELDS, so
+   * all of them usually carry the SAME file id. Deduplicating by id keeps the
+   * caller from deleting one entity three times.
+   *
+   * Files still used elsewhere are skipped: file.usage is the only reliable
+   * signal here, because a tenant may have uploaded one image and pointed
+   * several fields at it.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group about to be deleted.
+   *
+   * @return \Drupal\file\FileInterface[]
+   *   Files safe to delete, keyed by file id.
+   */
+  private function collectBrandingFiles(GroupInterface $group): array {
+    $files = [];
+
+    foreach (self::SIGNET_TARGET_FIELDS as $fieldName) {
+      if (!$group->hasField($fieldName) || $group->get($fieldName)->isEmpty()) {
+        continue;
+      }
+      $file = $group->get($fieldName)->entity;
+      if ($file instanceof FileInterface) {
+        $files[(int) $file->id()] = $file;
+      }
+    }
+
+    return $files;
   }
 
   /**

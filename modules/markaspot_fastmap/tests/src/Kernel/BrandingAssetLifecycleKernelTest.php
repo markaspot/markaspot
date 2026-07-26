@@ -259,14 +259,14 @@ final class BrandingAssetLifecycleKernelTest extends KernelTestBase {
   }
 
   /**
-   * Records that teardown currently leaves its generated signet orphaned.
+   * Tears down a workspace and expects its generated signet to be gone.
    *
-   * Teardown removes the group and therefore clears real file.usage records,
-   * but it does not delete the now-unreferenced permanent managed file. This
-   * assertion intentionally describes that current gap instead of hiding it
-   * behind field assertions on an entity that no longer exists.
+   * Teardown clears the group's file.usage records by deleting the group, so
+   * the signet would otherwise survive as a permanent managed file with empty
+   * usage plus bytes on disk. Every provisioned workspace carries one, so each
+   * torn-down demo used to leave exactly one orphan behind.
    */
-  public function testWorkspaceTeardownLeavesGeneratedAssetOrphaned(): void {
+  public function testWorkspaceTeardownRemovesGeneratedAsset(): void {
     $group = $this->provisionWorkspace('teardown-assets');
     $fid = $this->fieldTargetId($group, 'field_favicon');
     $path = $this->assertStoredFileExists($fid);
@@ -279,13 +279,13 @@ final class BrandingAssetLifecycleKernelTest extends KernelTestBase {
       ->resetCache([(int) $group->id()]);
     $this->assertNull(Group::load($group->id()));
 
+    $this->container->get('entity_type.manager')->getStorage('file')->resetCache([$fid]);
     $file = $this->container->get('entity_type.manager')
       ->getStorage('file')
       ->load($fid);
-    $this->assertInstanceOf(FileInterface::class, $file);
-    $this->assertSame([], $this->container->get('file.usage')->listUsage($file));
+    $this->assertNull($file, 'The generated signet must not survive its workspace.');
     $this->assertGroupFileUsage($fid, $group, 0);
-    $this->assertStoredFileExists($fid, $path);
+    $this->assertFileDoesNotExist($path, 'The signet bytes must be gone from disk.');
   }
 
   /**

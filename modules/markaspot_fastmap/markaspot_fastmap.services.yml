@@ -27,6 +27,7 @@ services:
       - '@file_system'
       - '@?markaspot_ai.client'
       - '@?markaspot_nuxt.citizen_wording_resolver'
+      - '@file.usage'
 
   markaspot_fastmap.placeholder_signet_generator:
     class: Drupal\markaspot_fastmap\Service\PlaceholderSignetGenerator
