@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.173](https://github.com/markaspot/markaspot/compare/11.9.172...11.9.173) (2026-07-26)
+
+### Features
+
+* add field_favicon for tenant-owned PWA app icons ([afad343](https://github.com/markaspot/markaspot/commit/afad343bd42de33f4e0313ce8b9d67e371f3cbc4))
+* generate a placeholder signet for new fastmap workspaces ([9fac46d](https://github.com/markaspot/markaspot/commit/9fac46d6580de5e9a62b821902fd01545544c753))
+
+### Bug Fixes
+
+* call StreamWrapperManager statically so the path helper is testable ([3233036](https://github.com/markaspot/markaspot/commit/32330368883dd50795209ea621aaee3c6ec8ac17))
+* delete branding files when a workspace is torn down ([79a96b4](https://github.com/markaspot/markaspot/commit/79a96b43b24d81318531c83e6b83123a2f8e54a0))
+
+### Performance
+
+* expose workspace visibility for SSR cache ([3032342](https://github.com/markaspot/markaspot/commit/3032342ccb8af7a9f35352575aac80eb212bb760))
+
 ## [11.9.172](https://github.com/markaspot/markaspot/compare/11.9.171...11.9.172) (2026-07-23)
 
 ### Bug Fixes
