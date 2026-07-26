@@ -5,6 +5,7 @@ namespace Drupal\markaspot_nuxt\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\StreamWrapper\PublicStream;
+use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
@@ -564,11 +565,13 @@ class MarkASpotSettingsController extends ControllerBase {
       // Helper to convert file URI to relative path.
       $getRelativePath = function ($file) {
         $uri = $file->getFileUri();
-        // Get the stream wrapper (e.g., public://)
-        $scheme = $this->streamWrapperManager->getScheme($uri);
+        // getScheme() and getTarget() are static on StreamWrapperManager.
+        // Calling them through the injected instance works at runtime but makes
+        // this closure untestable, because a mock cannot answer a static call.
+        $scheme = StreamWrapperManager::getScheme($uri);
         if ($scheme === 'public') {
           // public://fonts/file.woff2 -> /sites/default/files/fonts/file.woff2.
-          $target = $this->streamWrapperManager->getTarget($uri);
+          $target = StreamWrapperManager::getTarget($uri);
           $publicPath = PublicStream::basePath();
           return '/' . $publicPath . '/' . $target;
         }

@@ -586,11 +586,9 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $file->method('getCacheContexts')->willReturn([]);
     $file->method('getCacheMaxAge')->willReturn(-1);
 
-    $this->streamWrapperManager->method('getScheme')
-      ->willReturn('public');
-    $this->streamWrapperManager->method('getTarget')
-      ->willReturn('jurisdictions/14/app-icon/app-icon-a1b2c3d4.svg');
-
+    // getScheme() and getTarget() are STATIC on StreamWrapperManager, so a mock
+    // cannot stand in for them. The real implementations resolve public:// URIs
+    // correctly, which is exactly what this test needs.
     $group = $this->createMockGroup([
       'field_nuxt_config' => json_encode([
         'theme' => [
