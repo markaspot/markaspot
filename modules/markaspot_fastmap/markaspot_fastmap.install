@@ -7,6 +7,10 @@
 
 declare(strict_types=1);
 
+use Drupal\Component\Serialization\Yaml;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\user\Entity\Role;
 
 /**
@@ -179,8 +183,8 @@ function markaspot_fastmap_requirements(string $phase): array {
       '@count' => count($issues),
     ]),
     'severity' => empty($issues)
-      ? \Drupal\Core\Extension\Requirement\RequirementSeverity::OK
-      : \Drupal\Core\Extension\Requirement\RequirementSeverity::Warning,
+      ? RequirementSeverity::OK
+      : RequirementSeverity::Warning,
   ];
 
   if (!empty($issues)) {
@@ -772,16 +776,16 @@ function markaspot_fastmap_update_11913(): void {
     'en' => [
       'title' => 'Welcome to %name',
       'body' => '<p>Welcome to <strong>%name</strong>, your citizen reporting platform.</p>'
-      . '<p>Use the map to browse existing reports or create a new one. '
-      . 'Select a category, pin the location, and describe the issue. '
-      . 'Your report helps make %name better for everyone.</p>',
+        . '<p>Use the map to browse existing reports or create a new one. '
+        . 'Select a category, pin the location, and describe the issue. '
+        . 'Your report helps make %name better for everyone.</p>',
     ],
     'de' => [
       'title' => 'Willkommen bei %name',
       'body' => '<p>Willkommen bei <strong>%name</strong>, Ihrer Plattform für Bürgeranliegen.</p>'
-      . '<p>Nutzen Sie die Karte, um bestehende Meldungen zu sehen oder eine neue zu erstellen. '
-      . 'Wählen Sie eine Kategorie, markieren Sie den Standort und beschreiben Sie das Anliegen. '
-      . 'Ihre Meldung hilft, %name für alle zu verbessern.</p>',
+        . '<p>Nutzen Sie die Karte, um bestehende Meldungen zu sehen oder eine neue zu erstellen. '
+        . 'Wählen Sie eine Kategorie, markieren Sie den Standort und beschreiben Sie das Anliegen. '
+        . 'Ihre Meldung hilft, %name für alle zu verbessern.</p>',
     ],
   ];
 
@@ -1140,7 +1144,7 @@ function markaspot_fastmap_update_11919(): void {
  *
  * Live tenant DBs hold field_visibility.allowed_values in two shapes:
  *   - Flat map (older installs): ['public' => 'Public', ...]
- *   - List of mappings (post-Drupal-options-migration): [['value' => 'public', 'label' => 'Public'], ...]
+ *   - List of mappings after the Drupal options migration.
  *
  * Appending the wrong shape produces a mixed-type array and TypedConfig
  * refuses to save it with errors like
@@ -1148,7 +1152,7 @@ function markaspot_fastmap_update_11919(): void {
  * shape and append in kind so the hook is idempotent across both layouts.
  */
 function markaspot_fastmap_update_11920(): void {
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_visibility');
+  $field_storage = FieldStorageConfig::loadByName('group', 'field_visibility');
   if (!$field_storage) {
     return;
   }
@@ -1184,8 +1188,10 @@ function markaspot_fastmap_update_11920(): void {
 }
 
 /**
- * Recover from 11920 failure on tenants where system.schema advanced to 11920
- * without the field write landing.
+ * Recovers from an incomplete 11920 update.
+ *
+ * This applies when system.schema advanced to 11920 without the field write
+ * landing.
  *
  * Background: 11.9.85 shipped 11920 with a shape-naive append that failed
  * mid-flight on flat-map tenants (cp1 fastmap). system.schema got nudged to
@@ -1201,7 +1207,7 @@ function markaspot_fastmap_update_11920(): void {
  * shape — safe on dev/demo/any-cleanly-updated tenant.
  */
 function markaspot_fastmap_update_11921(): void {
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_visibility');
+  $field_storage = FieldStorageConfig::loadByName('group', 'field_visibility');
   if (!$field_storage) {
     return;
   }
@@ -1261,7 +1267,7 @@ function markaspot_fastmap_update_11922(): void {
   // 1. Strip the eager default from the field config so future installs
   //    get NULL tier. Operates on the active config so tenants that have
   //    already imported the old default get the new behavior immediately.
-  $field_config = \Drupal\field\Entity\FieldConfig::loadByName('group', 'jur', 'field_tier');
+  $field_config = FieldConfig::loadByName('group', 'jur', 'field_tier');
   if ($field_config) {
     $default_value = $field_config->getDefaultValueLiteral();
     if (!empty($default_value)) {
@@ -1384,7 +1390,7 @@ function markaspot_fastmap_update_11923(): void {
 /**
  * Backfills missing top-level keys in markaspot_fastmap.mail.
  *
- * workspace_welcome was added to config/install/markaspot_fastmap.mail.yml
+ * Workspace_welcome was added to config/install/markaspot_fastmap.mail.yml
  * after workspace_verification shipped. Fresh installs pick up both keys,
  * but config/install is only applied on hook_install(), so existing
  * tenants whose module was installed before workspace_welcome was added
@@ -1403,7 +1409,7 @@ function markaspot_fastmap_update_11924(): string {
   $path = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap')
     . '/config/install/markaspot_fastmap.mail.yml';
 
-  $shipped = is_file($path) ? \Drupal\Component\Serialization\Yaml::decode(file_get_contents($path)) : NULL;
+  $shipped = is_file($path) ? Yaml::decode(file_get_contents($path)) : NULL;
   if (!is_array($shipped)) {
     return 'Could not read shipped markaspot_fastmap.mail.yml, nothing backfilled.';
   }

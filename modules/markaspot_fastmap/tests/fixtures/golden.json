@@ -1,0 +1,272 @@
+{
+  "bleckede": {
+    "info": {
+      "silhouette": "crest",
+      "ornament": "chevron",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cnyox0j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#cnyox0j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#2563eb\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cnyox0j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#cnyox0j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#dc2626\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cnyox0j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#cnyox0j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#f59e0b\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cnyox0j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#cnyox0j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#7c3aed\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cnyox0j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#cnyox0j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#059669\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "dorsten": {
+    "info": {
+      "silhouette": "arch",
+      "ornament": "pale",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cwkjax6\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cwkjax6)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#2563eb\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cwkjax6\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cwkjax6)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#dc2626\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cwkjax6\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cwkjax6)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#f59e0b\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cwkjax6\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cwkjax6)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#7c3aed\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cwkjax6\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cwkjax6)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#059669\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "musterstadt": {
+    "info": {
+      "silhouette": "arch",
+      "ornament": "pale",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdn9jd\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cfdn9jd)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#2563eb\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdn9jd\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cfdn9jd)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#dc2626\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdn9jd\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cfdn9jd)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#f59e0b\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdn9jd\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cfdn9jd)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#7c3aed\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdn9jd\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#cfdn9jd)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#059669\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "neustadt-am-see": {
+    "info": {
+      "silhouette": "badge",
+      "ornament": "chevron",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"civfb6b\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#civfb6b)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#2563eb\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"civfb6b\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#civfb6b)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#dc2626\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"civfb6b\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#civfb6b)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#f59e0b\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"civfb6b\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#civfb6b)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#7c3aed\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"civfb6b\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#civfb6b)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#059669\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "ostheim": {
+    "info": {
+      "silhouette": "notch",
+      "ornament": "chevron",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"coaxkna\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#coaxkna)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#2563eb\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"coaxkna\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#coaxkna)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#dc2626\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"coaxkna\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#coaxkna)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#f59e0b\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"coaxkna\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#coaxkna)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#7c3aed\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"coaxkna\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#coaxkna)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#059669\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "kamp-lintfort": {
+    "info": {
+      "silhouette": "crest",
+      "ornament": "pile",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1onte3j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#c1onte3j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#2563eb\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1onte3j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#c1onte3j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#dc2626\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1onte3j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#c1onte3j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#f59e0b\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1onte3j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#c1onte3j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#7c3aed\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1onte3j\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#c1onte3j)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#059669\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "a": {
+    "info": {
+      "silhouette": "badge",
+      "ornament": "pale",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c15gofpr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c15gofpr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#2563eb\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c15gofpr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c15gofpr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#dc2626\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c15gofpr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c15gofpr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#f59e0b\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c15gofpr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c15gofpr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#7c3aed\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c15gofpr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c15gofpr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#059669\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "zzz-langer-slug-name": {
+    "info": {
+      "silhouette": "badge",
+      "ornament": "pile",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1pacrg8\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1pacrg8)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#2563eb\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1pacrg8\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1pacrg8)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#dc2626\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1pacrg8\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1pacrg8)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#f59e0b\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1pacrg8\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1pacrg8)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#7c3aed\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1pacrg8\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1pacrg8)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#059669\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-0": {
+    "info": {
+      "silhouette": "notch",
+      "ornament": "pile",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cbbjlt6\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cbbjlt6)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#2563eb\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cbbjlt6\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cbbjlt6)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#dc2626\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cbbjlt6\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cbbjlt6)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#f59e0b\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cbbjlt6\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cbbjlt6)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#7c3aed\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cbbjlt6\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cbbjlt6)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#059669\"/><g><path d=\"M20 0H76L48 82Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-1": {
+    "info": {
+      "silhouette": "arch",
+      "ornament": "pile",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c16ze6x3\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#c16ze6x3)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#2563eb\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c16ze6x3\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#c16ze6x3)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#dc2626\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c16ze6x3\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#c16ze6x3)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#f59e0b\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c16ze6x3\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#c16ze6x3)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#7c3aed\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c16ze6x3\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#c16ze6x3)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#059669\"/><g><path d=\"M32 0H64L48 66Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-2": {
+    "info": {
+      "silhouette": "notch",
+      "ornament": "bend",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1ddabl2\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1ddabl2)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#2563eb\"/><g><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1ddabl2\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1ddabl2)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#dc2626\"/><g><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1ddabl2\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1ddabl2)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#f59e0b\"/><g><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1ddabl2\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1ddabl2)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#7c3aed\"/><g><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1ddabl2\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1ddabl2)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#059669\"/><g><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-3": {
+    "info": {
+      "silhouette": "notch",
+      "ornament": "bend",
+      "weight": "slim",
+      "mirrored": true
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1dbwwy3\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1dbwwy3)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#2563eb\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1dbwwy3\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1dbwwy3)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#dc2626\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1dbwwy3\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1dbwwy3)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#f59e0b\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1dbwwy3\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1dbwwy3)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#7c3aed\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1dbwwy3\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#c1dbwwy3)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#059669\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-4": {
+    "info": {
+      "silhouette": "badge",
+      "ornament": "pale",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdisur\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#cfdisur)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#2563eb\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdisur\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#cfdisur)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#dc2626\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdisur\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#cfdisur)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#f59e0b\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdisur\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#cfdisur)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#7c3aed\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cfdisur\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#cfdisur)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#059669\"/><g><path d=\"M32 0H64V104H32Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-5": {
+    "info": {
+      "silhouette": "crest",
+      "ornament": "bend",
+      "weight": "broad",
+      "mirrored": true
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"canhekz\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#canhekz)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#2563eb\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"canhekz\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#canhekz)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#dc2626\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"canhekz\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#canhekz)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#f59e0b\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"canhekz\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#canhekz)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#7c3aed\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"canhekz\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\"/></clipPath></defs><g clip-path=\"url(#canhekz)\"><path d=\"M14 0H82A14 14 0 0 1 96 14V58C96 81 76 96 48 104C20 96 0 81 0 58V14A14 14 0 0 1 14 0Z\" fill=\"#059669\"/><g transform=\"translate(96 0) scale(-1 1)\"><path d=\"M-8 54L54 -8H108L-8 108Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-7": {
+    "info": {
+      "silhouette": "notch",
+      "ornament": "bend",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cgcvli0\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cgcvli0)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#2563eb\"/><g><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cgcvli0\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cgcvli0)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#dc2626\"/><g><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cgcvli0\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cgcvli0)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#f59e0b\"/><g><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cgcvli0\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cgcvli0)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#7c3aed\"/><g><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"cgcvli0\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\"/></clipPath></defs><g clip-path=\"url(#cgcvli0)\"><path d=\"M8 0H88A8 8 0 0 1 96 8V70L48 104L0 70V8A8 8 0 0 1 8 0Z\" fill=\"#059669\"/><g><path d=\"M-8 54L54 -8H80L-8 80Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-9": {
+    "info": {
+      "silhouette": "badge",
+      "ornament": "chevron",
+      "weight": "broad",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c12pz2m\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c12pz2m)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#2563eb\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c12pz2m\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c12pz2m)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#dc2626\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c12pz2m\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c12pz2m)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#f59e0b\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c12pz2m\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c12pz2m)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#7c3aed\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c12pz2m\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c12pz2m)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#059669\"/><g><path d=\"M48 18L96 66V98L48 50L0 98V66Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-13": {
+    "info": {
+      "silhouette": "badge",
+      "ornament": "chevron",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1p4hr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1p4hr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#2563eb\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1p4hr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1p4hr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#dc2626\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1p4hr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1p4hr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#f59e0b\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1p4hr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1p4hr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#7c3aed\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"c1p4hr\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\"/></clipPath></defs><g clip-path=\"url(#c1p4hr)\"><path d=\"M16 0H80A16 16 0 0 1 96 16V78A26 26 0 0 1 70 104H26A26 26 0 0 1 0 78V16A16 16 0 0 1 16 0Z\" fill=\"#059669\"/><g><path d=\"M48 26L96 74V94L48 46L0 94V74Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  },
+  "cover-28": {
+    "info": {
+      "silhouette": "arch",
+      "ornament": "pale",
+      "weight": "slim",
+      "mirrored": false
+    },
+    "svg": {
+      "blue": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"co0crsw\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#co0crsw)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#2563eb\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#c7c7c7\"/></g></g></svg>",
+      "red": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"co0crsw\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#co0crsw)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#dc2626\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#cccccc\"/></g></g></svg>",
+      "amber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"co0crsw\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#co0crsw)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#f59e0b\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#5a5a5a\"/></g></g></svg>",
+      "violet": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"co0crsw\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#co0crsw)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#7c3aed\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#bfbfbf\"/></g></g></svg>",
+      "emerald": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 104\" role=\"img\" aria-label=\"Placeholder logo\" data-generated=\"placeholder\"><defs><clipPath id=\"co0crsw\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\"/></clipPath></defs><g clip-path=\"url(#co0crsw)\"><path d=\"M0 34A48 34 0 0 1 96 34V58C96 81 76 96 48 104C20 96 0 81 0 58Z\" fill=\"#059669\"/><g><path d=\"M40 0H56V104H40Z\" fill=\"#cccccc\"/></g></g></svg>"
+    }
+  }
+}

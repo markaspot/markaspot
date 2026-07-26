@@ -22,8 +22,15 @@ services:
       - '@config.factory'
       - '@datetime.time'
       - '@lock'
+      - '@markaspot_fastmap.placeholder_signet_generator'
+      - '@file.repository'
+      - '@file_system'
       - '@?markaspot_ai.client'
-      - '@markaspot_nuxt.citizen_wording_resolver'
+      - '@?markaspot_nuxt.citizen_wording_resolver'
+      - '@file.usage'
+
+  markaspot_fastmap.placeholder_signet_generator:
+    class: Drupal\markaspot_fastmap\Service\PlaceholderSignetGenerator
 
   markaspot_fastmap.workspace_visibility:
     class: Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService

@@ -25,6 +25,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Drupal\Tests\UnitTestCase;
+use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Drupal\Core\Routing\TrustedRedirectResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -152,8 +153,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     // transaction wrapper in verifyWorkspace().
     $this->transaction = new class {
 
+      /**
+       * Number of transaction rollbacks.
+       */
       public int $rollbacks = 0;
 
+      /**
+       * Records a transaction rollback.
+       */
       public function rollBack(): void {
         $this->rollbacks++;
       }
@@ -1173,21 +1180,41 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       ->willReturn([$group]);
 
     $membership = new class {
+
+      /**
+       * Checks whether the relationship exposes a field.
+       */
       public function hasField(string $fieldName): bool {
         return in_array($fieldName, ['group_roles', 'entity_id'], TRUE);
       }
+
+      /**
+       * Returns a minimal field value object.
+       */
       public function get(string $fieldName): object {
         return match ($fieldName) {
           'group_roles' => new class {
+
+            /**
+             * Returns the relationship role values.
+             */
             public function getValue(): array {
               return [['target_id' => 'jur-tenant_admin']];
             }
+
           },
           'entity_id' => new class {
+
+            /**
+             * Referenced user ID in Drupal field-item form.
+             */
+            // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
             public int $target_id = 123;
+
           },
         };
       }
+
     };
 
     $relationshipStorage = $this->createMock(EntityStorageInterface::class);
@@ -1626,7 +1653,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $delete->method('execute')->willReturn(0);
 
     $database = $this->createMock(Connection::class);
-    $transactionStub = new class { public function rollBack(): void {} };
+    $transactionStub = new class {
+
+      /**
+       * Rolls back the transaction.
+       */
+      public function rollBack(): void {}
+
+    };
     $database->method('startTransaction')->willReturn($transactionStub);
     $database->method('select')->willReturn($select);
     $database->method('insert')->willReturn($insert);
@@ -1689,7 +1723,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $delete->method('execute')->willReturn(0);
 
     $database = $this->createMock(Connection::class);
-    $transactionStub = new class { public function rollBack(): void {} };
+    $transactionStub = new class {
+
+      /**
+       * Rolls back the transaction.
+       */
+      public function rollBack(): void {}
+
+    };
     $database->method('startTransaction')->willReturn($transactionStub);
     $database->method('select')->willReturn($select);
     $database->method('insert')->willReturn($insert);
@@ -1717,7 +1758,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $stored = json_decode($insertedData['workspace_data'], TRUE);
 
-    // status_translations: 'de' is valid, 'xx-evil' and 'zh' are not in allowlist.
+    // status_translations: 'de' is valid, 'xx-evil' and 'zh' are not.
     $statusTransLangs = array_keys($stored['status_translations'] ?? []);
     $this->assertContains('de', $statusTransLangs);
     $this->assertNotContains('xx-evil', $statusTransLangs);
@@ -1763,7 +1804,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $delete->method('execute')->willReturn(0);
 
     $database = $this->createMock(Connection::class);
-    $transactionStub = new class { public function rollBack(): void {} };
+    $transactionStub = new class {
+
+      /**
+       * Rolls back the transaction.
+       */
+      public function rollBack(): void {}
+
+    };
     $database->method('startTransaction')->willReturn($transactionStub);
     $database->method('select')->willReturn($select);
     $database->method('insert')->willReturn($insert);
@@ -1813,7 +1861,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       ->willReturn($kvStore);
 
     // User is blocked.
-    $user = $this->createMock(\Drupal\user\UserInterface::class);
+    $user = $this->createMock(UserInterface::class);
     $user->method('isBlocked')->willReturn(TRUE);
 
     $userStorage = $this->createMock(EntityStorageInterface::class);
@@ -1991,6 +2039,9 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $database = $this->createMock(Connection::class);
     $transactionStub = new class {
 
+      /**
+       * Rolls back the transaction.
+       */
       public function rollBack(): void {}
 
     };
@@ -2049,6 +2100,9 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $database = $this->createMock(Connection::class);
     $transactionStub = new class {
 
+      /**
+       * Rolls back the transaction.
+       */
       public function rollBack(): void {}
 
     };
@@ -2105,6 +2159,9 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $database = $this->createMock(Connection::class);
     $transactionStub = new class {
 
+      /**
+       * Rolls back the transaction.
+       */
       public function rollBack(): void {}
 
     };

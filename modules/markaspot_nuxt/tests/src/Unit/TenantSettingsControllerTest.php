@@ -20,7 +20,9 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Component\Utility\EmailValidator;
+use Drupal\file\FileInterface;
 use Drupal\file\FileRepositoryInterface;
+use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -92,6 +94,20 @@ class TenantSettingsControllerTest extends UnitTestCase {
   protected FileRepositoryInterface $fileRepository;
 
   /**
+   * The mocked managed file storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $fileStorage;
+
+  /**
+   * The mocked managed file usage service.
+   *
+   * @var \Drupal\file\FileUsage\FileUsageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FileUsageInterface $fileUsage;
+
+  /**
    * The mocked hierarchy resolver.
    *
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -128,12 +144,13 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $orgQuery->method('execute')->willReturn(['2']);
     $this->groupStorage->method('getQuery')->willReturn($orgQuery);
     $this->groupRelationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $this->fileStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->entityTypeManager->method('getStorage')
       ->willReturnCallback(fn(string $type) => match ($type) {
         'group' => $this->groupStorage,
         'group_relationship' => $this->groupRelationshipStorage,
-        'file' => $this->createMock(EntityStorageInterface::class),
+        'file' => $this->fileStorage,
         default => $this->createMock(EntityStorageInterface::class),
       });
 
@@ -142,6 +159,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
     $this->fileSystem = $this->createMock(FileSystemInterface::class);
     $this->fileRepository = $this->createMock(FileRepositoryInterface::class);
+    $this->fileUsage = $this->createMock(FileUsageInterface::class);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->currentUser->method('getDisplayName')->willReturn('testuser');
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
@@ -162,6 +180,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $container->set('stream_wrapper_manager', $this->streamWrapperManager);
     $container->set('file_system', $this->fileSystem);
     $container->set('file.repository', $this->fileRepository);
+    $container->set('file.usage', $this->fileUsage);
     $container->set('current_user', $this->currentUser);
     $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
     $container->set('markaspot_nuxt.feature_scope_resolver', new FeatureScopeResolver(
@@ -2955,6 +2974,142 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests app icon uploads outside the accepted aspect ratio are rejected.
+   *
+   * @covers ::uploadLogo
+   * @covers ::processLogoUpload
+   * @covers ::getAppIconAspectRatio
+   */
+  public function testUploadAppIconRejectsWideSvg(): void {
+    $group = $this->createMockGroup([
+      'field_favicon' => NULL,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $this->fileSystem->method('prepareDirectory')->willReturn(TRUE);
+    $this->fileRepository->expects($this->never())->method('writeData');
+
+    $tmp = tempnam(sys_get_temp_dir(), 'app-icon-');
+    $this->assertIsString($tmp);
+    file_put_contents(
+      $tmp,
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"></svg>',
+    );
+    $uploaded = new UploadedFile($tmp, 'wide.svg', 'image/svg+xml', NULL, TRUE);
+    $request = Request::create(
+      '/api/tenant/14/logo',
+      'POST',
+      [],
+      [],
+      ['app_icon' => $uploaded],
+    );
+
+    $response = $this->controller->uploadLogo($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertSame(
+      'App icon must be approximately square with an aspect ratio between 0.8 and 1.25.',
+      $data['error'],
+    );
+    $this->assertArrayNotHasKey('warnings', $data);
+    unlink($tmp);
+  }
+
+  /**
+   * Tests deleting a logo preserves a file still used by the app icon.
+   *
+   * @covers ::deleteLogo
+   */
+  public function testDeleteLogoPreservesFileReferencedByFavicon(): void {
+    $fields = [
+      'field_logo_light' => [['target_id' => 77]],
+      'field_logo_dark' => [],
+      'field_favicon' => [['target_id' => 77]],
+    ];
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(
+        static fn(string $name): bool => array_key_exists($name, $fields),
+      );
+    $group->method('get')
+      ->willReturnCallback(function (string $name) use (&$fields) {
+        $field = $this->createMock(FieldItemListInterface::class);
+        $field->method('getValue')
+          ->willReturnCallback(
+            static function () use (&$fields, $name): array {
+              return $fields[$name];
+            },
+          );
+        $field->method('isEmpty')
+          ->willReturnCallback(
+            static function () use (&$fields, $name): bool {
+              return $fields[$name] === [];
+            },
+          );
+        return $field;
+      });
+    $group->method('set')
+      ->willReturnCallback(
+        function (string $name, $value) use (&$fields, $group) {
+          $fields[$name] = $value === NULL ? [] : $value;
+          return $group;
+        },
+      );
+    $group->expects($this->once())->method('save');
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $file = $this->createMock(FileInterface::class);
+    $file->method('id')->willReturn('77');
+    $file->expects($this->never())->method('delete');
+    $this->fileStorage->method('load')->with(77)->willReturn($file);
+    $this->fileUsage->expects($this->never())->method('listUsage');
+
+    $request = Request::create(
+      '/api/tenant/14/logo?variant=logo_light',
+      'DELETE',
+    );
+    $response = $this->controller->deleteLogo($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame([['target_id' => 77]], $fields['field_favicon']);
+  }
+
+  /**
+   * Tests replacement keeps files still used outside the current group.
+   *
+   * @covers ::deleteBrandingFileIfUnreferenced
+   */
+  public function testReplacementPreservesFileWithGlobalUsage(): void {
+    $group = $this->createMockGroup([
+      'field_logo_light' => NULL,
+      'field_logo_dark' => NULL,
+      'field_favicon' => NULL,
+    ]);
+    $file = $this->createMock(FileInterface::class);
+    $file->expects($this->never())->method('delete');
+    $this->fileStorage->method('load')->with(77)->willReturn($file);
+    $this->fileUsage->expects($this->once())
+      ->method('listUsage')
+      ->with($file)
+      ->willReturn([
+        'file' => [
+          'group' => [
+            '99' => '1',
+          ],
+        ],
+      ]);
+
+    $method = new \ReflectionMethod(
+      $this->controller,
+      'deleteBrandingFileIfUnreferenced',
+    );
+    $method->invoke($this->controller, $group, 77);
+  }
+
+  /**
    * Tests saveLogoPngFallback() writes a sibling public PNG.
    *
    * @covers ::saveLogoPngFallback
@@ -3025,6 +3180,64 @@ class TenantSettingsControllerTest extends UnitTestCase {
   public function testSanitizeSvgLogoDataRejectsNonSvgMarkup(): void {
     $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
     $result = $method->invoke($this->controller, '<script>alert(1)</script>', 'logo_light');
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests sanitizeSvgLogoData() rejects external image references.
+   *
+   * @covers ::sanitizeSvgLogoData
+   * @covers ::svgContainsUnsafeExternalReferences
+   */
+  public function testSanitizeSvgLogoDataRejectsExternalImageReference(): void {
+    $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
+    $result = $method->invoke(
+      $this->controller,
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+      . '<image href="https://example.com/tracker.png" width="100" height="100"/>'
+      . '</svg>',
+      'app_icon',
+    );
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests sanitizeSvgLogoData() rejects escaped CSS imports.
+   *
+   * @covers ::sanitizeSvgLogoData
+   * @covers ::svgContainsUnsafeExternalReferences
+   */
+  public function testSanitizeSvgLogoDataRejectsEscapedCssImport(): void {
+    $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
+    $result = $method->invoke(
+      $this->controller,
+      '<svg xmlns="http://www.w3.org/2000/svg">'
+      . '<style>@\\69mport "https://example.com/tracker.css";</style>'
+      . '</svg>',
+      'app_icon',
+    );
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests sanitizeSvgLogoData() rejects external inline CSS images.
+   *
+   * @covers ::sanitizeSvgLogoData
+   * @covers ::svgContainsUnsafeExternalReferences
+   */
+  public function testSanitizeSvgLogoDataRejectsInlineStyle(): void {
+    $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
+    $result = $method->invoke(
+      $this->controller,
+      '<svg xmlns="http://www.w3.org/2000/svg">'
+      . '<rect width="100" height="100" '
+      . 'style="mask-image:image-set(\'https://example.com/tracker.png\' 1x)"/>'
+      . '</svg>',
+      'app_icon',
+    );
 
     $this->assertNull($result);
   }

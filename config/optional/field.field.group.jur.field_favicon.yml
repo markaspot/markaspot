@@ -1,0 +1,27 @@
+uuid: f56267a2-e96e-4652-8f52-2cd337c47945
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_favicon
+    - group.type.jur
+  module:
+    - file
+id: group.jur.field_favicon
+field_name: field_favicon
+entity_type: group
+bundle: jur
+label: 'App Icon (PWA)'
+description: 'Upload a square SVG or PNG icon for the progressive web app'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:file'
+  handler_settings: {  }
+  file_directory: 'jurisdictions/app-icon'
+  file_extensions: 'png svg'
+  max_filesize: '500 KB'
+  description_field: false
+field_type: file

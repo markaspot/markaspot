@@ -6,6 +6,7 @@ dependencies:
     - field.field.group.jur.field_boundary
     - field.field.group.jur.field_custom_css
     - field.field.group.jur.field_email_footer
+    - field.field.group.jur.field_favicon
     - field.field.group.jur.field_font_body
     - field.field.group.jur.field_font_heading
     - field.field.group.jur.field_jurisdiction_address
@@ -57,16 +58,23 @@ content:
       rows: 5
       placeholder: ''
     third_party_settings: {  }
+  field_favicon:
+    type: file_generic
+    weight: 12
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
   field_font_body:
     type: file_generic
-    weight: 13
+    weight: 14
     region: content
     settings:
       progress_indicator: throbber
     third_party_settings: {  }
   field_font_heading:
     type: file_generic
-    weight: 12
+    weight: 13
     region: content
     settings:
       progress_indicator: throbber

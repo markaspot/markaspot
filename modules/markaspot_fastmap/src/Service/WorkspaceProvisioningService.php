@@ -9,8 +9,13 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\File\FileExists;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\file\FileInterface;
+use Drupal\file\FileRepositoryInterface;
+use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
@@ -296,6 +301,33 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     'construction-watch' => ['primary' => 'yellow', 'secondary' => 'amber', 'neutral' => 'stone'],
   ];
 
+  /**
+   * Logo fields the placeholder signet is attached to, where present.
+   *
+   * Field_favicon is not shipped by the profile, so its presence is checked
+   * rather than assumed.
+   */
+  private const SIGNET_TARGET_FIELDS = [
+    'field_logo_light',
+    'field_logo_dark',
+    'field_favicon',
+  ];
+
+  /**
+   * Tailwind 500 colors used as template primaries.
+   */
+  private const TAILWIND_500_COLORS = [
+    'red' => '#ef4444',
+    'blue' => '#3b82f6',
+    'amber' => '#f59e0b',
+    'violet' => '#8b5cf6',
+    'orange' => '#f97316',
+    'green' => '#22c55e',
+    'emerald' => '#10b981',
+    'cyan' => '#06b6d4',
+    'yellow' => '#eab308',
+  ];
+
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly Connection $database,
@@ -304,8 +336,12 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly TimeInterface $time,
     protected readonly LockBackendInterface $lock,
+    protected readonly PlaceholderSignetGeneratorInterface $placeholderSignetGenerator,
+    protected readonly FileRepositoryInterface $fileRepository,
+    protected readonly FileSystemInterface $fileSystem,
     protected readonly ?AiClientService $aiClient = NULL,
     protected readonly ?CitizenWordingResolver $citizenWordingResolver = NULL,
+    protected readonly ?FileUsageInterface $fileUsage = NULL,
   ) {}
 
   /**
@@ -459,6 +495,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
         // 4. Assign categories to group.
         $group->set('field_service_categories', array_map(fn($tid) => ['target_id' => $tid], $categoryTermIds));
+        // Needs the saved group: the signet is written to the same directory a
+        // tenant-uploaded logo would land in, which is keyed by group id.
+        $this->attachPlaceholderSignet($group, $slug, $template);
         $group->save();
 
         // 5. Create tenant admin user.
@@ -598,10 +637,58 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
       }
 
-      // 5. Delete group entity.
+      // 5. Collect branding files before the group goes away.
+      // The group is the only reference to them, so once it is deleted the
+      // files become unreachable orphans: permanent entities with empty
+      // file.usage plus the bytes on disk. Every provisioned workspace carries
+      // a generated signet, so without this step each torn-down demo leaves
+      // one behind. Collect first, delete after the group save, otherwise a
+      // failed group deletion would leave fields pointing at missing files.
+      $brandingFiles = $this->collectBrandingFiles($group);
+
+      // 6. Delete group entity.
       $group->delete();
 
-      $this->logger->info('Workspace torn down: group @id', ['@id' => $groupId]);
+      // 7. Delete every branding file nobody else holds any more.
+      // Deleting the group already cleared its own file.usage records, so an
+      // empty usage list here means the file is now unreachable. Checking
+      // instead of deleting blindly matters because a tenant may have pointed
+      // another entity at the same upload.
+      // The dependency is optional only to keep the constructor signature
+      // backwards compatible. Without it the files cannot be checked, and
+      // deleting them unchecked could take away a file another entity still
+      // uses, so the safe move is to keep them and say so.
+      $deleted = 0;
+      if ($this->fileUsage === NULL) {
+        if ($brandingFiles !== []) {
+          $this->logger->warning('Branding files of group @id were kept: no file.usage service available to verify they are unreferenced.', [
+            '@id' => $groupId,
+          ]);
+        }
+        $brandingFiles = [];
+      }
+      foreach ($brandingFiles as $file) {
+        try {
+          if (!empty($this->fileUsage->listUsage($file))) {
+            continue;
+          }
+          $file->delete();
+          $deleted++;
+        }
+        catch (\Exception $e) {
+          // A stuck file must not roll back an otherwise complete teardown.
+          $this->logger->warning('Could not delete branding file @fid of torn-down group @id: @msg', [
+            '@fid' => $file->id(),
+            '@id' => $groupId,
+            '@msg' => $e->getMessage(),
+          ]);
+        }
+      }
+
+      $this->logger->info('Workspace torn down: group @id, @files branding files removed', [
+        '@id' => $groupId,
+        '@files' => count($brandingFiles),
+      ]);
     }
     catch (\Exception $e) {
       $transaction->rollBack();
@@ -611,6 +698,39 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       ]);
       throw new \RuntimeException('Workspace teardown failed: ' . $e->getMessage(), 0, $e);
     }
+  }
+
+  /**
+   * Collects the branding files a group holds, each file only once.
+   *
+   * The generated signet is written to every field in SIGNET_TARGET_FIELDS, so
+   * all of them usually carry the SAME file id. Deduplicating by id keeps the
+   * caller from deleting one entity three times.
+   *
+   * Files still used elsewhere are skipped: file.usage is the only reliable
+   * signal here, because a tenant may have uploaded one image and pointed
+   * several fields at it.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group about to be deleted.
+   *
+   * @return \Drupal\file\FileInterface[]
+   *   Files safe to delete, keyed by file id.
+   */
+  private function collectBrandingFiles(GroupInterface $group): array {
+    $files = [];
+
+    foreach (self::SIGNET_TARGET_FIELDS as $fieldName) {
+      if (!$group->hasField($fieldName) || $group->get($fieldName)->isEmpty()) {
+        continue;
+      }
+      $file = $group->get($fieldName)->entity;
+      if ($file instanceof FileInterface) {
+        $files[(int) $file->id()] = $file;
+      }
+    }
+
+    return $files;
   }
 
   /**
@@ -682,6 +802,70 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'category' => ['enabled' => TRUE],
       ],
     ];
+  }
+
+  /**
+   * Attaches one managed placeholder signet to the workspace logo fields.
+   *
+   * Sets the reference on the saved group rather than on the create() payload,
+   * for two reasons: the destination directory is keyed by group id, and each
+   * assignment can be guarded. An unknown field name in the create() payload
+   * would not throw, Drupal discards it silently, so the guard is what keeps
+   * field_favicon from becoming a line that looks effective and is not.
+   */
+  private function attachPlaceholderSignet(GroupInterface $group, string $slug, string $template): void {
+    // Same directory a tenant-uploaded logo lands in, so the placeholder and
+    // its eventual replacement share one location.
+    $directory = 'public://jurisdictions/' . $group->id() . '/logos';
+    try {
+      // writeData() does not create directories, it throws. Without this the
+      // feature is silently dead on every instance whose files directory was
+      // not prepared by the manual onboarding script.
+      if (!$this->fileSystem->prepareDirectory(
+        $directory,
+        FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS,
+      )) {
+        throw new \RuntimeException('Directory not writable: ' . $directory);
+      }
+
+      $theme = self::THEME_TEMPLATES[$template] ?? self::THEME_TEMPLATES['civic-report'];
+      $primaryHex = $this->resolvePrimaryHex($theme['primary']);
+      $svg = $this->placeholderSignetGenerator->generate($slug, $primaryHex);
+      $file = $this->fileRepository->writeData(
+        $svg,
+        $directory . '/signet.svg',
+        FileExists::Replace,
+      );
+      $reference = ['target_id' => $file->id()];
+
+      foreach (self::SIGNET_TARGET_FIELDS as $fieldName) {
+        if ($group->hasField($fieldName)) {
+          $group->set($fieldName, $reference);
+        }
+      }
+    }
+    catch (\Throwable $exception) {
+      // Logged as an error, not a warning: a failure here is not cosmetic, it
+      // means every new workspace starts with a foreign product logo.
+      $this->logger->error(
+        'Placeholder signet creation failed for workspace @slug: @message',
+        [
+          '@slug' => $slug,
+          '@message' => $exception->getMessage(),
+        ],
+      );
+    }
+  }
+
+  /**
+   * Resolves a Tailwind color name to its 500 shade.
+   */
+  private function resolvePrimaryHex(string $color): string {
+    if (preg_match('/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $color)) {
+      return $color;
+    }
+
+    return self::TAILWIND_500_COLORS[$color] ?? self::TAILWIND_500_COLORS['blue'];
   }
 
   /**
