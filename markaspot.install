@@ -4323,6 +4323,113 @@ function markaspot_update_11931(): string {
 }
 
 /**
+ * Adds a tenant-owned PWA app icon to jurisdiction groups.
+ */
+function markaspot_update_11932(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('group')) {
+    return 'Skipped app icon field because group module is not installed.';
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  try {
+    $jur_type = $entity_type_manager->getStorage('group_type')->load('jur');
+  }
+  catch (\Exception) {
+    return 'Skipped app icon field because group entity storage is not available.';
+  }
+  if (!$jur_type) {
+    return 'Skipped app icon field because jur group type does not exist.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $module_source = new FileStorage($module_path . '/config/optional');
+  $profile_source = new FileStorage($profile_path . '/config/optional');
+  $changes = [];
+
+  $definitions = [
+    [
+      'entity_type' => 'field_storage_config',
+      'entity_id' => 'group.field_favicon',
+      'config_name' => 'field.storage.group.field_favicon',
+      'source' => $module_source,
+    ],
+    [
+      'entity_type' => 'field_config',
+      'entity_id' => 'group.jur.field_favicon',
+      'config_name' => 'field.field.group.jur.field_favicon',
+      'source' => $profile_source,
+    ],
+  ];
+  foreach ($definitions as $definition) {
+    $storage = $entity_type_manager->getStorage($definition['entity_type']);
+    if ($storage->load($definition['entity_id'])) {
+      continue;
+    }
+    $config_data = $definition['source']->read($definition['config_name']);
+    if (!is_array($config_data)) {
+      throw new \RuntimeException("Could not read {$definition['config_name']} from optional config.");
+    }
+    $storage->create($config_data)->save();
+    $changes[] = 'created ' . $definition['config_name'];
+  }
+
+  $form_display_storage = $entity_type_manager->getStorage('entity_form_display');
+  $form_display = $form_display_storage->load('group.jur.default');
+  if (!$form_display) {
+    $form_display = $form_display_storage->create([
+      'targetEntityType' => 'group',
+      'bundle' => 'jur',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
+  if (!$form_display->getComponent('field_favicon')) {
+    $dark_logo_component = $form_display->getComponent('field_logo_dark');
+    $weight = (int) ($dark_logo_component['weight'] ?? 11) + 1;
+    $form_display->setComponent('field_favicon', [
+      'type' => 'file_generic',
+      'weight' => $weight,
+      'region' => 'content',
+      'settings' => [
+        'progress_indicator' => 'throbber',
+      ],
+      'third_party_settings' => [],
+    ]);
+    $form_display->save();
+    $changes[] = 'added field_favicon to group.jur.default';
+  }
+
+  if ($entity_type_manager->hasDefinition('jsonapi_resource_config')) {
+    $resource = $entity_type_manager
+      ->getStorage('jsonapi_resource_config')
+      ->load('group--jur');
+    if ($resource) {
+      $fields = $resource->get('resourceFields') ?? [];
+      $fields = is_array($fields) ? $fields : [];
+      $favicon_field = [
+        'disabled' => TRUE,
+        'fieldName' => 'field_favicon',
+        'publicName' => 'field_favicon',
+        'enhancer' => [
+          'id' => '',
+        ],
+      ];
+      if (($fields['field_favicon'] ?? NULL) !== $favicon_field) {
+        $fields['field_favicon'] = $favicon_field;
+        $resource->set('resourceFields', $fields);
+        $resource->save();
+        $changes[] = 'disabled field_favicon on group--jur JSON:API';
+      }
+    }
+  }
+
+  return $changes
+    ? ucfirst(implode('; ', $changes)) . '.'
+    : 'App icon field is already configured.';
+}
+
+/**
  * Places field_request_attributes in the Administration field group.
  */
 function _markaspot_update_11923_place_request_attributes_in_management_group(EntityFormDisplay $display): bool {

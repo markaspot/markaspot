@@ -74,6 +74,9 @@
           "description": "Background and text colors. Use a neutral preset (slate, gray, zinc, neutral, stone, mauve, olive, mist, taupe) or a custom HEX value.",
           "default": "slate"
         },
+        "pwaIcon": {
+          "type": "string"
+        },
         "fonts": {
           "type": "object",
           "title": "Typography",

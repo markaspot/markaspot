@@ -17,6 +17,7 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\file\FileInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
@@ -253,6 +254,13 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
           public $value;
 
           /**
+           * Referenced entity when the field contains one.
+           *
+           * @var mixed
+           */
+          public $entity;
+
+          /**
            * Whether the field is empty.
            *
            * @var bool
@@ -264,6 +272,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
            */
           public function __construct($value) {
             $this->value = $value;
+            $this->entity = is_object($value) ? $value : NULL;
             $this->empty = ($value === NULL);
           }
 
@@ -562,6 +571,71 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(50.73, $data['center_lat']);
     $this->assertEquals(7.1, $data['center_lng']);
     $this->assertEquals(14, $data['zoom_initial']);
+  }
+
+  /**
+   * Tests the PWA app icon field overrides JSON config with a Drupal path.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsAddsPwaIconFromField(): void {
+    $file = $this->createMock(FileInterface::class);
+    $file->method('getFileUri')
+      ->willReturn('public://jurisdictions/14/app-icon/app-icon-a1b2c3d4.svg');
+    $file->method('getCacheTags')->willReturn(['file:77']);
+    $file->method('getCacheContexts')->willReturn([]);
+    $file->method('getCacheMaxAge')->willReturn(-1);
+
+    $this->streamWrapperManager->method('getScheme')
+      ->willReturn('public');
+    $this->streamWrapperManager->method('getTarget')
+      ->willReturn('jurisdictions/14/app-icon/app-icon-a1b2c3d4.svg');
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'pwaIcon' => '/manually-configured.svg',
+        ],
+      ]),
+      'field_favicon' => $file,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $expected = '/sites/default/files/jurisdictions/14/app-icon/app-icon-a1b2c3d4.svg';
+    $this->assertSame($expected, $data['theme']['pwaIcon']);
+    $this->assertSame($expected, $data['theme']['favicon']);
+    $this->assertStringStartsWith('/', $data['theme']['pwaIcon']);
+    $this->assertStringContainsString('/sites/', $data['theme']['pwaIcon']);
+    $this->assertStringNotContainsString('public://', $data['theme']['pwaIcon']);
+    $this->assertStringNotContainsString('/api/images/', $data['theme']['pwaIcon']);
+  }
+
+  /**
+   * Tests an empty PWA app icon field does not add theme keys.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsOmitsEmptyPwaIconField(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'primary' => 'blue',
+        ],
+      ]),
+      'field_favicon' => NULL,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertArrayNotHasKey('pwaIcon', $data['theme']);
+    $this->assertArrayNotHasKey('favicon', $data['theme']);
   }
 
   /**

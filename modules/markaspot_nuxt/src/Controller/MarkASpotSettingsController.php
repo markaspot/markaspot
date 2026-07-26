@@ -604,6 +604,16 @@ class MarkASpotSettingsController extends ControllerBase {
         $settings['theme']['logos'] = $logos;
       }
 
+      if ($group->hasField('field_favicon') && !$group->get('field_favicon')->isEmpty()) {
+        $file = $group->get('field_favicon')->entity;
+        if ($file) {
+          $path = $getRelativePath($file);
+          $settings['theme']['pwaIcon'] = $path;
+          $settings['theme']['favicon'] = $path;
+          $cache_metadata->addCacheableDependency($file);
+        }
+      }
+
       // Add custom CSS from field_custom_css.
       if ($group->hasField('field_custom_css') && !$group->get('field_custom_css')->isEmpty()) {
         $custom_css = $group->get('field_custom_css')->value;

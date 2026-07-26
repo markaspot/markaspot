@@ -194,6 +194,12 @@ resourceFields:
     publicName: field_facilities
     enhancer:
       id: ''
+  field_favicon:
+    disabled: true
+    fieldName: field_favicon
+    publicName: field_favicon
+    enhancer:
+      id: ''
   field_font_body:
     disabled: true
     fieldName: field_font_body

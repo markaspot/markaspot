@@ -14,7 +14,9 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\file\FileInterface;
 use Drupal\file\FileRepositoryInterface;
+use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\Component\Utility\EmailValidator;
@@ -284,6 +286,13 @@ final class TenantSettingsController extends ControllerBase {
   protected FileRepositoryInterface $fileRepository;
 
   /**
+   * The managed file usage service.
+   *
+   * @var \Drupal\file\FileUsage\FileUsageInterface
+   */
+  protected FileUsageInterface $fileUsage;
+
+  /**
    * The jurisdiction hierarchy resolver.
    *
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
@@ -319,6 +328,7 @@ final class TenantSettingsController extends ControllerBase {
     StreamWrapperManagerInterface $stream_wrapper_manager,
     FileSystemInterface $file_system,
     FileRepositoryInterface $file_repository,
+    FileUsageInterface $file_usage,
     AccountInterface $current_user,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
     FeatureScopeResolver $feature_scope_resolver,
@@ -329,6 +339,7 @@ final class TenantSettingsController extends ControllerBase {
     $this->streamWrapperManager = $stream_wrapper_manager;
     $this->fileSystem = $file_system;
     $this->fileRepository = $file_repository;
+    $this->fileUsage = $file_usage;
     $this->currentUser = $current_user;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->featureScopeResolver = $feature_scope_resolver;
@@ -345,6 +356,7 @@ final class TenantSettingsController extends ControllerBase {
       $container->get('stream_wrapper_manager'),
       $container->get('file_system'),
       $container->get('file.repository'),
+      $container->get('file.usage'),
       $container->get('current_user'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('markaspot_nuxt.feature_scope_resolver'),
@@ -628,9 +640,8 @@ final class TenantSettingsController extends ControllerBase {
   /**
    * Handles logo upload for a jurisdiction group entity.
    *
-   * Accepts multipart/form-data with logo_light and/or logo_dark file fields.
-   * Validates file type (SVG, PNG) and size (max 500KB). Saves to the group
-   * entity's field_logo_light / field_logo_dark fields.
+   * Accepts multipart/form-data with logo_light, logo_dark, and app_icon file
+   * fields. Validates file type (SVG, PNG) and size (max 500KB).
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request with uploaded file(s).
@@ -650,16 +661,43 @@ final class TenantSettingsController extends ControllerBase {
     $uploadedFiles = $request->files;
     $logoLight = $uploadedFiles->get('logo_light');
     $logoDark = $uploadedFiles->get('logo_dark');
+    $appIcon = $uploadedFiles->get('app_icon');
     $logoLightPng = $uploadedFiles->get('logo_light_png');
     $logoDarkPng = $uploadedFiles->get('logo_dark_png');
 
-    if (!$logoLight && !$logoDark) {
-      return new JsonResponse(['error' => 'No logo file provided. Use logo_light or logo_dark field.'], 400);
+    if (!$logoLight && !$logoDark && !$appIcon) {
+      return new JsonResponse(['error' => 'No file provided. Use logo_light, logo_dark, or app_icon field.'], 400);
     }
 
     $logos = [];
+    $appIconUrl = NULL;
     $errors = [];
     $warnings = [];
+    $replacedFileIds = [];
+
+    // App icons fail atomically because the dashboard treats warnings as
+    // upload failures and must never report a rejected icon as saved.
+    if ($appIcon) {
+      $result = $this->processLogoUpload(
+        $appIcon,
+        $group,
+        'field_favicon',
+        'app_icon',
+        NULL,
+        [
+          'upload_dir' => 'public://jurisdictions/' . $group->id() . '/app-icon',
+          'mail_fallback' => FALSE,
+          'content_hashed_name' => TRUE,
+        ],
+      );
+      if (!$result['success']) {
+        return new JsonResponse(['error' => $result['error']], 400);
+      }
+      $appIconUrl = $result['url'];
+      if (!empty($result['replaced_file_id'])) {
+        $replacedFileIds[] = (int) $result['replaced_file_id'];
+      }
+    }
 
     // Process logo_light.
     if ($logoLight) {
@@ -697,8 +735,8 @@ final class TenantSettingsController extends ControllerBase {
       }
     }
 
-    // If any valid logo was processed, save the group entity.
-    if (!empty($logos)) {
+    // If any valid branding asset was processed, save the group entity.
+    if (!empty($logos) || $appIconUrl !== NULL) {
       try {
         $group->save();
       }
@@ -709,9 +747,12 @@ final class TenantSettingsController extends ControllerBase {
         );
         return new JsonResponse(['error' => 'Failed to save logo to group entity.'], 500);
       }
+      foreach (array_unique($replacedFileIds) as $replacedFileId) {
+        $this->deleteBrandingFileIfUnreferenced($group, $replacedFileId);
+      }
     }
 
-    if (!empty($errors) && empty($logos)) {
+    if (!empty($errors) && empty($logos) && $appIconUrl === NULL) {
       return new JsonResponse(['error' => implode(' ', $errors)], 400);
     }
 
@@ -720,6 +761,9 @@ final class TenantSettingsController extends ControllerBase {
       'jurisdiction_id' => (int) $group->id(),
       'logos' => $logos,
     ];
+    if ($appIconUrl !== NULL) {
+      $response['app_icon'] = $appIconUrl;
+    }
 
     if (!empty($errors)) {
       $response['warnings'] = $errors;
@@ -728,12 +772,16 @@ final class TenantSettingsController extends ControllerBase {
       $response['warnings'] = array_merge($response['warnings'] ?? [], $warnings);
     }
 
+    $uploadedVariants = array_keys($logos);
+    if ($appIconUrl !== NULL) {
+      $uploadedVariants[] = 'app_icon';
+    }
     $this->getLogger('markaspot_nuxt')->notice(
       'User @user uploaded logo(s) for jurisdiction @id: @logos',
       [
         '@user' => $this->currentUser->getDisplayName(),
         '@id' => $group->id(),
-        '@logos' => implode(', ', array_keys($logos)),
+        '@logos' => implode(', ', $uploadedVariants),
       ]
     );
 
@@ -748,14 +796,18 @@ final class TenantSettingsController extends ControllerBase {
    * @param \Drupal\group\Entity\GroupInterface $group
    *   The jurisdiction group entity.
    * @param string $fieldName
-   *   The group field name (field_logo_light or field_logo_dark).
+   *   The target branding field on the jurisdiction group.
    * @param string $fileKey
-   *   Human-readable key for error messages (logo_light or logo_dark).
+   *   Human-readable request key for error messages.
    * @param \Symfony\Component\HttpFoundation\File\UploadedFile|null $pngFallbackFile
    *   Optional client-generated PNG fallback for SVG logos.
+   * @param array $options
+   *   Upload behavior overrides. Supported keys are upload_dir,
+   *   mail_fallback, and content_hashed_name.
    *
    * @return array
-   *   Result array with 'success' bool, 'url', optional 'warnings', or 'error'.
+   *   Result array with 'success' bool, 'url', optional 'warnings',
+   *   'replaced_file_id', or 'error'.
    */
   protected function processLogoUpload(
     UploadedFile $uploadedFile,
@@ -763,6 +815,7 @@ final class TenantSettingsController extends ControllerBase {
     string $fieldName,
     string $fileKey,
     ?UploadedFile $pngFallbackFile = NULL,
+    array $options = [],
   ): array {
     // Validate file type: only SVG and PNG are allowed.
     $allowedExtensions = ['svg', 'png'];
@@ -792,8 +845,16 @@ final class TenantSettingsController extends ControllerBase {
       ];
     }
 
+    $options += [
+      'upload_dir' => 'public://jurisdictions/' . $group->id() . '/logos',
+      'mail_fallback' => TRUE,
+      'content_hashed_name' => FALSE,
+    ];
+    $uploadDir = (string) $options['upload_dir'];
+    $mailFallback = (bool) $options['mail_fallback'];
+    $contentHashedName = (bool) $options['content_hashed_name'];
+
     // Prepare the upload directory.
-    $uploadDir = 'public://jurisdictions/' . $group->id() . '/logos';
     if (!$this->fileSystem->prepareDirectory($uploadDir, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS)) {
       return [
         'success' => FALSE,
@@ -803,9 +864,11 @@ final class TenantSettingsController extends ControllerBase {
 
     // Build destination filename: sanitize the original filename.
     $originalName = $uploadedFile->getClientOriginalName();
-    $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
-    $destination = $uploadDir . '/' . $safeName;
-    $previousFallbackUri = $this->getExistingLogoPngFallbackUri($group, $fieldName);
+    $safeName = (string) preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+    $previousFileId = $this->getFieldTargetId($group, $fieldName);
+    $previousFallbackUri = $mailFallback
+      ? $this->getExistingLogoPngFallbackUri($group, $fieldName)
+      : NULL;
 
     // Save the file using Drupal's file repository (handles managed files).
     try {
@@ -832,6 +895,21 @@ final class TenantSettingsController extends ControllerBase {
           'error' => "Invalid PNG file for $fileKey.",
         ];
       }
+
+      if ($fieldName === 'field_favicon') {
+        $aspectRatio = $this->getAppIconAspectRatio($fileData, $extension);
+        if ($aspectRatio !== NULL && ($aspectRatio < 0.8 || $aspectRatio > 1.25)) {
+          return [
+            'success' => FALSE,
+            'error' => 'App icon must be approximately square with an aspect ratio between 0.8 and 1.25.',
+          ];
+        }
+      }
+
+      if ($contentHashedName) {
+        $safeName = 'app-icon-' . substr(sha1($fileData), 0, 8) . '.' . $extension;
+      }
+      $destination = $uploadDir . '/' . $safeName;
 
       $file = $this->fileRepository->writeData(
         $fileData,
@@ -865,7 +943,7 @@ final class TenantSettingsController extends ControllerBase {
     $warnings = [];
     $mailFallbackUrl = NULL;
     $mailFallbackUri = NULL;
-    if ($extension === 'svg' && $pngFallbackFile !== NULL) {
+    if ($mailFallback && $extension === 'svg' && $pngFallbackFile !== NULL) {
       $fallback = $this->saveLogoPngFallback($pngFallbackFile, $uploadDir, $safeName, $fileKey);
       if ($fallback['success']) {
         $mailFallbackUrl = $fallback['url'];
@@ -876,24 +954,31 @@ final class TenantSettingsController extends ControllerBase {
       }
     }
 
-    if ($previousFallbackUri !== NULL && $previousFallbackUri !== $mailFallbackUri) {
+    if ($mailFallback && $previousFallbackUri !== NULL && $previousFallbackUri !== $mailFallbackUri) {
       $this->deleteFileIfReadable($previousFallbackUri);
     }
 
     // Assign the file to the group field.
     $group->set($fieldName, ['target_id' => $file->id()]);
-
     // Build the URL for the response (relative path,
     // same pattern as getMarkASpotSettings).
     $uri = $file->getFileUri();
     $url = $this->buildPublicFileUrl($uri);
 
-    return [
+    $result = [
       'success' => TRUE,
       'url' => $url,
       'mail_fallback_url' => $mailFallbackUrl,
       'warnings' => $warnings,
     ];
+    if (
+      $contentHashedName
+      && $previousFileId !== NULL
+      && $previousFileId !== (int) $file->id()
+    ) {
+      $result['replaced_file_id'] = $previousFileId;
+    }
+    return $result;
   }
 
   /**
@@ -920,7 +1005,21 @@ final class TenantSettingsController extends ControllerBase {
     $clean = (string) preg_replace('/<!DOCTYPE[^>]*>\s*/i', '', $clean);
     $trimmed = trim($clean);
 
-    return $trimmed !== '' ? $trimmed : NULL;
+    if (
+      $trimmed === ''
+      || (
+        $fileKey === 'app_icon'
+        && $this->svgContainsUnsafeExternalReferences($trimmed)
+      )
+    ) {
+      $this->getLogger('markaspot_nuxt')->warning(
+        'Rejected SVG logo upload with an invalid root or external references for @key.',
+        ['@key' => $fileKey],
+      );
+      return NULL;
+    }
+
+    return $trimmed;
   }
 
   /**
@@ -933,6 +1032,185 @@ final class TenantSettingsController extends ControllerBase {
 
     $imageInfo = @getimagesizefromstring($fileData);
     return is_array($imageInfo) && ($imageInfo[2] ?? NULL) === IMAGETYPE_PNG;
+  }
+
+  /**
+   * Resolves an app icon aspect ratio when the dimensions are authoritative.
+   */
+  protected function getAppIconAspectRatio(string $fileData, string $extension): ?float {
+    if ($extension === 'png') {
+      $imageInfo = @getimagesizefromstring($fileData);
+      if (
+        !is_array($imageInfo)
+        || ($imageInfo[2] ?? NULL) !== IMAGETYPE_PNG
+        || empty($imageInfo[0])
+        || empty($imageInfo[1])
+      ) {
+        return NULL;
+      }
+      return (float) $imageInfo[0] / (float) $imageInfo[1];
+    }
+
+    $document = $this->loadSvgDocument($fileData);
+    if ($document === NULL) {
+      return NULL;
+    }
+    $svg = $document->documentElement;
+    if (!$svg instanceof \DOMElement) {
+      return NULL;
+    }
+    $width = $this->parseSvgDimension($svg->getAttribute('width'));
+    $height = $this->parseSvgDimension($svg->getAttribute('height'));
+    if ($width !== NULL && $height !== NULL) {
+      return $width / $height;
+    }
+
+    $viewBox = trim(
+      $svg->getAttribute('viewBox') ?: $svg->getAttribute('viewbox'),
+    );
+    if ($viewBox === '') {
+      return NULL;
+    }
+    $parts = preg_split('/[\s,]+/', $viewBox);
+    if (
+      !is_array($parts)
+      || count($parts) !== 4
+      || !is_numeric($parts[2])
+      || !is_numeric($parts[3])
+    ) {
+      return NULL;
+    }
+    $viewBoxWidth = (float) $parts[2];
+    $viewBoxHeight = (float) $parts[3];
+    if ($viewBoxWidth <= 0 || $viewBoxHeight <= 0) {
+      return NULL;
+    }
+
+    return $viewBoxWidth / $viewBoxHeight;
+  }
+
+  /**
+   * Loads a sanitized SVG document and requires an SVG root element.
+   */
+  protected function loadSvgDocument(string $fileData): ?\DOMDocument {
+    $document = new \DOMDocument();
+    $previous = libxml_use_internal_errors(TRUE);
+    try {
+      $loaded = $document->loadXML($fileData, LIBXML_NONET);
+    }
+    catch (\Throwable) {
+      $loaded = FALSE;
+    }
+    finally {
+      libxml_clear_errors();
+      libxml_use_internal_errors($previous);
+    }
+    if (
+      !$loaded
+      || $document->documentElement === NULL
+      || strtolower($document->documentElement->localName) !== 'svg'
+      || $document->documentElement->namespaceURI !== 'http://www.w3.org/2000/svg'
+    ) {
+      return NULL;
+    }
+
+    return $document;
+  }
+
+  /**
+   * Detects references that could make a public SVG fetch external content.
+   */
+  protected function svgContainsUnsafeExternalReferences(string $fileData): bool {
+    $document = $this->loadSvgDocument($fileData);
+    if ($document === NULL) {
+      return TRUE;
+    }
+
+    foreach ($document->getElementsByTagName('*') as $element) {
+      foreach ($element->attributes as $attribute) {
+        if (
+          strtolower($attribute->prefix ?? '') === 'xmlns'
+          || strtolower($attribute->nodeName) === 'xmlns'
+        ) {
+          continue;
+        }
+        $name = strtolower($attribute->localName);
+        $value = trim($attribute->value);
+        if ($name === 'style') {
+          return TRUE;
+        }
+        if (
+          $name === 'href'
+          && !$this->isSafeEmbeddedSvgReference($value)
+        ) {
+          return TRUE;
+        }
+        if (preg_match('~(?:https?:)?//~i', $value) === 1) {
+          return TRUE;
+        }
+        if ($this->containsUnsafeSvgCssReference($value)) {
+          return TRUE;
+        }
+      }
+
+      if (strtolower($element->localName) === 'style') {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Allows only internal fragments and embedded raster data in SVG links.
+   */
+  protected function isSafeEmbeddedSvgReference(string $value): bool {
+    return $value === ''
+      || str_starts_with($value, '#')
+      || preg_match(
+        '~^data:image/(?:png|gif|jpe?g|pjp)(?:;|,)~i',
+        $value,
+      ) === 1;
+  }
+
+  /**
+   * Rejects CSS imports and URL references outside the sanitized SVG.
+   */
+  protected function containsUnsafeSvgCssReference(string $value): bool {
+    if (
+      str_contains($value, '\\')
+      || preg_match('/@import\b/i', $value) === 1
+    ) {
+      return TRUE;
+    }
+    if (preg_match_all('/url\(\s*([^)]+)\s*\)/i', $value, $matches) < 1) {
+      return FALSE;
+    }
+    foreach ($matches[1] as $reference) {
+      $reference = trim($reference, " \t\n\r\0\x0B'\"");
+      if (!$this->isSafeEmbeddedSvgReference($reference)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Parses an absolute SVG dimension without guessing percentage sizing.
+   */
+  protected function parseSvgDimension(string $value): ?float {
+    if (
+      preg_match(
+        '/^\s*(\d+(?:\.\d+)?)(?:px)?\s*$/i',
+        $value,
+        $matches,
+      ) !== 1
+    ) {
+      return NULL;
+    }
+    $dimension = (float) $matches[1];
+    return $dimension > 0 ? $dimension : NULL;
   }
 
   /**
@@ -1025,8 +1303,8 @@ final class TenantSettingsController extends ControllerBase {
    * Deletes logo(s) from a jurisdiction group entity.
    *
    * Accepts a query parameter 'variant' to specify which logo to delete:
-   * 'logo_light', 'logo_dark', or 'both' (default). Removes the file reference
-   * from the group entity and deletes the underlying file entity.
+   * 'logo_light', 'logo_dark', 'app_icon', or 'both'. Removes the file
+   * reference from the group entity and deletes the underlying file entity.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request.
@@ -1043,16 +1321,19 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     $variant = $request->query->get('variant');
-    $validVariants = ['logo_light', 'logo_dark', 'both'];
+    $validVariants = ['logo_light', 'logo_dark', 'app_icon', 'both'];
     if (!$variant || !in_array($variant, $validVariants, TRUE)) {
       return new JsonResponse([
-        'error' => 'Missing or invalid variant parameter. Use logo_light, logo_dark, or both.',
+        'error' => 'Missing or invalid variant parameter. Use logo_light, logo_dark, app_icon, or both.',
       ], 400);
     }
 
     $fieldsToDelete = [];
     if ($variant === 'both') {
       $fieldsToDelete = ['field_logo_light', 'field_logo_dark'];
+    }
+    elseif ($variant === 'app_icon') {
+      $fieldsToDelete = ['field_favicon'];
     }
     else {
       $fieldsToDelete = ['field_' . $variant];
@@ -1105,7 +1386,7 @@ final class TenantSettingsController extends ControllerBase {
     // may point at the same file; deleting it for one variant must not break
     // the other. The PNG fallback follows the same keep/delete decision.
     $referencedFids = [];
-    foreach (['field_logo_light', 'field_logo_dark'] as $logoField) {
+    foreach (['field_logo_light', 'field_logo_dark', 'field_favicon'] as $logoField) {
       if ($group->hasField($logoField)) {
         $remaining = $group->get($logoField)->getValue();
         if (!empty($remaining[0]['target_id'])) {
@@ -1115,6 +1396,12 @@ final class TenantSettingsController extends ControllerBase {
     }
     foreach ($filesToDelete as $file) {
       if (in_array((int) $file->id(), $referencedFids, TRUE)) {
+        continue;
+      }
+      if (
+        !$file instanceof FileInterface
+        || $this->fileUsage->listUsage($file) !== []
+      ) {
         continue;
       }
       $fallbackUri = $this->getLogoPngFallbackUri((string) $file->getFileUri());
@@ -2994,6 +3281,56 @@ final class TenantSettingsController extends ControllerBase {
 
     // Return the current state (same shape as GET).
     return $this->getDashboardSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns the managed file ID stored in a branding field.
+   */
+  protected function getFieldTargetId($group, string $fieldName): ?int {
+    if (!$group->hasField($fieldName) || $group->get($fieldName)->isEmpty()) {
+      return NULL;
+    }
+
+    $field = $group->get($fieldName);
+    if (method_exists($field, 'getValue')) {
+      $values = $field->getValue();
+      if (!empty($values[0]['target_id'])) {
+        return (int) $values[0]['target_id'];
+      }
+    }
+
+    $targetId = $field->target_id ?? NULL;
+    return $targetId ? (int) $targetId : NULL;
+  }
+
+  /**
+   * Deletes a replaced asset unless another branding field still uses it.
+   */
+  protected function deleteBrandingFileIfUnreferenced($group, int $fileId): void {
+    foreach (['field_logo_light', 'field_logo_dark', 'field_favicon'] as $fieldName) {
+      if ($this->getFieldTargetId($group, $fieldName) === $fileId) {
+        return;
+      }
+    }
+
+    $file = $this->entityTypeManager()
+      ->getStorage('file')
+      ->load($fileId);
+    if (!$file) {
+      return;
+    }
+    if (
+      !$file instanceof FileInterface
+      || $this->fileUsage->listUsage($file) !== []
+    ) {
+      return;
+    }
+
+    $fallbackUri = $this->getLogoPngFallbackUri((string) $file->getFileUri());
+    $file->delete();
+    if ($fallbackUri !== NULL) {
+      $this->deleteFileIfReadable($fallbackUri);
+    }
   }
 
   /**
