@@ -204,6 +204,46 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
+   * Tests the operating-mode aware organisations default and root inheritance.
+   *
+   * The default is fail-closed on SaaS: explicit saas mode AND the
+   * misconfigured-container case (mode unset while markaspot_fastmap is
+   * installed) both resolve to FALSE, mirroring canUseTierGatedFeatures().
+   * A stored root opt-in wins in every mode and is inherited by children.
+   *
+   * @covers ::resolveEffectiveFeatures
+   */
+  public function testOrganisationsDefaultAndInheritance(): void {
+    $bareRoot = $this->createGroup(1, ['field_nuxt_config' => '{}']);
+    $child = $this->createGroup(2, ['field_nuxt_config' => '{}']);
+
+    // Self-hosted / enterprise without the fastmap module: enabled by default.
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $features = $this->createResolver($bareRoot, [], FALSE)->resolveEffectiveFeatures($child);
+    $this->assertTrue($features['organisations']);
+
+    // Explicit SaaS mode: opt-in, so absent resolves to FALSE.
+    new Settings(['markaspot_operating_mode' => 'saas']);
+    $features = $this->createResolver($bareRoot, [], FALSE)->resolveEffectiveFeatures($child);
+    $this->assertFalse($features['organisations']);
+
+    // Misconfigured SaaS container: mode unset but fastmap installed must
+    // fail closed instead of enabling the feature for every workspace.
+    new Settings([]);
+    $features = $this->createResolver($bareRoot, [], TRUE)->resolveEffectiveFeatures($child);
+    $this->assertFalse($features['organisations']);
+
+    // A premium workspace's stored root opt-in wins on SaaS and is
+    // inherited by the child workspace.
+    new Settings(['markaspot_operating_mode' => 'saas']);
+    $optedInRoot = $this->createGroup(1, [
+      'field_nuxt_config' => json_encode(['features' => ['organisations' => TRUE]]),
+    ]);
+    $features = $this->createResolver($optedInRoot, [], TRUE)->resolveEffectiveFeatures($child);
+    $this->assertTrue($features['organisations']);
+  }
+
+  /**
    * Tests the data-driven organisation edition gate.
    *
    * @covers ::hasOrganisationFeatures

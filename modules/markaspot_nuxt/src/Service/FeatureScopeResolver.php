@@ -32,6 +32,9 @@ class FeatureScopeResolver {
     'assignmentSyncsOrganisation' => 'tenant',
     'delegationNoteRequired' => 'tenant',
     'dashboard' => 'tenant',
+    // Organisation management operates on the root portfolio, so a child
+    // workspace inherits the root's opt-in (same reasoning as 'dashboard').
+    'organisations' => 'tenant',
     'dashboardRequestCreate' => 'tenant',
     'photoReporting' => 'jurisdiction',
     'classicReporting' => 'jurisdiction',
@@ -79,6 +82,9 @@ class FeatureScopeResolver {
     'assignmentSyncsOrganisation' => FALSE,
     'delegationNoteRequired' => FALSE,
     'dashboard' => TRUE,
+    // Conservative constant; the effective default is operating-mode aware
+    // via featureDefault(): opt-in on SaaS, enabled on self-hosted.
+    'organisations' => FALSE,
     'dashboardRequestCreate' => TRUE,
     'onboardingTour' => FALSE,
     'passwordless' => FALSE,
@@ -144,6 +150,7 @@ class FeatureScopeResolver {
     }
 
     foreach (self::DEFAULTS as $key => $default) {
+      $default = $this->featureDefault($key, $default);
       if ($key === 'boundaries'
         && $jur->hasField('field_boundary')
         && !$jur->get('field_boundary')->isEmpty()) {
@@ -157,7 +164,7 @@ class FeatureScopeResolver {
     $root_config = $this->readNuxtConfig($root);
     foreach (self::SCOPE_MAP as $key => $scope) {
       if ($scope === 'tenant') {
-        $value = $this->readFeatureValue($root_config, $key, self::DEFAULTS[$key]);
+        $value = $this->readFeatureValue($root_config, $key, $this->featureDefault($key, self::DEFAULTS[$key] ?? FALSE));
         $root_value = $this->readDotPath($root_config, 'features.' . $key);
         if (!str_contains($key, '.')) {
           $features[$key] = is_array($root_value) ? $root_value : $value;
@@ -246,7 +253,35 @@ class FeatureScopeResolver {
     if (is_bool($value)) {
       return $value;
     }
-    return $default ?? (self::DEFAULTS[$key] ?? FALSE);
+    return $default ?? $this->featureDefault($key, self::DEFAULTS[$key] ?? FALSE);
+  }
+
+  /**
+   * Resolves the effective default for a feature key.
+   *
+   * Most keys use the DEFAULTS constant as-is. Organisation management is
+   * operating-mode aware: opt-in per workspace on the shared SaaS platform
+   * (tier story: premium workspaces enable it via features.organisations on
+   * the ROOT jurisdiction; a child-level value is overridden by the root's,
+   * same as every tenant-scoped flag), enabled out of the box on self-hosted
+   * and enterprise stacks. This is the same platform split that
+   * hasOrganisationFeatures() describes for the capability payload.
+   */
+  private function featureDefault(string $key, bool $default): bool {
+    if ($key === 'organisations') {
+      // Mirror the canUseTierGatedFeatures() backstop: real SaaS containers
+      // can run with the operating-mode environment variable missing, and the
+      // Settings default is 'self_hosted'. The fastmap module marks the
+      // workspace-SaaS platform even then, so a misconfigured SaaS container
+      // must fail closed to the opt-in default instead of enabling
+      // organisation management for every workspace.
+      if (Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
+        return FALSE;
+      }
+      return $this->moduleHandler === NULL
+        || !$this->moduleHandler->moduleExists('markaspot_fastmap');
+    }
+    return $default;
   }
 
   /**
