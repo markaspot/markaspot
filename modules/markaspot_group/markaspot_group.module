@@ -4333,16 +4333,40 @@ function _markaspot_group_build_assignment_notification_context(NodeInterface $n
     'request_id' => $request_id,
     'category' => $category,
     'address' => _markaspot_group_sanitize_for_email(
-      (string) ($node->hasField('field_address') && !$node->get('field_address')->isEmpty()
-        ? $node->get('field_address')->getString()
-        : '')
+      _markaspot_group_assignment_notification_address($node)
     ),
     'description' => _markaspot_group_sanitize_for_email(
       (string) ($node->hasField('body') && !$node->get('body')->isEmpty()
-        ? $node->get('body')->getString()
+        ? $node->get('body')->value
         : '')
     ),
   ];
+}
+
+/**
+ * Builds a readable address without leaking Address field properties.
+ */
+function _markaspot_group_assignment_notification_address(NodeInterface $node): string {
+  if (!$node->hasField('field_address') || $node->get('field_address')->isEmpty()) {
+    return '';
+  }
+
+  $values = $node->get('field_address')->getValue();
+  $address = is_array($values[0] ?? NULL) ? $values[0] : [];
+  $value = static fn (string $property): string => trim((string) ($address[$property] ?? ''));
+
+  $parts = array_values(array_filter([
+    $value('address_line1'),
+    $value('address_line2'),
+    trim(implode(' ', array_filter([
+      $value('postal_code'),
+      $value('locality'),
+    ], static fn (string $part): bool => $part !== ''))),
+    $value('administrative_area'),
+    $value('country_code'),
+  ], static fn (string $part): bool => $part !== ''));
+
+  return implode(', ', $parts);
 }
 
 /**

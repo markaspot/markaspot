@@ -11,6 +11,7 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\RequestFieldValueTrait;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Drupal\markaspot_mail\Service\AttachmentResolver;
@@ -46,6 +47,7 @@ use Psr\Log\LoggerInterface;
 final class EcaActionEmailBuilder implements MailBuilderInterface {
 
   use ResolveJurisdictionFromNodeTrait;
+  use RequestFieldValueTrait;
   use SplitParagraphsTrait;
   use StringTranslationTrait;
 
@@ -232,14 +234,14 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
     }
 
     $features = [];
-    $facilityId = trim($entity->get('field_facility')->getString());
+    $facilityId = $this->resolveFieldString($entity, 'field_facility');
     if ($facilityId !== '') {
       $features[] = [
         (string) $this->t('Facility', [], ['langcode' => $langcode]) => $facilityId,
       ];
     }
 
-    $address = $this->resolveFieldString($entity, 'field_address');
+    $address = $this->resolveAddressText($entity);
     if ($address !== '') {
       $features[] = [
         (string) $this->t('Location', [], ['langcode' => $langcode]) => $address,

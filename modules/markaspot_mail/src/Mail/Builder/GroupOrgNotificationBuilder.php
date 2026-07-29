@@ -13,6 +13,7 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\RequestFieldValueTrait;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\markaspot_mail\Service\MailTextResolver;
@@ -34,6 +35,7 @@ use Psr\Log\LoggerInterface;
 final class GroupOrgNotificationBuilder implements MailBuilderInterface {
 
   use ResolveJurisdictionFromNodeTrait;
+  use RequestFieldValueTrait;
   use StringTranslationTrait;
 
   public function __construct(
@@ -75,7 +77,7 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
       ? $organisationName
       : (string) $this->t('your organisation', [], ['langcode' => $ctx->langcode]);
     $category = $this->resolveCategoryLabel($node);
-    $address = $this->resolveFieldString($node, 'field_address');
+    $address = $this->resolveAddressText($node);
     $description = $this->resolveBodyText($node);
     $requestUrl = $this->resolveRequestUrl($requestId, $branding);
 
@@ -189,10 +191,7 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
    * Resolves the human-facing request identifier.
    */
   private function resolveRequestId(NodeInterface $node): string {
-    $requestId = '';
-    if ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()) {
-      $requestId = trim($node->get('request_id')->getString());
-    }
+    $requestId = $this->resolveFieldString($node, 'request_id');
     return $requestId !== '' ? $requestId : (string) $node->id();
   }
 
@@ -221,13 +220,6 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
       return '';
     }
     return trim($node->get($fieldName)->getString());
-  }
-
-  /**
-   * Resolves and escapes the citizen-submitted description.
-   */
-  private function resolveBodyText(NodeInterface $node): string {
-    return trim(strip_tags($this->resolveFieldString($node, 'body')));
   }
 
   /**

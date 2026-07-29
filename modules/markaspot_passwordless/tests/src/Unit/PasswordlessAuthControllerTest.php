@@ -9,6 +9,7 @@ use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Flood\FloodInterface;
@@ -1375,6 +1376,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         ['administer site configuration', FALSE],
         ['triage inbound mail', TRUE],
         ['delete any service_request content', FALSE],
+        ['switch users', TRUE],
         ['access site in maintenance mode', TRUE],
       ]);
 
@@ -1405,9 +1407,23 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertTrue($data['authenticated']);
     $this->assertTrue($data['maintenance_access']);
     $this->assertSame('alice-user-uuid', $data['user']['uuid']);
-    $this->assertSame(['triage inbound mail'], $data['user']['permissions']);
+    $this->assertSame(['triage inbound mail', 'switch users'], $data['user']['permissions']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
+  }
+
+  /**
+   * Tests absent Drupal permissions stay absent from the frontend payload.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testFrontendPermissionsOmitSwitchUsersWithoutPermission(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')->willReturn(FALSE);
+
+    $method = new \ReflectionMethod($this->controller, 'getFrontendPermissions');
+
+    $this->assertSame([], $method->invoke($this->controller, $account));
   }
 
   /**
@@ -1712,6 +1728,100 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $response = $this->controller->listSwitchUsers();
 
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
+  }
+
+  /**
+   * Tests service accounts are excluded before the result cap is applied.
+   *
+   * @covers ::listSwitchUsers
+   */
+  public function testListSwitchUsersFiltersApiRoleBeforeRange(): void {
+    $this->enableDevelModule();
+
+    $queryCalls = [];
+    $roleQuery = $this->createMock(QueryInterface::class);
+    $roleQuery->method('condition')->willReturnCallback(
+      function (string $field, mixed $value, ?string $operator = NULL) use (&$queryCalls, $roleQuery): QueryInterface {
+        $queryCalls[] = ['role condition', $field, $value, $operator];
+        return $roleQuery;
+      },
+    );
+    $roleQuery->method('accessCheck')->willReturnSelf();
+    $roleQuery->method('execute')->willReturnCallback(
+      function () use (&$queryCalls): array {
+        $queryCalls[] = ['role execute'];
+        return [2 => 2, 4 => 4];
+      },
+    );
+
+    $userQuery = $this->createMock(QueryInterface::class);
+    $userQuery->method('condition')->willReturnCallback(
+      function (string $field, mixed $value, ?string $operator = NULL) use (&$queryCalls, $userQuery): QueryInterface {
+        $queryCalls[] = ['user condition', $field, $value, $operator];
+        return $userQuery;
+      },
+    );
+    $userQuery->method('sort')->willReturnCallback(
+      function (string $field) use (&$queryCalls, $userQuery): QueryInterface {
+        $queryCalls[] = ['sort', $field];
+        return $userQuery;
+      },
+    );
+    $userQuery->method('range')->willReturnCallback(
+      function (int $start, int $length) use (&$queryCalls, $userQuery): QueryInterface {
+        $queryCalls[] = ['range', $start, $length];
+        return $userQuery;
+      },
+    );
+    $userQuery->method('accessCheck')->willReturnSelf();
+    $userQuery->method('execute')->willReturn([3 => 3, 5 => 5]);
+
+    $staffAccount = $this->createMock(UserInterface::class);
+    $staffAccount->method('id')->willReturn(3);
+    $staffAccount->method('getAccountName')->willReturn('staff');
+    $staffAccount->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $rolelessAccount = $this->createMock(UserInterface::class);
+    $rolelessAccount->method('id')->willReturn(5);
+    $rolelessAccount->method('getAccountName')->willReturn('roleless');
+    $rolelessAccount->method('getRoles')->willReturn(['authenticated']);
+
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->method('getQuery')->willReturnOnConsecutiveCalls($roleQuery, $userQuery);
+    $userStorage->method('loadMultiple')
+      ->with([3 => 3, 5 => 5])
+      ->willReturn([3 => $staffAccount, 5 => $rolelessAccount]);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('user')
+      ->willReturn($userStorage);
+    \Drupal::getContainer()->set('entity_type.manager', $entityTypeManager);
+
+    $response = $this->controller->listSwitchUsers();
+
+    $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+    $this->assertSame([
+      ['role condition', 'roles', 'api_user', NULL],
+      ['role execute'],
+      ['user condition', 'uid', 1, '>'],
+      ['user condition', 'status', 1, NULL],
+      ['sort', 'uid'],
+      ['user condition', 'uid', [2, 4], 'NOT IN'],
+      ['range', 0, 20],
+    ], $queryCalls);
+    $this->assertSame([
+      [
+        'uid' => 3,
+        'name' => 'staff',
+        'roles' => ['tenant_admin'],
+      ],
+      [
+        'uid' => 5,
+        'name' => 'roleless',
+        'roles' => [],
+      ],
+    ], json_decode((string) $response->getContent(), TRUE));
   }
 
   /**

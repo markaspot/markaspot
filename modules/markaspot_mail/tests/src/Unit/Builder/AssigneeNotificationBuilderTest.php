@@ -76,12 +76,13 @@ final class AssigneeNotificationBuilderTest extends UnitTestCase {
     $this->assertSame([
       ['Request' => '#7-2026'],
       ['Category' => 'Radbuegel'],
-      ['Location' => 'Euskirchener Strasse 49'],
+      ['Location' => 'Euskirchener Strasse 49, 53113 Bonn, NRW, DE'],
     ], $message->content['features_block']);
     $this->assertSame([
       'This request has been assigned to you for processing.',
       'Description: Bitte pruefen.',
     ], $message->content['body_blocks']);
+    $this->assertStringNotContainsString('plain_text', implode(' ', $message->content['body_blocks']));
   }
 
   /**
@@ -276,10 +277,25 @@ final class AssigneeNotificationBuilderTest extends UnitTestCase {
 
     $fields = [
       'field_jurisdiction' => $this->referenceField([$jurisdiction]),
-      'request_id' => $this->field('7-2026'),
+      'request_id' => $this->field([['value' => '7-2026']], ['value' => '7-2026']),
       'field_category' => $this->referenceField([$category]),
-      'field_address' => $this->field('Euskirchener Strasse 49'),
-      'body' => $this->field('<p>Bitte pruefen.</p>'),
+      'field_address' => $this->field(
+        [[
+          'address_line1' => 'Euskirchener Strasse 49',
+          'address_line2' => '',
+          'postal_code' => '53113',
+          'locality' => 'Bonn',
+          'administrative_area' => 'NRW',
+          'country_code' => 'DE',
+        ]],
+        [],
+        'address-property-leak',
+      ),
+      'body' => $this->field(
+        [['value' => '<p>Bitte pruefen.</p>', 'format' => 'plain_text']],
+        ['value' => '<p>Bitte pruefen.</p>'],
+        '<p>Bitte pruefen.</p>, plain_text',
+      ),
     ];
     $node = $this->createMock(NodeInterface::class);
     $node->method('id')->willReturn(123);
@@ -293,10 +309,17 @@ final class AssigneeNotificationBuilderTest extends UnitTestCase {
   /**
    * Builds a scalar field item list.
    */
-  private function field(string $value): FieldItemListInterface {
+  private function field(
+    array $values,
+    array $properties = [],
+    ?string $stringValue = NULL,
+  ): FieldItemListInterface {
     $field = $this->createMock(FieldItemListInterface::class);
-    $field->method('isEmpty')->willReturn($value === '');
-    $field->method('getString')->willReturn($value);
+    $field->method('isEmpty')->willReturn($values === []);
+    $field->method('getValue')->willReturn($values);
+    $field->method('getString')->willReturn($stringValue ?? (string) ($properties['value'] ?? ''));
+    $field->method('__get')
+      ->willReturnCallback(static fn(string $property): mixed => $properties[$property] ?? NULL);
     return $field;
   }
 

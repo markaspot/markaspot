@@ -269,7 +269,10 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
 
     $this->assertNotNull($msg);
     $this->assertContains(['Facility' => 'school-centre'], $msg->content['features_block']);
-    $this->assertContains(['Location' => 'School Lane 7'], $msg->content['features_block']);
+    $this->assertContains(
+      ['Location' => 'School Lane 7, 12345 Exampletown, DE'],
+      $msg->content['features_block'],
+    );
   }
 
   /**
@@ -587,7 +590,15 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
 
     $addressField = $this->createMock(FieldItemListInterface::class);
     $addressField->method('isEmpty')->willReturn(FALSE);
-    $addressField->method('getString')->willReturn('School Lane 7');
+    $addressField->method('getValue')->willReturn([[
+      'address_line1' => 'School Lane 7',
+      'address_line2' => '',
+      'postal_code' => '12345',
+      'locality' => 'Exampletown',
+      'administrative_area' => '',
+      'country_code' => 'DE',
+    ]]);
+    $addressField->method('getString')->willReturn('address-property-leak');
 
     $organisationField = $this->createMock(FieldItemListInterface::class);
     $organisationField->method('isEmpty')->willReturn(TRUE);

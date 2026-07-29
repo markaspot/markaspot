@@ -56,6 +56,7 @@ class PasswordlessAuthController extends ControllerBase {
     'split service requests' => 'split service requests',
     'administer markaspot mail texts' => 'administer markaspot mail texts',
     'assign service requests' => 'assign service requests',
+    'switch users' => 'switch users',
   ];
 
   /**
@@ -1222,11 +1223,23 @@ class PasswordlessAuthController extends ControllerBase {
     try {
       $user_storage = $this->entityTypeManager()->getStorage('user');
 
+      // Entity Query applies inequalities row-by-row on multi-value fields.
+      // Build an anti-set so mixed-role accounts are excluded while users
+      // without any explicit role remain eligible.
+      $api_user_uids = $user_storage->getQuery()
+        ->condition('roles', 'api_user')
+        ->accessCheck(FALSE)
+        ->execute();
+
       // Load active users, exclude anonymous (uid=0) and super admin (uid=1).
-      $uids = $user_storage->getQuery()
+      $query = $user_storage->getQuery()
         ->condition('uid', 1, '>')
         ->condition('status', 1)
-        ->sort('uid')
+        ->sort('uid');
+      if ($api_user_uids !== []) {
+        $query->condition('uid', array_values($api_user_uids), 'NOT IN');
+      }
+      $uids = $query
         ->range(0, 20)
         ->accessCheck(FALSE)
         ->execute();

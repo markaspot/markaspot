@@ -609,6 +609,20 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   }
 
   /**
+   * Tests assignment mail context uses field values instead of all properties.
+   */
+  public function testAssignmentNotificationContextUsesPlainFieldValues(): void {
+    $context = _markaspot_group_build_assignment_notification_context(
+      $this->serviceRequestNode(),
+    );
+
+    $this->assertSame('A short body', $context['description']);
+    $this->assertSame('Teststrasse 1, 12345 Teststadt, NRW, DE', $context['address']);
+    $this->assertStringNotContainsString('plain_text', $context['description']);
+    $this->assertStringNotContainsString('field-property-leak', $context['address']);
+  }
+
+  /**
    * Tests a valid org relationship sends exactly one fallback notification.
    */
   public function testValidOrgRelationshipSendsOneFallbackNotification(): void {
@@ -1156,8 +1170,23 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
       ),
       'request_id' => $this->field([['value' => 'REQ-1']], ['value' => 'REQ-1']),
       'field_category' => $this->field([['target_id' => 9]], ['entity' => $category]),
-      'field_address' => $this->field([['value' => 'Teststrasse 1']], ['value' => 'Teststrasse 1']),
-      'body' => $this->field([['value' => 'A short body']], ['value' => 'A short body']),
+      'field_address' => $this->field(
+        [[
+          'address_line1' => 'Teststrasse 1',
+          'address_line2' => '',
+          'postal_code' => '12345',
+          'locality' => 'Teststadt',
+          'administrative_area' => 'NRW',
+          'country_code' => 'DE',
+        ]],
+        [],
+        'field-property-leak',
+      ),
+      'body' => $this->field(
+        [['value' => 'A short body', 'summary' => '', 'format' => 'plain_text']],
+        ['value' => 'A short body'],
+        'A short body, , plain_text',
+      ),
     ];
     if ($assignee !== NULL) {
       $fields['field_assignee'] = $this->field(
@@ -1270,11 +1299,15 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   /**
    * Creates a field item list mock with simple public item properties.
    */
-  private function field(array $values, array $properties = []): FieldItemListInterface {
+  private function field(
+    array $values,
+    array $properties = [],
+    ?string $stringValue = NULL,
+  ): FieldItemListInterface {
     $field = $this->createMock(FieldItemListInterface::class);
     $field->method('isEmpty')->willReturn($values === []);
     $field->method('getValue')->willReturn($values);
-    $field->method('getString')->willReturn((string) ($properties['value'] ?? ''));
+    $field->method('getString')->willReturn($stringValue ?? (string) ($properties['value'] ?? ''));
     $field->method('__get')
       ->willReturnCallback(static fn(string $property): mixed => $properties[$property] ?? NULL);
     $field->method('__isset')

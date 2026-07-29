@@ -87,10 +87,11 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
       'This request has been assigned to your organisation for processing.',
       'Description: Bitte pruefen.',
     ], $msg->content['body_blocks']);
+    $this->assertStringNotContainsString('plain_text', implode(' ', $msg->content['body_blocks']));
     $this->assertSame([
       ['Request' => '#7-2026'],
       ['Category' => 'Radbuegel'],
-      ['Location' => 'Euskirchener Strasse 49'],
+      ['Location' => 'Euskirchener Strasse 49, 53113 Bonn, NRW, DE'],
       ['Organisation' => 'Tiefbauamt'],
     ], $msg->content['features_block']);
   }
@@ -192,7 +193,7 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertSame([
       ['Request' => '#7-2026'],
       ['Category' => 'Radbuegel'],
-      ['Location' => 'Euskirchener Strasse 49'],
+      ['Location' => 'Euskirchener Strasse 49, 53113 Bonn, NRW, DE'],
       ['Organisation' => 'Tiefbauamt'],
     ], $message->content['features_block']);
   }
@@ -324,8 +325,23 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
       'field_jurisdiction' => $this->referenceField([$jurisdiction]),
       'request_id' => $this->field([['value' => '7-2026']], ['value' => '7-2026']),
       'field_category' => $this->referenceField([$category]),
-      'field_address' => $this->field([['value' => 'Euskirchener Strasse 49']], ['value' => 'Euskirchener Strasse 49']),
-      'body' => $this->field([['value' => 'Bitte pruefen.']], ['value' => 'Bitte pruefen.']),
+      'field_address' => $this->field(
+        [[
+          'address_line1' => 'Euskirchener Strasse 49',
+          'address_line2' => '',
+          'postal_code' => '53113',
+          'locality' => 'Bonn',
+          'administrative_area' => 'NRW',
+          'country_code' => 'DE',
+        ]],
+        [],
+        'address-property-leak',
+      ),
+      'body' => $this->field(
+        [['value' => '<p>Bitte pruefen.</p>', 'format' => 'plain_text']],
+        ['value' => '<p>Bitte pruefen.</p>'],
+        '<p>Bitte pruefen.</p>, plain_text',
+      ),
     ];
 
     $node = $this->createMock(NodeInterface::class);
@@ -350,11 +366,15 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
   /**
    * Builds a scalar field item list.
    */
-  private function field(array $values, array $properties = []): FieldItemListInterface {
+  private function field(
+    array $values,
+    array $properties = [],
+    ?string $stringValue = NULL,
+  ): FieldItemListInterface {
     $field = $this->createMock(FieldItemListInterface::class);
     $field->method('isEmpty')->willReturn($values === []);
-    $field->method('getString')
-      ->willReturn((string) ($properties['value'] ?? ''));
+    $field->method('getValue')->willReturn($values);
+    $field->method('getString')->willReturn($stringValue ?? (string) ($properties['value'] ?? ''));
     $field->method('__get')
       ->willReturnCallback(static fn(string $property): mixed => $properties[$property] ?? NULL);
     return $field;

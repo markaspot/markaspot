@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Hook;
 
+use Drupal\Component\Utility\Html;
 use Drupal\markaspot_mail\Mail\MailBuilderRegistry;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Service\MailBrandingService;
@@ -88,7 +89,7 @@ final class MailAlterHook {
     // can fail open to the original Drupal message. Sanitize that original
     // header before any such early return so tokenized admin templates cannot
     // carry CR/LF/NUL bytes to the mailer in the unbranded fallback path.
-    $message['subject'] = $this->sanitizeHeaderValue((string) ($message['subject'] ?? ''));
+    $message['subject'] = $this->stripHeaderBytes((string) ($message['subject'] ?? ''));
 
     $langcode = (string) ($message['langcode'] ?? 'en');
     $ctx = new MailContext(
@@ -150,7 +151,7 @@ final class MailAlterHook {
     // Defense-in-depth: strip CR/LF/NUL even though builders SHOULD already
     // sanitize. Mail header injection (CWE-93) would otherwise let an
     // attacker add Bcc: / To: headers and turn the pipeline into a relay.
-    $message['subject'] = $this->sanitizeHeaderValue($msg->subject);
+    $message['subject'] = $this->stripHeaderBytes(Html::decodeEntities($msg->subject));
     // Strip <style> blocks before handing HTML to phpmailer_smtp. PHPMailer
     // generates the plaintext AltBody via html2text() from this HTML; if the
     // <style> block is present, the CSS leaks into the text part and appears
@@ -180,7 +181,9 @@ final class MailAlterHook {
           unset($message['headers'][$headerName]);
         }
       }
-      $message['headers']['Reply-To'] = $this->sanitizeHeaderValue((string) $brandingPackage['reply_to']);
+      $message['headers']['Reply-To'] = $this->stripHeaderBytes(
+        Html::decodeEntities((string) $brandingPackage['reply_to']),
+      );
     }
 
     // Strip Mail Plugin routing keys so SwiftMailer / Symfony Mailer
@@ -214,7 +217,7 @@ final class MailAlterHook {
   /**
    * Strips CR / LF / NUL bytes from a header value.
    */
-  private function sanitizeHeaderValue(string $value): string {
+  private function stripHeaderBytes(string $value): string {
     return str_replace(["\r", "\n", "\0"], '', $value);
   }
 

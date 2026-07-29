@@ -13,12 +13,15 @@ use Drupal\Core\Render\Markup;
 use Drupal\markaspot_mail\Hook\MailAlterHook;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailBuilderRegistry;
+use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\markaspot_mail\Service\MailHtmlRenderer;
 use Drupal\Tests\markaspot_mail\Unit\Stub\RecordingStubBuilder;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
+
+require_once dirname(__DIR__, 3) . '/src/Hook/MailAlterHook.php';
 
 /**
  * Tests the central mail-alter dispatcher.
@@ -52,6 +55,73 @@ final class MailAlterHookTest extends UnitTestCase {
     $this->assertStringNotContainsString("\r", $message['subject']);
     $this->assertStringNotContainsString("\n", $message['subject']);
     $this->assertSame('Report #42 updatedBcc: attacker@example.com', $message['subject']);
+  }
+
+  /**
+   * Rendered HTML entities are decoded before the subject reaches the header.
+   */
+  public function testAlterDecodesEntitiesInSubjectOnly(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'Assigned to Roofing &amp; Siding &quot;Contractor&quot; &lt;HQ&gt;',
+      variant: 'card_transactional',
+      content: ['headline' => 'Roofing &amp; Siding'],
+    ));
+    $renderer = $this->createMock(MailHtmlRenderer::class);
+    $renderer->method('render')->willReturn([
+      'html' => '<p>Roofing &amp; Siding</p>',
+      'plain' => 'Roofing & Siding',
+    ]);
+
+    $message = $this->buildMessage();
+    $this->buildHook($builder, renderer: $renderer)->alter($message);
+
+    $this->assertSame(
+      'Assigned to Roofing & Siding "Contractor" <HQ>',
+      $message['subject'],
+    );
+    $this->assertSame(['<p>Roofing &amp; Siding</p>'], $message['body']);
+  }
+
+  /**
+   * Entity decoding happens once when a builder preserves the input subject.
+   */
+  public function testAlterDecodesPreservedSubjectExactlyOnce(): void {
+    $builder = $this->createMock(MailBuilderInterface::class);
+    $builder->method('supports')->willReturn(TRUE);
+    $builder->method('build')->willReturnCallback(
+      static fn (MailContext $ctx): MailMessage => new MailMessage(
+        subject: $ctx->subject,
+        variant: 'card_transactional',
+        content: ['headline' => 'Hi'],
+      ),
+    );
+
+    $message = $this->buildMessage(subject: 'Roofing &amp;amp; Siding');
+    $this->buildHook($builder)->alter($message);
+
+    $this->assertSame('Roofing &amp; Siding', $message['subject']);
+  }
+
+  /**
+   * Reply-To is decoded once before decoded control bytes are stripped.
+   */
+  public function testAlterDecodesAndStripsReplyToExactlyOnce(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'Branded subject',
+      variant: 'card_transactional',
+      content: ['headline' => 'Hi'],
+    ));
+
+    $message = $this->buildMessage();
+    $this->buildHook(
+      $builder,
+      replyTo: "Support &amp;amp; Team&#13;&#10;\0 <support@example.com>",
+    )->alter($message);
+
+    $this->assertSame(
+      'Support &amp; Team <support@example.com>',
+      $message['headers']['Reply-To'],
+    );
   }
 
   /**
@@ -407,6 +477,7 @@ final class MailAlterHookTest extends UnitTestCase {
     ?string $plainOverride = NULL,
     ?MailHtmlRenderer $renderer = NULL,
     ?callable $urlNormalizer = NULL,
+    string $replyTo = 'support@civic-patches.com',
   ): MailAlterHook {
     $registry = new MailBuilderRegistry($builder === NULL ? [] : [$builder]);
 
@@ -433,7 +504,7 @@ final class MailAlterHookTest extends UnitTestCase {
       'legal_notice_url' => 'https://civicpatches.de/impressum',
       'privacy_url' => 'https://civicpatches.de/datenschutz',
       'email_footer_html' => Markup::create(''),
-      'reply_to' => 'support@civic-patches.com',
+      'reply_to' => $replyTo,
       'frontend_base_url' => 'https://mark-a-spot.com',
       'jurisdiction_slug' => NULL,
       'jurisdiction_label' => NULL,
