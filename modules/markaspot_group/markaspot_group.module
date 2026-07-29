@@ -23,6 +23,7 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership as GroupMembershipEntity;
@@ -4727,6 +4728,15 @@ function _markaspot_group_case_assignment_jurisdiction_group(NodeInterface $node
 
 /**
  * Checks whether a jurisdiction tier enables case assignment.
+ *
+ * With field_tier attached everywhere (markaspot_group), field presence no
+ * longer identifies the platform. A missing or empty tier is only permissive
+ * on enterprise/self-hosted stacks; on the shared self-service platform an
+ * untiered workspace (demo, pending checkout) must not receive this paid
+ * feature. The platform check inlines the canonical
+ * FeatureScopeResolver::isSelfServicePlatform() logic because markaspot_group
+ * must not depend on markaspot_nuxt: an explicit operating mode wins, the
+ * fastmap module classifies containers that never declared one.
  */
 function _markaspot_group_case_assignment_enabled_for_jurisdiction(?GroupInterface $jurisdiction): bool {
   if (!$jurisdiction instanceof GroupInterface) {
@@ -4734,10 +4744,17 @@ function _markaspot_group_case_assignment_enabled_for_jurisdiction(?GroupInterfa
   }
 
   if (!$jurisdiction->hasField('field_tier') || $jurisdiction->get('field_tier')->isEmpty()) {
-    return TRUE;
+    $mode = Settings::get('markaspot_operating_mode');
+    $self_service = $mode === 'saas'
+      || ($mode !== 'self_hosted' && \Drupal::moduleHandler()->moduleExists('markaspot_fastmap'));
+    return !$self_service;
   }
 
-  return in_array((string) $jurisdiction->get('field_tier')->value, ['pro', 'heart'], TRUE);
+  return in_array(
+    (string) $jurisdiction->get('field_tier')->value,
+    ['pro', 'heart', 'community', 'premium'],
+    TRUE,
+  );
 }
 
 /**

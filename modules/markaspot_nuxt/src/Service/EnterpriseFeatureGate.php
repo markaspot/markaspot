@@ -9,20 +9,14 @@ use Drupal\group\Entity\GroupInterface;
 /**
  * Gates enterprise-only features behind SaaS subscription tiers.
  *
- * Self-hosted / on-premise jurisdictions carry no field_tier field at all
- * (the field is only attached to the 'jur' bundle when markaspot_fastmap is
- * installed) and are always allowed: they are operator-managed installs,
- * not tier-limited SaaS workspaces. This mirrors the "no field_tier means
- * no fastmap ... (on-premise)" convention already established by
- * \Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraintValidator
- * and \Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::canUseOperationsDashboard().
+ * Field presence no longer identifies the platform: markaspot_group attaches
+ * field_tier to every jurisdiction, including self-hosted installations.
+ * Platform mode is therefore authoritative. Enterprise/self-hosted stacks
+ * are operator-managed and always allowed.
  *
- * SaaS workspaces (field_tier present, values free/starter/pro/heart per
- * markaspot_fastmap/config/install/field.storage.group.field_tier.yml) only
- * pass for tiers in the allowed list. An attached-but-empty field_tier
- * (workspace has not completed Stripe checkout) is treated as NOT allowed,
- * matching canUseOperationsDashboard's fail-closed behavior — a pending
- * SaaS signup does not get enterprise features for free.
+ * On the shared self-service platform, only tiers in the allowed list pass.
+ * A missing or empty tier remains fail-closed, so a pending SaaS signup does
+ * not get enterprise features for free.
  *
  * Lives in markaspot_nuxt rather than markaspot_fastmap: consumers such as
  * markaspot_dashboard do not depend on markaspot_fastmap, and self-hosted
@@ -31,6 +25,10 @@ use Drupal\group\Entity\GroupInterface;
  * already depends on (see FeatureFlagChecker in this namespace).
  */
 class EnterpriseFeatureGate {
+
+  public function __construct(
+    private readonly FeatureScopeResolver $featureScopeResolver,
+  ) {}
 
   /**
    * SaaS tiers that unlock enterprise-gated features.
@@ -56,19 +54,20 @@ class EnterpriseFeatureGate {
    *   method's signature or any call site.
    *
    * @return bool
-   *   TRUE for self-hosted jurisdictions (no field_tier field) and SaaS
-   *   jurisdictions on an allowed tier, FALSE otherwise.
+   *   TRUE for enterprise/self-hosted stacks and entitled self-service tiers,
+   *   FALSE otherwise.
    */
   public function isEnterpriseFeatureAllowed(?GroupInterface $jurisdiction, string $feature): bool {
     if ($jurisdiction === NULL) {
       return FALSE;
     }
 
-    if (!$jurisdiction->hasField('field_tier')) {
+    if (!$this->featureScopeResolver->isSelfServicePlatform()) {
       return TRUE;
     }
 
-    if ($jurisdiction->get('field_tier')->isEmpty()) {
+    if (!$jurisdiction->hasField('field_tier')
+      || $jurisdiction->get('field_tier')->isEmpty()) {
       return FALSE;
     }
 

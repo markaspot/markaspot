@@ -26,6 +26,12 @@ settings:
     -
       value: heart
       label: Heart
+    -
+      value: community
+      label: Community
+    -
+      value: premium
+      label: Premium
   allowed_values_function: ''
 module: options
 locked: false

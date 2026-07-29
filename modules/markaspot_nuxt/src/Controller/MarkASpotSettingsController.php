@@ -462,8 +462,8 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Enterprise-gate: mail text editor. Self-hosted jurisdictions (no
-    // field_tier) and top-tier SaaS jurisdictions (field_tier=heart, see
+    // Enterprise-gate: mail text editor. Enterprise/self-hosted stacks and
+    // top-tier SaaS jurisdictions (field_tier=heart, see
     // EnterpriseFeatureGate) may edit notification wording via the
     // dashboard; everyone else keeps receiving the default notification
     // texts, unedited. This gates only the *editor* UI/API — mail sending
@@ -528,10 +528,10 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Tier-gate: tenant-supplied WMS layer URLs (features.map.wmsLayers[].url)
-    // are forwarded by the Nuxt proxy to arbitrary upstream HTTPS hosts. SaaS
-    // workspaces with field_tier only allow this on paid tiers; classic
-    // client/on-premise tenants without field_tier are operator-managed and may
-    // use their configured WMS layers.
+    // are forwarded by the Nuxt proxy to arbitrary upstream HTTPS hosts.
+    // Enterprise/self-hosted stacks are operator-managed and may use their
+    // configured layers. Self-service workspaces remain restricted to the
+    // existing paid SaaS tiers.
     //
     // Sits AFTER the field_nuxt_config merge above so a tenant cannot
     // overwrite this flag from their own JSON config.
@@ -539,11 +539,13 @@ class MarkASpotSettingsController extends ControllerBase {
     $has_configured_wms_layers = !empty($settings['features']['map']['wmsLayers'])
       || !empty($settings['map']['wmsLayers']);
     $tier = NULL;
-    $has_tier_field = $group instanceof GroupInterface && $group->hasField('field_tier');
-    if ($has_tier_field && !$group->get('field_tier')->isEmpty()) {
+    if ($group instanceof GroupInterface
+      && $group->hasField('field_tier')
+      && !$group->get('field_tier')->isEmpty()) {
       $tier = $group->get('field_tier')->value;
     }
-    if ($group instanceof GroupInterface && !$has_tier_field) {
+    if ($group instanceof GroupInterface
+      && !$this->featureScopeResolver->isSelfServicePlatform()) {
       $settings['features']['customWmsLayers'] = $has_configured_wms_layers;
     }
     else {

@@ -116,6 +116,21 @@ class FeatureScopeResolver {
   ];
 
   /**
+   * Tier-specific entitlements for features constrained by TIER_GATED.
+   *
+   * The ladder is cumulative: upgrading must never remove a feature.
+   * Community retains the Operations Dashboard from Professional, while
+   * advanced AI processing is a Premium differentiator alongside SMTP/MCP.
+   * Quotas are not modelled here because enterprise quantities are contractual.
+   */
+  public const TIER_FEATURE_ENTITLEMENT = [
+    'pro' => self::TIER_GATED,
+    'heart' => self::TIER_GATED,
+    'community' => ['operationsDashboard'],
+    'premium' => self::TIER_GATED,
+  ];
+
+  /**
    * Platform flags whose NULL config value derives from the operating mode.
    *
    * NULL means "no operator decision recorded": SaaS installs need these on
@@ -184,8 +199,8 @@ class FeatureScopeResolver {
       $this->writeFeatureValue($features, $key, $this->isPlatformFeatureEnabled($key));
     }
 
-    if (!$this->canUseTierGatedFeatures($jur)) {
-      foreach (self::TIER_GATED as $key) {
+    foreach (self::TIER_GATED as $key) {
+      if (!$this->isTierFeatureAllowed($key, $jur)) {
         $this->writeFeatureValue($features, $key, FALSE);
       }
     }
@@ -244,7 +259,7 @@ class FeatureScopeResolver {
     $default ??= $this->featureDefault($scope_key, self::DEFAULTS[$scope_key] ?? FALSE);
     $value = $this->readFeatureValue($this->readNuxtConfig($source), $scope_key, $default);
     if (in_array($scope_key, self::TIER_GATED, TRUE)
-      && !$this->canUseTierGatedFeatures($jur)) {
+      && !$this->isTierFeatureAllowed($scope_key, $jur)) {
       return FALSE;
     }
     // Hard platform gate: enterprise-only features stay off on the shared
@@ -303,11 +318,12 @@ class FeatureScopeResolver {
    *
    * An explicitly configured operating mode always wins: development
    * environments run the fastmap module alongside a self_hosted setting and
-   * must keep the enterprise feature set. The module backstop only classifies
-   * containers that never declared a mode, so a misconfigured SaaS container
-   * still fails closed (same reasoning as canUseTierGatedFeatures()).
+   * must keep enterprise platform defaults. The module backstop only
+   * classifies containers that never declared a mode. Tierless TIER_GATED
+   * features deliberately retain their stricter, independent FastMap
+   * backstop in isTierFeatureAllowed().
    */
-  private function isSelfServicePlatform(): bool {
+  public function isSelfServicePlatform(): bool {
     $mode = Settings::get('markaspot_operating_mode');
     if ($mode === 'saas') {
       return TRUE;
@@ -358,13 +374,24 @@ class FeatureScopeResolver {
   }
 
   /**
-   * Checks the shared tier capability against the workspace root.
+   * Checks whether one tier-gated feature is allowed for a jurisdiction.
+   *
+   * A child's explicit tier wins so one Premium community cannot elevate its
+   * siblings. Only an empty child tier inherits from the portfolio root. When
+   * neither carries a tier, the operating-mode/FastMap backstop applies to all
+   * tier-gated features together.
    */
-  public function canUseTierGatedFeatures(GroupInterface $jur): bool {
-    $root = $this->getRootJurisdiction($jur);
-    if ($root->hasField('field_tier') && !$root->get('field_tier')->isEmpty()) {
-      return in_array((string) $root->get('field_tier')->value, ['pro', 'heart'], TRUE);
+  public function isTierFeatureAllowed(string $key, GroupInterface $jur): bool {
+    if (!in_array($key, self::TIER_GATED, TRUE)) {
+      return FALSE;
     }
+
+    $tier = $this->resolveTier($jur);
+    if ($tier !== NULL) {
+      $entitled_features = self::TIER_FEATURE_ENTITLEMENT[$tier] ?? [];
+      return in_array($key, $entitled_features, TRUE);
+    }
+
     // No tier recorded: only genuine enterprise/self-hosted installs get the
     // full feature set. The fastmap module marks the workspace-SaaS platform
     // even when the operating-mode environment variable is missing, so a
@@ -375,6 +402,48 @@ class FeatureScopeResolver {
     }
     return $this->moduleHandler === NULL
       || !$this->moduleHandler->moduleExists('markaspot_fastmap');
+  }
+
+  /**
+   * Checks whether all currently tier-gated features are allowed.
+   *
+   * Kept as a backwards-compatible aggregate for consumers that genuinely
+   * require the complete tier-gated set. Feature-specific consumers must use
+   * isTierFeatureAllowed() instead.
+   */
+  public function canUseTierGatedFeatures(GroupInterface $jur): bool {
+    foreach (self::TIER_GATED as $key) {
+      if (!$this->isTierFeatureAllowed($key, $jur)) {
+        return FALSE;
+      }
+    }
+    return TRUE;
+  }
+
+  /**
+   * Resolves the child-first tier, inheriting from the root only when empty.
+   */
+  private function resolveTier(GroupInterface $jur): ?string {
+    $tier = $this->readTier($jur);
+    if ($tier !== NULL) {
+      return $tier;
+    }
+
+    $root = $this->getRootJurisdiction($jur);
+    if ((int) $root->id() === (int) $jur->id()) {
+      return NULL;
+    }
+    return $this->readTier($root);
+  }
+
+  /**
+   * Reads a non-empty tier value from a jurisdiction.
+   */
+  private function readTier(GroupInterface $jur): ?string {
+    if (!$jur->hasField('field_tier') || $jur->get('field_tier')->isEmpty()) {
+      return NULL;
+    }
+    return (string) $jur->get('field_tier')->value;
   }
 
   /**

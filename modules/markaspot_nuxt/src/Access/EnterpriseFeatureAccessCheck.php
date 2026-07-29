@@ -21,10 +21,10 @@ use Symfony\Component\Routing\Route;
  * Generic _custom_access check that gates routes behind an enterprise tier.
  *
  * Unlike FeatureFlagAccessCheck, which trusts the tenant-writable
- * field_nuxt_config JSON, this check derives the decision from the
- * jurisdiction's own field_tier entity field. A tenant cannot elevate their
- * own access by editing field_nuxt_config, because that value never enters
- * this decision — see EnterpriseFeatureGate for the tier logic itself.
+ * field_nuxt_config JSON, this check derives the decision from platform mode
+ * and, on the self-service platform, the jurisdiction's field_tier value. A
+ * tenant cannot elevate their own access by editing field_nuxt_config, because
+ * that value never enters this decision. See EnterpriseFeatureGate.
  *
  * These enterprise-gated admin routes (e.g. the mail-text editor) have no
  * per-request jurisdiction parameter: the config they guard (such as

@@ -220,7 +220,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->streamWrapperManager,
       $this->hierarchyResolver,
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($this->featureScopeResolver),
       $this->organisationMetadataBuilder,
       $this->featureScopeResolver,
       $this->statusTermScope,
@@ -366,14 +366,19 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->groupStorage->method('loadMultiple')->with([9])->willReturn([9 => $child]);
     $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $hierarchyResolver->method('getRootJurisdictionId')->with(9)->willReturn(7);
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $hierarchyResolver,
+    );
     $controller = new MarkASpotSettingsController(
       $this->entityTypeManager,
       $this->configFactory,
       $this->streamWrapperManager,
       $hierarchyResolver,
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($featureScopeResolver),
       $this->organisationMetadataBuilder,
-      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
+      $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
     );
 
@@ -434,15 +439,20 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
         'markaspot_nuxt.settings' => $newConfig,
         default => $this->createMock(ImmutableConfig::class),
       });
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $configFactory,
+      $this->hierarchyResolver,
+    );
 
     $controller = new MarkASpotSettingsController(
       $this->entityTypeManager,
       $configFactory,
       $this->streamWrapperManager,
       $this->hierarchyResolver,
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($featureScopeResolver),
       $this->organisationMetadataBuilder,
-      new FeatureScopeResolver($this->entityTypeManager, $configFactory, $this->hierarchyResolver),
+      $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
     );
 
@@ -497,15 +507,20 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       ->method('getRootJurisdictionId')
       ->with(14)
       ->willReturn(NULL);
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $hierarchyResolver,
+    );
 
     $controller = new MarkASpotSettingsController(
       $this->entityTypeManager,
       $this->configFactory,
       $this->streamWrapperManager,
       $hierarchyResolver,
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($featureScopeResolver),
       $this->organisationMetadataBuilder,
-      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
+      $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
     );
 
@@ -803,11 +818,16 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests custom WMS layers are enabled for operator-managed tenants.
+   * Tests custom WMS layers are enabled on self-hosted installations.
+   *
+   * The tier field is attached but empty after moving it to markaspot_group,
+   * so platform mode rather than field presence must identify this case.
    *
    * @covers ::getMarkASpotSettings
    */
-  public function testCustomWmsLayersEnabledWithoutTierField(): void {
+  public function testCustomWmsLayersEnabledForEmptySelfHostedTier(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+
     $nuxtJson = json_encode([
       'features' => [
         'map' => [
@@ -824,6 +844,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
 
     $group = $this->createMockGroup([
       'field_nuxt_config' => $nuxtJson,
+      'field_tier' => NULL,
     ]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
@@ -842,6 +863,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @dataProvider customWmsLayerTierProvider
    */
   public function testCustomWmsLayersRespectTierField(string $tier, bool $expected): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
     $nuxtJson = json_encode([
       'features' => [
         'map' => [
@@ -1106,6 +1129,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @covers ::getMarkASpotSettings
    */
   public function testOperationsDashboardAllowedForEmptySelfHostedTier(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
@@ -1137,19 +1162,23 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   /**
    * Tests the mail text editor is allowed for self-hosted jurisdictions.
    *
-   * No field_tier field at all (module not attached to the bundle) means
-   * on-premise/self-hosted: allowed by default.
+   * The tier field is present but empty after moving it to markaspot_group.
+   * Explicit platform mode keeps enterprise/self-hosted stacks allowed.
    *
    * @covers ::getMarkASpotSettings
    */
   public function testMailTextEditorAllowedForSelfHosted(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
     $moduleHandler->method('alter');
     \Drupal::getContainer()->set('module_handler', $moduleHandler);
 
-    $group = $this->createMockGroup([]);
+    $group = $this->createMockGroup([
+      'field_tier' => NULL,
+    ]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -1165,6 +1194,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @covers ::getMarkASpotSettings
    */
   public function testMailTextEditorAllowedForHeartTier(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
@@ -1194,6 +1225,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @covers ::getMarkASpotSettings
    */
   public function testMailTextEditorInheritsRootTierForChildJurisdiction(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
@@ -1219,14 +1252,19 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $hierarchyResolver->method('getRootJurisdictionId')
       ->willReturnCallback(static fn(int $id): int => $id === 14 ? 7 : $id);
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $hierarchyResolver,
+    );
     $controller = new MarkASpotSettingsController(
       $this->entityTypeManager,
       $this->configFactory,
       $this->streamWrapperManager,
       $hierarchyResolver,
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($featureScopeResolver),
       $this->organisationMetadataBuilder,
-      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
+      $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
     );
 
@@ -1242,13 +1280,15 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    *
    * Unlike Operations Dashboard, 'pro' does NOT unlock the mail text editor
    * — only 'heart' does. This is the key behavioral difference from
-   * canUseOperationsDashboard().
+   * FeatureScopeResolver's per-feature tier entitlement.
    *
    * @covers ::getMarkASpotSettings
    *
    * @dataProvider mailTextEditorNonEnterpriseTierProvider
    */
   public function testMailTextEditorForcedFalseBelowTopTier(string $tier): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
@@ -1293,8 +1333,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * Tests the mail text editor is denied for pending FastMap checkouts.
    *
    * An attached-but-empty field_tier (Stripe checkout not yet completed)
-   * must not be treated as self-hosted. Matches
-   * canUseOperationsDashboard()'s fail-closed behavior — note this
+   * must not be treated as self-hosted. Matches the tier-feature resolver's
+   * fail-closed behavior — note this
    * deliberately differs from TierLimitConstraintValidator's demo-state
    * bypass, since granting a paid-only editor during a free trial is not
    * the same risk as temporarily lifting a report quota.
@@ -1302,6 +1342,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @covers ::getMarkASpotSettings
    */
   public function testMailTextEditorForcedFalseForEmptyFastMapTier(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
@@ -1330,6 +1372,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @covers ::getMarkASpotSettings
    */
   public function testMailTextEditorCanBeOptedOutViaNuxtConfig(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');

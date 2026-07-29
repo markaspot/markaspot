@@ -18,6 +18,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Component\Utility\EmailValidator;
 use Drupal\file\FileInterface;
@@ -199,6 +200,12 @@ class TenantSettingsControllerTest extends UnitTestCase {
 
     \Drupal::setContainer($container);
 
+    // Settings are static and survive between test methods, so a test that
+    // switches the operating mode would otherwise leak its platform into
+    // every later test. Pin the enterprise baseline here; tests that need
+    // the shared self-service platform override it locally.
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+
     $this->controller = TenantSettingsController::create($container);
   }
 
@@ -294,6 +301,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
    *   Whether the group save method should be called exactly once.
    * @param int $id
    *   The group ID.
+   * @param string|null $tier
+   *   Optional tier value. NULL leaves field_tier unattached.
    *
    * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked group entity.
@@ -302,6 +311,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     string &$storedNuxtConfig,
     bool $expectSave = FALSE,
     int $id = 14,
+    ?string $tier = NULL,
   ): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
@@ -309,10 +319,17 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
-      ->willReturnCallback(static fn(string $name) => $name === 'field_nuxt_config');
+      ->willReturnCallback(
+        static fn(string $name) => $name === 'field_nuxt_config'
+          || ($name === 'field_tier' && $tier !== NULL),
+      );
     $group->method('get')
-      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
-        $value = $name === 'field_nuxt_config' ? $storedNuxtConfig : '';
+      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig, $tier) {
+        $value = match ($name) {
+          'field_nuxt_config' => $storedNuxtConfig,
+          'field_tier' => $tier ?? '',
+          default => '',
+        };
         return new class ($value) {
 
           /**
@@ -2124,6 +2141,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['assignmentSyncsOrganisation']);
     $this->assertTrue($data['features']['forms']['allowParentCategorySelection']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
+    $this->assertTrue($data['capabilities']['aiProcessing']);
   }
 
   /**
@@ -2426,6 +2444,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'dashboard' => TRUE,
         'dashboardRequestCreate' => FALSE,
         'operationsDashboard' => TRUE,
+        'aiProcessing' => TRUE,
       ],
     ]);
     $group = $this->createMockGroup([
@@ -2442,7 +2461,38 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['dashboard']);
     $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertFalse($data['features']['operationsDashboard']);
+    $this->assertFalse($data['features']['aiProcessing']);
     $this->assertFalse($data['capabilities']['operationsDashboard']);
+    $this->assertFalse($data['capabilities']['aiProcessing']);
+  }
+
+  /**
+   * Tests Community exposes the dashboard capability but not Advanced AI.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsExposesPerFeatureCommunityCapabilities(): void {
+    $nuxtConfig = json_encode([
+      'features' => [
+        'operationsDashboard' => TRUE,
+        'aiProcessing' => TRUE,
+      ],
+    ]);
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtConfig,
+      'field_tier' => 'community',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['operationsDashboard']);
+    $this->assertFalse($data['features']['aiProcessing']);
+    $this->assertTrue($data['capabilities']['operationsDashboard']);
+    $this->assertFalse($data['capabilities']['aiProcessing']);
   }
 
   /**
@@ -2450,12 +2500,13 @@ class TenantSettingsControllerTest extends UnitTestCase {
    *
    * @covers ::getFeatureSettings
    */
-  public function testGetFeatureSettingsForcesOperationsDashboardFalseForEmptyFastMapTier(): void {
+  public function testGetFeatureSettingsAllowsTierFeaturesForEmptySelfHostedTier(): void {
     $nuxtConfig = json_encode([
       'features' => [
         'dashboard' => TRUE,
         'dashboardRequestCreate' => FALSE,
         'operationsDashboard' => TRUE,
+        'aiProcessing' => TRUE,
       ],
     ]);
     $group = $this->createMockGroup([
@@ -2473,7 +2524,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['dashboard']);
     $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertTrue($data['features']['operationsDashboard']);
+    $this->assertTrue($data['features']['aiProcessing']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
+    $this->assertTrue($data['capabilities']['aiProcessing']);
   }
 
   /**
@@ -2515,14 +2568,55 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests empty field_tier keeps caseAssignment enabled.
+   * Tests empty field_tier keeps caseAssignment enabled on enterprise stacks.
    *
    * @covers ::getFeatureSettings
    */
-  public function testGetFeatureSettingsEnablesCaseAssignmentForEmptyTier(): void {
+  public function testGetFeatureSettingsEnablesCaseAssignmentForEmptyTierOnEnterprise(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
     $group = $this->createMockGroup([
       'field_nuxt_config' => json_encode(['features' => []]),
       'field_tier' => NULL,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests empty field_tier fails closed on the self-service platform.
+   *
+   * An untiered workspace (demo, pending checkout) must not receive the
+   * paid case-assignment feature on the shared platform.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsDisablesCaseAssignmentForEmptyTierOnSaas(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => NULL,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests the community enterprise tier keeps caseAssignment enabled.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsEnablesCaseAssignmentForCommunityTier(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => 'community',
     ]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
@@ -2569,7 +2663,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests missing field_tier keeps caseAssignment enabled.
+   * Tests a missing field_tier keeps caseAssignment on enterprise stacks.
    *
    * @covers ::getFeatureSettings
    */
@@ -2616,11 +2710,15 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests updateFeatureSettings() blocks operations dashboard on demo.
+   * Tests updateFeatureSettings() persists tier features on enterprise stacks.
+   *
+   * An empty tier is only permissive off the shared platform: here the
+   * operating mode is self_hosted, so the PATCH must persist the flag
+   * instead of scrubbing it.
    *
    * @covers ::updateFeatureSettings
    */
-  public function testUpdateFeatureSettingsForcesOperationsDashboardFalseForEmptyFastMapTier(): void {
+  public function testUpdateFeatureSettingsAllowsTierFeaturesForEmptySelfHostedTier(): void {
     $storedNuxtConfig = json_encode([
       'features' => [
         'dashboard' => TRUE,
@@ -2699,6 +2797,44 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $updatedConfig = json_decode($storedNuxtConfig, TRUE);
     $this->assertTrue($data['features']['operationsDashboard']);
     $this->assertTrue($updatedConfig['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests Community PATCH keeps Dashboard and scrubs unentitled Advanced AI.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsAppliesCommunityEntitlementsPerFeature(): void {
+    $storedNuxtConfig = json_encode(['features' => []]);
+    $group = $this->createMutableNuxtConfigGroup(
+      $storedNuxtConfig,
+      TRUE,
+      14,
+      'community',
+    );
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'operationsDashboard' => TRUE,
+        'aiProcessing' => TRUE,
+      ]),
+    );
+    $response = $this->controller->updateFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+    $this->assertTrue($data['features']['operationsDashboard']);
+    $this->assertFalse($data['features']['aiProcessing']);
+    $this->assertTrue($updatedConfig['features']['operationsDashboard']);
+    $this->assertFalse($updatedConfig['features']['aiProcessing']);
   }
 
   /**
@@ -3054,7 +3190,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group->method('set')
       ->willReturnCallback(
         function (string $name, $value) use (&$fields, $group) {
-          $fields[$name] = $value === NULL ? [] : $value;
+          $fields[$name] = $value ?? [];
           return $group;
         },
       );

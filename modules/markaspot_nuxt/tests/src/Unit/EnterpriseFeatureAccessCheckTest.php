@@ -16,18 +16,15 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Access\EnterpriseFeatureAccessCheck;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\Routing\Route;
 
 /**
  * Tests the EnterpriseFeatureAccessCheck route access service.
  *
- * EnterpriseFeatureGate is final-ish with no constructor dependencies, so
- * the real class is used instead of a mock — mirrors
- * FeatureFlagAccessCheckTest's approach for FeatureFlagChecker. These tests
- * exercise installation-jurisdiction resolution (default group, then root)
- * and that the resolved group's actual field_tier — not any
- * request-supplied value — drives the decision.
+ * These tests exercise platform detection, installation-jurisdiction
+ * resolution (default group, then root), and the self-service tier decision.
  *
  * @group markaspot_nuxt
  * @coversDefaultClass \Drupal\markaspot_nuxt\Access\EnterpriseFeatureAccessCheck
@@ -58,6 +55,7 @@ class EnterpriseFeatureAccessCheckTest extends UnitTestCase {
   protected function buildCheck(
     ?GroupInterface $defaultGroup,
     ?GroupInterface $rootGroup = NULL,
+    bool $selfService = TRUE,
   ): EnterpriseFeatureAccessCheck {
     $query = $this->createMock(QueryInterface::class);
     $query->method('accessCheck')->willReturnSelf();
@@ -95,8 +93,12 @@ class EnterpriseFeatureAccessCheckTest extends UnitTestCase {
         ->willReturn((int) $rootGroup->id());
     }
 
+    $featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $featureScopeResolver->method('isSelfServicePlatform')
+      ->willReturn($selfService);
+
     return new EnterpriseFeatureAccessCheck(
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($featureScopeResolver),
       $entityTypeManager,
       $configFactory,
       $hierarchyResolver,
@@ -187,15 +189,27 @@ class EnterpriseFeatureAccessCheckTest extends UnitTestCase {
   }
 
   /**
-   * Self-hosted installation jurisdiction (no field_tier) is allowed.
+   * Self-hosted is allowed with the now-universal empty tier field.
    *
    * @covers ::check
    */
   public function testSelfHostedJurisdictionIsAllowed(): void {
-    $group = $this->mockGroup(1, FALSE);
-    $check = $this->buildCheck($group);
+    $group = $this->mockGroup(1, TRUE, NULL);
+    $check = $this->buildCheck($group, selfService: FALSE);
     $result = $check->check($this->buildRoute('mail_text_editor'), $this->createMock(AccountInterface::class));
     $this->assertTrue($result->isAllowed());
+  }
+
+  /**
+   * Empty self-service tier is forbidden.
+   *
+   * @covers ::check
+   */
+  public function testEmptySelfServiceTierIsForbidden(): void {
+    $group = $this->mockGroup(1, TRUE, NULL);
+    $check = $this->buildCheck($group);
+    $result = $check->check($this->buildRoute('mail_text_editor'), $this->createMock(AccountInterface::class));
+    $this->assertFalse($result->isAllowed());
   }
 
   /**

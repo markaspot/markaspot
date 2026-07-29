@@ -5304,3 +5304,126 @@ function markaspot_group_update_11944(): string {
   $role->grantPermission('create org group')->save();
   return 'Granted create org group permission to the tenant_admin role.';
 }
+
+/**
+ * Moves the jurisdiction tier field into the core group module.
+ *
+ * Existing CivicSpot sites already have this field from markaspot_fastmap.
+ * Enterprise stacks do not install that SaaS module, so the core module must
+ * create the field when it is absent. Existing allowed values are extended
+ * additively because stored CivicSpot tiers must remain valid.
+ */
+function markaspot_group_update_11945(): string {
+  $changes = [];
+  $storage = FieldStorageConfig::loadByName('group', 'field_tier');
+
+  if (!$storage) {
+    $allowed_values = _markaspot_group_tier_allowed_values([
+      'free' => 'Free',
+      'starter' => 'Starter',
+      'pro' => 'Pro',
+      'heart' => 'Heart',
+    ]);
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_tier',
+      'entity_type' => 'group',
+      'type' => 'list_string',
+      'module' => 'options',
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'settings' => [
+        'allowed_values' => $allowed_values,
+        'allowed_values_function' => '',
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ],
+    ]);
+    $storage->save();
+    $changes[] = 'field storage';
+  }
+  else {
+    $allowed_values = $storage->getSetting('allowed_values');
+    if (!is_array($allowed_values)) {
+      throw new \UnexpectedValueException('group.field_tier allowed_values must be an array.');
+    }
+
+    $updated_values = _markaspot_group_tier_allowed_values($allowed_values);
+    if ($updated_values !== $allowed_values) {
+      $storage->setSetting('allowed_values', $updated_values);
+      $storage->save();
+      $changes[] = 'allowed tier values';
+    }
+  }
+
+  if (!FieldConfig::loadByName('group', 'jur', 'field_tier')) {
+    FieldConfig::create([
+      'field_storage' => $storage,
+      'bundle' => 'jur',
+      'label' => 'Tier',
+      'description' => 'Subscription tier. Controls feature availability in the dashboard.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'settings' => [],
+    ])->save();
+    $changes[] = 'jur field';
+  }
+
+  return $changes === []
+    ? 'The jurisdiction tier field and allowed values already exist.'
+    : 'Created or updated ' . implode(', ', $changes) . '.';
+}
+
+/**
+ * Adds core enterprise tiers without changing existing values or labels.
+ *
+ * Live databases may store options as a flat map or as a list of value/label
+ * mappings. Appending in the existing shape avoids a mixed array that Drupal's
+ * typed configuration cannot save. Existing entries always win.
+ *
+ * @param array<int|string, mixed> $allowed_values
+ *   Existing tier values in either supported storage shape.
+ *
+ * @return array<int|string, mixed>
+ *   The allowed values with missing enterprise tiers appended.
+ */
+function _markaspot_group_tier_allowed_values(array $allowed_values): array {
+  $new_values = [
+    'community' => 'Community',
+    'premium' => 'Premium',
+  ];
+
+  $is_list_of_mappings = FALSE;
+  foreach ($allowed_values as $item) {
+    $is_list_of_mappings = is_array($item)
+      && array_key_exists('value', $item);
+    break;
+  }
+
+  foreach ($new_values as $value => $label) {
+    $exists = array_key_exists($value, $allowed_values);
+    if (!$exists) {
+      foreach ($allowed_values as $item) {
+        if (is_array($item) && ($item['value'] ?? NULL) === $value) {
+          $exists = TRUE;
+          break;
+        }
+      }
+    }
+    if ($exists) {
+      continue;
+    }
+
+    if ($is_list_of_mappings) {
+      $allowed_values[] = ['value' => $value, 'label' => $label];
+    }
+    else {
+      $allowed_values[$value] = $label;
+    }
+  }
+
+  return $allowed_values;
+}

@@ -214,15 +214,20 @@ class OrganisationsControllerTest extends UnitTestCase {
   protected function createController(AccountInterface $account): MarkASpotSettingsController {
     $this->container->set('current_user', $account);
     \Drupal::setContainer($this->container);
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->hierarchyResolver,
+    );
 
     return new MarkASpotSettingsController(
       $this->entityTypeManager,
       $this->configFactory,
       $this->streamWrapperManager,
       $this->hierarchyResolver,
-      new EnterpriseFeatureGate(),
+      new EnterpriseFeatureGate($featureScopeResolver),
       $this->organisationMetadataBuilder,
-      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $this->hierarchyResolver),
+      $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
     );
   }

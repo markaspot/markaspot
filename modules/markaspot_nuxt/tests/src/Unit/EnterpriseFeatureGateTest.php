@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -17,24 +18,19 @@ use Drupal\Tests\UnitTestCase;
 class EnterpriseFeatureGateTest extends UnitTestCase {
 
   /**
-   * The gate under test. Final-ish, no constructor deps — real instance.
+   * Creates a gate for the requested platform type.
    */
-  protected EnterpriseFeatureGate $gate;
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp(): void {
-    parent::setUp();
-    $this->gate = new EnterpriseFeatureGate();
+  private function createGate(bool $selfService): EnterpriseFeatureGate {
+    $resolver = $this->createMock(FeatureScopeResolver::class);
+    $resolver->method('isSelfServicePlatform')->willReturn($selfService);
+    return new EnterpriseFeatureGate($resolver);
   }
 
   /**
    * Creates a group mock with a controllable field_tier state.
    *
    * @param bool $hasTierField
-   *   Whether the bundle carries field_tier at all (FALSE = self-hosted:
-   *   markaspot_fastmap not installed / field not attached).
+   *   Whether the bundle carries field_tier at all.
    * @param string|null $tierValue
    *   The stored tier value. NULL means the field is attached but empty
    *   (pending Stripe checkout).
@@ -88,30 +84,51 @@ class EnterpriseFeatureGateTest extends UnitTestCase {
    * @covers ::isEnterpriseFeatureAllowed
    */
   public function testNullJurisdictionIsDenied(): void {
-    $this->assertFalse($this->gate->isEnterpriseFeatureAllowed(NULL, 'mail_text_editor'));
+    $this->assertFalse(
+      $this->createGate(FALSE)
+        ->isEnterpriseFeatureAllowed(NULL, 'mail_text_editor'),
+    );
   }
 
   /**
-   * No field_tier at all means self-hosted/on-premise: always allowed.
+   * Self-hosted remains allowed with the now-universal empty tier field.
    *
    * @covers ::isEnterpriseFeatureAllowed
    */
-  public function testSelfHostedWithNoTierFieldIsAllowed(): void {
-    $group = $this->mockGroup(FALSE);
-    $this->assertTrue($this->gate->isEnterpriseFeatureAllowed($group, 'mail_text_editor'));
-  }
-
-  /**
-   * Attached-but-empty field_tier (pending Stripe checkout) is denied.
-   *
-   * This is deliberately NOT treated as self-hosted: a demo/pending SaaS
-   * workspace should not get enterprise features for free.
-   *
-   * @covers ::isEnterpriseFeatureAllowed
-   */
-  public function testEmptyTierFieldIsDenied(): void {
+  public function testSelfHostedWithEmptyTierFieldIsAllowed(): void {
     $group = $this->mockGroup(TRUE, NULL);
-    $this->assertFalse($this->gate->isEnterpriseFeatureAllowed($group, 'mail_text_editor'));
+    $this->assertTrue(
+      $this->createGate(FALSE)
+        ->isEnterpriseFeatureAllowed($group, 'mail_text_editor'),
+    );
+  }
+
+  /**
+   * Attached-but-empty field_tier on self-service remains denied.
+   *
+   * A demo/pending SaaS workspace must not get enterprise features for free.
+   *
+   * @covers ::isEnterpriseFeatureAllowed
+   */
+  public function testSelfServiceWithEmptyTierFieldIsDenied(): void {
+    $group = $this->mockGroup(TRUE, NULL);
+    $this->assertFalse(
+      $this->createGate(TRUE)
+        ->isEnterpriseFeatureAllowed($group, 'mail_text_editor'),
+    );
+  }
+
+  /**
+   * Missing tier field on self-service fails closed.
+   *
+   * @covers ::isEnterpriseFeatureAllowed
+   */
+  public function testSelfServiceWithMissingTierFieldIsDenied(): void {
+    $group = $this->mockGroup(FALSE);
+    $this->assertFalse(
+      $this->createGate(TRUE)
+        ->isEnterpriseFeatureAllowed($group, 'mail_text_editor'),
+    );
   }
 
   /**
@@ -123,7 +140,11 @@ class EnterpriseFeatureGateTest extends UnitTestCase {
    */
   public function testTierGating(string $tier, bool $expected): void {
     $group = $this->mockGroup(TRUE, $tier);
-    $this->assertSame($expected, $this->gate->isEnterpriseFeatureAllowed($group, 'mail_text_editor'));
+    $this->assertSame(
+      $expected,
+      $this->createGate(TRUE)
+        ->isEnterpriseFeatureAllowed($group, 'mail_text_editor'),
+    );
   }
 
   /**

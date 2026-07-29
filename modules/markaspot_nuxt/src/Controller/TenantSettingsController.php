@@ -599,26 +599,27 @@ final class TenantSettingsController extends ControllerBase {
   }
 
   /**
-   * Checks whether the jurisdiction tier may use Operations Overview.
-   */
-  private function canUseOperationsDashboard(GroupInterface $group): bool {
-    return $this->featureScopeResolver->canUseTierGatedFeatures($group);
-  }
-
-  /**
    * Checks whether the jurisdiction tier may use case assignment.
+   *
+   * With field_tier now attached everywhere (markaspot_group), field
+   * presence no longer identifies the platform. A missing or empty tier is
+   * only permissive on enterprise/self-hosted stacks; on the shared
+   * self-service platform an untiered workspace (demo, pending checkout)
+   * must not receive this paid feature. Mirrors
+   * _markaspot_group_case_assignment_enabled_for_jurisdiction().
    */
   private function canUseCaseAssignment(GroupInterface $group): bool {
     $tier_group = $this->effectiveCaseAssignmentTierGroup($group);
-    if (!$tier_group->hasField('field_tier')) {
-      return TRUE;
+    if (!$tier_group->hasField('field_tier')
+      || $tier_group->get('field_tier')->isEmpty()) {
+      return !$this->featureScopeResolver->isSelfServicePlatform();
     }
 
-    if ($tier_group->get('field_tier')->isEmpty()) {
-      return TRUE;
-    }
-
-    return in_array((string) $tier_group->get('field_tier')->value, ['pro', 'heart'], TRUE);
+    return in_array(
+      (string) $tier_group->get('field_tier')->value,
+      ['pro', 'heart', 'community', 'premium'],
+      TRUE,
+    );
   }
 
   /**
@@ -2242,7 +2243,11 @@ final class TenantSettingsController extends ControllerBase {
     ));
     $root_id = $this->hierarchyResolver->getRootJurisdictionId((int) $group->id());
     $is_tenant_root = $root_id === NULL || $root_id === (int) $group->id();
-    $tier_capability = $this->canUseOperationsDashboard($group);
+    $tier_capabilities = [];
+    foreach (FeatureScopeResolver::TIER_GATED as $tier_key) {
+      $tier_capabilities[$tier_key] = $this->featureScopeResolver
+        ->isTierFeatureAllowed($tier_key, $group);
+    }
 
     return new JsonResponse([
       'jurisdiction_id' => (int) $group->id(),
@@ -2299,9 +2304,9 @@ final class TenantSettingsController extends ControllerBase {
         // flags to FALSE when not permitted). aiAnalysis is available in
         // every tier (budget-capped, not gated); the key stays in the
         // response for contract stability.
-        'operationsDashboard' => $tier_capability,
+        'operationsDashboard' => $tier_capabilities['operationsDashboard'],
         'aiAnalysis' => TRUE,
-        'aiProcessing' => $tier_capability,
+        'aiProcessing' => $tier_capabilities['aiProcessing'],
         // Edition gate: org-coupled toggles are hidden entirely where no
         // organisation groups exist (SaaS has no org management).
         'organisations' => $this->featureScopeResolver->hasOrganisationFeatures(),
@@ -2359,8 +2364,8 @@ final class TenantSettingsController extends ControllerBase {
     // Never persist an un-entitled TRUE for tier-gated flags. The read side
     // scrubs the effective value anyway, but a stored TRUE would silently
     // self-activate on a later tier or operating-mode change.
-    if (!$this->featureScopeResolver->canUseTierGatedFeatures($group)) {
-      foreach (FeatureScopeResolver::TIER_GATED as $tier_key) {
+    foreach (FeatureScopeResolver::TIER_GATED as $tier_key) {
+      if (!$this->featureScopeResolver->isTierFeatureAllowed($tier_key, $group)) {
         if (($data[$tier_key] ?? NULL) === TRUE || (is_array($data[$tier_key] ?? NULL) && ($data[$tier_key]['enabled'] ?? NULL) === TRUE)) {
           $data[$tier_key] = FALSE;
         }

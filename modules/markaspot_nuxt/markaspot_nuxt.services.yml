@@ -20,6 +20,7 @@ services:
     arguments: ['@markaspot_nuxt.feature_flag_checker', '@request_stack', '@entity_type.manager', '@config.factory']
   markaspot_nuxt.enterprise_feature_gate:
     class: Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate
+    arguments: ['@markaspot_nuxt.feature_scope_resolver']
   markaspot_nuxt.enterprise_feature_access_check:
     class: Drupal\markaspot_nuxt\Access\EnterpriseFeatureAccessCheck
     arguments: ['@markaspot_nuxt.enterprise_feature_gate', '@entity_type.manager', '@config.factory', '@?markaspot_group.hierarchy_resolver']

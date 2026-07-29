@@ -155,23 +155,51 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
-   * Tests the unified tier rule.
+   * Tests per-feature tier entitlements and the aggregate compatibility API.
    *
    * @dataProvider tierProvider
+   * @covers ::isTierFeatureAllowed
    * @covers ::canUseTierGatedFeatures
+   * @covers ::resolveEffectiveFeatures
    */
-  public function testTierRule(?string $tier, string $mode, bool $expected): void {
+  public function testTierRule(
+    ?string $tier,
+    string $mode,
+    bool $expectedAll,
+    bool $expectedOperations,
+    bool $expectedAi,
+  ): void {
     new Settings(['markaspot_operating_mode' => $mode]);
-    $fields = ['field_nuxt_config' => '{}'];
-    if ($tier !== NULL) {
-      $fields['field_tier'] = $tier;
-    }
-    elseif ($mode === 'saas') {
-      $fields['field_tier'] = NULL;
-    }
+    $fields = [
+      'field_nuxt_config' => json_encode(['features' => [
+        'operationsDashboard' => TRUE,
+        'aiProcessing' => TRUE,
+      ]]),
+      'field_tier' => $tier,
+    ];
     $root = $this->createGroup(1, $fields);
+    $resolver = $this->createResolver($root);
+    $features = $resolver->resolveEffectiveFeatures($root);
 
-    $this->assertSame($expected, $this->createResolver($root)->canUseTierGatedFeatures($root));
+    $this->assertSame(
+      $expectedOperations,
+      $resolver->isTierFeatureAllowed('operationsDashboard', $root),
+    );
+    $this->assertSame(
+      $expectedAi,
+      $resolver->isTierFeatureAllowed('aiProcessing', $root),
+    );
+    $this->assertSame($expectedAll, $resolver->canUseTierGatedFeatures($root));
+    $this->assertSame($expectedOperations, $features['operationsDashboard']);
+    $this->assertSame($expectedAi, $features['aiProcessing']);
+    $this->assertSame(
+      $expectedOperations,
+      $resolver->isEnabledEffective('operationsDashboard', $root),
+    );
+    $this->assertSame(
+      $expectedAi,
+      $resolver->isEnabledEffective('aiProcessing', $root),
+    );
   }
 
   /**
@@ -179,12 +207,68 @@ final class FeatureScopeResolverTest extends UnitTestCase {
    */
   public static function tierProvider(): array {
     return [
-      'pro SaaS' => ['pro', 'saas', TRUE],
-      'heart SaaS' => ['heart', 'saas', TRUE],
-      'starter SaaS' => ['starter', 'saas', FALSE],
-      'empty SaaS' => [NULL, 'saas', FALSE],
-      'empty self hosted' => [NULL, 'self_hosted', TRUE],
+      'pro SaaS' => ['pro', 'saas', TRUE, TRUE, TRUE],
+      'heart SaaS' => ['heart', 'saas', TRUE, TRUE, TRUE],
+      'community self hosted' => ['community', 'self_hosted', FALSE, TRUE, FALSE],
+      'premium self hosted' => ['premium', 'self_hosted', TRUE, TRUE, TRUE],
+      'starter SaaS' => ['starter', 'saas', FALSE, FALSE, FALSE],
+      'empty SaaS' => [NULL, 'saas', FALSE, FALSE, FALSE],
+      'empty self hosted' => [NULL, 'self_hosted', TRUE, TRUE, TRUE],
     ];
+  }
+
+  /**
+   * Tests child tiers override the root and empty siblings inherit it.
+   *
+   * Premium enables the complete tier-gated set. Community keeps Operations
+   * Dashboard but not advanced AI, and an empty sibling inherits that split.
+   *
+   * @covers ::isTierFeatureAllowed
+   * @covers ::canUseTierGatedFeatures
+   * @covers ::resolveEffectiveFeatures
+   */
+  public function testChildTierWinsWithoutElevatingSibling(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $root = $this->createGroup(1, [
+      'field_nuxt_config' => json_encode(['features' => [
+        'operationsDashboard' => TRUE,
+        'aiProcessing' => TRUE,
+      ]]),
+      'field_tier' => 'community',
+    ]);
+    $premiumChild = $this->createGroup(2, [
+      'field_nuxt_config' => '{}',
+      'field_tier' => 'premium',
+    ]);
+    $communityChild = $this->createGroup(4, [
+      'field_nuxt_config' => '{}',
+      'field_tier' => 'community',
+    ]);
+    $emptySibling = $this->createGroup(3, [
+      'field_nuxt_config' => '{}',
+      'field_tier' => NULL,
+    ]);
+    $resolver = $this->createResolver(
+      $root,
+      jurisdictions: [
+        1 => $root,
+        2 => $premiumChild,
+        3 => $emptySibling,
+        4 => $communityChild,
+      ],
+    );
+
+    $this->assertTrue($resolver->canUseTierGatedFeatures($premiumChild));
+    $this->assertFalse($resolver->canUseTierGatedFeatures($emptySibling));
+    $premiumFeatures = $resolver->resolveEffectiveFeatures($premiumChild);
+    $communityFeatures = $resolver->resolveEffectiveFeatures($communityChild);
+    $siblingFeatures = $resolver->resolveEffectiveFeatures($emptySibling);
+    $this->assertTrue($premiumFeatures['operationsDashboard']);
+    $this->assertTrue($premiumFeatures['aiProcessing']);
+    $this->assertTrue($communityFeatures['operationsDashboard']);
+    $this->assertFalse($communityFeatures['aiProcessing']);
+    $this->assertTrue($siblingFeatures['operationsDashboard']);
+    $this->assertFalse($siblingFeatures['aiProcessing']);
   }
 
   /**
@@ -194,13 +278,28 @@ final class FeatureScopeResolverTest extends UnitTestCase {
    * back to "everything allowed" for tierless demo workspaces.
    *
    * @covers ::canUseTierGatedFeatures
+   * @covers ::isTierFeatureAllowed
    */
   public function testTierlessRootWithFastmapStaysGated(): void {
-    new Settings(['markaspot_operating_mode' => 'self_hosted']);
     $root = $this->createGroup(1, ['field_nuxt_config' => '{}']);
 
-    $this->assertFalse($this->createResolver($root, [], TRUE)->canUseTierGatedFeatures($root));
-    $this->assertTrue($this->createResolver($root, [], FALSE)->canUseTierGatedFeatures($root));
+    new Settings([]);
+    $fastmap = $this->createResolver($root, [], TRUE);
+    $this->assertFalse($fastmap->canUseTierGatedFeatures($root));
+    $this->assertFalse($fastmap->isTierFeatureAllowed('operationsDashboard', $root));
+    $this->assertFalse($fastmap->isTierFeatureAllowed('aiProcessing', $root));
+
+    // The independent FastMap backstop remains fail-closed even when an
+    // explicit self_hosted mode makes the platform-level gates permissive.
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $this->assertFalse($fastmap->canUseTierGatedFeatures($root));
+    $this->assertFalse($fastmap->isTierFeatureAllowed('operationsDashboard', $root));
+    $this->assertFalse($fastmap->isTierFeatureAllowed('aiProcessing', $root));
+
+    $enterprise = $this->createResolver($root, [], FALSE);
+    $this->assertTrue($enterprise->canUseTierGatedFeatures($root));
+    $this->assertTrue($enterprise->isTierFeatureAllowed('operationsDashboard', $root));
+    $this->assertTrue($enterprise->isTierFeatureAllowed('aiProcessing', $root));
   }
 
   /**
@@ -342,14 +441,23 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   /**
    * Creates a resolver whose root lookup returns the supplied group.
    */
-  private function createResolver(GroupInterface $root, array $platformFeatures = [], ?bool $fastmapInstalled = NULL, array $orgGroupIds = []): FeatureScopeResolver {
+  private function createResolver(
+    GroupInterface $root,
+    array $platformFeatures = [],
+    ?bool $fastmapInstalled = NULL,
+    array $orgGroupIds = [],
+    array $jurisdictions = [],
+  ): FeatureScopeResolver {
     $query = $this->createMock(QueryInterface::class);
     $query->method('condition')->willReturnSelf();
     $query->method('accessCheck')->willReturnSelf();
     $query->method('range')->willReturnSelf();
     $query->method('execute')->willReturn($orgGroupIds);
     $storage = $this->createMock(EntityStorageInterface::class);
-    $storage->method('load')->willReturn($root);
+    $jurisdictions[(int) $root->id()] = $root;
+    $storage->method('load')->willReturnCallback(
+      static fn(int|string $id): ?GroupInterface => $jurisdictions[(int) $id] ?? NULL,
+    );
     $storage->method('getQuery')->willReturn($query);
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')->with('group')->willReturn($storage);
