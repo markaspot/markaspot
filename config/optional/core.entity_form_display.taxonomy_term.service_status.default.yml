@@ -4,6 +4,7 @@ status: true
 dependencies:
   config:
     - field.field.taxonomy_term.service_status.field_jurisdiction
+    - field.field.taxonomy_term.service_status.field_notification_key
     - field.field.taxonomy_term.service_status.field_open311_mapping
     - field.field.taxonomy_term.service_status.field_status_hex
     - field.field.taxonomy_term.service_status.field_status_icon
@@ -36,6 +37,14 @@ content:
       match_operator: CONTAINS
       match_limit: 10
       size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_notification_key:
+    type: string_textfield
+    weight: 6
+    region: content
+    settings:
+      size: 64
       placeholder: ''
     third_party_settings: {  }
   field_open311_mapping:

@@ -1,0 +1,27 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_service_statuses
+    - group.type.jur
+    - taxonomy.vocabulary.service_status
+id: group.jur.field_service_statuses
+field_name: field_service_statuses
+entity_type: group
+bundle: jur
+label: 'Service Statuses'
+description: 'Optional: Restrict selectable statuses for this jurisdiction. Leave empty to use all statuses owned by the root jurisdiction. Only statuses belonging to the root jurisdiction are shown.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'jurisdiction_category:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      service_status: service_status
+    sort:
+      field: name
+      direction: ASC
+    auto_create: false
+field_type: entity_reference

@@ -18,6 +18,7 @@ dependencies:
     - field.field.group.jur.field_platform_name
     - field.field.group.jur.field_request_id_prefix
     - field.field.group.jur.field_service_categories
+    - field.field.group.jur.field_service_statuses
     - field.field.group.jur.field_slug
     - field.field.group.jur.field_stripe_customer_id
     - field.field.group.jur.field_stripe_subscription_id
@@ -144,6 +145,16 @@ content:
   field_service_categories:
     type: entity_reference_autocomplete
     weight: 15
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_service_statuses:
+    type: entity_reference_autocomplete
+    weight: 16
     region: content
     settings:
       match_operator: CONTAINS

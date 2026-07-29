@@ -12,7 +12,7 @@ field_name: field_notification_key
 entity_type: taxonomy_term
 bundle: service_status
 label: 'Notification key'
-description: 'Mail text key sent when a request enters this status. Leave empty to send no mail.'
+description: 'Standard keys: status_open, status_closed, status_not_responsible. Leave empty to send no mail.'
 required: false
 translatable: false
 default_value: {  }

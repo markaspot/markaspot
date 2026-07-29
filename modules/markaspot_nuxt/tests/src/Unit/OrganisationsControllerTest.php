@@ -22,6 +22,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
+use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
@@ -30,6 +31,7 @@ use Symfony\Component\HttpFoundation\Request;
 
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrgHierarchyResolverInterface.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrganisationMetadataBuilder.php';
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/StatusTermScope.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
 require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
@@ -221,6 +223,7 @@ class OrganisationsControllerTest extends UnitTestCase {
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
       new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $this->hierarchyResolver),
+      $this->createMock(StatusTermScope::class),
     );
   }
 

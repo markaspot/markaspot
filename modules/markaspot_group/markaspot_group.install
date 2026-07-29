@@ -5172,3 +5172,80 @@ function markaspot_group_update_11941(): string {
     ? 'Migrated the report confirmation ECA action and preserved the existing notification text.'
     : 'Migrated the report confirmation ECA action and reconciled its notification text.';
 }
+
+/**
+ * Adds the service status selection field to jurisdiction groups.
+ */
+function markaspot_group_update_11942(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $created = [];
+
+  $field_storage = $entity_type_manager
+    ->getStorage('field_storage_config')
+    ->load('group.field_service_statuses');
+  if (!$field_storage) {
+    $field_storage = $entity_type_manager
+      ->getStorage('field_storage_config')
+      ->create([
+        'field_name' => 'field_service_statuses',
+        'entity_type' => 'group',
+        'type' => 'entity_reference',
+        'settings' => ['target_type' => 'taxonomy_term'],
+        'cardinality' => -1,
+        'translatable' => TRUE,
+      ]);
+    $field_storage->save();
+    $created[] = 'field storage';
+  }
+
+  $field = $entity_type_manager
+    ->getStorage('field_config')
+    ->load('group.jur.field_service_statuses');
+  if (!$field) {
+    $entity_type_manager
+      ->getStorage('field_config')
+      ->create([
+        'field_storage' => $field_storage,
+        'bundle' => 'jur',
+        'label' => 'Service Statuses',
+        'description' => 'Optional: Restrict selectable statuses for this jurisdiction. '
+          . 'Leave empty to use all statuses owned by the root jurisdiction. '
+          . 'Only statuses belonging to the root jurisdiction are shown.',
+        'required' => FALSE,
+        'translatable' => TRUE,
+        'settings' => [
+          'handler' => 'jurisdiction_category:taxonomy_term',
+          'handler_settings' => [
+            'target_bundles' => ['service_status' => 'service_status'],
+            'sort' => ['field' => 'name', 'direction' => 'ASC'],
+            'auto_create' => FALSE,
+          ],
+        ],
+      ])
+      ->save();
+    $created[] = 'jur field';
+  }
+
+  $form_display = $entity_type_manager
+    ->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display && $form_display->getComponent('field_service_statuses') === NULL) {
+    $form_display->setComponent('field_service_statuses', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 16,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ])->save();
+    $created[] = 'form widget';
+  }
+
+  return $created === []
+    ? 'The service status selection field already exists.'
+    : 'Created ' . implode(', ', $created) . '.';
+}

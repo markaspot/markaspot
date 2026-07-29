@@ -5,6 +5,7 @@ namespace Drupal\markaspot_dashboard\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
@@ -46,6 +47,7 @@ class StatusNoteController extends ControllerBase {
     GeoreportProcessorServiceInterface $georeport_processor,
     AccountProxyInterface $current_user,
     protected FeatureFlagChecker $featureFlagChecker,
+    protected StatusTermScope $statusTermScope,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->georeportProcessor = $georeport_processor;
@@ -61,6 +63,7 @@ class StatusNoteController extends ControllerBase {
       $container->get('markaspot_open311.processor'),
       $container->get('current_user'),
       $container->get('markaspot_nuxt.feature_flag_checker'),
+      $container->get('markaspot_group.status_term_scope'),
     );
   }
 
@@ -98,13 +101,20 @@ class StatusNoteController extends ControllerBase {
     // Resolve UUIDs to entity IDs.
     $statusTermId = NULL;
     if (!empty($data['status_term_uuid'])) {
-      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties([
-        'uuid' => $data['status_term_uuid'],
-        'vid' => 'service_status',
-      ]);
-      if (!empty($terms)) {
-        $statusTermId = reset($terms)->id();
+      $jurisdictionId = $this->statusJurisdictionId($node);
+      $terms = $this->statusTermScope->loadByProperties(
+        [
+          'uuid' => $data['status_term_uuid'],
+          'vid' => 'service_status',
+        ],
+        $jurisdictionId,
+      );
+      if (empty($terms) && $this->statusTermScope->canScope($jurisdictionId)) {
+        return new JsonResponse([
+          'error' => 'Status term is not available for this jurisdiction.',
+        ], 400);
       }
+      $statusTermId = empty($terms) ? NULL : reset($terms)->id();
     }
 
     $boilerplateId = NULL;
@@ -196,13 +206,20 @@ class StatusNoteController extends ControllerBase {
     if (array_key_exists('status_term_uuid', $data)) {
       $statusTermId = NULL;
       if (!empty($data['status_term_uuid'])) {
-        $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties([
-          'uuid' => $data['status_term_uuid'],
-          'vid' => 'service_status',
-        ]);
-        if (!empty($terms)) {
-          $statusTermId = reset($terms)->id();
+        $jurisdictionId = $this->statusJurisdictionId($node);
+        $terms = $this->statusTermScope->loadByProperties(
+          [
+            'uuid' => $data['status_term_uuid'],
+            'vid' => 'service_status',
+          ],
+          $jurisdictionId,
+        );
+        if (empty($terms) && $this->statusTermScope->canScope($jurisdictionId)) {
+          return new JsonResponse([
+            'error' => 'Status term is not available for this jurisdiction.',
+          ], 400);
         }
+        $statusTermId = empty($terms) ? NULL : reset($terms)->id();
       }
       $paragraph->set('field_status_term', $statusTermId ?? []);
     }
@@ -316,6 +333,19 @@ class StatusNoteController extends ControllerBase {
   private function statusAttributesEnabled(NodeInterface $node): bool {
     $jurisdiction = $this->featureFlagChecker->resolveJurisdictionForNode($node);
     return $this->featureFlagChecker->isEnabled('features.statusAttributes', $jurisdiction, FALSE);
+  }
+
+  /**
+   * Reuses the processor's existing effective node jurisdiction resolution.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   Service request node.
+   *
+   * @return int|null
+   *   Resolved jurisdiction group ID.
+   */
+  private function statusJurisdictionId(NodeInterface $node): ?int {
+    return $this->georeportProcessor->resolveNodeJurisdictionId($node);
   }
 
 }

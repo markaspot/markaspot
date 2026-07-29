@@ -127,6 +127,7 @@ class DashboardController extends ControllerBase {
       'node_list:service_request',
       'taxonomy_term_list:service_status',
       'taxonomy_term_list:service_category',
+      'group_list',
     ]);
 
     // Cache context based on query parameters.

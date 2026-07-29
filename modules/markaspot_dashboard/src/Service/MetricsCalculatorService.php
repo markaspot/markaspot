@@ -9,6 +9,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\StatusTermScope;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -48,6 +49,11 @@ class MetricsCalculatorService {
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The graceful jurisdiction scope for service status terms.
+   */
+  protected StatusTermScope $statusTermScope;
+
+  /**
    * Whether node__field_organisation exists; NULL = not yet checked.
    */
   protected ?bool $hasOrganisationNodeField = NULL;
@@ -63,6 +69,8 @@ class MetricsCalculatorService {
    *   The config factory.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
+   * @param \Drupal\markaspot_group\Service\StatusTermScope $status_term_scope
+   *   The graceful jurisdiction scope for service status terms.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver (optional).
    */
@@ -71,12 +79,14 @@ class MetricsCalculatorService {
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
+    StatusTermScope $status_term_scope,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->logger = $logger_factory->get('markaspot_dashboard');
+    $this->statusTermScope = $status_term_scope;
     $this->hierarchyResolver = $hierarchy_resolver;
   }
 
@@ -101,7 +111,10 @@ class MetricsCalculatorService {
       'forwarding_rate' => $this->calculateForwardingRate($node_ids),
       'fcr_rate' => $this->calculateFcrRate($node_ids),
       'avg_processing_time' => $this->calculateAvgProcessingTime($node_ids),
-      'status_distribution' => $this->getStatusDistribution($node_ids),
+      'status_distribution' => $this->getStatusDistribution(
+        $node_ids,
+        $this->getRequestedJurisdictionIds($filters),
+      ),
       'source_distribution' => $this->getSourceDistribution($node_ids),
       'total_requests' => count($node_ids),
       'filters_applied' => $this->getAppliedFiltersInfo($filters),
@@ -193,15 +206,7 @@ class MetricsCalculatorService {
    *   Unique jurisdiction group IDs.
    */
   protected function getExpandedJurisdictionIds(array $filters): array {
-    $requested = [];
-    if (!empty($filters['jurisdiction_ids']) && is_array($filters['jurisdiction_ids'])) {
-      $requested = array_map('intval', $filters['jurisdiction_ids']);
-    }
-    elseif (!empty($filters['jurisdiction_id'])) {
-      $requested = [(int) $filters['jurisdiction_id']];
-    }
-
-    $requested = array_values(array_filter($requested, static fn(int $id): bool => $id > 0));
+    $requested = $this->getRequestedJurisdictionIds($filters);
     if ($requested === []) {
       return [];
     }
@@ -217,6 +222,30 @@ class MetricsCalculatorService {
     }
 
     return array_values(array_unique(array_filter($expanded, static fn(int $id): bool => $id > 0)));
+  }
+
+  /**
+   * Gets the directly requested jurisdiction IDs without descendant expansion.
+   *
+   * @param array $filters
+   *   Dashboard filters. Supports jurisdiction_id and jurisdiction_ids.
+   *
+   * @return int[]
+   *   Unique positive jurisdiction group IDs.
+   */
+  protected function getRequestedJurisdictionIds(array $filters): array {
+    $requested = [];
+    if (!empty($filters['jurisdiction_ids']) && is_array($filters['jurisdiction_ids'])) {
+      $requested = array_map('intval', $filters['jurisdiction_ids']);
+    }
+    elseif (!empty($filters['jurisdiction_id'])) {
+      $requested = [(int) $filters['jurisdiction_id']];
+    }
+
+    return array_values(array_unique(array_filter(
+      $requested,
+      static fn(int $id): bool => $id > 0,
+    )));
   }
 
   /**
@@ -513,26 +542,81 @@ class MetricsCalculatorService {
    *
    * @param array $node_ids
    *   Array of node IDs to analyze.
+   * @param int[] $jurisdiction_ids
+   *   Requested jurisdiction group IDs, or an empty array for an unscoped
+   *   status list. Multiple IDs contribute the union of their effective sets.
    *
    * @return array
    *   Array of status counts with colors.
    */
-  public function getStatusDistribution(array $node_ids): array {
+  public function getStatusDistribution(array $node_ids, array $jurisdiction_ids = []): array {
+    $jurisdiction_ids = array_values(array_unique(array_filter(
+      array_map('intval', $jurisdiction_ids),
+      static fn(int $id): bool => $id > 0,
+    )));
+    $scope_statuses = $this->statusTermScope->canScope($jurisdiction_ids[0] ?? NULL);
+    $status_args = [];
+    $status_placeholder_string = '';
+    if ($scope_statuses) {
+      $status_ids = [];
+      foreach ($jurisdiction_ids as $jurisdiction_id) {
+        $terms = $this->statusTermScope->loadByProperties(
+          ['vid' => 'service_status'],
+          $jurisdiction_id,
+        );
+        foreach ($terms as $term) {
+          $status_id = (int) $term->id();
+          if ($status_id > 0) {
+            $status_ids[$status_id] = $status_id;
+          }
+        }
+      }
+      if ($status_ids === []) {
+        return [];
+      }
+      $status_placeholder_string = $this->addIntegerPlaceholders(
+        array_values($status_ids),
+        'status_tid',
+        $status_args,
+      );
+    }
+
     if (empty($node_ids)) {
       // Return all statuses with zero counts.
-      $query = $this->database->query("
-        SELECT
-          t.tid,
-          t.name AS status,
-          0 AS count,
-          h.field_status_hex_color AS color,
-          t.weight
-        FROM {taxonomy_term_field_data} t
-        LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
-        WHERE t.vid = 'service_status' AND t.default_langcode = 1
-        GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
-        ORDER BY t.weight ASC
-      ");
+      if ($scope_statuses) {
+        $query = $this->database->query("
+          SELECT
+            t.tid,
+            t.name AS status,
+            0 AS count,
+            h.field_status_hex_color AS color,
+            t.weight
+          FROM {taxonomy_term_field_data} t
+          LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+          WHERE t.vid = 'service_status'
+            AND t.default_langcode = 1
+            AND t.tid IN ($status_placeholder_string)
+          GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
+          ORDER BY t.weight ASC
+        ", $status_args);
+      }
+      else {
+        // Keep the established single-tenant SQL unchanged when no scope can
+        // be applied, including installs without field_jurisdiction storage.
+        $query = $this->database->query("
+          SELECT
+            t.tid,
+            t.name AS status,
+            0 AS count,
+            h.field_status_hex_color AS color,
+            t.weight
+          FROM {taxonomy_term_field_data} t
+          LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+          WHERE t.vid = 'service_status' AND t.default_langcode = 1
+          GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
+          ORDER BY t.weight ASC
+        ");
+      }
 
       $results = $query->fetchAll();
       $output = [];
@@ -556,21 +640,45 @@ class MetricsCalculatorService {
     }
     $placeholder_string = implode(',', $named_placeholders);
 
-    $query = $this->database->query("
-      SELECT
-        t.tid,
-        t.name AS status,
-        COUNT(DISTINCT n.nid) AS count,
-        h.field_status_hex_color AS color,
-        t.weight
-      FROM {taxonomy_term_field_data} t
-      LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
-      LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
-      LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholder_string)
-      WHERE t.vid = 'service_status' AND t.default_langcode = 1
-      GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
-      ORDER BY t.weight ASC
-    ", $args);
+    if ($scope_statuses) {
+      $args += $status_args;
+      $query = $this->database->query("
+        SELECT
+          t.tid,
+          t.name AS status,
+          COUNT(DISTINCT n.nid) AS count,
+          h.field_status_hex_color AS color,
+          t.weight
+        FROM {taxonomy_term_field_data} t
+        LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+        LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
+        LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholder_string)
+        WHERE t.vid = 'service_status'
+          AND t.default_langcode = 1
+          AND t.tid IN ($status_placeholder_string)
+        GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
+        ORDER BY t.weight ASC
+      ", $args);
+    }
+    else {
+      // This branch intentionally preserves the prior SQL for single-tenant
+      // installs and requests without one resolved jurisdiction.
+      $query = $this->database->query("
+        SELECT
+          t.tid,
+          t.name AS status,
+          COUNT(DISTINCT n.nid) AS count,
+          h.field_status_hex_color AS color,
+          t.weight
+        FROM {taxonomy_term_field_data} t
+        LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+        LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
+        LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholder_string)
+        WHERE t.vid = 'service_status' AND t.default_langcode = 1
+        GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
+        ORDER BY t.weight ASC
+      ", $args);
+    }
 
     $results = $query->fetchAll();
     $output = [];

@@ -21,6 +21,7 @@ use Drupal\file\FileInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
+use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
@@ -31,6 +32,7 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrgHierarchyResolverInterface.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrganisationMetadataBuilder.php';
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/StatusTermScope.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
 require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
@@ -113,6 +115,11 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   protected FeatureScopeResolver $featureScopeResolver;
 
   /**
+   * The mocked effective service status resolver.
+   */
+  protected StatusTermScope $statusTermScope;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -177,6 +184,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->hierarchyResolver,
     );
+    $this->statusTermScope = $this->createMock(StatusTermScope::class);
 
     // Module handler: reports no modules installed.
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
@@ -200,6 +208,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $container->set('stream_wrapper_manager', $this->streamWrapperManager);
     $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
     $container->set('markaspot_group.organisation_metadata_builder', $this->organisationMetadataBuilder);
+    $container->set('markaspot_group.status_term_scope', $this->statusTermScope);
     $container->set('module_handler', $this->moduleHandler);
     $container->set('language_manager', $languageManager);
     $container->set('cache_contexts_manager', $cacheContextsManager);
@@ -213,6 +222,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
       $this->featureScopeResolver,
+      $this->statusTermScope,
     );
   }
 
@@ -363,6 +373,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
       new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
+      $this->createMock(StatusTermScope::class),
     );
 
     $data = json_decode($controller->getJurisdictions()->getContent(), TRUE);
@@ -431,6 +442,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
       new FeatureScopeResolver($this->entityTypeManager, $configFactory, $this->hierarchyResolver),
+      $this->createMock(StatusTermScope::class),
     );
 
     $request = Request::create('/api/mark-a-spot-settings', 'GET');
@@ -493,6 +505,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
       new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
+      $this->createMock(StatusTermScope::class),
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -1213,6 +1226,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
       new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
+      $this->createMock(StatusTermScope::class),
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');

@@ -15,6 +15,7 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -51,6 +52,11 @@ class DuplicateController extends ControllerBase {
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The graceful jurisdiction scope for service status terms.
+   */
+  protected StatusTermScope $statusTermScope;
+
+  /**
    * Constructs a DuplicateController object.
    */
   public function __construct(
@@ -61,6 +67,7 @@ class DuplicateController extends ControllerBase {
     TimeInterface $time,
     ConfigFactoryInterface $config_factory,
     ModuleHandlerInterface $module_handler,
+    StatusTermScope $status_term_scope,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->database = $database;
@@ -70,6 +77,7 @@ class DuplicateController extends ControllerBase {
     $this->time = $time;
     $this->configFactory = $config_factory;
     $this->moduleHandler = $module_handler;
+    $this->statusTermScope = $status_term_scope;
     $this->hierarchyResolver = $hierarchy_resolver;
   }
 
@@ -85,6 +93,7 @@ class DuplicateController extends ControllerBase {
       $container->get('datetime.time'),
       $container->get('config.factory'),
       $container->get('module_handler'),
+      $container->get('markaspot_group.status_term_scope'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL
@@ -273,6 +282,7 @@ class DuplicateController extends ControllerBase {
     }
 
     $new_status = $data['status'];
+    $closed_tid = NULL;
 
     // Load the match record.
     $match = $this->database->select('markaspot_ai_duplicate_matches', 'm')
@@ -305,6 +315,16 @@ class DuplicateController extends ControllerBase {
       ], 403);
     }
 
+    if ($new_status === 'confirmed') {
+      $closed_tid = $this->resolveClosedStatusTid($duplicate_node);
+      if ($closed_tid === NULL) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'message' => 'No selectable closed status is configured for this jurisdiction.',
+        ], 409);
+      }
+    }
+
     // Update the match status.
     $this->database->update('markaspot_ai_duplicate_matches')
       ->fields([
@@ -317,7 +337,7 @@ class DuplicateController extends ControllerBase {
 
     // If confirmed, auto-close the duplicate and add status note.
     if ($new_status === 'confirmed') {
-      $this->confirmDuplicate($duplicate_node, $source_node);
+      $this->confirmDuplicate($duplicate_node, $source_node, $closed_tid);
     }
 
     return new JsonResponse([
@@ -575,8 +595,14 @@ class DuplicateController extends ControllerBase {
    *   The duplicate service request node.
    * @param \Drupal\node\NodeInterface $source_node
    *   The original/source service request node.
+   * @param int $closed_tid
+   *   Selected closed status term ID.
    */
-  protected function confirmDuplicate(NodeInterface $duplicate_node, NodeInterface $source_node): void {
+  protected function confirmDuplicate(
+    NodeInterface $duplicate_node,
+    NodeInterface $source_node,
+    int $closed_tid,
+  ): void {
     // Get the language of the duplicate request.
     $langcode = $duplicate_node->language()->getId();
 
@@ -592,11 +618,7 @@ class DuplicateController extends ControllerBase {
     // Add the status note.
     $this->addStatusNote($duplicate_node, $note_text);
 
-    // Resolve the "closed" status term for the node's jurisdiction.
-    // Status terms are jurisdiction-specific.
-    // They are mapped by field_jurisdiction and field_open311_mapping.
-    $closed_tid = $this->resolveClosedStatusTid($duplicate_node);
-    if ($closed_tid && $duplicate_node->hasField('field_status')) {
+    if ($duplicate_node->hasField('field_status')) {
       $duplicate_node->set('field_status', ['target_id' => $closed_tid]);
     }
 
@@ -646,7 +668,8 @@ class DuplicateController extends ControllerBase {
    *
    * Status terms are jurisdiction-specific: each jurisdiction has its own
    * set of terms with field_open311_mapping indicating open/closed/initial.
-   * The jurisdiction is derived from the node's category term.
+   * The controller's existing effective node resolver keeps this lookup
+   * aligned with duplicate access checks.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.
@@ -655,14 +678,7 @@ class DuplicateController extends ControllerBase {
    *   The closed status term ID, or NULL if not found.
    */
   protected function resolveClosedStatusTid(NodeInterface $node): ?int {
-    // Resolve jurisdiction from node's category.
-    $jurisdictionId = NULL;
-    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
-      $category = $node->get('field_category')->entity;
-      if ($category && $category->hasField('field_jurisdiction') && !$category->get('field_jurisdiction')->isEmpty()) {
-        $jurisdictionId = (int) $category->get('field_jurisdiction')->target_id;
-      }
-    }
+    $jurisdictionId = $this->getJurisdictionIdForNode($node);
 
     // Build query for "closed" status terms in this jurisdiction.
     $properties = [
@@ -670,12 +686,8 @@ class DuplicateController extends ControllerBase {
       'status' => 1,
       'field_open311_mapping' => 'closed',
     ];
-    if ($jurisdictionId) {
-      $properties['field_jurisdiction'] = $jurisdictionId;
-    }
-
-    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadByProperties($properties);
+    $terms = $this->statusTermScope
+      ->loadByProperties($properties, $jurisdictionId);
 
     if (!empty($terms)) {
       $term = reset($terms);

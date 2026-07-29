@@ -895,3 +895,33 @@ function markaspot_nuxt_update_11911(): string {
   $style_storage->create($config_data)->save();
   return 'Created the markaspot_dashboard_media image style.';
 }
+
+/**
+ * Hides the status selection field from the jurisdiction JSON:API resource.
+ *
+ * The field ships disabled in the optional group--jur resource
+ * config, but jsonapi_extras EXPOSES any field that is missing from
+ * resourceFields — so existing installs whose active config predates the
+ * field would leak it through the dashboard JSON:API without this backfill.
+ */
+function markaspot_nuxt_update_11912(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.group--jur');
+  if ($config->isNew()) {
+    return 'Skipped: the jurisdiction JSON:API resource is not installed.';
+  }
+
+  $resource_fields = $config->get('resourceFields') ?: [];
+  if (isset($resource_fields['field_service_statuses'])) {
+    return 'The status selection field is already listed on the jurisdiction resource.';
+  }
+
+  $resource_fields['field_service_statuses'] = [
+    'disabled' => TRUE,
+    'fieldName' => 'field_service_statuses',
+    'publicName' => 'field_service_statuses',
+    'enhancer' => ['id' => ''],
+  ];
+  $config->set('resourceFields', $resource_fields)->save();
+  return 'Disabled field_service_statuses on the jurisdiction JSON:API resource.';
+}

@@ -12,6 +12,7 @@ services:
       - '@entity_type.manager'
       - '@config.factory'
       - '@logger.factory'
+      - '@markaspot_group.status_term_scope'
       - '@?markaspot_group.hierarchy_resolver'
 
   markaspot_dashboard.request_link:

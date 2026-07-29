@@ -829,3 +829,50 @@ function markaspot_mail_update_10014(): string {
     ? 'Created ' . implode(' and ', $created) . '.'
     : 'The service status notification key field already exists.';
 }
+
+/**
+ * Exposes the status notification key to operators on the term form.
+ *
+ * Existing installs already own this display config, so a module default alone
+ * cannot add the widget after update 10014 created the field.
+ */
+function markaspot_mail_update_10015(): string {
+  $field = FieldConfig::loadByName('taxonomy_term', 'service_status', 'field_notification_key');
+  if (!$field) {
+    return 'Skipped the notification key widget because the field is absent.';
+  }
+
+  $description = 'Standard keys: status_open, status_closed, status_not_responsible. Leave empty to send no mail.';
+  $description_updated = FALSE;
+  if ($field->getDescription() !== $description) {
+    $field->setDescription($description)->save();
+    $description_updated = TRUE;
+  }
+
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('taxonomy_term.service_status.default');
+  if (!$display) {
+    return $description_updated
+      ? 'Updated the notification key description; the service status form display is absent.'
+      : 'Skipped the notification key widget because the service status form display is absent.';
+  }
+  if ($display->getComponent('field_notification_key') !== NULL) {
+    return $description_updated
+      ? 'Updated the notification key description; the widget already exists.'
+      : 'The service status notification key widget already exists.';
+  }
+
+  $display->setComponent('field_notification_key', [
+    'type' => 'string_textfield',
+    'weight' => 6,
+    'region' => 'content',
+    'settings' => [
+      'size' => 64,
+      'placeholder' => '',
+    ],
+    'third_party_settings' => [],
+  ])->save();
+
+  return 'Added the notification key text field to the service status form.';
+}

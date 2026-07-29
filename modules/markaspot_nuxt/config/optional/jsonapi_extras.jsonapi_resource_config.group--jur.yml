@@ -278,6 +278,12 @@ resourceFields:
     publicName: field_service_categories
     enhancer:
       id: ''
+  field_service_statuses:
+    disabled: true
+    fieldName: field_service_statuses
+    publicName: field_service_statuses
+    enhancer:
+      id: ''
   field_slug:
     disabled: false
     fieldName: field_slug

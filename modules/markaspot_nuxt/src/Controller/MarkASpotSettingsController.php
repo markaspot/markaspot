@@ -12,6 +12,7 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
+use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
@@ -67,6 +68,13 @@ class MarkASpotSettingsController extends ControllerBase {
   protected FeatureScopeResolver $featureScopeResolver;
 
   /**
+   * The effective service status resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\StatusTermScope
+   */
+  protected StatusTermScope $statusTermScope;
+
+  /**
    * Constructs a MarkASpotSettingsController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -83,6 +91,8 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The organisation metadata builder.
    * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver
    *   The effective feature scope resolver.
+   * @param \Drupal\markaspot_group\Service\StatusTermScope $status_term_scope
+   *   The effective service status resolver.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -92,6 +102,7 @@ class MarkASpotSettingsController extends ControllerBase {
     EnterpriseFeatureGate $enterprise_feature_gate,
     OrganisationMetadataBuilder $organisation_metadata_builder,
     FeatureScopeResolver $feature_scope_resolver,
+    StatusTermScope $status_term_scope,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
@@ -100,6 +111,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $this->enterpriseFeatureGate = $enterprise_feature_gate;
     $this->organisationMetadataBuilder = $organisation_metadata_builder;
     $this->featureScopeResolver = $feature_scope_resolver;
+    $this->statusTermScope = $status_term_scope;
   }
 
   /**
@@ -114,6 +126,7 @@ class MarkASpotSettingsController extends ControllerBase {
       $container->get('markaspot_nuxt.enterprise_feature_gate'),
       $container->get('markaspot_group.organisation_metadata_builder'),
       $container->get('markaspot_nuxt.feature_scope_resolver'),
+      $container->get('markaspot_group.status_term_scope'),
     );
   }
 
@@ -725,12 +738,14 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Load jurisdiction-filtered categories and statuses.
-    // $taxonomyJurisdictionId (resolved above) points to the root jurisdiction
-    // so child jurisdictions inherit the parent's service catalog.
+    // $taxonomyJurisdictionId points to the root category owner.
+    // StatusTermScope receives the requested group so its selection can win.
     // The original $group is passed to loadServices() so child jurisdictions
     // can further filter categories via field_service_categories.
     $settings['services'] = $this->loadServices($taxonomyJurisdictionId, $group);
-    $settings['statuses'] = $this->loadStatuses($taxonomyJurisdictionId);
+    $settings['statuses'] = $this->loadStatuses(
+      $group instanceof GroupInterface ? (int) $group->id() : NULL,
+    );
     // Districts and sublocalities are loaded globally, not
     // jurisdiction-filtered.
     // because they represent geographic areas that are typically shared across
@@ -870,12 +885,10 @@ class MarkASpotSettingsController extends ControllerBase {
    */
   private function loadStatuses(?int $jurisdictionId = NULL): array {
     $langcode = $this->languageManager()->getCurrentLanguage()->getId();
-    $properties = ['vid' => 'service_status', 'status' => 1];
-    if ($jurisdictionId && FieldStorageConfig::loadByName('taxonomy_term', 'field_jurisdiction')) {
-      $properties['field_jurisdiction'] = $jurisdictionId;
-    }
-    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadByProperties($properties);
+    $terms = $this->statusTermScope->loadByProperties(
+      ['vid' => 'service_status', 'status' => 1],
+      $jurisdictionId,
+    );
 
     $statuses = [];
     foreach ($terms as $term) {
