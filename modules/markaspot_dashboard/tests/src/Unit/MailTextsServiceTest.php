@@ -366,8 +366,34 @@ class MailTextsServiceTest extends UnitTestCase {
 
     $catalog = $this->buildService()->getCatalog();
 
+    self::assertSame([
+      'report_confirmation',
+      'status_open',
+      'status_closed',
+      'status_not_responsible',
+      'group_assignment',
+      'assignee_notification',
+    ], MailTextsService::STANDARD_KEYS);
     self::assertSame(MailTextsService::STANDARD_KEYS, $catalog['standard_keys']);
     self::assertTrue($catalog['texts']['report_confirmation']['standard']);
+    self::assertSame([
+      'subject' => '',
+      'headline' => '',
+      'intro' => '',
+      'body_blocks' => [],
+      'cta_label' => '',
+      'preheader' => '',
+      'standard' => TRUE,
+    ], $catalog['texts']['group_assignment']);
+    self::assertSame([
+      'subject' => '',
+      'headline' => '',
+      'intro' => '',
+      'body_blocks' => [],
+      'cta_label' => '',
+      'preheader' => '',
+      'standard' => TRUE,
+    ], $catalog['texts']['assignee_notification']);
     self::assertFalse($catalog['texts']['status_closed_ampel_sommer']['standard']);
     self::assertSame('Custom subject', $catalog['texts']['status_closed_ampel_sommer']['subject']);
     // Missing slots on the custom key normalize to '' / [].
@@ -847,6 +873,39 @@ class MailTextsServiceTest extends UnitTestCase {
     $result = $this->buildService()->saveText('custom_key_50', [], $this->account);
 
     self::assertTrue($result['created']);
+  }
+
+  /**
+   * @covers ::saveText
+   * @dataProvider provideNewAssignmentStandardKeys
+   */
+  public function testSaveTextExemptsNewStandardKeysFromCustomLimit(string $key): void {
+    $existingKeys = [];
+    foreach (range(1, 50) as $i) {
+      $existingKeys['custom_key_' . $i] = ['subject' => 'x'];
+    }
+    $config = $this->buildEditableConfig($existingKeys);
+    $config->expects(self::once())->method('set')->with($key, self::isType('array'));
+    $config->expects(self::once())->method('save');
+    $this->configFactory->method('getEditable')->with('markaspot_mail.texts')->willReturn($config);
+
+    $result = $this->buildService()->saveText($key, ['subject' => 'Custom'], $this->account);
+
+    self::assertTrue($result['created']);
+    self::assertTrue($result['text']['standard']);
+  }
+
+  /**
+   * Assignment standard keys.
+   *
+   * @return array<string, array{0: string}>
+   *   Test label and standard key.
+   */
+  public static function provideNewAssignmentStandardKeys(): array {
+    return [
+      'organisation' => ['group_assignment'],
+      'assignee' => ['assignee_notification'],
+    ];
   }
 
 }

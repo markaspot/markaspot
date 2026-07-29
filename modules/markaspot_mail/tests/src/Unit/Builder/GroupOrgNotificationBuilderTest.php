@@ -14,6 +14,7 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Service\MailBrandingService;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -77,12 +78,123 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertSame('jurisdiction', $msg->mode);
     $this->assertSame(18, $msg->jurisdictionId);
     $this->assertSame('Request #7-2026 assigned to Tiefbauamt', $msg->subject);
+    $this->assertSame('Request #7-2026 assigned to Tiefbauamt', (string) $msg->content['headline']);
+    $this->assertSame('Request #7-2026 was assigned to Tiefbauamt', (string) $msg->content['preheader']);
     $this->assertSame('A citizen request is ready for review.', (string) $msg->content['intro']);
     $this->assertSame('Open request', (string) $msg->content['cta_label']);
     $this->assertSame('https://bonn-mobility.example/bonn/dashboard/requests/7-2026', $msg->content['cta_url']);
-    $this->assertContains(['Category' => 'Radbuegel'], $msg->content['features_block']);
-    $this->assertContains(['Location' => 'Euskirchener Strasse 49'], $msg->content['features_block']);
-    $this->assertContains(['Organisation' => 'Tiefbauamt'], $msg->content['features_block']);
+    $this->assertSame([
+      'This request has been assigned to your organisation for processing.',
+      'Description: Bitte pruefen.',
+    ], $msg->content['body_blocks']);
+    $this->assertSame([
+      ['Request' => '#7-2026'],
+      ['Category' => 'Radbuegel'],
+      ['Location' => 'Euskirchener Strasse 49'],
+      ['Organisation' => 'Tiefbauamt'],
+    ], $msg->content['features_block']);
+  }
+
+  /**
+   * Tests all editable slots, Drupal tokens, and assignment placeholders.
+   */
+  public function testBuildUsesResolvedOverridesAndKeepsGeneratedDetails(): void {
+    $node = $this->buildNode();
+    $resolver = $this->buildTextResolver([
+      'subject' => 'Custom {{ organisation }} #{{ request_id }} [node:title]',
+      'headline' => 'Handle {{ organisation }}',
+      'intro' => 'Review [node:title] #{{ request_id }}.',
+      'body_blocks' => ['Assigned to {{ organisation }} for [node:title].'],
+      'cta_label' => 'Open #{{ request_id }}',
+      'preheader' => '{{ organisation }} received [node:title].',
+    ], $node);
+    $branding = $this->createMock(MailBrandingService::class);
+    $branding->method('getBranding')->willReturn([
+      'frontend_base_url' => 'https://example.test',
+      'frontend_uses_jurisdiction_path' => FALSE,
+    ]);
+    $organisation = $this->buildOrganisation('Tiefbau & Grün');
+
+    $message = $this->buildBuilder(branding: $branding, textResolver: $resolver)->build(
+      $this->buildContext([
+        'node' => $node,
+        'organisation' => $organisation,
+      ]),
+    );
+
+    $this->assertNotNull($message);
+    $this->assertSame('Custom Tiefbau & Grün #7-2026 Broken lamp', $message->subject);
+    $this->assertSame('Handle Tiefbau & Grün', (string) $message->content['headline']);
+    $this->assertSame('Review Broken lamp #7-2026.', (string) $message->content['intro']);
+    $this->assertSame('Tiefbau & Grün received Broken lamp.', (string) $message->content['preheader']);
+    $this->assertSame('Open #7-2026', (string) $message->content['cta_label']);
+    $this->assertSame([
+      'Assigned to Tiefbau &amp; Grün for Broken lamp.',
+      'Description: Bitte pruefen.',
+    ], $message->content['body_blocks']);
+    $this->assertContains(['Request' => '#7-2026'], $message->content['features_block']);
+    $this->assertContains(['Organisation' => 'Tiefbau & Grün'], $message->content['features_block']);
+  }
+
+  /**
+   * Tests final raw-slot filtering after token and context replacement.
+   */
+  public function testBuildFiltersDynamicValuesInRawHtmlSlots(): void {
+    $node = $this->buildNode();
+    $resolver = $this->buildTextResolver([
+      'intro' => '<a href="{{ organisation }}">Organisation</a> <a href="[node:title]">Token</a>',
+      'body_blocks' => ['<a href="{{ organisation }}">Organisation</a> <a href="[node:title]">Token</a>'],
+    ], $node, 'javascript:alert(1)');
+
+    $message = $this->buildBuilder(textResolver: $resolver)->build(
+      $this->buildContext([
+        'node' => $node,
+        'organisation' => $this->buildOrganisation('javascript:alert(2)'),
+      ]),
+    );
+
+    $this->assertNotNull($message);
+    $this->assertStringNotContainsString('javascript:', (string) $message->content['intro']);
+    $this->assertStringNotContainsString('javascript:', (string) $message->content['body_blocks'][0]);
+  }
+
+  /**
+   * Tests a subject-only override leaves every other slot at its old default.
+   */
+  public function testBuildUsesPartialSubjectOverrideWithOtherSlotsUnchanged(): void {
+    $node = $this->buildNode();
+    $resolver = $this->buildTextResolver([
+      'subject' => 'Queue #{{ request_id }} for {{ organisation }}',
+    ], $node);
+    $branding = $this->createMock(MailBrandingService::class);
+    $branding->method('getBranding')->willReturn([
+      'frontend_base_url' => 'https://example.test',
+      'frontend_uses_jurisdiction_path' => FALSE,
+    ]);
+
+    $message = $this->buildBuilder(branding: $branding, textResolver: $resolver)->build(
+      $this->buildContext([
+        'node' => $node,
+        'organisation' => $this->buildOrganisation(),
+      ]),
+    );
+
+    $this->assertNotNull($message);
+    $this->assertSame('Queue #7-2026 for Tiefbauamt', $message->subject);
+    $this->assertSame('Request #7-2026 assigned to Tiefbauamt', (string) $message->content['headline']);
+    $this->assertSame('Request #7-2026 was assigned to Tiefbauamt', (string) $message->content['preheader']);
+    $this->assertSame('A citizen request is ready for review.', (string) $message->content['intro']);
+    $this->assertSame('Open request', (string) $message->content['cta_label']);
+    $this->assertSame([
+      'This request has been assigned to your organisation for processing.',
+      'Description: Bitte pruefen.',
+    ], $message->content['body_blocks']);
+    $this->assertSame([
+      ['Request' => '#7-2026'],
+      ['Category' => 'Radbuegel'],
+      ['Location' => 'Euskirchener Strasse 49'],
+      ['Organisation' => 'Tiefbauamt'],
+    ], $message->content['features_block']);
   }
 
   /**
@@ -125,13 +237,67 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
   /**
    * Builds the builder with optional test doubles.
    */
-  private function buildBuilder(?LoggerInterface $logger = NULL, ?MailBrandingService $branding = NULL): GroupOrgNotificationBuilder {
+  private function buildBuilder(
+    ?LoggerInterface $logger = NULL,
+    ?MailBrandingService $branding = NULL,
+    ?MailTextResolver $textResolver = NULL,
+  ): GroupOrgNotificationBuilder {
+    $textResolver ??= $this->buildTextResolver([]);
     $builder = new GroupOrgNotificationBuilder(
       $logger ?? $this->createMock(LoggerInterface::class),
       $branding ?? $this->createMock(MailBrandingService::class),
+      $textResolver,
     );
     $builder->setStringTranslation($this->getStringTranslationStub());
     return $builder;
+  }
+
+  /**
+   * Builds a resolver double for one complete or partial slot set.
+   */
+  private function buildTextResolver(
+    array $overrides,
+    ?NodeInterface $expectedNode = NULL,
+    string $tokenValue = 'Broken lamp',
+  ): MailTextResolver {
+    $slots = $overrides + [
+      'subject' => '',
+      'headline' => '',
+      'intro' => '',
+      'body_blocks' => [],
+      'cta_label' => '',
+      'preheader' => '',
+    ];
+    $resolver = $this->createMock(MailTextResolver::class);
+    $resolver->method('resolve')
+      ->with('markaspot_mail.texts', 'group_assignment', $this->anything())
+      ->willReturn($slots);
+    $resolver->method('resolveField')
+      ->willReturnCallback(
+        static fn(string $configName, string $key, string $field): string => (string) $slots[$field],
+      );
+    $replaceTokens = $expectedNode === NULL
+      ? $resolver->method('replaceTokens')
+      : $resolver->expects($this->once())->method('replaceTokens');
+    $replaceTokens
+      ->with(
+        $this->callback(static fn(array $resolved): bool => $resolved['subject'] === $slots['subject']),
+        $this->callback(
+          static fn(array $data): bool => $expectedNode === NULL || ($data['node'] ?? NULL) === $expectedNode,
+        ),
+        $this->anything(),
+      )
+      ->willReturnCallback(static function (array $resolved) use ($tokenValue): array {
+        foreach (['subject', 'headline', 'intro', 'cta_label', 'preheader'] as $slot) {
+          $resolved[$slot] = str_replace('[node:title]', $tokenValue, $resolved[$slot]);
+        }
+        $resolved['body_blocks'] = array_map(
+          static fn(string $block): string => str_replace('[node:title]', $tokenValue, $block),
+          $resolved['body_blocks'],
+        );
+        return $resolved;
+      });
+    return $resolver;
   }
 
   /**
@@ -175,9 +341,9 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
   /**
    * Builds an organisation group.
    */
-  private function buildOrganisation(): GroupInterface {
+  private function buildOrganisation(string $label = 'Tiefbauamt'): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
-    $group->method('label')->willReturn('Tiefbauamt');
+    $group->method('label')->willReturn($label);
     return $group;
   }
 

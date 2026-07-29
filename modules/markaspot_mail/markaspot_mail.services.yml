@@ -192,6 +192,7 @@ services:
     arguments:
       - '@logger.channel.markaspot_mail'
       - '@markaspot_mail.branding'
+      - '@markaspot_mail.text_resolver'
     tags:
       - { name: markaspot_mail.builder }
 
@@ -200,6 +201,7 @@ services:
     arguments:
       - '@logger.channel.markaspot_mail'
       - '@markaspot_mail.branding'
+      - '@markaspot_mail.text_resolver'
     tags:
       - { name: markaspot_mail.builder }
 

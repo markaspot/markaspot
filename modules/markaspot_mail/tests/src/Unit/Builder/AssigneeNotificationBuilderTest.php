@@ -11,8 +11,10 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\AssigneeNotificationBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Service\MailBrandingService;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
+use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
@@ -63,16 +65,114 @@ final class AssigneeNotificationBuilderTest extends UnitTestCase {
 
     $this->assertNotNull($message);
     $this->assertSame('Request #7-2026 assigned to you', $message->subject);
+    $this->assertSame('Request #7-2026 assigned to you', (string) $message->content['headline']);
+    $this->assertSame('Request #7-2026 was assigned to you', (string) $message->content['preheader']);
     $this->assertSame('card_transactional', $message->variant);
     $this->assertSame('jurisdiction', $message->mode);
     $this->assertSame(18, $message->jurisdictionId);
     $this->assertSame('A citizen request is ready for review.', (string) $message->content['intro']);
     $this->assertSame('Open request', (string) $message->content['cta_label']);
     $this->assertSame('https://bonn-mobility.example/bonn/dashboard/requests/7-2026', $message->content['cta_url']);
+    $this->assertSame([
+      ['Request' => '#7-2026'],
+      ['Category' => 'Radbuegel'],
+      ['Location' => 'Euskirchener Strasse 49'],
+    ], $message->content['features_block']);
+    $this->assertSame([
+      'This request has been assigned to you for processing.',
+      'Description: Bitte pruefen.',
+    ], $message->content['body_blocks']);
+  }
+
+  /**
+   * Tests all editable slots, Drupal tokens, and assignment placeholders.
+   */
+  public function testBuildUsesResolvedOverridesAndKeepsGeneratedDetails(): void {
+    $node = $this->buildNode();
+    $resolver = $this->buildTextResolver([
+      'subject' => 'Custom {{ assignee }} #{{ request_id }} [node:title]',
+      'headline' => 'Handle {{ assignee }}',
+      'intro' => 'Review [node:title] #{{ request_id }}.',
+      'body_blocks' => ['Assigned to {{ assignee }} for [node:title].'],
+      'cta_label' => 'Open #{{ request_id }}',
+      'preheader' => '{{ assignee }} received [node:title].',
+    ], $node);
+    $branding = $this->createMock(MailBrandingService::class);
+    $branding->method('getBranding')->willReturn([
+      'frontend_base_url' => 'https://example.test',
+      'frontend_uses_jurisdiction_path' => FALSE,
+    ]);
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('getDisplayName')->willReturn('Alex & Kim');
+
+    $message = $this->buildBuilder(branding: $branding, textResolver: $resolver)->build(
+      $this->buildContext(['node' => $node, 'assignee' => $assignee]),
+    );
+
+    $this->assertNotNull($message);
+    $this->assertSame('Custom Alex & Kim #7-2026 Broken lamp', $message->subject);
+    $this->assertSame('Handle Alex & Kim', (string) $message->content['headline']);
+    $this->assertSame('Review Broken lamp #7-2026.', (string) $message->content['intro']);
+    $this->assertSame('Alex & Kim received Broken lamp.', (string) $message->content['preheader']);
+    $this->assertSame('Open #7-2026', (string) $message->content['cta_label']);
+    $this->assertSame([
+      'Assigned to Alex &amp; Kim for Broken lamp.',
+      'Description: Bitte pruefen.',
+    ], $message->content['body_blocks']);
     $this->assertContains(['Request' => '#7-2026'], $message->content['features_block']);
-    $this->assertContains(['Category' => 'Radbuegel'], $message->content['features_block']);
-    $this->assertContains(['Location' => 'Euskirchener Strasse 49'], $message->content['features_block']);
-    $this->assertContains('Description: Bitte pruefen.', $message->content['body_blocks']);
+  }
+
+  /**
+   * Tests final raw-slot filtering after token and context replacement.
+   */
+  public function testBuildFiltersDynamicValuesInRawHtmlSlots(): void {
+    $node = $this->buildNode();
+    $resolver = $this->buildTextResolver([
+      'intro' => '<a href="{{ assignee }}">Assignee</a> <a href="[node:title]">Token</a>',
+      'body_blocks' => ['<a href="{{ assignee }}">Assignee</a> <a href="[node:title]">Token</a>'],
+    ], $node, 'javascript:alert(1)');
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('getDisplayName')->willReturn('javascript:alert(2)');
+
+    $message = $this->buildBuilder(textResolver: $resolver)->build(
+      $this->buildContext(['node' => $node, 'assignee' => $assignee]),
+    );
+
+    $this->assertNotNull($message);
+    $this->assertStringNotContainsString('javascript:', (string) $message->content['intro']);
+    $this->assertStringNotContainsString('javascript:', (string) $message->content['body_blocks'][0]);
+  }
+
+  /**
+   * Tests a subject-only override leaves every other slot at its old default.
+   */
+  public function testBuildUsesPartialSubjectOverrideWithOtherSlotsUnchanged(): void {
+    $node = $this->buildNode();
+    $resolver = $this->buildTextResolver([
+      'subject' => 'Queue #{{ request_id }} for {{ assignee }}',
+    ], $node);
+    $branding = $this->createMock(MailBrandingService::class);
+    $branding->method('getBranding')->willReturn([
+      'frontend_base_url' => 'https://example.test',
+      'frontend_uses_jurisdiction_path' => FALSE,
+    ]);
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('getDisplayName')->willReturn('Alex Example');
+
+    $message = $this->buildBuilder(branding: $branding, textResolver: $resolver)->build(
+      $this->buildContext(['node' => $node, 'assignee' => $assignee]),
+    );
+
+    $this->assertNotNull($message);
+    $this->assertSame('Queue #7-2026 for Alex Example', $message->subject);
+    $this->assertSame('Request #7-2026 assigned to you', (string) $message->content['headline']);
+    $this->assertSame('Request #7-2026 was assigned to you', (string) $message->content['preheader']);
+    $this->assertSame('A citizen request is ready for review.', (string) $message->content['intro']);
+    $this->assertSame('Open request', (string) $message->content['cta_label']);
+    $this->assertSame([
+      'This request has been assigned to you for processing.',
+      'Description: Bitte pruefen.',
+    ], $message->content['body_blocks']);
   }
 
   /**
@@ -91,13 +191,67 @@ final class AssigneeNotificationBuilderTest extends UnitTestCase {
   /**
    * Builds the builder with optional test doubles.
    */
-  private function buildBuilder(?LoggerInterface $logger = NULL, ?MailBrandingService $branding = NULL): AssigneeNotificationBuilder {
+  private function buildBuilder(
+    ?LoggerInterface $logger = NULL,
+    ?MailBrandingService $branding = NULL,
+    ?MailTextResolver $textResolver = NULL,
+  ): AssigneeNotificationBuilder {
+    $textResolver ??= $this->buildTextResolver([]);
     $builder = new AssigneeNotificationBuilder(
       $logger ?? $this->createMock(LoggerInterface::class),
       $branding ?? $this->createMock(MailBrandingService::class),
+      $textResolver,
     );
     $builder->setStringTranslation($this->getStringTranslationStub());
     return $builder;
+  }
+
+  /**
+   * Builds a resolver double for one complete or partial slot set.
+   */
+  private function buildTextResolver(
+    array $overrides,
+    ?NodeInterface $expectedNode = NULL,
+    string $tokenValue = 'Broken lamp',
+  ): MailTextResolver {
+    $slots = $overrides + [
+      'subject' => '',
+      'headline' => '',
+      'intro' => '',
+      'body_blocks' => [],
+      'cta_label' => '',
+      'preheader' => '',
+    ];
+    $resolver = $this->createMock(MailTextResolver::class);
+    $resolver->method('resolve')
+      ->with('markaspot_mail.texts', 'assignee_notification', $this->anything())
+      ->willReturn($slots);
+    $resolver->method('resolveField')
+      ->willReturnCallback(
+        static fn(string $configName, string $key, string $field): string => (string) $slots[$field],
+      );
+    $replaceTokens = $expectedNode === NULL
+      ? $resolver->method('replaceTokens')
+      : $resolver->expects($this->once())->method('replaceTokens');
+    $replaceTokens
+      ->with(
+        $this->callback(static fn(array $resolved): bool => $resolved['subject'] === $slots['subject']),
+        $this->callback(
+          static fn(array $data): bool => $expectedNode === NULL || ($data['node'] ?? NULL) === $expectedNode,
+        ),
+        $this->anything(),
+      )
+      ->willReturnCallback(static function (array $resolved) use ($tokenValue): array {
+        foreach (['subject', 'headline', 'intro', 'cta_label', 'preheader'] as $slot) {
+          $resolved[$slot] = str_replace('[node:title]', $tokenValue, $resolved[$slot]);
+        }
+        $resolved['body_blocks'] = array_map(
+          static fn(string $block): string => str_replace('[node:title]', $tokenValue, $block),
+          $resolved['body_blocks'],
+        );
+        return $resolved;
+      });
+    return $resolver;
   }
 
   /**

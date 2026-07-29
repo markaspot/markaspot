@@ -98,6 +98,12 @@ markaspot_mail.texts:
     status_not_responsible:
       type: markaspot_mail.texts.slot_set
       label: 'Status update: not responsible'
+    group_assignment:
+      type: markaspot_mail.texts.slot_set
+      label: 'Organisation assignment'
+    assignee_notification:
+      type: markaspot_mail.texts.slot_set
+      label: 'Assignee notification'
 
 # Schema for the markaspot_mail_send_notification ECA action plugin's
 # configuration, keyed by Drupal core's action.configuration.[%parent.plugin]

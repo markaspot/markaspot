@@ -22,11 +22,9 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * via markaspot_mail.config_translation.yml — the same
  * markaspot_mail.texts config object, no separate storage.
  *
- * One details group per notification key (report_confirmation, status_open,
- * status_closed, status_not_responsible), each exposing the six
+ * One details group per notification key, each exposing the six
  * MailTextResolver slots (subject, headline, intro, body_blocks, cta_label,
- * preheader). body_blocks is edited as a textarea, one paragraph per line;
- * NotificationTextBuilder renders each line as a separate <p> block.
+ * preheader). body_blocks is edited as a textarea, one paragraph per line.
  *
  * Tokens are resolved against the acted-upon service_request node
  * (['node' => $node]) exactly as ResubmissionRequestBuilder and the legacy
@@ -49,6 +47,8 @@ final class MailTextsForm extends ConfigFormBase {
     'status_open',
     'status_closed',
     'status_not_responsible',
+    'group_assignment',
+    'assignee_notification',
   ];
 
   public function __construct(
@@ -132,7 +132,9 @@ final class MailTextsForm extends ConfigFormBase {
       $form[$key]['cta_label'] = [
         '#type' => 'textfield',
         '#title' => $this->t('Call-to-action button label'),
-        '#description' => $this->t('Leave empty to hide the button. When set, it links to the report itself.'),
+        '#description' => in_array($key, ['group_assignment', 'assignee_notification'], TRUE)
+          ? $this->t('Leave empty to keep the platform default button label. When a report URL is available, the button links to it.')
+          : $this->t('Leave empty to hide the button. When set, it links to the report itself.'),
         '#default_value' => (string) ($slots['cta_label'] ?? ''),
         '#maxlength' => 254,
       ];
@@ -213,6 +215,8 @@ final class MailTextsForm extends ConfigFormBase {
       'status_open' => (string) $this->t('Status update: open / in progress'),
       'status_closed' => (string) $this->t('Status update: closed'),
       'status_not_responsible' => (string) $this->t('Status update: not responsible'),
+      'group_assignment' => (string) $this->t('Organisation assignment'),
+      'assignee_notification' => (string) $this->t('Assignee notification'),
       default => $key,
     };
   }
@@ -228,6 +232,12 @@ final class MailTextsForm extends ConfigFormBase {
       'status_open' => $this->t('Sent when a report is forwarded to the responsible department and marked as being worked on.'),
       'status_closed' => $this->t('Sent when a report has been resolved.'),
       'status_not_responsible' => $this->t("Sent when a report is reviewed and found to be outside this jurisdiction's responsibility."),
+      'group_assignment' => $this->t(
+        'Sent when a request is assigned to an organisation. You can also use {{ organisation }} and {{ request_id }}. Empty slots keep the platform default text.',
+      ),
+      'assignee_notification' => $this->t(
+        'Sent when a request is assigned to a person. You can also use {{ assignee }} and {{ request_id }}. Empty slots keep the platform default text.',
+      ),
       default => '',
     };
   }

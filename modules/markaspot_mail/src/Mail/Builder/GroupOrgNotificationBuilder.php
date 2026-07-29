@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
+use Drupal\Component\Utility\Html;
+use Drupal\Component\Utility\Xss;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\group\Entity\GroupInterface;
@@ -13,6 +15,7 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Service\MailBrandingService;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -36,6 +39,7 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
   public function __construct(
     private readonly LoggerInterface $logger,
     private readonly MailBrandingService $branding,
+    private readonly MailTextResolver $textResolver,
   ) {}
 
   /**
@@ -75,14 +79,35 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
     $description = $this->resolveBodyText($node);
     $requestUrl = $this->resolveRequestUrl($requestId, $branding);
 
-    $subject = (string) $this->t('Request #@request_id assigned to @organisation', [
+    $defaultSubject = (string) $this->t('Request #@request_id assigned to @organisation', [
       '@request_id' => $requestId,
       '@organisation' => $organisationLabel,
     ], ['langcode' => $ctx->langcode]);
+    $defaultPreheader = (string) $this->t('Request #@request_id was assigned to @organisation', [
+      '@request_id' => $requestId,
+      '@organisation' => $organisationLabel,
+    ], ['langcode' => $ctx->langcode]);
+    $defaultIntro = (string) $this->t('A citizen request is ready for review.', [], ['langcode' => $ctx->langcode]);
+    $defaultLead = (string) $this->t(
+      'This request has been assigned to your organisation for processing.',
+      [],
+      ['langcode' => $ctx->langcode],
+    );
+    $defaultCtaLabel = (string) $this->t('Open request', [], ['langcode' => $ctx->langcode]);
 
-    $bodyBlocks = [
-      (string) $this->t('This request has been assigned to your organisation for processing.', [], ['langcode' => $ctx->langcode]),
-    ];
+    $slots = $this->resolveTextSlots('group_assignment', $node, $ctx->langcode);
+    $slots = $this->replaceContextPlaceholders($slots, [
+      '{{ organisation }}' => $organisationLabel,
+      '{{ request_id }}' => $requestId,
+    ]);
+
+    $subject = $slots['subject'] !== '' ? $slots['subject'] : $defaultSubject;
+    $headline = $slots['headline'] !== '' ? $slots['headline'] : $defaultSubject;
+    $intro = $slots['intro'] !== '' ? $slots['intro'] : $defaultIntro;
+    $preheader = $slots['preheader'] !== '' ? $slots['preheader'] : $defaultPreheader;
+    $ctaLabel = $slots['cta_label'] !== '' ? $slots['cta_label'] : $defaultCtaLabel;
+
+    $bodyBlocks = $slots['body_blocks'] !== [] ? $slots['body_blocks'] : [$defaultLead];
     if ($description !== '') {
       $bodyBlocks[] = (string) $this->t('Description: @description', [
         '@description' => $description,
@@ -106,20 +131,58 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
       subject: $subject,
       variant: 'card_transactional',
       content: [
-        'preheader' => (string) $this->t('Request #@request_id was assigned to @organisation', [
-          '@request_id' => $requestId,
-          '@organisation' => $organisationLabel,
-        ], ['langcode' => $ctx->langcode]),
-        'headline' => $subject,
-        'intro' => (string) $this->t('A citizen request is ready for review.', [], ['langcode' => $ctx->langcode]),
+        'preheader' => $preheader,
+        'headline' => $headline,
+        'intro' => $intro,
         'body_blocks' => $bodyBlocks,
         'features_block' => $features,
-        'cta_label' => $requestUrl !== '' ? (string) $this->t('Open request', [], ['langcode' => $ctx->langcode]) : '',
+        'cta_label' => $requestUrl !== '' ? $ctaLabel : '',
         'cta_url' => $requestUrl,
       ],
       mode: $mode,
       jurisdictionId: $jurisdictionId,
     );
+  }
+
+  /**
+   * Resolves and token-replaces the six editable text slots.
+   */
+  private function resolveTextSlots(string $key, NodeInterface $node, string $langcode): array {
+    $resolved = $this->textResolver->resolve('markaspot_mail.texts', $key, $langcode);
+    $slots = [
+      'subject' => $this->textResolver->resolveField('markaspot_mail.texts', $key, 'subject', $langcode),
+      'headline' => $this->textResolver->resolveField('markaspot_mail.texts', $key, 'headline', $langcode),
+      'intro' => $this->textResolver->resolveField('markaspot_mail.texts', $key, 'intro', $langcode),
+      'body_blocks' => $resolved['body_blocks'],
+      'cta_label' => $this->textResolver->resolveField('markaspot_mail.texts', $key, 'cta_label', $langcode),
+      'preheader' => $this->textResolver->resolveField('markaspot_mail.texts', $key, 'preheader', $langcode),
+    ];
+    return $this->textResolver->replaceTokens($slots, ['node' => $node], $langcode);
+  }
+
+  /**
+   * Replaces assignment-only placeholders after generic token replacement.
+   */
+  private function replaceContextPlaceholders(array $slots, array $replacements): array {
+    foreach (['subject', 'headline', 'cta_label', 'preheader'] as $slot) {
+      $slots[$slot] = strtr($slots[$slot], $replacements);
+    }
+    $htmlReplacements = array_map(
+      static fn(string $replacement): string => Html::escape($replacement),
+      $replacements,
+    );
+    $slots['intro'] = Xss::filter(
+      strtr($slots['intro'], $htmlReplacements),
+      MailTextResolver::MAIL_ALLOWED_TAGS,
+    );
+    $slots['body_blocks'] = array_map(
+      static fn(string $block): string => Xss::filter(
+        strtr($block, $htmlReplacements),
+        MailTextResolver::MAIL_ALLOWED_TAGS,
+      ),
+      $slots['body_blocks'],
+    );
+    return $slots;
   }
 
   /**

@@ -30,20 +30,19 @@ final class MailTextsService implements MailTextsServiceInterface {
   private const CONFIG_NAME = 'markaspot_mail.texts';
 
   /**
-   * Notification keys shipped in config/install/markaspot_mail.texts.yml.
+   * Protected notification keys shown by the mail-text editors.
    *
-   * Never deletable; slots may be emptied. Mirrors
-   * \Drupal\markaspot_mail\Service\EcaMailMigrator::KNOWN_KEYS and
-   * \Drupal\markaspot_mail\Form\MailTextsForm::KEYS. Not read from those
-   * classes directly to avoid a cross-service coupling for a four-item
-   * list that changes only when markaspot_mail ships a new standard key
-   * (which itself requires a schema + admin-form change in that module).
+   * Never deletable; slots may be emptied. Mirrors the keys exposed by
+   * \Drupal\markaspot_mail\Form\MailTextsForm. Not read from that class
+   * directly to avoid cross-module coupling.
    */
   public const STANDARD_KEYS = [
     'report_confirmation',
     'status_open',
     'status_closed',
     'status_not_responsible',
+    'group_assignment',
+    'assignee_notification',
   ];
 
   /**
@@ -216,6 +215,9 @@ final class MailTextsService implements MailTextsServiceInterface {
     unset($raw['langcode']);
 
     $texts = [];
+    foreach (self::STANDARD_KEYS as $key) {
+      $texts[$key] = $this->normalizeSlots([]) + ['standard' => TRUE];
+    }
     foreach ($raw as $key => $slots) {
       if (!is_string($key) || !is_array($slots)) {
         continue;
