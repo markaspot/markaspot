@@ -84,6 +84,8 @@ markaspot_dashboard.duplicates_review:
   requirements:
     # Aligned with markaspot_ai.duplicate_review permission (review ai duplicates).
     _permission: 'review ai duplicates'
+    # Only enforced for cookie sessions; api_key_auth requests pass unchanged.
+    _csrf_request_header_token: 'TRUE'
     match_id: \d+
   methods: [POST]
   options:
