@@ -139,13 +139,13 @@ class SearchApiQueryServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests email is excluded when the account cannot view the email field.
+   * Tests PII fields are excluded without any field view permission.
    *
    * @covers ::search
    */
   public function testSearchExcludesEmailWithoutFieldViewPermission(): void {
     $expected_fields = ['title', 'body', 'request_id'];
-    $this->assertSearchUsesFulltextFields(FALSE, $expected_fields);
+    $this->assertSearchUsesFulltextFields(FALSE, FALSE, $expected_fields);
   }
 
   /**
@@ -155,7 +155,36 @@ class SearchApiQueryServiceTest extends UnitTestCase {
    */
   public function testSearchIncludesEmailWithFieldViewPermission(): void {
     $expected_fields = ['title', 'body', 'request_id', 'field_e_mail'];
-    $this->assertSearchUsesFulltextFields(TRUE, $expected_fields);
+    $this->assertSearchUsesFulltextFields(TRUE, FALSE, $expected_fields);
+  }
+
+  /**
+   * Tests address fields are searchable with the address view permission.
+   *
+   * Staff address and postal code search must survive the PII whitelist.
+   *
+   * @covers ::search
+   */
+  public function testSearchIncludesAddressWithFieldViewPermission(): void {
+    $expected_fields = ['title', 'body', 'request_id', 'address_line1', 'postal_code'];
+    $this->assertSearchUsesFulltextFields(FALSE, TRUE, $expected_fields);
+  }
+
+  /**
+   * Tests staff accounts search email and address fields together.
+   *
+   * @covers ::search
+   */
+  public function testSearchIncludesAllPiiFieldsForStaff(): void {
+    $expected_fields = [
+      'title',
+      'body',
+      'request_id',
+      'field_e_mail',
+      'address_line1',
+      'postal_code',
+    ];
+    $this->assertSearchUsesFulltextFields(TRUE, TRUE, $expected_fields);
   }
 
   /**
@@ -267,11 +296,14 @@ class SearchApiQueryServiceTest extends UnitTestCase {
    *
    * @param bool $can_view_email
    *   Whether the account has the broad email field view permission.
+   * @param bool $can_view_address
+   *   Whether the account has the broad address field view permission.
    * @param string[] $expected_fields
    *   Expected Search API full-text field identifiers.
    */
   private function assertSearchUsesFulltextFields(
     bool $can_view_email,
+    bool $can_view_address,
     array $expected_fields,
   ): void {
     $this->moduleHandler->method('moduleExists')
@@ -296,10 +328,12 @@ class SearchApiQueryServiceTest extends UnitTestCase {
     $index->method('query')->willReturn($query);
 
     $user = $this->createMock(AccountInterface::class);
-    $user->expects($this->once())
-      ->method('hasPermission')
-      ->with('view field_e_mail')
-      ->willReturn($can_view_email);
+    $user->method('hasPermission')
+      ->willReturnCallback(static fn (string $permission): bool => match ($permission) {
+        'view field_e_mail' => $can_view_email,
+        'view field_address' => $can_view_address,
+        default => FALSE,
+      });
     $user->method('isAnonymous')->willReturn(FALSE);
 
     $service = new class(

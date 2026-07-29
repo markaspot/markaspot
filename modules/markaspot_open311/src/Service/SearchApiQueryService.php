@@ -177,6 +177,10 @@ class SearchApiQueryService {
       if ($user->hasPermission('view field_e_mail')) {
         $fulltext_fields[] = 'field_e_mail';
       }
+      if ($user->hasPermission('view field_address')) {
+        $fulltext_fields[] = 'address_line1';
+        $fulltext_fields[] = 'postal_code';
+      }
       $query->setFulltextFields($fulltext_fields);
 
       // Set the search keys (the search text).

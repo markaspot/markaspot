@@ -11,6 +11,7 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Url;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\SelectInterface;
@@ -110,13 +111,20 @@ function markaspot_group_entity_presave(EntityInterface $entity): void {
 }
 
 /**
- * Keeps contractor status changes within the request's jurisdiction catalog.
+ * Keeps limited-author status changes within the request's jurisdiction.
+ *
+ * Guards on the status-note permission as well as the contractor role: the
+ * restricted note endpoint can be granted to custom lower-trust roles, and
+ * the save-time jurisdiction backstop must follow that grant.
  */
 function _markaspot_group_presave_contractor_status(NodeInterface $node): void {
   $account = \Drupal::currentUser();
+  $is_limited_author = _markaspot_group_account_has_restricted_contractor_access($account)
+    || ($account->hasPermission('add dashboard status notes')
+      && !$account->hasPermission('manage dashboard notes'));
   if ($node->bundle() !== 'service_request'
     || $node->isNew()
-    || !_markaspot_group_account_has_restricted_contractor_access($account)
+    || !$is_limited_author
     || !$node->hasField('field_status')) {
     return;
   }
@@ -2697,7 +2705,6 @@ function markaspot_group_node_insert(NodeInterface $node): void {
   // Organisation notifications are emitted when the org relationship is
   // created. That covers dashboard, JSON:API, admin UI, Drush and legacy ECA
   // writes without double-sending on freshly inserted nodes.
-
   // 6. Save the node if org was derived or jurisdiction was set.
   if ($org_derived || $jur_set) {
     // Prevent recursive hooks during this save.
@@ -4215,7 +4222,7 @@ function _markaspot_group_notify_organisation_group(NodeInterface $node, GroupIn
 /**
  * Builds the plain fallback mail body for organisation notifications.
  *
- * markaspot_mail normally replaces this in hook_mail_alter() with branded,
+ * Markaspot_mail normally replaces this in hook_mail_alter() with branded,
  * localized HTML. Keep the original Drupal mail actionable so render failures
  * still notify the organisation with enough context to process the request.
  *
@@ -4343,7 +4350,7 @@ function _markaspot_group_build_assignment_notification_context(NodeInterface $n
  */
 function _markaspot_group_assignment_notification_edit_url(NodeInterface $node): string {
   try {
-    return \Drupal\Core\Url::fromRoute('entity.node.edit_form', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+    return Url::fromRoute('entity.node.edit_form', ['node' => $node->id()], ['absolute' => TRUE])->toString();
   }
   catch (\Throwable) {
     // Keep the fallback mail sendable even in CLI or partially bootstrapped
@@ -5552,7 +5559,7 @@ function markaspot_group_query_taxonomy_term_access_alter(AlterableInterface $qu
     // In that case, show terms for any jur group they are a member of.
     $user = User::load($current_user->id());
     if ($user) {
-      foreach (\Drupal\group\Entity\GroupMembership::loadByUser($user) as $membership) {
+      foreach (GroupMembershipEntity::loadByUser($user) as $membership) {
         if (_markaspot_group_is_jurisdiction_group($membership->getGroup())) {
           $jur_ids[] = (int) $membership->getGroupId();
         }

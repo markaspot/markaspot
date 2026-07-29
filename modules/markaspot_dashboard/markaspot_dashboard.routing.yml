@@ -109,6 +109,7 @@ markaspot_dashboard.status_note_delete:
   methods: [DELETE]
   requirements:
     _permission: 'manage dashboard notes'
+    _csrf_request_header_token: 'TRUE'
 
 markaspot_dashboard.status_note_update:
   path: '/api/dashboard/status-notes/{uuid}'
@@ -118,6 +119,7 @@ markaspot_dashboard.status_note_update:
   methods: [PATCH]
   requirements:
     _permission: 'manage dashboard notes'
+    _csrf_request_header_token: 'TRUE'
 
 # Internal Remarks API (Staff/Dashboard feature)
 markaspot_dashboard.internal_remark_create:
@@ -128,6 +130,7 @@ markaspot_dashboard.internal_remark_create:
   methods: [POST]
   requirements:
     _permission: 'manage dashboard notes'
+    _csrf_request_header_token: 'TRUE'
 
 markaspot_dashboard.internal_remark_update:
   path: '/api/dashboard/internal-remarks/{uuid}'
@@ -137,6 +140,7 @@ markaspot_dashboard.internal_remark_update:
   methods: [PATCH]
   requirements:
     _permission: 'manage dashboard notes'
+    _csrf_request_header_token: 'TRUE'
 
 markaspot_dashboard.internal_remark_delete:
   path: '/api/dashboard/internal-remarks/{uuid}'
@@ -146,6 +150,7 @@ markaspot_dashboard.internal_remark_delete:
   methods: [DELETE]
   requirements:
     _permission: 'manage dashboard notes'
+    _csrf_request_header_token: 'TRUE'
 
 # Admin report page
 markaspot_dashboard.admin:
