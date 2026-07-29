@@ -38,6 +38,9 @@ services:
   markaspot_group.jurisdiction_scope_validator:
     class: Drupal\markaspot_group\Service\JurisdictionScopeValidator
     arguments: ['@database', '@logger.channel.markaspot_group', '@config.factory']
+  markaspot_group.workspace_visibility:
+    class: Drupal\markaspot_group\Service\WorkspaceVisibilityService
+    arguments: ['@entity_type.manager', '@config.factory', '@entity_field.manager']
   markaspot_group.status_term_scope:
     class: Drupal\markaspot_group\Service\StatusTermScope
     arguments: ['@entity_type.manager', '@entity_field.manager', '@markaspot_group.hierarchy_resolver']

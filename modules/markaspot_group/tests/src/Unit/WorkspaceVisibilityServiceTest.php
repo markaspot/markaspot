@@ -2,20 +2,28 @@
 
 declare(strict_types=1);
 
-namespace Drupal\Tests\markaspot_fastmap\Unit;
+namespace Drupal\Tests\markaspot_group\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\group\Entity\GroupInterface;
-use Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService;
+use Drupal\markaspot_group\Service\WorkspaceVisibilityService;
 use Drupal\Tests\UnitTestCase;
+
+require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceVisibilityInterface.php';
+require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceVisibilityService.php';
 
 /**
  * Tests the WorkspaceVisibilityService.
  *
- * @coversDefaultClass \Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService
- * @group markaspot_fastmap
+ * @coversDefaultClass \Drupal\markaspot_group\Service\WorkspaceVisibilityService
+ * @group markaspot_group
  */
 class WorkspaceVisibilityServiceTest extends UnitTestCase {
 
@@ -35,6 +43,11 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
   protected EntityStorageInterface $groupStorage;
 
   /**
+   * The mocked configuration factory.
+   */
+  protected ConfigFactoryInterface $configFactory;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -45,8 +58,13 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     $this->entityTypeManager->method('getStorage')
       ->with('group')
       ->willReturn($this->groupStorage);
+    $this->configFactory = $this->createConfigFactory();
 
-    $this->service = new WorkspaceVisibilityService($this->entityTypeManager);
+    $this->service = new WorkspaceVisibilityService(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->createEntityFieldManager(),
+    );
   }
 
   /**
@@ -61,8 +79,9 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
   protected function createMockGroup(?string $visibility): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('hasField')
-      ->with('field_visibility')
-      ->willReturn(TRUE);
+      ->willReturnCallback(
+        static fn(string $fieldName): bool => $fieldName === 'field_visibility',
+      );
 
     $fieldItemList = $this->createMock(FieldItemListInterface::class);
     $fieldItemList->method('isEmpty')
@@ -132,6 +151,8 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     $this->groupStorage->method('load')->with(4)->willReturn($group);
 
     $this->assertEquals('public', $this->service->getVisibility(4));
+    $this->assertTrue($this->service->canAnonymousView(4));
+    $this->assertTrue($this->service->canAnonymousSubmit(4));
   }
 
   /**
@@ -141,6 +162,64 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     $this->groupStorage->method('load')->with(999)->willReturn(NULL);
 
     $this->assertEquals('public', $this->service->getVisibility(999));
+  }
+
+  /**
+   * Missing and empty values stay public in the bulk lookup.
+   *
+   * The query matches only the three explicit restrictive values, so groups
+   * without a field row or with an empty value cannot enter the result.
+   *
+   * @covers ::getRestrictedJurisdictionIds
+   */
+  public function testBulkRestrictionQueryExcludesMissingAndEmptyValues(): void {
+    $conditions = [];
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->with(FALSE)->willReturnSelf();
+    $query->method('condition')->willReturnCallback(
+      function (string $field, mixed $value, ?string $operator = NULL) use (&$conditions, $query): QueryInterface {
+        $conditions[] = [$field, $value, $operator];
+        return $query;
+      },
+    );
+    $query->method('execute')->willReturn([7 => 7]);
+    $this->groupStorage->method('getQuery')->willReturn($query);
+    $this->groupStorage->method('load')->with(7)
+      ->willReturn($this->createMockGroup('authenticated'));
+
+    $this->assertSame([7], $this->service->getRestrictedJurisdictionIds());
+    $this->assertSame([
+      ['type', 'jur', NULL],
+      [
+        'field_visibility',
+        ['submission_only', 'authenticated', 'blocked'],
+        'IN',
+      ],
+    ], $conditions);
+  }
+
+  /**
+   * The bulk lookup loads nothing while no workspace is restricted.
+   *
+   * This is the hot path on every anonymous request list: the old
+   * implementation loaded every jurisdiction entity just to learn that none of
+   * them restricts anything. Entities are now only loaded for the candidates
+   * the query already narrowed down, which in the common case is none.
+   *
+   * @covers ::getRestrictedJurisdictionIds
+   */
+  public function testBulkRestrictionLookupLoadsNothingWhenUnrestricted(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('execute')->willReturn([]);
+    $this->groupStorage->expects($this->once())
+      ->method('getQuery')
+      ->willReturn($query);
+    $this->groupStorage->expects($this->never())->method('load');
+    $this->groupStorage->expects($this->never())->method('loadMultiple');
+
+    $this->assertSame([], $this->service->getRestrictedJurisdictionIds());
   }
 
   /**
@@ -257,7 +336,11 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     $newStorage->method('load')->willReturn($newGroup);
     $newEntityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $newEntityTypeManager->method('getStorage')->with('group')->willReturn($newStorage);
-    $newService = new WorkspaceVisibilityService($newEntityTypeManager);
+    $newService = new WorkspaceVisibilityService(
+      $newEntityTypeManager,
+      $this->configFactory,
+      $this->createEntityFieldManager(),
+    );
 
     // Pre-populate cache, then reset.
     $newService->getVisibility(10);
@@ -334,6 +417,170 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     $this->assertEquals('submission_only', $this->service->getVisibility(8));
     $this->assertEquals(2, $loadCountByGroup[7]);
     $this->assertEquals(1, $loadCountByGroup[8]);
+  }
+
+  /**
+   * Tests every overlapping boundary match is checked for blocking.
+   *
+   * @covers ::isBlockedForSubmission
+   * @covers ::resolveBoundaryCandidates
+   */
+  public function testBlockedOverlappingSiblingCannotHideBehindPublicSibling(): void {
+    $groups = [
+      7 => $this->createMockGroup('public'),
+      8 => $this->createMockGroup('blocked'),
+    ];
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $groupId): ?GroupInterface => $groups[$groupId] ?? NULL);
+
+    $service = new class($this->entityTypeManager, $this->configFactory, $this->createEntityFieldManager()) extends WorkspaceVisibilityService {
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function resolveMatchingBoundaryJurisdictionIds(float $lat, float $lng): array {
+        return [7, 8];
+      }
+
+    };
+
+    $this->assertTrue($service->isBlockedForSubmission(NULL, 51.0, 7.0));
+  }
+
+  /**
+   * Tests boundary lookup honors a configured legacy jurisdiction bundle.
+   *
+   * @covers ::resolveMatchingBoundaryJurisdictionIds
+   * @covers ::jurisdictionGroupType
+   */
+  public function testBoundaryLookupUsesConfiguredJurisdictionGroupType(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->with(FALSE)->willReturnSelf();
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('type', 'legacy_jurisdiction')
+      ->willReturnSelf();
+    $query->method('exists')->with('field_boundary')->willReturnSelf();
+    $query->method('execute')->willReturn([]);
+    $this->groupStorage->method('getQuery')->willReturn($query);
+
+    $service = new WorkspaceVisibilityService(
+      $this->entityTypeManager,
+      $this->createConfigFactory('legacy_jurisdiction'),
+      $this->createEntityFieldManager(),
+    );
+    $method = new \ReflectionMethod($service, 'resolveMatchingBoundaryJurisdictionIds');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([], $method->invoke($service, 51.0, 7.0));
+  }
+
+  /**
+   * Creates an Open311 configuration factory for service tests.
+   */
+  private function createConfigFactory(string $jurisdictionGroupType = 'jur'): ConfigFactoryInterface {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn($jurisdictionGroupType);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($config);
+    return $configFactory;
+  }
+
+  /**
+   * Creates a field manager that reports field_visibility as installed.
+   *
+   * @param bool $fieldInstalled
+   *   Whether the group entity type carries field_visibility, i.e. whether
+   *   markaspot_group_update_11946() has run.
+   */
+  private function createEntityFieldManager(bool $fieldInstalled = TRUE): EntityFieldManagerInterface {
+    $fieldManager = $this->createMock(EntityFieldManagerInterface::class);
+    $fieldManager->method('getFieldStorageDefinitions')
+      ->with('group')
+      ->willReturn($fieldInstalled
+        ? ['field_visibility' => $this->createMock(FieldStorageDefinitionInterface::class)]
+        : []);
+    return $fieldManager;
+  }
+
+  /**
+   * Tests that unsupported stored values fail open to public.
+   *
+   * A value outside the four supported modes is a data error. Treating it as
+   * restrictive would lock anonymous users out of a workspace nobody closed.
+   *
+   * @dataProvider unsupportedVisibilityProvider
+   * @covers ::getVisibility
+   * @covers ::canAnonymousView
+   * @covers ::canAnonymousSubmit
+   */
+  public function testUnsupportedVisibilityValueFailsOpen(string $stored): void {
+    $this->groupStorage->method('load')->with(7)->willReturn($this->createMockGroup($stored));
+
+    $this->assertSame('public', $this->service->getVisibility(7));
+    $this->assertTrue($this->service->canAnonymousView(7));
+    $this->assertTrue($this->service->canAnonymousSubmit(7));
+    $this->assertFalse($this->service->isBlocked(7));
+  }
+
+  /**
+   * Provides stored values that must not restrict anonymous access.
+   *
+   * @return array<string, array{string}>
+   *   Test cases.
+   */
+  public static function unsupportedVisibilityProvider(): array {
+    return [
+      'capitalised' => ['Public'],
+      'leading whitespace' => [' blocked'],
+      'legacy value' => ['private'],
+    ];
+  }
+
+  /**
+   * Tests the bulk lookup before the field-creating update has run.
+   *
+   * Querying a non-existent field throws, which would turn every anonymous
+   * request list into a 500. Without the field nobody can have restricted a
+   * workspace, so the fail-open answer is an empty exclusion list.
+   *
+   * @covers ::getRestrictedJurisdictionIds
+   */
+  public function testRestrictedIdsWithoutInstalledFieldReturnsEmpty(): void {
+    $service = new WorkspaceVisibilityService(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->createEntityFieldManager(FALSE),
+    );
+    $this->groupStorage->expects($this->never())->method('getQuery');
+
+    $this->assertSame([], $service->getRestrictedJurisdictionIds());
+  }
+
+  /**
+   * Tests that the bulk lookup re-applies the strict value whitelist.
+   *
+   * Database collations commonly compare case-insensitively and ignore
+   * trailing spaces, so the SQL condition can return candidates that
+   * getVisibility() resolves to public. Both paths must agree.
+   *
+   * @covers ::getRestrictedJurisdictionIds
+   */
+  public function testRestrictedIdsDropCollationOnlyMatches(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('execute')->willReturn([11 => '11', 12 => '12']);
+    $this->groupStorage->method('getQuery')->willReturn($query);
+    $this->groupStorage->method('load')->willReturnCallback(
+      fn(int $id) => $this->createMockGroup($id === 11 ? 'Blocked' : 'authenticated'),
+    );
+
+    $this->assertSame([12], $this->service->getRestrictedJurisdictionIds());
   }
 
 }

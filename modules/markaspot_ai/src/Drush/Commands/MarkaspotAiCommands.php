@@ -47,8 +47,8 @@ class MarkaspotAiCommands extends DrushCommands {
   #[CLI\Option(name: 'use-ai', description: 'Use the configured AI provider after deterministic prefiltering.')]
   #[CLI\Option(name: 'provider', description: 'AI provider override for classification, for example anthropic.')]
   #[CLI\Option(name: 'ai-trigger-score', description: 'Minimum deterministic score before sending redacted samples to AI.')]
-  #[CLI\Option(name: 'apply', description: 'Apply automatic block when risk score reaches threshold.')]
-  #[CLI\Option(name: 'auto-block-threshold', description: 'Risk score required for --apply to set field_visibility=blocked.')]
+  #[CLI\Option(name: 'apply', description: 'Apply automatic block on the shared self-service platform when risk reaches the threshold.')]
+  #[CLI\Option(name: 'auto-block-threshold', description: 'Risk score required for --apply to set field_visibility=blocked on self-service workspaces.')]
   #[CLI\FieldLabels(labels: [
     'workspace_id' => 'Workspace ID',
     'workspace' => 'Workspace',
@@ -61,7 +61,7 @@ class MarkaspotAiCommands extends DrushCommands {
   ])]
   #[CLI\Usage(name: 'markaspot:ai:spam-scan --hours=24', description: 'Dry-run deterministic scan of new workspaces.')]
   #[CLI\Usage(name: 'markaspot:ai:spam-scan --hours=24 --use-ai --provider=anthropic', description: 'Send only suspicious, redacted first-request samples to Anthropic.')]
-  #[CLI\Usage(name: 'markaspot:ai:spam-scan --workspace=test --use-ai --provider=anthropic --apply', description: 'Scan one workspace and block it automatically when the score reaches the threshold.')]
+  #[CLI\Usage(name: 'markaspot:ai:spam-scan --workspace=test --use-ai --provider=anthropic --apply', description: 'Scan one self-service workspace and block it automatically when the score reaches the threshold.')]
   public function spamScan(
     array $options = [
       'hours' => 24,

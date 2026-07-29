@@ -170,6 +170,9 @@ class TenantPagesAssignedCheck extends HealthCheckPluginBase {
    * Reads the jurisdiction's field_visibility to decide severity elevation.
    */
   protected function isPublicVisibility($jurisdiction): bool {
+    // Intentionally stricter than WorkspaceVisibilityService: treating empty
+    // legacy values as public here would raise new missing-page alarms across
+    // municipal production dashboards during the field ownership update.
     if (!$jurisdiction->hasField('field_visibility')) {
       return FALSE;
     }

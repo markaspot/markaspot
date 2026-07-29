@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Drupal\markaspot_fastmap\Service;
+namespace Drupal\markaspot_group\Service;
 
 /**
  * Public contract for workspace visibility decisions.
@@ -24,6 +24,14 @@ interface WorkspaceVisibilityInterface {
    *   One of: 'public', 'submission_only', 'authenticated', 'blocked'.
    */
   public function getVisibility(int $groupId): string;
+
+  /**
+   * Gets jurisdictions with an explicitly restrictive visibility value.
+   *
+   * @return int[]
+   *   Restricted jurisdiction group IDs.
+   */
+  public function getRestrictedJurisdictionIds(): array;
 
   /**
    * Whether anonymous users can view requests in this workspace.

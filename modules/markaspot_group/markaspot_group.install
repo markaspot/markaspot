@@ -5427,3 +5427,127 @@ function _markaspot_group_tier_allowed_values(array $allowed_values): array {
 
   return $allowed_values;
 }
+
+/**
+ * Moves the jurisdiction visibility field into the core group module.
+ *
+ * Existing CivicSpot sites already own this field through historical
+ * markaspot_fastmap updates. Enterprise stacks do not install that SaaS
+ * module, so the core module creates only missing configuration. Allowed
+ * values are merged additively in either live storage shape, while existing
+ * entity values remain untouched. In particular, this update performs no
+ * public-value backfill because the visibility service deliberately treats an
+ * empty value as public.
+ */
+function markaspot_group_update_11946(): string {
+  $changes = [];
+  $jurisdiction_group_type = _markaspot_group_update_jurisdiction_group_type();
+  $storage = FieldStorageConfig::loadByName('group', 'field_visibility');
+
+  if (!$storage) {
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_visibility',
+      'entity_type' => 'group',
+      'type' => 'list_string',
+      'module' => 'options',
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'settings' => [
+        'allowed_values' => _markaspot_group_visibility_allowed_values([]),
+        'allowed_values_function' => '',
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ],
+    ]);
+    $storage->save();
+    $changes[] = 'field storage';
+  }
+  else {
+    $allowed_values = $storage->getSetting('allowed_values');
+    if (!is_array($allowed_values)) {
+      throw new \UnexpectedValueException('group.field_visibility allowed_values must be an array.');
+    }
+
+    $updated_values = _markaspot_group_visibility_allowed_values($allowed_values);
+    if ($updated_values !== $allowed_values) {
+      $storage->setSetting('allowed_values', $updated_values);
+      $storage->save();
+      $changes[] = 'allowed visibility values';
+    }
+  }
+
+  if (!FieldConfig::loadByName('group', $jurisdiction_group_type, 'field_visibility')) {
+    FieldConfig::create([
+      'field_storage' => $storage,
+      'bundle' => $jurisdiction_group_type,
+      'label' => 'Visibility',
+      'description' => 'Controls anonymous access to this workspace.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 'public']],
+      'settings' => [],
+    ])->save();
+    $changes[] = $jurisdiction_group_type . ' field';
+  }
+
+  return $changes === []
+    ? 'The jurisdiction visibility field and allowed values already exist.'
+    : 'Created or updated ' . implode(', ', $changes) . '.';
+}
+
+/**
+ * Adds missing visibility modes without changing existing values or labels.
+ *
+ * Live databases store list options either as a flat value-label map or as a
+ * list of value/label mappings. Appending in the existing shape avoids mixed
+ * arrays that Drupal typed configuration rejects. Existing entries always
+ * win, and repeated calls are no-ops.
+ *
+ * @param array<int|string, mixed> $allowed_values
+ *   Existing visibility values in either supported storage shape.
+ *
+ * @return array<int|string, mixed>
+ *   The allowed values with missing visibility modes appended.
+ */
+function _markaspot_group_visibility_allowed_values(array $allowed_values): array {
+  $new_values = [
+    'public' => 'Public',
+    'submission_only' => 'Submission Only',
+    'authenticated' => 'Authenticated',
+    'blocked' => 'Blocked',
+  ];
+
+  $is_list_of_mappings = FALSE;
+  foreach ($allowed_values as $item) {
+    $is_list_of_mappings = is_array($item)
+      && array_key_exists('value', $item);
+    break;
+  }
+
+  foreach ($new_values as $value => $label) {
+    $exists = array_key_exists($value, $allowed_values);
+    if (!$exists) {
+      foreach ($allowed_values as $item) {
+        if (is_array($item) && ($item['value'] ?? NULL) === $value) {
+          $exists = TRUE;
+          break;
+        }
+      }
+    }
+    if ($exists) {
+      continue;
+    }
+
+    if ($is_list_of_mappings) {
+      $allowed_values[] = ['value' => $value, 'label' => $label];
+    }
+    else {
+      $allowed_values[$value] = $label;
+    }
+  }
+
+  return $allowed_values;
+}

@@ -14,6 +14,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -39,6 +40,7 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
     protected readonly ?ConfigFactoryInterface $configFactory = NULL,
     protected readonly ?CitizenWordingResolver $citizenWordingResolver = NULL,
     protected readonly ?LanguageManagerInterface $languageManager = NULL,
+    protected readonly ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {}
 
   /**
@@ -58,6 +60,7 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
         ? $container->get('markaspot_nuxt.citizen_wording_resolver')
         : NULL,
       $container->get('language_manager'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -84,7 +87,14 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
       return;
     }
 
-    // No field_tier means no fastmap, no limits (on-premise).
+    // Platform scope is explicit now that field_tier belongs to the core group
+    // module and its presence no longer distinguishes SaaS from self-hosted.
+    if ($this->featureScopeResolver !== NULL
+      && !$this->featureScopeResolver->isSelfServicePlatform()) {
+      return;
+    }
+
+    // Defensive schema guard for incomplete updates, not platform detection.
     if (!$group->hasField('field_tier')) {
       return;
     }

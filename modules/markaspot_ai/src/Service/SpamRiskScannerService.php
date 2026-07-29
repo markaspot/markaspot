@@ -8,6 +8,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -28,6 +29,7 @@ class SpamRiskScannerService {
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly AiClientService $aiClient,
     protected readonly TimeInterface $time,
+    protected readonly FeatureScopeResolver $featureScopeResolver,
     LoggerChannelFactoryInterface $loggerFactory,
   ) {
     $this->logger = $loggerFactory->get('markaspot_ai');
@@ -318,6 +320,10 @@ class SpamRiskScannerService {
    * Blocks a workspace group.
    */
   protected function blockWorkspace(GroupInterface $group): string {
+    if (!$this->featureScopeResolver->isSelfServicePlatform()) {
+      return 'skipped_not_self_service';
+    }
+
     if (!$group->hasField('field_visibility')) {
       return 'cannot_block_missing_field';
     }

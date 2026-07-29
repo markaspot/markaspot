@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Drupal\markaspot_nuxt\Plugin\TenantAlert;
 
 use Drupal\Component\Plugin\PluginBase;
-use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\TenantAlertInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -16,8 +16,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * Surfaces an alert when a FastMap workspace is still on default branding.
  *
  * Mirrors the gating used by the dashboard banner shipped in #437: the alert
- * only registers in FastMap-enabled installs and only on workspaces that
- * have a tier assigned. Once an admin completes the first-run branding
+ * only registers on the shared self-service platform and only on workspaces
+ * that have completed tier onboarding. Once an admin completes the branding
  * setup (field_nuxt_config.setup.brandingCompleted = TRUE), the alert
  * disappears for everyone, regardless of per-user "handled" state.
  *
@@ -30,11 +30,9 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class BrandingAlert extends PluginBase implements TenantAlertInterface, ContainerFactoryPluginInterface {
 
   /**
-   * The module handler.
-   *
-   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   * The effective platform and feature scope resolver.
    */
-  protected ModuleHandlerInterface $moduleHandler;
+  protected FeatureScopeResolver $featureScopeResolver;
 
   /**
    * Constructs a BrandingAlert plugin.
@@ -45,17 +43,17 @@ class BrandingAlert extends PluginBase implements TenantAlertInterface, Containe
    *   The plugin ID.
    * @param mixed $plugin_definition
    *   The plugin definition.
-   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
-   *   The module handler.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver
+   *   The effective platform and feature scope resolver.
    */
   public function __construct(
     array $configuration,
     string $plugin_id,
     mixed $plugin_definition,
-    ModuleHandlerInterface $module_handler,
+    FeatureScopeResolver $feature_scope_resolver,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
-    $this->moduleHandler = $module_handler;
+    $this->featureScopeResolver = $feature_scope_resolver;
   }
 
   /**
@@ -66,7 +64,7 @@ class BrandingAlert extends PluginBase implements TenantAlertInterface, Containe
       $configuration,
       $plugin_id,
       $plugin_definition,
-      $container->get('module_handler'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -74,13 +72,13 @@ class BrandingAlert extends PluginBase implements TenantAlertInterface, Containe
    * {@inheritdoc}
    */
   public function check(GroupInterface $group, AccountInterface $account): ?array {
-    // FastMap-only feature: outside FastMap installs the alert never registers.
-    if (!$this->moduleHandler->moduleExists('markaspot_fastmap')) {
+    // Self-service-only feature: dedicated enterprise stacks manage branding
+    // through their deployment process and must not see SaaS onboarding.
+    if (!$this->featureScopeResolver->isSelfServicePlatform()) {
       return NULL;
     }
 
-    // Workspaces without a tier are on-premise / pre-onboarding; the
-    // first-run branding flow does not apply to them.
+    // An empty tier now means pre-onboarding, not an enterprise platform.
     if (!$group->hasField('field_tier') || $group->get('field_tier')->isEmpty()) {
       return NULL;
     }

@@ -6,11 +6,16 @@ namespace Drupal\Tests\markaspot_ai\Unit;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_ai\Service\SpamRiskScannerService;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
+
+require_once dirname(__DIR__, 3) . '/src/Service/SpamRiskScannerService.php';
 
 /**
  * Tests spam risk scanning helpers.
@@ -41,6 +46,7 @@ class SpamRiskScannerServiceTest extends UnitTestCase {
       $this->createMock(EntityTypeManagerInterface::class),
       $this->createMock(AiClientService::class),
       $time,
+      $this->createMock(FeatureScopeResolver::class),
       $loggerFactory,
     );
   }
@@ -134,6 +140,7 @@ class SpamRiskScannerServiceTest extends UnitTestCase {
       $this->createMock(EntityTypeManagerInterface::class),
       $aiClient,
       $time,
+      $this->createMock(FeatureScopeResolver::class),
       $loggerFactory,
     );
 
@@ -172,6 +179,7 @@ class SpamRiskScannerServiceTest extends UnitTestCase {
       $this->createMock(EntityTypeManagerInterface::class),
       $aiClient,
       $time,
+      $this->createMock(FeatureScopeResolver::class),
       $loggerFactory,
     );
 
@@ -183,6 +191,75 @@ class SpamRiskScannerServiceTest extends UnitTestCase {
       ['request_count' => 12, 'texts' => ['sample']],
       'openai',
     );
+  }
+
+  /**
+   * Auto-blocking must never change a self-hosted workspace.
+   *
+   * @covers ::blockWorkspace
+   */
+  public function testBlockWorkspaceSkipsSelfHostedPlatform(): void {
+    $resolver = $this->createMock(FeatureScopeResolver::class);
+    $resolver->method('isSelfServicePlatform')->willReturn(FALSE);
+    $service = $this->scannerWithPlatformResolver($resolver);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->expects($this->never())->method('set');
+    $group->expects($this->never())->method('save');
+
+    $this->assertSame(
+      'skipped_not_self_service',
+      $this->invokeBlockWorkspace($service, $group),
+    );
+  }
+
+  /**
+   * Auto-blocking retains its existing behavior on the SaaS platform.
+   *
+   * @covers ::blockWorkspace
+   */
+  public function testBlockWorkspaceBlocksOnSelfServicePlatform(): void {
+    $resolver = $this->createMock(FeatureScopeResolver::class);
+    $resolver->method('isSelfServicePlatform')->willReturn(TRUE);
+    $service = $this->scannerWithPlatformResolver($resolver);
+
+    $visibility = $this->createMock(FieldItemListInterface::class);
+    $visibility->method('isEmpty')->willReturn(TRUE);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('hasField')->with('field_visibility')->willReturn(TRUE);
+    $group->method('get')->with('field_visibility')->willReturn($visibility);
+    $group->expects($this->once())
+      ->method('set')
+      ->with('field_visibility', 'blocked');
+    $group->expects($this->once())->method('save');
+
+    $this->assertSame('blocked', $this->invokeBlockWorkspace($service, $group));
+  }
+
+  /**
+   * Builds a scanner with a controlled platform classifier.
+   */
+  private function scannerWithPlatformResolver(FeatureScopeResolver $resolver): SpamRiskScannerService {
+    $time = $this->createMock(TimeInterface::class);
+    $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
+    $loggerFactory->method('get')->willReturn($this->createMock(LoggerInterface::class));
+
+    return new SpamRiskScannerService(
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(AiClientService::class),
+      $time,
+      $resolver,
+      $loggerFactory,
+    );
+  }
+
+  /**
+   * Invokes the protected workspace block decision.
+   */
+  private function invokeBlockWorkspace(SpamRiskScannerService $service, GroupInterface $group): string {
+    $method = new \ReflectionMethod($service, 'blockWorkspace');
+    $method->setAccessible(TRUE);
+    return (string) $method->invoke($service, $group);
   }
 
 }

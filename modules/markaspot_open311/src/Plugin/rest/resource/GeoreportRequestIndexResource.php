@@ -24,6 +24,7 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
@@ -131,11 +132,9 @@ final class GeoreportRequestIndexResource extends ResourceBase {
   protected $flood;
 
   /**
-   * The workspace visibility service (optional, from markaspot_fastmap).
-   *
-   * @var object|null
+   * The workspace visibility service.
    */
-  protected $workspaceVisibility;
+  protected WorkspaceVisibilityInterface $workspaceVisibility;
 
   /**
    * The jurisdiction scope validator.
@@ -194,10 +193,10 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    *   The Search API query service.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood service for rate limiting.
-   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
-   * @param object|null $workspace_visibility
-   *   The workspace visibility service (optional).
+   * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $workspace_visibility
+   *   The workspace visibility service.
    * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator $jurisdiction_scope_validator
    *   The jurisdiction scope validator.
    * @param \Drupal\markaspot_validation\Service\BoundaryValidator $boundary_validator
@@ -221,10 +220,10 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     LanguageManagerInterface $language_manager,
     SearchApiQueryService $search_api_query_service,
     FloodInterface $flood,
-    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
-    ?object $workspace_visibility = NULL,
-    ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
-    ?BoundaryValidator $boundary_validator = NULL,
+    JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    WorkspaceVisibilityInterface $workspace_visibility,
+    JurisdictionScopeValidator $jurisdiction_scope_validator,
+    BoundaryValidator $boundary_validator,
     protected ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
@@ -265,7 +264,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('markaspot_open311.search_api_query'),
       $container->get('flood'),
       $container->get('markaspot_group.hierarchy_resolver'),
-      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL,
+      $container->get('markaspot_group.workspace_visibility'),
       $container->get('markaspot_group.jurisdiction_scope_validator'),
       $container->get('markaspot_validation.boundary_validator'),
       $container->get('markaspot_nuxt.feature_scope_resolver'),
@@ -693,7 +692,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       // workspace while the coordinates fall into a blocked child —
       // node_presave would still throw, but the response would surface as a
       // 502 via the generic \Throwable trap, hiding the real reason.
-      if ($jurisdictionId && $this->workspaceVisibility) {
+      if ($jurisdictionId) {
         $coordinates = $this->getRequestCoordinates($request_data);
         if ($this->workspaceVisibility->isBlockedForSubmission(
             $jurisdictionId,
@@ -730,7 +729,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
       // Workspace visibility enforcement: block anonymous POST for
       // authenticated-only workspaces.
-      if ($jurisdictionId && $this->workspaceVisibility && $this->currentUser->isAnonymous()) {
+      if ($jurisdictionId && $this->currentUser->isAnonymous()) {
         if (!$this->workspaceVisibility->canAnonymousSubmit($jurisdictionId)) {
           throw new GeoreportException('Authentication required to submit to this workspace.', 403);
         }
@@ -973,34 +972,58 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    * Restricts anonymous reads to publicly visible workspaces.
    */
   protected function applyAnonymousWorkspaceReadScope(QueryInterface $query): void {
-    if (!$this->workspaceVisibility || !$this->currentUser->isAnonymous()) {
+    if (!$this->currentUser->isAnonymous()) {
       return;
     }
 
-    $query->condition('field_jurisdiction', $this->getAnonymousVisibleJurisdictionIds() ?: [0], 'IN');
+    $restricted = $this->workspaceVisibility
+      ->getRestrictedJurisdictionIds();
+    if ($this->featureScopeResolver?->isSelfServicePlatform() === TRUE) {
+      $query->condition(
+        'field_jurisdiction',
+        $this->getAnonymousVisibleJurisdictionIds($restricted) ?: [0],
+        'IN',
+      );
+    }
+    elseif ($restricted === []) {
+      // Municipal stacks historically had no anonymous jurisdiction filter.
+      // Preserve that behavior until an operator explicitly restricts one.
+      return;
+    }
+
+    if ($restricted !== []) {
+      // field_jurisdiction is multi-value. A row-level NOT IN would let a
+      // request assigned to both restricted and public workspaces through via
+      // its public row. The tagged SQL anti-subquery excludes the whole NID
+      // when any target is restricted. Unassigned municipal requests have no
+      // matching subquery row and therefore remain visible off-platform.
+      $query->addTag('markaspot_open311_workspace_visibility');
+      $query->addMetaData(
+        'markaspot_open311_restricted_jurisdiction_ids',
+        $restricted,
+      );
+    }
   }
 
   /**
-   * Gets jurisdiction IDs whose requests are visible to anonymous users.
+   * Gets public jurisdiction IDs without loading group entities.
+   *
+   * @param int[] $restricted
+   *   Explicitly restricted jurisdiction IDs.
    *
    * @return int[]
    *   Public jurisdiction group IDs.
    */
-  protected function getAnonymousVisibleJurisdictionIds(): array {
+  protected function getAnonymousVisibleJurisdictionIds(array $restricted): array {
     $ids = $this->entityTypeManager->getStorage('group')->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', $this->jurisdictionGroupType())
       ->execute();
 
-    $visible = [];
-    foreach ($ids as $id) {
-      $id = (int) $id;
-      if ($this->workspaceVisibility->canAnonymousView($id)) {
-        $visible[] = $id;
-      }
-    }
-
-    return $visible;
+    return array_values(array_diff(
+      array_map('intval', $ids),
+      $restricted,
+    ));
   }
 
   /**
@@ -1030,9 +1053,10 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    * Checks whether an anonymous jurisdiction claim must resolve as empty.
    */
   protected function anonymousJurisdictionClaimIsUnreadable(array $parameters, ?int $resolvedJurisdictionId): bool {
-    if (!$this->workspaceVisibility
-      || !$this->currentUser->isAnonymous()
+    if (!$this->currentUser->isAnonymous()
       || !$this->hasJurisdictionClaim($parameters)) {
+      // Outside self-service, an unclaimed municipal list must remain
+      // unscoped. Explicit claims still honor an operator-set restriction.
       return FALSE;
     }
 

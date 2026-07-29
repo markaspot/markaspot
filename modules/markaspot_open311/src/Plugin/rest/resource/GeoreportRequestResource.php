@@ -27,6 +27,8 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\markaspot_open311\Traits\LanguageNegotiationTrait;
 
@@ -122,11 +124,9 @@ class GeoreportRequestResource extends ResourceBase {
   protected $jurisdictionScopeValidator;
 
   /**
-   * The workspace visibility service (optional, from markaspot_fastmap).
-   *
-   * @var object|null
+   * The workspace visibility service.
    */
-  protected $workspaceVisibility;
+  protected WorkspaceVisibilityInterface $workspaceVisibility;
 
   /**
    * The flood control service.
@@ -172,12 +172,14 @@ class GeoreportRequestResource extends ResourceBase {
    *   The language manager.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood control service.
-   * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null $jurisdiction_scope_validator
+   * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator $jurisdiction_scope_validator
    *   The jurisdiction scope validator.
-   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
-   * @param object|null $workspace_visibility
-   *   The workspace visibility service (optional).
+   * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $workspace_visibility
+   *   The workspace visibility service.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|null $featureScopeResolver
+   *   The effective feature scope resolver.
    */
   public function __construct(
     array $configuration,
@@ -194,9 +196,10 @@ class GeoreportRequestResource extends ResourceBase {
     GeoreportProcessorService $georeport_processor,
     LanguageManagerInterface $language_manager,
     FloodInterface $flood,
-    ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
-    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
-    ?object $workspace_visibility = NULL,
+    JurisdictionScopeValidator $jurisdiction_scope_validator,
+    JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    WorkspaceVisibilityInterface $workspace_visibility,
+    protected ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -234,7 +237,8 @@ class GeoreportRequestResource extends ResourceBase {
       $container->get('flood'),
       $container->get('markaspot_group.jurisdiction_scope_validator'),
       $container->get('markaspot_group.hierarchy_resolver'),
-      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL,
+      $container->get('markaspot_group.workspace_visibility'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -646,18 +650,19 @@ class GeoreportRequestResource extends ResourceBase {
    * Checks whether a loaded request node matches the resolved scope.
    */
   protected function requestNodeMatchesScope(ContentEntityInterface $node, ?array $scopeJurisdictionIds): bool {
-    $jurisdictionId = $this->resolveNodeJurisdictionId($node);
+    $jurisdictionIds = $this->resolveNodeJurisdictionIds($node);
     if ($this->currentUser->isAnonymous()
-      && $this->workspaceVisibility
-      && $jurisdictionId === NULL) {
+      && $this->featureScopeResolver?->isSelfServicePlatform() === TRUE
+      && $jurisdictionIds === []) {
       return FALSE;
     }
 
-    if ($this->currentUser->isAnonymous()
-      && $jurisdictionId
-      && $this->workspaceVisibility
-      && !$this->workspaceVisibility->canAnonymousView($jurisdictionId)) {
-      return FALSE;
+    if ($this->currentUser->isAnonymous()) {
+      foreach ($jurisdictionIds as $jurisdictionId) {
+        if (!$this->workspaceVisibility->canAnonymousView($jurisdictionId)) {
+          return FALSE;
+        }
+      }
     }
 
     if ($scopeJurisdictionIds !== NULL) {
@@ -786,10 +791,18 @@ class GeoreportRequestResource extends ResourceBase {
    * Denies updates to requests in a blocked workspace.
    */
   protected function enforceWorkspaceWritable(ContentEntityInterface $node): void {
-    $jurisdictionId = $this->resolveNodeJurisdictionId($node);
-    if (!$jurisdictionId
-      || !$this->workspaceVisibility
-      || !$this->workspaceVisibility->isBlocked($jurisdictionId)) {
+    // Read and write must agree on what "blocked" means. The anonymous read
+    // path checks every jurisdiction a request belongs to, so a request under
+    // a blocked parent with an unblocked deepest child is hidden; checking
+    // only the deepest one here would leave that same request writable.
+    $jurisdictionId = NULL;
+    foreach ($this->resolveNodeJurisdictionIds($node) as $candidateId) {
+      if ($this->workspaceVisibility->isBlocked($candidateId)) {
+        $jurisdictionId = $candidateId;
+        break;
+      }
+    }
+    if ($jurisdictionId === NULL) {
       return;
     }
 
@@ -830,6 +843,47 @@ class GeoreportRequestResource extends ResourceBase {
     }
 
     return NULL;
+  }
+
+  /**
+   * Resolves every jurisdiction assigned to a service request.
+   *
+   * Anonymous visibility is conservative across this multi-value field: one
+   * restrictive target makes the request unreadable even when another target
+   * is public. Relationship and field assignments are combined so neither
+   * storage path can hide a restriction.
+   *
+   * @return int[]
+   *   Unique valid jurisdiction group IDs.
+   */
+  protected function resolveNodeJurisdictionIds(object $node): array {
+    $jurisdictionIds = [];
+    try {
+      $relationships = $this->entityTypeManager->getStorage('group_relationship')->loadByProperties([
+        'entity_id' => $node->id(),
+        'plugin_id' => 'group_node:service_request',
+      ]);
+      foreach ($relationships as $relationship) {
+        $group = $relationship->getGroup();
+        if ($group && $this->isJurisdictionGroup($group)) {
+          $jurisdictionIds[(int) $group->id()] = (int) $group->id();
+        }
+      }
+    }
+    catch (\Exception) {
+      // Legacy stacks may not have relationship storage available.
+    }
+
+    if ($node->hasField('field_jurisdiction')) {
+      foreach ($node->get('field_jurisdiction') as $item) {
+        $jurisdictionId = (int) $item->target_id;
+        if ($jurisdictionId > 0 && $this->isJurisdictionGroupId($jurisdictionId)) {
+          $jurisdictionIds[$jurisdictionId] = $jurisdictionId;
+        }
+      }
+    }
+
+    return array_values($jurisdictionIds);
   }
 
   /**

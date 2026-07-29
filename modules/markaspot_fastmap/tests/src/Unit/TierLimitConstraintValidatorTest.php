@@ -18,12 +18,15 @@ use Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraintVal
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
+
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/TierLimitConstraintValidator.php';
 
 /**
  * Tests the TierLimitConstraintValidator.
@@ -502,11 +505,11 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
-   * Tests that no field_tier (on-premise) means no limits.
+   * Tests incomplete field configuration is skipped defensively.
    *
    * @covers ::validate
    */
-  public function testNoTierFieldMeansUnlimited(): void {
+  public function testMissingTierFieldSkipsValidation(): void {
     $node = $this->createNode('service_request', TRUE, 1, NULL, FALSE);
 
     $this->tierConfig->expects($this->never())
@@ -516,6 +519,25 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->method('addViolation');
 
     $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests self-hosted platform scope skips SaaS tier enforcement.
+   *
+   * @covers ::validate
+   */
+  public function testSelfHostedPlatformSkipsTierLimits(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->expects($this->never())->method('getLimits');
+    $resolver = $this->createMock(FeatureScopeResolver::class);
+    $resolver->method('isSelfServicePlatform')->willReturn(FALSE);
+    $node = $this->createPublishTransitionNode(1, 'free');
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator(featureScopeResolver: $resolver)
+      ->validate($node, $this->constraint);
   }
 
   /**
@@ -918,6 +940,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     string $jurisdictionGroupType = 'jur',
     ?CitizenWordingResolver $citizenWordingResolver = NULL,
     ?LanguageManagerInterface $languageManager = NULL,
+    ?FeatureScopeResolver $featureScopeResolver = NULL,
   ): TierLimitConstraintValidator {
     $configFactory = $this->createConfigFactory($jurisdictionGroupType);
     if ($boundaryJurisdictionId !== NULL) {
@@ -972,6 +995,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
         $configFactory,
         $citizenWordingResolver,
         $languageManager,
+        $featureScopeResolver,
       );
     }
     $validator->initialize($this->executionContext);

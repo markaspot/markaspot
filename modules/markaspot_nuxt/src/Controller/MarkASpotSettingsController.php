@@ -287,8 +287,8 @@ class MarkASpotSettingsController extends ControllerBase {
             ? $group->get('field_slug')->value
             : NULL,
           'taxonomyJurisdictionId' => $taxonomyJurisdictionId,
-          // Match WorkspaceVisibilityService's access contract: traditional
-          // client installs without the optional workspace field are public,
+          // Match WorkspaceVisibilityService's fail-open access contract:
+          // newly updated client workspaces with an empty value stay public,
           // while every explicit restriction is passed through unchanged.
           'visibility' => $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()
             ? $group->get('field_visibility')->value

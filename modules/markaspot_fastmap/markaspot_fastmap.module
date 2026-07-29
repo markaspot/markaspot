@@ -46,8 +46,8 @@ function markaspot_fastmap_entity_access(EntityInterface $entity, string $operat
       ->addCacheTags(['group:' . $jurisdictionId]);
   }
 
-  /** @var \Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService $service */
-  $service = \Drupal::service('markaspot_fastmap.workspace_visibility');
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityService $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
   if ($service->isBlocked($jurisdictionId)) {
     return AccessResult::forbidden('Workspace is blocked.')
       ->cachePerUser()
@@ -75,8 +75,8 @@ function markaspot_fastmap_entity_presave(EntityInterface $entity): void {
     return;
   }
 
-  /** @var \Drupal\markaspot_fastmap\Service\WorkspaceVisibilityInterface $service */
-  $service = \Drupal::service('markaspot_fastmap.workspace_visibility');
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
   if ($service->isBlocked($jurisdictionId)) {
     // Log the bypass attempt so silent-failure callers (ECA action_save_entity,
     // VBO bulk publish, custom code calling $node->save() directly) leave a
@@ -175,8 +175,8 @@ function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitio
 function markaspot_fastmap_node_access(NodeInterface $node, string $op, AccountInterface $account): AccessResult {
   $jurisdictionId = _markaspot_fastmap_resolve_blockable_entity_jurisdiction_id($node);
   if ($jurisdictionId) {
-    /** @var \Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService $service */
-    $service = \Drupal::service('markaspot_fastmap.workspace_visibility');
+    /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityService $service */
+    $service = \Drupal::service('markaspot_group.workspace_visibility');
     if ($service->isBlocked($jurisdictionId) && !_markaspot_fastmap_account_can_bypass_workspace_block($account)) {
       return AccessResult::forbidden('Workspace is blocked.')
         ->cachePerUser()
@@ -199,8 +199,8 @@ function markaspot_fastmap_node_access(NodeInterface $node, string $op, AccountI
     return AccessResult::neutral();
   }
 
-  /** @var \Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService $service */
-  $service = \Drupal::service('markaspot_fastmap.workspace_visibility');
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityService $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
   if (!$service->canAnonymousView($jurisdictionId)) {
     return AccessResult::forbidden('Workspace requires authentication for viewing.')
       ->addCacheContexts(['user.roles:anonymous'])
@@ -565,18 +565,13 @@ function _markaspot_fastmap_shipped_mail_template(string $key): array {
 /**
  * Implements hook_ENTITY_TYPE_update() for group entities.
  *
- * Invalidates the workspace visibility cache entry when a group is saved,
- * ensuring visibility changes take effect immediately within the same request.
- *
- * Also triggers a legal-notice regeneration when billing fields changed.
+ * Triggers a legal-notice regeneration when billing fields changed.
  * The generator itself calls $group->save() with setNewRevision(TRUE), so a
  * static guard prevents the inner save from recursing into this hook a
  * second time. Manual overrides (sentinel <!-- manual-override -->) are
  * skipped by the generator and never get auto-regenerated.
  */
 function markaspot_fastmap_group_update(GroupInterface $group): void {
-  \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache((int) $group->id());
-
   if ($group->bundle() !== 'jur') {
     return;
   }
@@ -640,27 +635,6 @@ function markaspot_fastmap_group_update(GroupInterface $group): void {
   finally {
     unset($regenerating[$gid]);
   }
-}
-
-/**
- * Implements hook_ENTITY_TYPE_insert() for group entities.
- *
- * Same intent as the update hook: newly provisioned workspaces (FastMap
- * signup, migration) must not see a stale 'public' default cached from an
- * earlier same-request probe.
- */
-function markaspot_fastmap_group_insert(GroupInterface $group): void {
-  \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache((int) $group->id());
-}
-
-/**
- * Implements hook_ENTITY_TYPE_delete() for group entities.
- *
- * Drops the orphan cache entry. Avoids handing out a stale visibility value
- * if a later test or migration reuses the same GID.
- */
-function markaspot_fastmap_group_delete(GroupInterface $group): void {
-  \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache((int) $group->id());
 }
 
 /**
@@ -740,6 +714,14 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
   // resolves to the root (e.g., BCP Council) instead of the child workspace.
   $group = _markaspot_fastmap_resolve_jurisdiction_group_for_node($node);
 
+  /** @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver */
+  $feature_scope_resolver = \Drupal::service('markaspot_nuxt.feature_scope_resolver');
+  if (!$feature_scope_resolver->isSelfServicePlatform()) {
+    return;
+  }
+
+  // Missing field configuration is an incomplete-update guard, not a
+  // self-hosted platform signal now that markaspot_group owns field_tier.
   if (!$group || !$group->hasField('field_tier')) {
     return;
   }
@@ -1173,7 +1155,7 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
     $settings['jurisdiction']['tier'] = $group->get('field_tier')->value;
   }
 
-  // Workspace visibility (public, submission_only, authenticated).
+  // Workspace visibility (public, submission_only, authenticated, blocked).
   if ($group && $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()) {
     $settings['jurisdiction']['visibility'] = $group->get('field_visibility')->value;
   }

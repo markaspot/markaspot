@@ -12,7 +12,6 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
@@ -22,11 +21,14 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\DashboardAlertsController;
 use Drupal\markaspot_nuxt\Plugin\TenantAlert\BrandingAlert;
 use Drupal\markaspot_nuxt\Service\AlertStateStore;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\TenantAlertPluginManager;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserDataInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+
+require_once dirname(__DIR__, 3) . '/src/Plugin/TenantAlert/BrandingAlert.php';
 
 /**
  * Tests the DashboardAlertsController and its supporting service.
@@ -70,9 +72,9 @@ class DashboardAlertsControllerTest extends UnitTestCase {
   protected UserDataInterface $userData;
 
   /**
-   * The mocked module handler.
+   * The mocked feature scope resolver.
    */
-  protected ModuleHandlerInterface $moduleHandler;
+  protected FeatureScopeResolver $featureScopeResolver;
 
   /**
    * The mocked plugin manager.
@@ -114,9 +116,8 @@ class DashboardAlertsControllerTest extends UnitTestCase {
     $this->currentUser->method('getDisplayName')->willReturn('testuser');
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $this->userData = $this->createMock(UserDataInterface::class);
-    $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
-    $this->moduleHandler->method('moduleExists')
-      ->willReturnCallback(fn(string $name) => $name === 'markaspot_fastmap');
+    $this->featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $this->featureScopeResolver->method('isSelfServicePlatform')->willReturn(TRUE);
     $this->alertPluginManager = $this->createMock(TenantAlertPluginManager::class);
     $time = $this->createMock(TimeInterface::class);
     $time->method('getRequestTime')->willReturn(1700000000);
@@ -143,7 +144,7 @@ class DashboardAlertsControllerTest extends UnitTestCase {
     $container->set('cache_contexts_manager', $cacheContextsManager);
     $container->set('cache_tags.invalidator', $this->cacheTagsInvalidator);
     $container->set('datetime.time', $time);
-    $container->set('module_handler', $this->moduleHandler);
+    $container->set('markaspot_nuxt.feature_scope_resolver', $this->featureScopeResolver);
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
     $loggerFactory->method('get')->willReturn($this->createMock(LoggerInterface::class));
@@ -236,7 +237,7 @@ class DashboardAlertsControllerTest extends UnitTestCase {
       ->willReturn(['branding' => $definition]);
     $this->alertPluginManager->method('createInstance')
       ->with('branding')
-      ->willReturnCallback(fn() => new BrandingAlert([], 'branding', $definition, $this->moduleHandler));
+      ->willReturnCallback(fn() => new BrandingAlert([], 'branding', $definition, $this->featureScopeResolver));
   }
 
   /**

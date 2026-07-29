@@ -13,12 +13,17 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_open311\Plugin\rest\resource\GeoreportRequestResource;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+
+require_once dirname(dirname(__DIR__, 3)) . '/markaspot_group/src/Service/WorkspaceVisibilityInterface.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/rest/resource/GeoreportRequestResource.php';
 
 /**
  * Tests API-key jurisdiction scoping on single-request lookups.
@@ -170,6 +175,128 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
   }
 
   /**
+   * Self-hosted requests without a jurisdiction remain anonymously readable.
+   *
+   * This protects municipal single-tenant data predating jurisdiction fields.
+   *
+   * @covers ::requestNodeMatchesScope
+   */
+  public function testSelfHostedNodeWithoutJurisdictionRemainsAnonymouslyReadable(): void {
+    $node = $this->node(101);
+    $resource = $this->resource(
+      [],
+      [],
+      [$node],
+      FALSE,
+      TRUE,
+      [],
+      NULL,
+      NULL,
+      FALSE,
+    );
+
+    $this->assertSame($node, $resource->loadForRead('REQ-101', []));
+  }
+
+  /**
+   * A restricted self-hosted jurisdiction remains anonymously unreadable.
+   *
+   * @covers ::requestNodeMatchesScope
+   */
+  public function testSelfHostedRestrictedJurisdictionIsAnonymouslyUnreadable(): void {
+    $node = $this->node(101);
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('canAnonymousView')->with(1)->willReturn(FALSE);
+    $resource = $this->resource(
+      [],
+      [101 => 1],
+      [$node],
+      FALSE,
+      TRUE,
+      [1],
+      NULL,
+      $visibility,
+      FALSE,
+    );
+
+    $this->assertNull($resource->loadForRead('REQ-101', []));
+  }
+
+  /**
+   * Any restrictive target hides a multi-jurisdiction request anonymously.
+   *
+   * @covers ::requestNodeMatchesScope
+   * @covers ::resolveNodeJurisdictionIds
+   */
+  public function testSelfHostedMixedPublicAndRestrictedJurisdictionsAreUnreadable(): void {
+    $node = $this->node(101);
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('canAnonymousView')->willReturnMap([
+      [1, TRUE],
+      [2, FALSE],
+    ]);
+    $resource = $this->resource(
+      [],
+      [101 => [1, 2]],
+      [$node],
+      FALSE,
+      TRUE,
+      [1, 2],
+      NULL,
+      $visibility,
+      FALSE,
+    );
+
+    $this->assertNull($resource->loadForRead('REQ-101', []));
+  }
+
+  /**
+   * A public self-hosted jurisdiction remains anonymously readable.
+   *
+   * @covers ::requestNodeMatchesScope
+   */
+  public function testSelfHostedPublicJurisdictionRemainsAnonymouslyReadable(): void {
+    $node = $this->node(101);
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('canAnonymousView')->with(1)->willReturn(TRUE);
+    $resource = $this->resource(
+      [],
+      [101 => 1],
+      [$node],
+      FALSE,
+      TRUE,
+      [1],
+      NULL,
+      $visibility,
+      FALSE,
+    );
+
+    $this->assertSame($node, $resource->loadForRead('REQ-101', []));
+  }
+
+  /**
+   * Self-service retains null-jurisdiction denial for anonymous reads.
+   *
+   * @covers ::requestNodeMatchesScope
+   */
+  public function testSelfServiceNodeWithoutJurisdictionRemainsUnreadable(): void {
+    $node = $this->node(101);
+    $resource = $this->resource(
+      [],
+      [],
+      [$node],
+      FALSE,
+      TRUE,
+      [],
+      NULL,
+      NULL,
+      TRUE,
+    );
+
+    $this->assertNull($resource->loadForRead('REQ-101', []));
+  }
+
+  /**
    * Submission lookup still rejects an unclaimed multi-scope API key.
    *
    * @covers ::loadScopedRequestNode
@@ -188,8 +315,8 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
    *
    * @param int[] $allowedJurisdictionIds
    *   Jurisdiction scope granted to the API key.
-   * @param array<int, int> $nodeJurisdictionIds
-   *   Node ID to jurisdiction ID map.
+   * @param array<int, int|int[]> $nodeJurisdictionIds
+   *   Node ID to jurisdiction ID or IDs map.
    * @param \Drupal\Core\Entity\ContentEntityInterface[] $nodes
    *   Candidate request nodes.
    * @param bool $usesApiKey
@@ -200,6 +327,10 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
    *   Existing jurisdiction IDs.
    * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null $validator
    *   Optional validator used to assert audit-log calls.
+   * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface|null $workspaceVisibility
+   *   Optional visibility service.
+   * @param bool $selfServicePlatform
+   *   Whether the shared self-service platform is active.
    */
   private function resource(
     array $allowedJurisdictionIds,
@@ -209,6 +340,8 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
     bool $anonymous = FALSE,
     array $validJurisdictionIds = [1, 4],
     ?JurisdictionScopeValidator $validator = NULL,
+    ?WorkspaceVisibilityInterface $workspaceVisibility = NULL,
+    bool $selfServicePlatform = TRUE,
   ): ScopeTestGeoreportRequestResource {
     $account = $this->createMock(AccountProxyInterface::class);
     $account->method('id')->willReturn($anonymous ? 0 : 7);
@@ -240,12 +373,18 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
     $config = $this->createMock(Config::class);
     $config->method('get')->with('bundle')->willReturn('service_request');
 
+    $featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $featureScopeResolver->method('isSelfServicePlatform')
+      ->willReturn($selfServicePlatform);
+
     return new ScopeTestGeoreportRequestResource(
       $account,
       $config,
       $entityTypeManager,
       $processor,
       $validator ?? $this->validatorWithAllowed($allowedJurisdictionIds),
+      $workspaceVisibility ?? $this->createMock(WorkspaceVisibilityInterface::class),
+      $featureScopeResolver,
       $usesApiKey,
       $nodeJurisdictionIds,
       $validJurisdictionIds,
@@ -322,6 +461,10 @@ final class ScopeTestGeoreportRequestResource extends GeoreportRequestResource {
    *   Open311 processor mock.
    * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator $jurisdictionScopeValidator
    *   Jurisdiction scope validator.
+   * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $workspaceVisibility
+   *   Workspace visibility service.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $featureScopeResolver
+   *   Effective feature scope resolver.
    * @param bool $usesApiKey
    *   Whether the request carries an API key.
    * @param array<int, int> $nodeJurisdictionIds
@@ -335,6 +478,8 @@ final class ScopeTestGeoreportRequestResource extends GeoreportRequestResource {
     EntityTypeManagerInterface $entityTypeManager,
     GeoreportProcessorService $georeportProcessor,
     JurisdictionScopeValidator $jurisdictionScopeValidator,
+    WorkspaceVisibilityInterface $workspaceVisibility,
+    FeatureScopeResolver $featureScopeResolver,
     private readonly bool $usesApiKey,
     private readonly array $nodeJurisdictionIds,
     private readonly array $validJurisdictionIds,
@@ -344,7 +489,8 @@ final class ScopeTestGeoreportRequestResource extends GeoreportRequestResource {
     $this->entityTypeManager = $entityTypeManager;
     $this->georeportProcessor = $georeportProcessor;
     $this->jurisdictionScopeValidator = $jurisdictionScopeValidator;
-    $this->workspaceVisibility = NULL;
+    $this->workspaceVisibility = $workspaceVisibility;
+    $this->featureScopeResolver = $featureScopeResolver;
   }
 
   /**
@@ -379,7 +525,19 @@ final class ScopeTestGeoreportRequestResource extends GeoreportRequestResource {
    * {@inheritdoc}
    */
   protected function resolveNodeJurisdictionId(object $node): ?int {
-    return $this->nodeJurisdictionIds[(int) $node->id()] ?? NULL;
+    $jurisdictionIds = $this->nodeJurisdictionIds[(int) $node->id()] ?? NULL;
+    if (is_array($jurisdictionIds)) {
+      return $jurisdictionIds[0] ?? NULL;
+    }
+    return $jurisdictionIds;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function resolveNodeJurisdictionIds(object $node): array {
+    $jurisdictionIds = $this->nodeJurisdictionIds[(int) $node->id()] ?? [];
+    return is_array($jurisdictionIds) ? $jurisdictionIds : [$jurisdictionIds];
   }
 
   /**

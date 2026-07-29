@@ -1474,6 +1474,7 @@ function _markaspot_group_count_group_content_relationships(int $group_id): int 
  * the "All Groups Member" field enabled as members with the admin role.
  */
 function markaspot_group_group_insert(GroupInterface $group): void {
+  \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
   _markaspot_group_add_all_groups_members_to_group($group);
   _markaspot_group_add_root_admin_to_group($group);
 }
@@ -1482,6 +1483,8 @@ function markaspot_group_group_insert(GroupInterface $group): void {
  * Implements hook_ENTITY_TYPE_update() for group entities.
  */
 function markaspot_group_group_update(GroupInterface $group): void {
+  \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
+
   if ($group->bundle() !== _markaspot_group_get_org_group_type()) {
     return;
   }
@@ -1726,6 +1729,13 @@ function _markaspot_group_restamp_service_requests_for_org_move(
       ]
     );
   }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for group entities.
+ */
+function markaspot_group_group_delete(GroupInterface $group): void {
+  \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
 }
 
 /**

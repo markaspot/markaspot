@@ -6,7 +6,10 @@
  */
 
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Database\Query\AlterableInterface;
+use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\Sql\SqlEntityStorageInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
@@ -14,6 +17,99 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\taxonomy\TermInterface;
+
+/**
+ * Implements hook_query_TAG_alter() for anonymous workspace visibility.
+ *
+ * EntityQuery field conditions operate on individual rows. Because
+ * field_jurisdiction is multi-value, a normal NOT IN would still match the
+ * public row of a request also assigned to a restricted workspace. Excluding
+ * base NIDs through a subquery makes any restrictive assignment win without
+ * materializing every matching request ID in PHP.
+ *
+ * The field table and target column come from Drupal's SQL table mapping, not
+ * naming conventions. Once restricted IDs are present, inability to resolve
+ * or query that mapping must fail closed: silently omitting the condition
+ * would expose requests that an operator explicitly made non-public.
+ */
+function markaspot_open311_query_markaspot_open311_workspace_visibility_alter(AlterableInterface $query): void {
+  if (!$query instanceof SelectInterface
+    || $query->getMetaData('entity_type') !== 'node') {
+    return;
+  }
+
+  $restricted = $query->getMetaData('markaspot_open311_restricted_jurisdiction_ids');
+  if (!is_array($restricted) || $restricted === []) {
+    return;
+  }
+  $restricted = array_values(array_unique(array_map('intval', $restricted)));
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $node_storage = $entity_type_manager->getStorage('node');
+  $field_storage_definitions = \Drupal::service('entity_field.manager')
+    ->getFieldStorageDefinitions('node');
+  $field_storage = $field_storage_definitions['field_jurisdiction'] ?? NULL;
+  if (!$node_storage instanceof SqlEntityStorageInterface || $field_storage === NULL) {
+    $query->where('1 = 0');
+    return;
+  }
+
+  try {
+    $table_mapping = $node_storage->getTableMapping();
+    $field_table = $table_mapping->getFieldTableName('field_jurisdiction');
+    $target_column = $table_mapping->getFieldColumnName(
+      $field_storage,
+      'target_id',
+    );
+    $field_table_columns = $table_mapping->getAllColumns($field_table);
+    $schema = \Drupal::database()->schema();
+    $field_table_exists = $schema->tableExists($field_table);
+    $physical_columns_exist = $field_table_exists
+      && $schema->fieldExists($field_table, 'entity_id')
+      && $schema->fieldExists($field_table, 'deleted')
+      && $schema->fieldExists($field_table, $target_column);
+  }
+  catch (\Throwable) {
+    $query->where('1 = 0');
+    return;
+  }
+
+  // Unlimited configurable fields use a dedicated Field API table. Validate
+  // its stable metadata columns as well as the mapped target column before
+  // constructing SQL. A missing table is an incomplete schema update and must
+  // fail closed because restrictions are already known to exist.
+  if (!in_array('entity_id', $field_table_columns, TRUE)
+    || !in_array('deleted', $field_table_columns, TRUE)
+    || !in_array($target_column, $field_table_columns, TRUE)
+    || !$physical_columns_exist) {
+    $query->where('1 = 0');
+    return;
+  }
+
+  $base_alias = NULL;
+  foreach ($query->getTables() as $alias => $table) {
+    if ($table['join type'] === NULL) {
+      $base_alias = $alias;
+      break;
+    }
+  }
+  if ($base_alias === NULL) {
+    $query->where('1 = 0');
+    return;
+  }
+
+  $restricted_nodes = \Drupal::database()
+    ->select($field_table, 'restricted_workspace');
+  $restricted_nodes->addField('restricted_workspace', 'entity_id');
+  $restricted_nodes
+    ->condition('restricted_workspace.deleted', 0)
+    ->condition(
+      'restricted_workspace.' . $target_column,
+      $restricted,
+      'IN',
+    );
+  $query->condition($base_alias . '.nid', $restricted_nodes, 'NOT IN');
+}
 
 /**
  * Implements hook_help().

@@ -17,6 +17,7 @@ use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -207,6 +208,9 @@ class TierLimitLockTest extends UnitTestCase {
     $container->set('request_stack', $requestStack);
     $container->set('logger.factory', $loggerFactory);
     $container->set('config.factory', $configFactory);
+    $featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $featureScopeResolver->method('isSelfServicePlatform')->willReturn(TRUE);
+    $container->set('markaspot_nuxt.feature_scope_resolver', $featureScopeResolver);
     \Drupal::setContainer($container);
   }
 

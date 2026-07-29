@@ -81,6 +81,7 @@ services:
       - '@entity_type.manager'
       - '@markaspot_ai.client'
       - '@datetime.time'
+      - '@markaspot_nuxt.feature_scope_resolver'
       - '@logger.factory'
 
   markaspot_ai.nlp_client:
