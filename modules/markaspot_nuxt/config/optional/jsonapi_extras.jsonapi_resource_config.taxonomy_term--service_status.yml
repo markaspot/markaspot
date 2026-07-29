@@ -128,3 +128,9 @@ resourceFields:
     publicName: field_status_icon
     enhancer:
       id: ''
+  field_notification_key:
+    disabled: false
+    fieldName: field_notification_key
+    publicName: field_notification_key
+    enhancer:
+      id: ''

@@ -925,3 +925,29 @@ function markaspot_nuxt_update_11912(): string {
   $config->set('resourceFields', $resource_fields)->save();
   return 'Disabled field_service_statuses on the jurisdiction JSON:API resource.';
 }
+
+/**
+ * Exposes the service-status notification key through JSON:API.
+ */
+function markaspot_nuxt_update_11913(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.taxonomy_term--service_status');
+  if ($config->isNew()) {
+    return 'Skipped: the service status JSON:API resource is not installed.';
+  }
+
+  $resource_fields = $config->get('resourceFields') ?: [];
+  $field = [
+    'disabled' => FALSE,
+    'fieldName' => 'field_notification_key',
+    'publicName' => 'field_notification_key',
+    'enhancer' => ['id' => ''],
+  ];
+  if (($resource_fields['field_notification_key'] ?? NULL) === $field) {
+    return 'The service status notification key is already enabled.';
+  }
+
+  $resource_fields['field_notification_key'] = $field;
+  $config->set('resourceFields', $resource_fields)->save(TRUE);
+  return 'Enabled field_notification_key on the service status JSON:API resource.';
+}

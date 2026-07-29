@@ -81,6 +81,37 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
   }
 
   /**
+   * Ensures status notification keys use the existing term JSON:API resource.
+   */
+  public function testServiceStatusNotificationKeyIsShippedAndBackfilled(): void {
+    $moduleRoot = dirname(__DIR__, 3);
+    $config = Yaml::decode((string) file_get_contents(
+      $moduleRoot . '/config/optional/jsonapi_extras.jsonapi_resource_config.taxonomy_term--service_status.yml'
+    ));
+    $install = file_get_contents($moduleRoot . '/markaspot_nuxt.install');
+
+    $this->assertIsString($install);
+    foreach (['field_status_hex', 'field_status_icon', 'field_notification_key'] as $fieldName) {
+      $this->assertFalse(
+        $config['resourceFields'][$fieldName]['disabled'] ?? TRUE,
+        $fieldName . ' must use the enabled service-status JSON:API resource.',
+      );
+    }
+    $this->assertStringContainsString('function markaspot_nuxt_update_11913(): string', $install);
+    $this->assertStringContainsString(
+      "getEditable('jsonapi_extras.jsonapi_resource_config.taxonomy_term--service_status')",
+      $install,
+    );
+    $this->assertStringContainsString("'fieldName' => 'field_notification_key'", $install);
+
+    $fieldStorage = Yaml::decode((string) file_get_contents(
+      $moduleRoot . '/../markaspot_mail/config/install/field.storage.taxonomy_term.field_notification_key.yml'
+    ));
+    $this->assertSame(64, $fieldStorage['settings']['max_length']);
+    $this->assertSame(1, $fieldStorage['cardinality']);
+  }
+
+  /**
    * Ensures the jurisdiction resource keeps contact information private.
    */
   public function testJurisdictionResourceOnlyExposesIdAndLabel(): void {

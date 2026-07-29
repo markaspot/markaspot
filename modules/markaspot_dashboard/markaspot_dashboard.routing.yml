@@ -323,3 +323,33 @@ markaspot_dashboard.mail_texts_delete:
     _format: 'json'
     _auth: ['cookie']
     _enterprise_feature: 'mail_text_editor'
+
+# Per-jurisdiction status selection. The pool is always owned by the tree root;
+# child jurisdictions store only an optional subset. Access is session-based
+# and scoped to tenant-admin membership of the requested group or its root.
+markaspot_dashboard.status_selection_get:
+  path: '/api/dashboard/status-selection/{group_id}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusSelectionController::getSelection'
+    _title: 'Status selection'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_dashboard\Controller\StatusSelectionController::accessCheck'
+    group_id: '\d+'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_dashboard.status_selection_patch:
+  path: '/api/dashboard/status-selection/{group_id}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusSelectionController::patchSelection'
+    _title: 'Update status selection'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_dashboard\Controller\StatusSelectionController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
+    group_id: '\d+'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
