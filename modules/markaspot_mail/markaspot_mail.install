@@ -876,3 +876,84 @@ function markaspot_mail_update_10015(): string {
 
   return 'Added the notification key text field to the service status form.';
 }
+
+/**
+ * Imports shipped notification text translations on existing installs.
+ *
+ * config/install/language/<lang>/markaspot_mail.texts.yml only reaches NEW
+ * installs, so existing sites never receive newly shipped languages and keep
+ * falling back to English for non-German reports (verified on dev: a
+ * langcode=de node rendered the English subject because the active config
+ * carried no override). Imports each shipped override that is absent for an
+ * installed site language; never touches an existing, possibly operator-
+ * edited override.
+ */
+function markaspot_mail_update_10016(): string {
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_mail');
+  $language_dir = $module_path . '/config/install/language';
+  if (!is_dir($language_dir)) {
+    return 'Skipped: the module ships no language overrides.';
+  }
+
+  $language_manager = \Drupal::languageManager();
+  if (!method_exists($language_manager, 'getLanguageConfigOverride')) {
+    return 'Skipped: configurable language overrides are unavailable.';
+  }
+  $installed = array_keys($language_manager->getLanguages());
+
+  $imported = [];
+  foreach (scandir($language_dir) ?: [] as $langcode) {
+    if ($langcode === '.' || $langcode === '..' || !in_array($langcode, $installed, TRUE)) {
+      continue;
+    }
+    $file = $language_dir . '/' . $langcode . '/markaspot_mail.texts.yml';
+    if (!is_file($file)) {
+      continue;
+    }
+    $override = $language_manager->getLanguageConfigOverride($langcode, 'markaspot_mail.texts');
+    $data = Yaml::decode((string) file_get_contents($file));
+    unset($data['langcode']);
+    if (!is_array($data) || $data === []) {
+      continue;
+    }
+    // Key-level merge: an existing override may be a partial stub (dev showed
+    // a de override without report_confirmation, so German confirmations fell
+    // back to English). Add shipped keys that are absent; never overwrite a
+    // key an operator already owns.
+    $existing = $override->isNew() ? [] : (array) $override->get();
+    $added = FALSE;
+    foreach ($data as $key => $slots) {
+      if (!array_key_exists($key, $existing)) {
+        $override->set($key, $slots);
+        $added = TRUE;
+        continue;
+      }
+      if (!is_array($slots) || !is_array($existing[$key])) {
+        continue;
+      }
+      // Slot-level fill: overrides can be partial stubs (dev carried a de
+      // report_confirmation holding only body_blocks, so the subject fell
+      // back to English). Absent slots get the shipped translation; present
+      // slots — including deliberately emptied ones — stay untouched.
+      $merged = $existing[$key];
+      foreach ($slots as $slot => $value) {
+        if (!array_key_exists($slot, $merged)) {
+          $merged[$slot] = $value;
+          $added = TRUE;
+        }
+      }
+      if ($merged !== $existing[$key]) {
+        $override->set($key, $merged);
+      }
+    }
+    if (!$added) {
+      continue;
+    }
+    $override->save();
+    $imported[] = $langcode;
+  }
+
+  return $imported
+    ? 'Imported notification text translations: ' . implode(', ', $imported) . '.'
+    : 'All shipped notification text translations are already present for installed languages.';
+}
