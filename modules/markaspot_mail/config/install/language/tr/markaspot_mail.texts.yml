@@ -1,0 +1,34 @@
+langcode: tr
+report_confirmation:
+  subject: '#[node:request_id] numaralı bildiriminiz alındı'
+  headline: 'Bildiriminizi aldık'
+  intro: '#[node:request_id] numaralı bildiriminiz kaydedildi.'
+  body_blocks:
+    - 'Kategori: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Bildiriminizi görüntüleyin'
+  preheader: 'Bildiriminizi aldık, sizi gelişmelerden haberdar edeceğiz.'
+status_open:
+  subject: '#[node:request_id] numaralı bildiriminizle ilgili güncelleme'
+  headline: 'Bildiriminiz işleme alındı'
+  intro: 'Bildiriminiz için teşekkür ederiz. İlgili birime iletildi ve şu anda işleme alındı.'
+  body_blocks:
+    - 'Çözüldüğünde yeni bir bildirim alacaksınız.'
+  cta_label: 'Bildiriminizi görüntüleyin'
+  preheader: 'Bildiriminiz şu anda işleniyor.'
+status_closed:
+  subject: '#[node:request_id] numaralı bildiriminiz çözüldü'
+  headline: 'Bildiriminiz çözüldü'
+  intro: 'İyi haber! #[node:request_id] numaralı bildiriminiz çözüldü.'
+  body_blocks:
+    - 'Acil bir durum veya doğrudan tehlike söz konusuysa lütfen doğrudan yerel acil yardım hizmetlerine başvurun.'
+  cta_label: 'Bildiriminizi görüntüleyin'
+  preheader: 'Bildiriminiz çözüldü.'
+status_not_responsible:
+  subject: '#[node:request_id] numaralı bildiriminiz: sorumluluk alanımız dışında'
+  headline: 'Bu bildirim sorumluluk alanımız dışında'
+  intro: '#[node:request_id] numaralı bildiriminiz incelendi. Ne yazık ki bu tür talepler sorumluluk alanımız dışındadır.'
+  body_blocks:
+    - 'Acil bir durum veya doğrudan tehlike söz konusuysa lütfen doğrudan yerel acil yardım hizmetlerine başvurun.'
+  cta_label: 'Bildiriminizi görüntüleyin'
+  preheader: 'Bu bildirim sorumluluk alanımız dışında.'

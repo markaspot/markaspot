@@ -1,0 +1,34 @@
+langcode: fr
+report_confirmation:
+  subject: 'Votre {{ citizen_term_singular }} #[node:request_id] a bien été reçu'
+  headline: 'Nous avons bien reçu votre {{ citizen_term_singular }}'
+  intro: 'Votre {{ citizen_term_singular }} #[node:request_id] a bien été enregistré.'
+  body_blocks:
+    - 'Catégorie : [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Voir votre {{ citizen_term_singular }}'
+  preheader: 'Nous avons bien reçu votre {{ citizen_term_singular }} et vous tiendrons informé.'
+status_open:
+  subject: 'Mise à jour de votre {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Votre {{ citizen_term_singular }} est en cours de traitement'
+  intro: 'Merci pour votre {{ citizen_term_singular }}. Il a été transmis au service compétent et est en cours de traitement.'
+  body_blocks:
+    - 'Vous recevrez une nouvelle notification dès sa résolution.'
+  cta_label: 'Voir votre {{ citizen_term_singular }}'
+  preheader: 'Votre {{ citizen_term_singular }} est en cours de traitement.'
+status_closed:
+  subject: 'Votre {{ citizen_term_singular }} #[node:request_id] a été résolu'
+  headline: 'Votre {{ citizen_term_singular }} a été résolu'
+  intro: 'Bonne nouvelle ! Votre {{ citizen_term_singular }} #[node:request_id] a été résolu.'
+  body_blocks:
+    - 'En cas d''urgence ou de danger immédiat, contactez directement les services d''urgence locaux.'
+  cta_label: 'Voir votre {{ citizen_term_singular }}'
+  preheader: 'Votre {{ citizen_term_singular }} a été résolu.'
+status_not_responsible:
+  subject: 'Votre {{ citizen_term_singular }} #[node:request_id] : hors de notre compétence'
+  headline: 'Ce {{ citizen_term_singular }} ne relève pas de notre compétence'
+  intro: 'Votre {{ citizen_term_singular }} #[node:request_id] a été examiné. Ce type de demande ne relève malheureusement pas de notre compétence.'
+  body_blocks:
+    - 'En cas d''urgence ou de danger immédiat, contactez directement les services d''urgence locaux.'
+  cta_label: 'Voir votre {{ citizen_term_singular }}'
+  preheader: 'Ce {{ citizen_term_singular }} ne relève pas de notre compétence.'

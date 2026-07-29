@@ -49,6 +49,16 @@ markaspot_mail.settings:
         tier_gating:
           type: boolean
           label: 'Hide the Platform footer on paid tiers (future stage)'
+    recipient_flood:
+      type: mapping
+      label: 'Per-recipient notification flood control'
+      mapping:
+        limit:
+          type: integer
+          label: 'Maximum notifications per recipient and window'
+        window:
+          type: integer
+          label: 'Flood-control window in seconds'
     attachments:
       type: mapping
       label: 'File-attachment policy for outgoing mails'
@@ -99,6 +109,9 @@ action.configuration.markaspot_mail_send_notification:
   type: mapping
   label: 'Send notification email (Mark-a-Spot) configuration'
   mapping:
+    object:
+      type: string
+      label: 'ECA token name of the acted-upon entity'
     notification_key:
       type: string
       label: 'Notification key'

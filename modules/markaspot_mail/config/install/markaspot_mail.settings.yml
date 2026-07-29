@@ -13,6 +13,9 @@ platform:
 features:
   show_platform_footer: true
   tier_gating: false
+recipient_flood:
+  limit: 5
+  window: 3600
 attachments:
   enabled: true
   max_per_file_bytes: 5242880

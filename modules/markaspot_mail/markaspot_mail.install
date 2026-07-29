@@ -430,6 +430,32 @@ function markaspot_mail_update_10011(): string {
 }
 
 /**
+ * Adds per-recipient flood defaults without overriding operator settings.
+ */
+function markaspot_mail_update_10012(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_mail.settings');
+  $recipient_flood = $config->get('recipient_flood');
+  $recipient_flood = is_array($recipient_flood) ? $recipient_flood : [];
+  $changed = FALSE;
+
+  if (!array_key_exists('limit', $recipient_flood)) {
+    $recipient_flood['limit'] = 5;
+    $changed = TRUE;
+  }
+  if (!array_key_exists('window', $recipient_flood)) {
+    $recipient_flood['window'] = 3600;
+    $changed = TRUE;
+  }
+
+  if (!$changed) {
+    return 'The recipient flood settings already exist.';
+  }
+
+  $config->set('recipient_flood', $recipient_flood)->save();
+  return 'Added the default recipient flood settings.';
+}
+
+/**
  * Reads one current shipped notification-template data set from YAML.
  *
  * @param bool $keepLangcode
@@ -705,4 +731,46 @@ function _markaspot_mail_ensure_phpmailer_html_format(): bool {
     $config->save();
   }
   return $changed;
+}
+
+/**
+ * Restores the ECA entity token on migrated notification mail actions.
+ *
+ * The mail-text migration shipped in update 10007ff rewrote legacy
+ * action_send_email_action actions onto markaspot_mail_send_notification but
+ * dropped the ECA `object` configuration key. Without it, ECA resolves no
+ * acted-upon entity for the action (see EcaObject::getEntities()), execute()
+ * receives NULL and silently skips every send. Unit tests pass the node
+ * directly and cannot catch this; only real ECA execution does.
+ */
+function markaspot_mail_update_10013(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('eca')) {
+    return 'Skipped: the ECA module is not installed, no models to heal.';
+  }
+
+  $healed = [];
+  foreach ($entity_type_manager->getStorage('eca')->loadMultiple() as $eca) {
+    $actions = $eca->get('actions') ?? [];
+    $changed = FALSE;
+    foreach ($actions as $activity_id => $action) {
+      if (($action['plugin'] ?? '') !== 'markaspot_mail_send_notification') {
+        continue;
+      }
+      if (trim((string) ($action['configuration']['object'] ?? '')) !== '') {
+        continue;
+      }
+      $actions[$activity_id]['configuration'] = ['object' => 'entity'] + (array) ($action['configuration'] ?? []);
+      $changed = TRUE;
+    }
+    if ($changed) {
+      $eca->set('actions', $actions);
+      $eca->save();
+      $healed[] = $eca->id();
+    }
+  }
+
+  return $healed
+    ? sprintf('Restored the ECA entity token on notification mail actions in: %s.', implode(', ', $healed))
+    : 'All notification mail actions already carry an entity token.';
 }

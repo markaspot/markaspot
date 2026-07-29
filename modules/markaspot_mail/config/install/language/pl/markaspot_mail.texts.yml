@@ -1,0 +1,34 @@
+langcode: pl
+report_confirmation:
+  subject: 'Twoje zgłoszenie #[node:request_id] zostało przyjęte'
+  headline: 'Otrzymaliśmy Twoje zgłoszenie'
+  intro: 'Twoje zgłoszenie #[node:request_id] zostało zarejestrowane.'
+  body_blocks:
+    - 'Kategoria: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Zobacz swoje zgłoszenie'
+  preheader: 'Otrzymaliśmy Twoje zgłoszenie i będziemy Cię informować na bieżąco.'
+status_open:
+  subject: 'Aktualizacja zgłoszenia #[node:request_id]'
+  headline: 'Twoje zgłoszenie jest w trakcie realizacji'
+  intro: 'Dziękujemy za zgłoszenie. Zostało przekazane do właściwego działu i jest obecnie realizowane.'
+  body_blocks:
+    - 'Otrzymasz kolejne powiadomienie, gdy sprawa zostanie rozwiązana.'
+  cta_label: 'Zobacz swoje zgłoszenie'
+  preheader: 'Twoje zgłoszenie jest teraz realizowane.'
+status_closed:
+  subject: 'Twoje zgłoszenie #[node:request_id] zostało rozwiązane'
+  headline: 'Twoje zgłoszenie zostało rozwiązane'
+  intro: 'Dobra wiadomość! Twoje zgłoszenie #[node:request_id] zostało rozwiązane.'
+  body_blocks:
+    - 'W nagłym wypadku lub przy bezpośrednim zagrożeniu skontaktuj się bezpośrednio z lokalnymi służbami ratunkowymi.'
+  cta_label: 'Zobacz swoje zgłoszenie'
+  preheader: 'Twoje zgłoszenie zostało rozwiązane.'
+status_not_responsible:
+  subject: 'Twoje zgłoszenie #[node:request_id]: poza naszą właściwością'
+  headline: 'To zgłoszenie nie leży w naszej właściwości'
+  intro: 'Twoje zgłoszenie #[node:request_id] zostało sprawdzone. Niestety ten rodzaj sprawy nie leży w naszej właściwości.'
+  body_blocks:
+    - 'W nagłym wypadku lub przy bezpośrednim zagrożeniu skontaktuj się bezpośrednio z lokalnymi służbami ratunkowymi.'
+  cta_label: 'Zobacz swoje zgłoszenie'
+  preheader: 'To zgłoszenie nie leży w naszej właściwości.'

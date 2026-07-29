@@ -1,0 +1,34 @@
+langcode: cs
+report_confirmation:
+  subject: 'Vaše hlášení #[node:request_id] bylo přijato'
+  headline: 'Přijali jsme Vaše hlášení'
+  intro: 'Vaše hlášení #[node:request_id] bylo zaregistrováno.'
+  body_blocks:
+    - 'Kategorie: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Zobrazit hlášení'
+  preheader: 'Přijali jsme Vaše hlášení a budeme Vás informovat.'
+status_open:
+  subject: 'Aktualizace hlášení #[node:request_id]'
+  headline: 'Vaše hlášení se zpracovává'
+  intro: 'Děkujeme za Vaše hlášení. Bylo předáno příslušnému oddělení a nyní se zpracovává.'
+  body_blocks:
+    - 'Jakmile bude vyřešeno, obdržíte další upozornění.'
+  cta_label: 'Zobrazit hlášení'
+  preheader: 'Vaše hlášení se nyní zpracovává.'
+status_closed:
+  subject: 'Vaše hlášení #[node:request_id] bylo vyřešeno'
+  headline: 'Vaše hlášení bylo vyřešeno'
+  intro: 'Dobrá zpráva! Vaše hlášení #[node:request_id] bylo vyřešeno.'
+  body_blocks:
+    - 'V případě naléhavé nouze nebo bezprostředního nebezpečí kontaktujte přímo místní tísňové služby.'
+  cta_label: 'Zobrazit hlášení'
+  preheader: 'Vaše hlášení bylo vyřešeno.'
+status_not_responsible:
+  subject: 'Vaše hlášení #[node:request_id]: mimo naši působnost'
+  headline: 'Toto hlášení nespadá do naší působnosti'
+  intro: 'Vaše hlášení #[node:request_id] bylo posouzeno. Tento typ podnětu bohužel nespadá do naší působnosti.'
+  body_blocks:
+    - 'V případě naléhavé nouze nebo bezprostředního nebezpečí kontaktujte přímo místní tísňové služby.'
+  cta_label: 'Zobrazit hlášení'
+  preheader: 'Toto hlášení nespadá do naší působnosti.'

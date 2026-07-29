@@ -1,0 +1,34 @@
+langcode: fi
+report_confirmation:
+  subject: '{{ citizen_term_singular }} #[node:request_id] on vastaanotettu'
+  headline: 'Olemme vastaanottaneet ilmoituksesi'
+  intro: '{{ citizen_term_singular }} #[node:request_id] on vastaanotettu.'
+  body_blocks:
+    - 'Kategoria: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Näytä {{ citizen_term_singular }}'
+  preheader: 'Olemme vastaanottaneet ilmoituksesi ja pidämme sinut ajan tasalla.'
+status_open:
+  subject: 'Päivitys: {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Ilmoituksesi on käsittelyssä'
+  intro: 'Kiitos ilmoituksestasi. Se on välitetty vastaavalle taholle ja on nyt käsittelyssä.'
+  body_blocks:
+    - 'Saat uuden ilmoituksen, kun asia on ratkaistu.'
+  cta_label: 'Näytä {{ citizen_term_singular }}'
+  preheader: 'Ilmoituksesi on nyt käsittelyssä.'
+status_closed:
+  subject: '{{ citizen_term_singular }} #[node:request_id] on ratkaistu'
+  headline: 'Ilmoituksesi on ratkaistu'
+  intro: 'Hyviä uutisia! {{ citizen_term_singular }} #[node:request_id] on ratkaistu.'
+  body_blocks:
+    - 'Kiireellisessä hätätilanteessa tai välittömässä vaarassa ota suoraan yhteyttä paikallisiin hätäpalveluihin.'
+  cta_label: 'Näytä {{ citizen_term_singular }}'
+  preheader: 'Ilmoituksesi on ratkaistu.'
+status_not_responsible:
+  subject: '{{ citizen_term_singular }} #[node:request_id]: ei kuulu vastuullemme'
+  headline: 'Tämä asia ei kuulu vastuullemme'
+  intro: '{{ citizen_term_singular }} #[node:request_id] on tarkistettu. Valitettavasti tämäntyyppinen asia ei kuulu vastuualueeseemme.'
+  body_blocks:
+    - 'Kiireellisessä hätätilanteessa tai välittömässä vaarassa ota suoraan yhteyttä paikallisiin hätäpalveluihin.'
+  cta_label: 'Näytä {{ citizen_term_singular }}'
+  preheader: 'Tämä asia ei kuulu vastuullemme.'

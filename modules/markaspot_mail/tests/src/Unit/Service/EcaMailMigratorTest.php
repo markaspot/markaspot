@@ -197,6 +197,22 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
+   * Tests a scoped update can migrate a model before it is re-enabled.
+   */
+  public function testAnalyzeCanIncludeOneDisabledModel(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $raw['status'] = FALSE;
+    $migrator = $this->buildMigrator(['eca.eca.process_confirm_report' => $raw]);
+
+    $this->assertSame([], $migrator->analyze(['eca.eca.process_confirm_report']));
+
+    $findings = $migrator->analyze(['eca.eca.process_confirm_report'], TRUE);
+    $this->assertCount(1, $findings);
+    $this->assertSame('eca.eca.process_confirm_report', $findings[0]['config_name']);
+    $this->assertSame('Activity_send_confirmation', $findings[0]['activity_id']);
+  }
+
+  /**
    * Tests the simplest real insert flow across tenants.
    *
    * Bleckede's process_ugsohtl is the simplest real insert flow: one
@@ -373,7 +389,11 @@ final class EcaMailMigratorTest extends UnitTestCase {
 
     $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
     $this->assertSame(
-      ['notification_key' => 'report_confirmation', 'recipient' => '[node:field_e_mail:value]'],
+      [
+        'object' => 'entity',
+        'notification_key' => 'report_confirmation',
+        'recipient' => '[node:field_e_mail:value]',
+      ],
       $capturedEca['actions']['Activity_send_confirmation']['configuration'],
     );
     // Untouched model parts survive byte-identical.

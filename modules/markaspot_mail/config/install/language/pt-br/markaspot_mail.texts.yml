@@ -1,0 +1,34 @@
+langcode: pt-br
+report_confirmation:
+  subject: 'Seu {{ citizen_term_singular }} #[node:request_id] foi recebido'
+  headline: 'Recebemos o seu {{ citizen_term_singular }}'
+  intro: 'Seu {{ citizen_term_singular }} #[node:request_id] foi registrado.'
+  body_blocks:
+    - 'Categoria: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Ver seu {{ citizen_term_singular }}'
+  preheader: 'Recebemos o seu {{ citizen_term_singular }} e manteremos você informado.'
+status_open:
+  subject: 'Atualização do seu {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Seu {{ citizen_term_singular }} está em andamento'
+  intro: 'Obrigado pelo seu {{ citizen_term_singular }}. Ele foi encaminhado ao setor responsável e está em andamento.'
+  body_blocks:
+    - 'Você receberá outra notificação assim que for resolvido.'
+  cta_label: 'Ver seu {{ citizen_term_singular }}'
+  preheader: 'Seu {{ citizen_term_singular }} está em andamento.'
+status_closed:
+  subject: 'Seu {{ citizen_term_singular }} #[node:request_id] foi resolvido'
+  headline: 'Seu {{ citizen_term_singular }} foi resolvido'
+  intro: 'Boa notícia! Seu {{ citizen_term_singular }} #[node:request_id] foi resolvido.'
+  body_blocks:
+    - 'Em caso de emergência ou perigo imediato, entre em contato diretamente com os serviços de emergência locais.'
+  cta_label: 'Ver seu {{ citizen_term_singular }}'
+  preheader: 'Seu {{ citizen_term_singular }} foi resolvido.'
+status_not_responsible:
+  subject: 'Seu {{ citizen_term_singular }} #[node:request_id]: fora da nossa competência'
+  headline: 'Este {{ citizen_term_singular }} não é da nossa competência'
+  intro: 'Seu {{ citizen_term_singular }} #[node:request_id] foi analisado. Infelizmente, esse tipo de solicitação não é da nossa competência.'
+  body_blocks:
+    - 'Em caso de emergência ou perigo imediato, entre em contato diretamente com os serviços de emergência locais.'
+  cta_label: 'Ver seu {{ citizen_term_singular }}'
+  preheader: 'Este {{ citizen_term_singular }} não é da nossa competência.'

@@ -1,0 +1,34 @@
+langcode: nb
+report_confirmation:
+  subject: 'Din {{ citizen_term_singular }} #[node:request_id] er mottatt'
+  headline: 'Vi har mottatt din {{ citizen_term_singular }}'
+  intro: 'Din {{ citizen_term_singular }} #[node:request_id] er registrert.'
+  body_blocks:
+    - 'Kategori: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Se din {{ citizen_term_singular }}'
+  preheader: 'Vi har mottatt din {{ citizen_term_singular }} og holder deg oppdatert.'
+status_open:
+  subject: 'Oppdatering om din {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Din {{ citizen_term_singular }} er under behandling'
+  intro: 'Takk for din {{ citizen_term_singular }}. Den er sendt videre til ansvarlig avdeling og er nå under behandling.'
+  body_blocks:
+    - 'Du får en ny melding når den er løst.'
+  cta_label: 'Se din {{ citizen_term_singular }}'
+  preheader: 'Din {{ citizen_term_singular }} er nå under behandling.'
+status_closed:
+  subject: 'Din {{ citizen_term_singular }} #[node:request_id] er løst'
+  headline: 'Din {{ citizen_term_singular }} er løst'
+  intro: 'Gode nyheter! Din {{ citizen_term_singular }} #[node:request_id] er løst.'
+  body_blocks:
+    - 'Ved akutt nødsituasjon eller umiddelbar fare, kontakt nødetatene direkte.'
+  cta_label: 'Se din {{ citizen_term_singular }}'
+  preheader: 'Din {{ citizen_term_singular }} er løst.'
+status_not_responsible:
+  subject: 'Din {{ citizen_term_singular }} #[node:request_id]: utenfor vårt ansvar'
+  headline: 'Vi er ikke ansvarlige for denne {{ citizen_term_singular }}'
+  intro: 'Din {{ citizen_term_singular }} #[node:request_id] er vurdert. Denne typen henvendelse ligger dessverre utenfor vårt ansvarsområde.'
+  body_blocks:
+    - 'Ved akutt nødsituasjon eller umiddelbar fare, kontakt nødetatene direkte.'
+  cta_label: 'Se din {{ citizen_term_singular }}'
+  preheader: 'Vi er ikke ansvarlige for denne {{ citizen_term_singular }}.'

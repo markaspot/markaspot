@@ -8,6 +8,7 @@
 use Drupal\Component\Serialization\Yaml;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\markaspot_mail\Service\EcaMailMigrator;
 use Drupal\user\Entity\Role;
 
 /**
@@ -5131,4 +5132,43 @@ function markaspot_group_update_11940(): string {
   }
 
   return 'Seeded single_organisation_assignment to TRUE because no existing service request has multiple organisation assignments.';
+}
+
+/**
+ * Migrates report confirmations without losing tenant-authored mail text.
+ */
+function markaspot_group_update_11941(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('markaspot_mail')) {
+    return 'Skipped report confirmation migration because markaspot_mail is not installed; the legacy mail action remains active.';
+  }
+
+  $config_name = 'eca.eca.process_confirm_report';
+  $activity_id = 'Activity_send_confirmation';
+  $config = \Drupal::configFactory()->get($config_name);
+  if ($config->isNew()) {
+    return 'Skipped report confirmation migration because the ECA model is not installed.';
+  }
+  if ($config->get("actions.{$activity_id}.plugin") === 'markaspot_mail_send_notification') {
+    return 'The report confirmation ECA action is already migrated.';
+  }
+
+  $migrator = \Drupal::service('markaspot_mail.eca_migrator');
+  if (!$migrator instanceof EcaMailMigrator) {
+    throw new \LogicException('The markaspot_mail ECA migrator service is unavailable.');
+  }
+
+  $findings = array_values(array_filter(
+    $migrator->analyze([$config_name], TRUE),
+    static fn (array $finding): bool => ($finding['activity_id'] ?? NULL) === $activity_id,
+  ));
+  if ($findings === []) {
+    return 'Skipped report confirmation migration because no migratable confirmation action was found.';
+  }
+
+  $result = $migrator->apply($findings, [$activity_id => 'report_confirmation']);
+  $texts_preserved = !empty($result[0]['texts_preserved']);
+
+  return $texts_preserved
+    ? 'Migrated the report confirmation ECA action and preserved the existing notification text.'
+    : 'Migrated the report confirmation ECA action and reconciled its notification text.';
 }

@@ -114,12 +114,17 @@ final class EcaMailMigrator {
   ) {}
 
   /**
-   * Scans every active eca.eca.* config for action_send_email_action actions.
+   * Scans selected eca.eca.* config for action_send_email_action actions.
    *
-   * Read-only: never touches config, safe to call any number of times.
-   * Inactive configs (status: false) are skipped, matching the "aktive
-   * eca.eca.*-Configs" scope of the migration — a disabled workflow has no
-   * live wording to migrate.
+   * Read-only: never touches config, safe to call any number of times. The
+   * command defaults remain limited to enabled workflows, while update hooks
+   * can include a disabled model so enabling it later cannot restore a legacy
+   * mail path.
+   *
+   * @param list<string>|null $configNames
+   *   Config names to scan, or NULL to scan every eca.eca.* config.
+   * @param bool $includeInactive
+   *   Whether disabled workflows should be analyzed.
    *
    * @return list<array<string, mixed>>
    *   One finding per action_send_email_action (or already-migrated
@@ -131,11 +136,12 @@ final class EcaMailMigrator {
    *   (_plugin, _subject_raw, _message_raw, _recipient_raw,
    *   _successors_raw).
    */
-  public function analyze(): array {
+  public function analyze(?array $configNames = NULL, bool $includeInactive = FALSE): array {
     $findings = [];
-    foreach ($this->configFactory->listAll(self::ECA_CONFIG_PREFIX) as $configName) {
+    $configNames ??= $this->configFactory->listAll(self::ECA_CONFIG_PREFIX);
+    foreach ($configNames as $configName) {
       $raw = $this->configFactory->get($configName)->getRawData();
-      if (($raw['status'] ?? FALSE) !== TRUE) {
+      if (!$includeInactive && ($raw['status'] ?? FALSE) !== TRUE) {
         continue;
       }
       $findings = array_merge($findings, $this->analyzeModel($configName, $raw));
@@ -227,6 +233,11 @@ final class EcaMailMigrator {
           'label' => $finding['activity_label'],
           'plugin' => self::NOTIFICATION_PLUGIN,
           'configuration' => [
+            // ECA resolves the acted-upon entity from this token name (see
+            // EcaObject::getEntities()). Without it the action receives NULL
+            // under real ECA execution and silently skips every send — unit
+            // tests pass the node directly and never catch that.
+            'object' => ($finding['_object_raw'] ?? '') !== '' ? $finding['_object_raw'] : 'entity',
             'notification_key' => $key,
             'recipient' => $finding['_recipient_raw'],
           ],
@@ -498,6 +509,7 @@ final class EcaMailMigrator {
         'reason' => '',
         'shared_key_conflict' => FALSE,
         '_plugin' => $plugin,
+        '_object_raw' => (string) ($configuration['object'] ?? ''),
         '_subject_raw' => '',
         '_message_raw' => '',
         '_recipient_raw' => (string) ($configuration['recipient'] ?? ''),
@@ -553,6 +565,7 @@ final class EcaMailMigrator {
       'reason' => $reason,
       'shared_key_conflict' => FALSE,
       '_plugin' => $plugin,
+      '_object_raw' => (string) ($configuration['object'] ?? ''),
       '_subject_raw' => $subject,
       '_message_raw' => (string) ($configuration['message'] ?? ''),
       '_recipient_raw' => (string) ($configuration['recipient'] ?? ''),

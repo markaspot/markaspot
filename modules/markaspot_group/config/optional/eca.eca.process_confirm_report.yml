@@ -2,18 +2,14 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.field.node.service_request.field_category
     - field.field.node.service_request.field_e_mail
-    - field.field.node.service_request.field_jurisdiction
     - field.field.node.service_request.field_notification
-    - field.storage.node.field_category
     - field.storage.node.field_e_mail
-    - field.storage.node.field_jurisdiction
     - field.storage.node.field_notification
     - node.type.service_request
   module:
     - eca_content
-    - markaspot_token
+    - markaspot_mail
 id: process_confirm_report
 modeller: bpmn_io
 label: 'Confirm Report'
@@ -43,28 +39,10 @@ conditions:
 gateways: {  }
 actions:
   Activity_send_confirmation:
-    plugin: action_send_email_action
+    plugin: markaspot_mail_send_notification
     label: 'Send Confirmation Email'
     configuration:
       object: 'entity'
+      notification_key: report_confirmation
       recipient: '[node:field_e_mail:value]'
-      subject: 'Your Report #[node:request_id] has been received'
-      message: |-
-        Your report #[node:request_id] has been received.
-
-        Category: [node:field_category:entity:name]
-
-        [node:initial_status_note]
-
-        You can check the status of your report at any time:
-        [site:url][node:url:path]
-
-        --
-        [node:field_jurisdiction:entity:field_email_footer:value]
-
-        [node:field_jurisdiction:entity:field_jurisdiction_address:organization]
-        [node:field_jurisdiction:entity:field_jurisdiction_address:address_line1]
-        [node:field_jurisdiction:entity:field_jurisdiction_address:postal_code] [node:field_jurisdiction:entity:field_jurisdiction_address:locality]
-        [node:field_jurisdiction:entity:field_jurisdiction_e_mail]
-      replace_tokens: true
     successors: {  }

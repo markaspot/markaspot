@@ -1,0 +1,34 @@
+langcode: nl
+report_confirmation:
+  subject: 'Uw {{ citizen_term_singular }} #[node:request_id] is ontvangen'
+  headline: 'Wij hebben uw {{ citizen_term_singular }} ontvangen'
+  intro: 'Uw {{ citizen_term_singular }} #[node:request_id] is bij ons binnengekomen.'
+  body_blocks:
+    - 'Categorie: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Bekijk uw {{ citizen_term_singular }}'
+  preheader: 'Wij hebben uw {{ citizen_term_singular }} ontvangen en houden u op de hoogte.'
+status_open:
+  subject: 'Update over uw {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Uw {{ citizen_term_singular }} wordt behandeld'
+  intro: 'Bedankt voor uw {{ citizen_term_singular }}. Deze is doorgestuurd naar de verantwoordelijke afdeling en wordt nu behandeld.'
+  body_blocks:
+    - 'U ontvangt opnieuw bericht zodra deze is afgehandeld.'
+  cta_label: 'Bekijk uw {{ citizen_term_singular }}'
+  preheader: 'Uw {{ citizen_term_singular }} wordt nu behandeld.'
+status_closed:
+  subject: 'Uw {{ citizen_term_singular }} #[node:request_id] is afgehandeld'
+  headline: 'Uw {{ citizen_term_singular }} is afgehandeld'
+  intro: 'Goed nieuws! Uw {{ citizen_term_singular }} #[node:request_id] is afgehandeld.'
+  body_blocks:
+    - 'Is er sprake van een noodgeval of direct gevaar? Neem dan rechtstreeks contact op met de lokale hulpdiensten.'
+  cta_label: 'Bekijk uw {{ citizen_term_singular }}'
+  preheader: 'Uw {{ citizen_term_singular }} is afgehandeld.'
+status_not_responsible:
+  subject: 'Uw {{ citizen_term_singular }} #[node:request_id]: niet onze verantwoordelijkheid'
+  headline: 'Wij zijn niet verantwoordelijk voor deze {{ citizen_term_singular }}'
+  intro: 'Uw {{ citizen_term_singular }} #[node:request_id] is beoordeeld. Helaas valt dit type melding niet onder onze verantwoordelijkheid.'
+  body_blocks:
+    - 'Is er sprake van een noodgeval of direct gevaar? Neem dan rechtstreeks contact op met de lokale hulpdiensten.'
+  cta_label: 'Bekijk uw {{ citizen_term_singular }}'
+  preheader: 'Wij zijn niet verantwoordelijk voor deze {{ citizen_term_singular }}.'

@@ -21,7 +21,7 @@ status_closed:
   headline: 'Your {{ citizen_term_singular }} has been resolved'
   intro: 'Good news! Your {{ citizen_term_singular }} #[node:request_id] has been resolved.'
   body_blocks:
-    - 'If your matter is an urgent emergency or poses an immediate threat, please contact the police (110) or the fire department (112) directly.'
+    - 'If your matter is an urgent emergency or poses an immediate threat, please contact your local emergency services directly.'
   cta_label: 'View your {{ citizen_term_singular }}'
   preheader: 'Your {{ citizen_term_singular }} has been resolved.'
 status_not_responsible:
@@ -29,6 +29,6 @@ status_not_responsible:
   headline: 'We are not responsible for this {{ citizen_term_singular }}'
   intro: 'Your {{ citizen_term_singular }} #[node:request_id] has been reviewed. Unfortunately, we are not responsible for this type of request.'
   body_blocks:
-    - 'If your matter is an urgent emergency or poses an immediate threat, please contact the police (110) or the fire department (112) directly.'
+    - 'If your matter is an urgent emergency or poses an immediate threat, please contact your local emergency services directly.'
   cta_label: 'View your {{ citizen_term_singular }}'
   preheader: 'We are not responsible for this {{ citizen_term_singular }}.'

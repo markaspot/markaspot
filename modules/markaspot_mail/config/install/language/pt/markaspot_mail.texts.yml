@@ -1,0 +1,34 @@
+langcode: pt
+report_confirmation:
+  subject: 'O seu {{ citizen_term_singular }} #[node:request_id] foi recebido'
+  headline: 'Recebemos o seu {{ citizen_term_singular }}'
+  intro: 'O seu {{ citizen_term_singular }} #[node:request_id] foi registado.'
+  body_blocks:
+    - 'Categoria: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Ver o seu {{ citizen_term_singular }}'
+  preheader: 'Recebemos o seu {{ citizen_term_singular }} e mantê-lo-emos informado.'
+status_open:
+  subject: 'Atualização do seu {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'O seu {{ citizen_term_singular }} está em processamento'
+  intro: 'Obrigado pelo seu {{ citizen_term_singular }}. Foi encaminhado para o departamento responsável e está agora em processamento.'
+  body_blocks:
+    - 'Receberá uma nova notificação quando estiver resolvido.'
+  cta_label: 'Ver o seu {{ citizen_term_singular }}'
+  preheader: 'O seu {{ citizen_term_singular }} está agora em processamento.'
+status_closed:
+  subject: 'O seu {{ citizen_term_singular }} #[node:request_id] foi resolvido'
+  headline: 'O seu {{ citizen_term_singular }} foi resolvido'
+  intro: 'Boas notícias! O seu {{ citizen_term_singular }} #[node:request_id] foi resolvido.'
+  body_blocks:
+    - 'Em caso de emergência urgente ou perigo imediato, contacte diretamente os serviços de emergência locais.'
+  cta_label: 'Ver o seu {{ citizen_term_singular }}'
+  preheader: 'O seu {{ citizen_term_singular }} foi resolvido.'
+status_not_responsible:
+  subject: 'O seu {{ citizen_term_singular }} #[node:request_id]: fora da nossa competência'
+  headline: 'Este {{ citizen_term_singular }} não é da nossa competência'
+  intro: 'O seu {{ citizen_term_singular }} #[node:request_id] foi analisado. Infelizmente, este tipo de pedido não é da nossa competência.'
+  body_blocks:
+    - 'Em caso de emergência urgente ou perigo imediato, contacte diretamente os serviços de emergência locais.'
+  cta_label: 'Ver o seu {{ citizen_term_singular }}'
+  preheader: 'Este {{ citizen_term_singular }} não é da nossa competência.'

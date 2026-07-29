@@ -1,0 +1,34 @@
+langcode: ar
+report_confirmation:
+  subject: 'تم استلام بلاغك رقم ‎#[node:request_id]'
+  headline: 'لقد استلمنا بلاغك'
+  intro: 'تم تسجيل بلاغك رقم ‎#[node:request_id].'
+  body_blocks:
+    - 'الفئة: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'عرض بلاغك'
+  preheader: 'لقد استلمنا بلاغك وسنبقيك على اطلاع.'
+status_open:
+  subject: 'تحديث بشأن بلاغك رقم ‎#[node:request_id]'
+  headline: 'بلاغك قيد المعالجة'
+  intro: 'شكرًا على بلاغك. تمت إحالته إلى الجهة المختصة وهو الآن قيد المعالجة.'
+  body_blocks:
+    - 'ستصلك إشعارات أخرى عند حل المشكلة.'
+  cta_label: 'عرض بلاغك'
+  preheader: 'بلاغك الآن قيد المعالجة.'
+status_closed:
+  subject: 'تم حل بلاغك رقم ‎#[node:request_id]'
+  headline: 'تم حل بلاغك'
+  intro: 'خبر سار! تم حل بلاغك رقم ‎#[node:request_id].'
+  body_blocks:
+    - 'في حالة الطوارئ العاجلة أو الخطر المباشر، يرجى الاتصال مباشرة بخدمات الطوارئ المحلية.'
+  cta_label: 'عرض بلاغك'
+  preheader: 'تم حل بلاغك.'
+status_not_responsible:
+  subject: 'بلاغك رقم ‎#[node:request_id]: خارج نطاق اختصاصنا'
+  headline: 'هذا البلاغ خارج نطاق اختصاصنا'
+  intro: 'تمت مراجعة بلاغك رقم ‎#[node:request_id]. للأسف، هذا النوع من الطلبات خارج نطاق اختصاصنا.'
+  body_blocks:
+    - 'في حالة الطوارئ العاجلة أو الخطر المباشر، يرجى الاتصال مباشرة بخدمات الطوارئ المحلية.'
+  cta_label: 'عرض بلاغك'
+  preheader: 'هذا البلاغ خارج نطاق اختصاصنا.'

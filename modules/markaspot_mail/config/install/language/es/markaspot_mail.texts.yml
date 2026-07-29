@@ -1,0 +1,34 @@
+langcode: es
+report_confirmation:
+  subject: 'Su {{ citizen_term_singular }} #[node:request_id] ha sido recibido'
+  headline: 'Hemos recibido su {{ citizen_term_singular }}'
+  intro: 'Su {{ citizen_term_singular }} #[node:request_id] ha sido registrado.'
+  body_blocks:
+    - 'Categoría: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Ver su {{ citizen_term_singular }}'
+  preheader: 'Hemos recibido su {{ citizen_term_singular }} y le mantendremos informado.'
+status_open:
+  subject: 'Actualización de su {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Su {{ citizen_term_singular }} está en tramitación'
+  intro: 'Gracias por su {{ citizen_term_singular }}. Ha sido remitido al departamento competente y está en tramitación.'
+  body_blocks:
+    - 'Recibirá otra notificación cuando esté resuelto.'
+  cta_label: 'Ver su {{ citizen_term_singular }}'
+  preheader: 'Su {{ citizen_term_singular }} está en tramitación.'
+status_closed:
+  subject: 'Su {{ citizen_term_singular }} #[node:request_id] ha sido resuelto'
+  headline: 'Su {{ citizen_term_singular }} ha sido resuelto'
+  intro: '¡Buenas noticias! Su {{ citizen_term_singular }} #[node:request_id] ha sido resuelto.'
+  body_blocks:
+    - 'En caso de emergencia urgente o peligro inmediato, contacte directamente con los servicios de emergencia locales.'
+  cta_label: 'Ver su {{ citizen_term_singular }}'
+  preheader: 'Su {{ citizen_term_singular }} ha sido resuelto.'
+status_not_responsible:
+  subject: 'Su {{ citizen_term_singular }} #[node:request_id]: fuera de nuestra competencia'
+  headline: 'Este {{ citizen_term_singular }} no es de nuestra competencia'
+  intro: 'Su {{ citizen_term_singular }} #[node:request_id] ha sido revisado. Lamentablemente, este tipo de solicitud no es de nuestra competencia.'
+  body_blocks:
+    - 'En caso de emergencia urgente o peligro inmediato, contacte directamente con los servicios de emergencia locales.'
+  cta_label: 'Ver su {{ citizen_term_singular }}'
+  preheader: 'Este {{ citizen_term_singular }} no es de nuestra competencia.'

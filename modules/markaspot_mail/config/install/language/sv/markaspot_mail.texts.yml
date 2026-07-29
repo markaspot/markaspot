@@ -1,0 +1,34 @@
+langcode: sv
+report_confirmation:
+  subject: 'Din {{ citizen_term_singular }} #[node:request_id] har tagits emot'
+  headline: 'Vi har tagit emot din {{ citizen_term_singular }}'
+  intro: 'Din {{ citizen_term_singular }} #[node:request_id] har registrerats.'
+  body_blocks:
+    - 'Kategori: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Visa din {{ citizen_term_singular }}'
+  preheader: 'Vi har tagit emot din {{ citizen_term_singular }} och håller dig uppdaterad.'
+status_open:
+  subject: 'Uppdatering om din {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Din {{ citizen_term_singular }} behandlas'
+  intro: 'Tack för din {{ citizen_term_singular }}. Den har skickats vidare till ansvarig avdelning och behandlas nu.'
+  body_blocks:
+    - 'Du får ett nytt meddelande när den är löst.'
+  cta_label: 'Visa din {{ citizen_term_singular }}'
+  preheader: 'Din {{ citizen_term_singular }} behandlas nu.'
+status_closed:
+  subject: 'Din {{ citizen_term_singular }} #[node:request_id] är löst'
+  headline: 'Din {{ citizen_term_singular }} är löst'
+  intro: 'Goda nyheter! Din {{ citizen_term_singular }} #[node:request_id] är löst.'
+  body_blocks:
+    - 'Vid akut nödläge eller omedelbar fara, kontakta räddningstjänsten direkt.'
+  cta_label: 'Visa din {{ citizen_term_singular }}'
+  preheader: 'Din {{ citizen_term_singular }} är löst.'
+status_not_responsible:
+  subject: 'Din {{ citizen_term_singular }} #[node:request_id]: utanför vårt ansvar'
+  headline: 'Vi ansvarar inte för denna {{ citizen_term_singular }}'
+  intro: 'Din {{ citizen_term_singular }} #[node:request_id] har granskats. Denna typ av ärende ligger tyvärr utanför vårt ansvarsområde.'
+  body_blocks:
+    - 'Vid akut nödläge eller omedelbar fara, kontakta räddningstjänsten direkt.'
+  cta_label: 'Visa din {{ citizen_term_singular }}'
+  preheader: 'Vi ansvarar inte för denna {{ citizen_term_singular }}.'

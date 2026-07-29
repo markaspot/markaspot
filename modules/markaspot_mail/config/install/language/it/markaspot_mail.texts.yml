@@ -1,0 +1,34 @@
+langcode: it
+report_confirmation:
+  subject: 'Abbiamo ricevuto la tua {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'Abbiamo ricevuto la tua {{ citizen_term_singular }}'
+  intro: 'La tua {{ citizen_term_singular }} #[node:request_id] è stata registrata.'
+  body_blocks:
+    - 'Categoria: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Vedi la tua {{ citizen_term_singular }}'
+  preheader: 'Abbiamo ricevuto la tua {{ citizen_term_singular }} e ti terremo aggiornato.'
+status_open:
+  subject: 'Aggiornamento sulla tua {{ citizen_term_singular }} #[node:request_id]'
+  headline: 'La tua {{ citizen_term_singular }} è in lavorazione'
+  intro: 'Grazie per la tua {{ citizen_term_singular }}. È stata inoltrata all''ufficio competente ed è ora in lavorazione.'
+  body_blocks:
+    - 'Riceverai un''altra notifica quando sarà risolta.'
+  cta_label: 'Vedi la tua {{ citizen_term_singular }}'
+  preheader: 'La tua {{ citizen_term_singular }} è ora in lavorazione.'
+status_closed:
+  subject: 'La tua {{ citizen_term_singular }} #[node:request_id] è stata risolta'
+  headline: 'La tua {{ citizen_term_singular }} è stata risolta'
+  intro: 'Buone notizie! La tua {{ citizen_term_singular }} #[node:request_id] è stata risolta.'
+  body_blocks:
+    - 'In caso di emergenza o pericolo immediato, contatta direttamente i servizi di emergenza locali.'
+  cta_label: 'Vedi la tua {{ citizen_term_singular }}'
+  preheader: 'La tua {{ citizen_term_singular }} è stata risolta.'
+status_not_responsible:
+  subject: 'La tua {{ citizen_term_singular }} #[node:request_id]: non di nostra competenza'
+  headline: 'Questa {{ citizen_term_singular }} non è di nostra competenza'
+  intro: 'La tua {{ citizen_term_singular }} #[node:request_id] è stata esaminata. Purtroppo questo tipo di richiesta non rientra nella nostra competenza.'
+  body_blocks:
+    - 'In caso di emergenza o pericolo immediato, contatta direttamente i servizi di emergenza locali.'
+  cta_label: 'Vedi la tua {{ citizen_term_singular }}'
+  preheader: 'Questa {{ citizen_term_singular }} non è di nostra competenza.'

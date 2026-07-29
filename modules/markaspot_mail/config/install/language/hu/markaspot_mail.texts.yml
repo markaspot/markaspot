@@ -1,0 +1,34 @@
+langcode: hu
+report_confirmation:
+  subject: 'Bejelentése (#[node:request_id]) beérkezett'
+  headline: 'Megkaptuk a bejelentését'
+  intro: 'Bejelentése (#[node:request_id]) beérkezett hozzánk.'
+  body_blocks:
+    - 'Kategória: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Bejelentés megtekintése'
+  preheader: 'Megkaptuk a bejelentését, és folyamatosan tájékoztatjuk.'
+status_open:
+  subject: 'Frissítés a bejelentéséről (#[node:request_id])'
+  headline: 'Bejelentése feldolgozás alatt áll'
+  intro: 'Köszönjük a bejelentését. Továbbítottuk az illetékes osztálynak, és jelenleg feldolgozás alatt áll.'
+  body_blocks:
+    - 'A megoldásról újabb értesítést küldünk.'
+  cta_label: 'Bejelentés megtekintése'
+  preheader: 'Bejelentése feldolgozás alatt áll.'
+status_closed:
+  subject: 'Bejelentése (#[node:request_id]) megoldódott'
+  headline: 'Bejelentése megoldódott'
+  intro: 'Jó hír! Bejelentése (#[node:request_id]) megoldódott.'
+  body_blocks:
+    - 'Sürgős vészhelyzet vagy közvetlen veszély esetén forduljon közvetlenül a helyi segélyszolgálatokhoz.'
+  cta_label: 'Bejelentés megtekintése'
+  preheader: 'Bejelentése megoldódott.'
+status_not_responsible:
+  subject: 'Bejelentése (#[node:request_id]): nem tartozik hatáskörünkbe'
+  headline: 'Ez a bejelentés nem tartozik hatáskörünkbe'
+  intro: 'Bejelentését (#[node:request_id]) megvizsgáltuk. Ez a típusú ügy sajnos nem tartozik a hatáskörünkbe.'
+  body_blocks:
+    - 'Sürgős vészhelyzet vagy közvetlen veszély esetén forduljon közvetlenül a helyi segélyszolgálatokhoz.'
+  cta_label: 'Bejelentés megtekintése'
+  preheader: 'Ez a bejelentés nem tartozik hatáskörünkbe.'
