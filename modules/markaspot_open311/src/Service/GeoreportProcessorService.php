@@ -299,6 +299,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The messenger service.
    * @param \Drupal\Core\Session\AccountSwitcherInterface $accountSwitcher
    *   The account switcher service.
+   * @param \Drupal\markaspot_open311\Service\StatusClassifier $statusClassifier
+   *   The shared Open311 status classifier.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchyResolver
    *   The jurisdiction hierarchy resolver.
    * @param \Psr\Log\LoggerInterface|null $logger
@@ -323,6 +325,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     ClientInterface $httpClient,
     MessengerInterface $messenger,
     AccountSwitcherInterface $accountSwitcher,
+    protected StatusClassifier $statusClassifier,
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     ?LoggerInterface $logger = NULL,
     ?KeyValueFactoryInterface $keyValueFactory = NULL,
@@ -2635,17 +2638,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       return 'open';
     }
 
-    // Use field_open311_mapping on the term if available (jurisdiction-aware).
-    $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($taxonomyId);
-    if ($term && $term->hasField('field_open311_mapping') && !$term->get('field_open311_mapping')->isEmpty()) {
-      $mapping = $term->get('field_open311_mapping')->value;
-      // 'initial' and 'open' both count as Open311 "open".
-      return ($mapping === 'closed') ? 'closed' : 'open';
-    }
-
-    // Fallback to config-based lookup for backward compatibility.
-    $statusOpen = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_open') ?? []);
-    return in_array($taxonomyId, $statusOpen) ? 'open' : 'closed';
+    return $this->statusClassifier->isClosed($taxonomyId) ? 'closed' : 'open';
   }
 
   /**

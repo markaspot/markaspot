@@ -14,6 +14,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -76,6 +77,11 @@ class EscalationService implements EscalationServiceInterface {
   protected ConfigFactoryInterface $configFactory;
 
   /**
+   * The shared Open311 status classifier.
+   */
+  protected StatusClassifier $statusClassifier;
+
+  /**
    * The time service.
    *
    * @var \Drupal\Component\Datetime\TimeInterface
@@ -116,6 +122,8 @@ class EscalationService implements EscalationServiceInterface {
    *   The current user.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param \Drupal\markaspot_open311\Service\StatusClassifier $statusClassifier
+   *   The shared Open311 status classifier.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service.
    * @param \Psr\Log\LoggerInterface $logger
@@ -133,6 +141,7 @@ class EscalationService implements EscalationServiceInterface {
     GeoreportProcessorServiceInterface $processor,
     AccountInterface $currentUser,
     ConfigFactoryInterface $configFactory,
+    StatusClassifier $statusClassifier,
     TimeInterface $time,
     LoggerInterface $logger,
     MailManagerInterface $mailManager,
@@ -145,6 +154,7 @@ class EscalationService implements EscalationServiceInterface {
     $this->processor = $processor;
     $this->currentUser = $currentUser;
     $this->configFactory = $configFactory;
+    $this->statusClassifier = $statusClassifier;
     $this->time = $time;
     $this->logger = $logger;
     $this->mailManager = $mailManager;
@@ -919,16 +929,9 @@ class EscalationService implements EscalationServiceInterface {
       return FALSE;
     }
 
-    $currentStatusTid = (int) $node->get('field_status')->target_id;
-    $closedConfig = $this->configFactory->get('markaspot_open311.settings')->get('status_closed');
-
-    if (!is_array($closedConfig)) {
-      return FALSE;
-    }
-
-    // status_closed is stored as an associative array like {6: '6'}.
-    $closedTids = array_map('intval', array_values($closedConfig));
-    return in_array($currentStatusTid, $closedTids, TRUE);
+    return $this->statusClassifier->isClosed(
+      (int) $node->get('field_status')->target_id,
+    );
   }
 
   /**

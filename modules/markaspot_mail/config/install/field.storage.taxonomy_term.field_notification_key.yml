@@ -1,0 +1,23 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - markaspot_mail
+  module:
+    - taxonomy
+id: taxonomy_term.field_notification_key
+field_name: field_notification_key
+entity_type: taxonomy_term
+type: string
+settings:
+  max_length: 64
+  is_ascii: false
+  case_sensitive: false
+module: core
+locked: false
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

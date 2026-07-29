@@ -34,6 +34,7 @@ use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\ClientInterface;
@@ -113,6 +114,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   protected $logger;
 
   /**
+   * Mocked status classifier.
+   *
+   * @var \Drupal\markaspot_open311\Service\StatusClassifier|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $statusClassifier;
+
+  /**
    * Mocked node storage.
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -173,6 +181,8 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
+    $this->statusClassifier = $this->createMock(StatusClassifier::class);
+    $this->statusClassifier->method('isClosed')->willReturn(FALSE);
 
     // Set up entity storages.
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
@@ -264,6 +274,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $httpClient,
       $messenger,
       $accountSwitcher,
+      $this->statusClassifier,
       $this->hierarchyResolver,
       $this->logger,
       $this->keyValueFactory = new KeyValueMemoryFactory(),

@@ -1,0 +1,63 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.node.service_request.field_e_mail
+    - field.field.node.service_request.field_notification
+    - field.field.node.service_request.field_status
+    - field.field.taxonomy_term.service_status.field_notification_key
+    - field.storage.node.field_e_mail
+    - field.storage.node.field_notification
+    - field.storage.node.field_status
+    - field.storage.taxonomy_term.field_notification_key
+    - node.type.service_request
+  module:
+    - eca_content
+    - markaspot_mail
+id: process_notify_status_term
+modeller: bpmn_io
+label: 'Notify Status from Term'
+version: '1.0'
+weight: 10
+events:
+  Event_status_update:
+    plugin: 'content_entity:update'
+    label: 'Update Service Request'
+    configuration:
+      type: 'node service_request'
+    successors:
+      -
+        id: Gateway_notification_enabled
+        condition: Condition_status_changed
+conditions:
+  Condition_status_changed:
+    plugin: eca_entity_field_value_changed
+    configuration:
+      field_name: field_status.target_id
+      negate: false
+      entity: ''
+  Condition_notification_enabled:
+    plugin: eca_entity_field_value
+    configuration:
+      expected_value: '1'
+      field_name: field_notification.value
+      operator: equal
+      type: value
+      case: true
+      negate: false
+      entity: ''
+gateways:
+  Gateway_notification_enabled:
+    type: 0
+    successors:
+      -
+        id: Activity_send_term_notification
+        condition: Condition_notification_enabled
+actions:
+  Activity_send_term_notification:
+    plugin: markaspot_mail_send_term_notification
+    label: 'Send Status Notification from Term'
+    configuration:
+      object: 'entity'
+      recipient: '[node:field_e_mail:value]'
+    successors: {  }

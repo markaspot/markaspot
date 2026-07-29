@@ -11,6 +11,8 @@ use Drupal\locale\Gettext;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Component\Serialization\Yaml;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Service\NotificationTextWordingMigrationGuard;
 use Drupal\user\Entity\Role;
@@ -773,4 +775,57 @@ function markaspot_mail_update_10013(): string {
   return $healed
     ? sprintf('Restored the ECA entity token on notification mail actions in: %s.', implode(', ', $healed))
     : 'All notification mail actions already carry an entity token.';
+}
+
+/**
+ * Adds the operator-owned status notification key field.
+ *
+ * Empty values intentionally remain valid because not every status transition
+ * should send citizen mail.
+ */
+function markaspot_mail_update_10014(): string {
+  $created = [];
+
+  if (!FieldStorageConfig::loadByName('taxonomy_term', 'field_notification_key')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_notification_key',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'string',
+      'settings' => [
+        'max_length' => 64,
+        'is_ascii' => FALSE,
+        'case_sensitive' => FALSE,
+      ],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'dependencies' => [
+        'enforced' => [
+          'module' => ['markaspot_mail'],
+        ],
+      ],
+    ])->save();
+    $created[] = 'field_notification_key storage';
+  }
+
+  if (!FieldConfig::loadByName('taxonomy_term', 'service_status', 'field_notification_key')) {
+    FieldConfig::create([
+      'field_name' => 'field_notification_key',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_status',
+      'label' => 'Notification key',
+      'description' => 'Mail text key sent when a request enters this status. Leave empty to send no mail.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'dependencies' => [
+        'enforced' => [
+          'module' => ['markaspot_mail'],
+        ],
+      ],
+    ])->save();
+    $created[] = 'field_notification_key on service_status';
+  }
+
+  return $created
+    ? 'Created ' . implode(' and ', $created) . '.'
+    : 'The service status notification key field already exists.';
 }

@@ -3,9 +3,9 @@
 namespace Drupal\markaspot_escalation\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -30,11 +30,9 @@ class EscalationCronService implements EscalationCronServiceInterface {
   protected EscalationServiceInterface $escalationService;
 
   /**
-   * The config factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   * The shared Open311 status classifier.
    */
-  protected ConfigFactoryInterface $configFactory;
+  protected StatusClassifier $statusClassifier;
 
   /**
    * The time service.
@@ -57,8 +55,8 @@ class EscalationCronService implements EscalationCronServiceInterface {
    *   The entity type manager.
    * @param \Drupal\markaspot_escalation\Service\EscalationServiceInterface $escalationService
    *   The escalation service.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
-   *   The config factory.
+   * @param \Drupal\markaspot_open311\Service\StatusClassifier $statusClassifier
+   *   The shared Open311 status classifier.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service.
    * @param \Psr\Log\LoggerInterface $logger
@@ -67,13 +65,13 @@ class EscalationCronService implements EscalationCronServiceInterface {
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     EscalationServiceInterface $escalationService,
-    ConfigFactoryInterface $configFactory,
+    StatusClassifier $statusClassifier,
     TimeInterface $time,
     LoggerInterface $logger,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->escalationService = $escalationService;
-    $this->configFactory = $configFactory;
+    $this->statusClassifier = $statusClassifier;
     $this->time = $time;
     $this->logger = $logger;
   }
@@ -85,10 +83,8 @@ class EscalationCronService implements EscalationCronServiceInterface {
     $count = 0;
     $now = $this->time->getRequestTime();
 
-    // Get closed status term IDs to exclude.
-    $open311Config = $this->configFactory->get('markaspot_open311.settings');
-    $closedStatuses = $open311Config->get('status_closed') ?: [];
-    $closedTids = array_map('intval', array_values($closedStatuses));
+    // Term semantics and legacy config both contribute closed status IDs.
+    $closedTids = $this->statusClassifier->closedTids();
 
     // Query: all service_request nodes that are assigned to an org,
     // not yet escalated, published, and not closed.

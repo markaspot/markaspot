@@ -3,13 +3,12 @@
 namespace Drupal\Tests\markaspot_escalation\Unit;
 
 use Drupal\Component\Datetime\TimeInterface;
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\markaspot_escalation\Service\EscalationCronService;
 use Drupal\markaspot_escalation\Service\EscalationServiceInterface;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -47,11 +46,11 @@ class EscalationCronServiceTest extends UnitTestCase {
   protected $escalationService;
 
   /**
-   * Mocked config factory.
+   * Mocked status classifier.
    *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface|\PHPUnit\Framework\MockObject\MockObject
+   * @var \Drupal\markaspot_open311\Service\StatusClassifier|\PHPUnit\Framework\MockObject\MockObject
    */
-  protected $configFactory;
+  protected $statusClassifier;
 
   /**
    * Mocked time service.
@@ -89,25 +88,14 @@ class EscalationCronServiceTest extends UnitTestCase {
 
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->escalationService = $this->createMock(EscalationServiceInterface::class);
-    $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $this->statusClassifier = $this->createMock(StatusClassifier::class);
+    $this->statusClassifier->method('closedTids')->willReturn([6]);
     $this->time = $this->createMock(TimeInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
 
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager->method('getStorage')
       ->willReturnCallback(fn($type) => $type === 'node' ? $this->nodeStorage : NULL);
-
-    // Default open311 config: closed status TID = 6.
-    $open311Config = $this->createMock(ImmutableConfig::class);
-    $open311Config->method('get')
-      ->willReturnMap([
-        ['status_closed', [6 => '6']],
-      ]);
-
-    $this->configFactory->method('get')
-      ->willReturnMap([
-        ['markaspot_open311.settings', $open311Config],
-      ]);
 
     // Build a fluent query mock.
     $this->query = $this->createMock(QueryInterface::class);
@@ -128,7 +116,7 @@ class EscalationCronServiceTest extends UnitTestCase {
     $this->service = new EscalationCronService(
       $this->entityTypeManager,
       $this->escalationService,
-      $this->configFactory,
+      $this->statusClassifier,
       $this->time,
       $this->logger,
     );

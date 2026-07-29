@@ -119,6 +119,17 @@ action.configuration.markaspot_mail_send_notification:
       type: string
       label: 'Recipient email address'
 
+action.configuration.markaspot_mail_send_term_notification:
+  type: mapping
+  label: 'Send status notification from term (Mark-a-Spot) configuration'
+  mapping:
+    object:
+      type: string
+      label: 'ECA token name of the acted-upon entity'
+    recipient:
+      type: string
+      label: 'Recipient email address'
+
 markaspot_mail.texts.slot_set:
   type: mapping
   label: 'Notification mail text slots'

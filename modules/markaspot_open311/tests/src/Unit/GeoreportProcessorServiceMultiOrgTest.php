@@ -22,6 +22,7 @@ use Drupal\Component\Datetime\Time;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\ClientInterface;
@@ -87,6 +88,8 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $statusClassifier = $this->createMock(StatusClassifier::class);
+    $statusClassifier->method('isClosed')->willReturn(FALSE);
     $this->logger = $this->createMock(LoggerInterface::class);
 
     // Set up entity storages.
@@ -184,6 +187,7 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
       $httpClient,
       $messenger,
       $accountSwitcher,
+      $statusClassifier,
       $hierarchyResolver,
       $this->logger,
     );

@@ -18,6 +18,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Tests\UnitTestCase;
@@ -99,6 +100,13 @@ class EscalationServiceTest extends UnitTestCase {
   protected $configFactory;
 
   /**
+   * Mocked status classifier.
+   *
+   * @var \Drupal\markaspot_open311\Service\StatusClassifier|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $statusClassifier;
+
+  /**
    * Mocked time service.
    *
    * @var \Drupal\Component\Datetime\TimeInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -159,6 +167,9 @@ class EscalationServiceTest extends UnitTestCase {
     $this->processor = $this->createMock(GeoreportProcessorServiceInterface::class);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $this->statusClassifier = $this->createMock(StatusClassifier::class);
+    $this->statusClassifier->method('isClosed')
+      ->willReturnCallback(static fn (int $tid): bool => $tid === 6);
     $this->time = $this->createMock(TimeInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->mailManager = $this->createMock(MailManagerInterface::class);
@@ -204,6 +215,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->processor,
       $this->currentUser,
       $this->configFactory,
+      $this->statusClassifier,
       $this->time,
       $this->logger,
       $this->mailManager,
@@ -964,6 +976,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->processor,
       $this->currentUser,
       $configFactory,
+      $this->statusClassifier,
       $this->time,
       $this->logger,
       $this->mailManager,
@@ -1188,6 +1201,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->processor,
       $this->currentUser,
       $this->configFactory,
+      $this->statusClassifier,
       $this->time,
       $this->logger,
       $this->mailManager,
@@ -1225,6 +1239,7 @@ class EscalationServiceTest extends UnitTestCase {
         GeoreportProcessorServiceInterface $processor,
         AccountInterface $currentUser,
         ConfigFactoryInterface $configFactory,
+        StatusClassifier $statusClassifier,
         TimeInterface $time,
         LoggerInterface $logger,
         MailManagerInterface $mailManager,
@@ -1237,6 +1252,7 @@ class EscalationServiceTest extends UnitTestCase {
           $processor,
           $currentUser,
           $configFactory,
+          $statusClassifier,
           $time,
           $logger,
           $mailManager,
@@ -1386,6 +1402,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->processor,
       $this->currentUser,
       $this->configFactory,
+      $this->statusClassifier,
       $this->time,
       $this->logger,
       $this->mailManager,
@@ -1634,6 +1651,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->processor,
       $this->currentUser,
       $configFactory,
+      $this->statusClassifier,
       $this->time,
       $this->logger,
       $this->mailManager,

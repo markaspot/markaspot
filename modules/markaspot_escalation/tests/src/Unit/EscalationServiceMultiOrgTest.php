@@ -16,6 +16,7 @@ use Drupal\markaspot_escalation\Service\EscalationService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -99,6 +100,9 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
     $this->processor = $this->createMock(GeoreportProcessorServiceInterface::class);
     $currentUser = $this->createMock(AccountInterface::class);
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $statusClassifier = $this->createMock(StatusClassifier::class);
+    $statusClassifier->method('isClosed')
+      ->willReturnCallback(static fn (int $tid): bool => $tid === 6);
     $time = $this->createMock(TimeInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $mailManager = $this->createMock(MailManagerInterface::class);
@@ -143,6 +147,7 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
       $this->processor,
       $currentUser,
       $configFactory,
+      $statusClassifier,
       $time,
       $this->logger,
       $mailManager,
