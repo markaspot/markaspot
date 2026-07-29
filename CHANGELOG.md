@@ -1,5 +1,24 @@
 # Changelog
 
+## [11.9.174](https://github.com/markaspot/markaspot/compare/11.9.173...11.9.174) (2026-07-29)
+
+### Features
+
+* **dashboard:** add jurisdiction status selection ([bb47a2b](https://github.com/markaspot/markaspot/commit/bb47a2bdc24ed08cb15af5435b7fa00d0212ccd2))
+* **group:** contractor role with org-scoped, PII-shielded access ([#545](https://github.com/markaspot/markaspot/issues/545)) ([f13452b](https://github.com/markaspot/markaspot/commit/f13452b4762352322f2ec7d2048043d03169c865))
+* **mail:** make staff assignment texts operator-editable ([c86318c](https://github.com/markaspot/markaspot/commit/c86318c55335f0f3e16b1994f1d035f3cc1df27f))
+* **status:** add term-driven status semantics ([54ba8bd](https://github.com/markaspot/markaspot/commit/54ba8bd04a181ae22710f8af7a3faaf65e465182))
+* **status:** scope and seed jurisdiction statuses ([4ca3179](https://github.com/markaspot/markaspot/commit/4ca317970b228fee5ee057bac5fe253da180479e))
+
+### Bug Fixes
+
+* **dashboard:** require csrf header on duplicate review route ([885f8b0](https://github.com/markaspot/markaspot/commit/885f8b042da086e3080979cc5e0f442949b3bf78))
+* **dashboard:** route hardened duplicate review to the browser path and align status selection access ([d828830](https://github.com/markaspot/markaspot/commit/d828830a4abccd43eb97b7e7b42d7fab14928fcf))
+* **mail:** import shipped notification text languages on existing installs ([fcbe97a](https://github.com/markaspot/markaspot/commit/fcbe97aab954a7daf8ae4b243e4fed66d10569dd))
+* **mail:** migrate and throttle report confirmations ([881c707](https://github.com/markaspot/markaspot/commit/881c70733de0be96fd999a65bfd527bfc5484a1e))
+* **security:** restore staff address search, extend csrf and status guard coverage ([6f3bfe3](https://github.com/markaspot/markaspot/commit/6f3bfe3d6133192f8b03b481ff2e210b2db3a78f))
+* **status:** harden mail action, escalation semantics and metrics scoping from stack review ([153848d](https://github.com/markaspot/markaspot/commit/153848dacaf8f9a05198ea0dcb6b6476e654e62e))
+
 ## [11.9.173](https://github.com/markaspot/markaspot/compare/11.9.172...11.9.173) (2026-07-26)
 
 ### Features
