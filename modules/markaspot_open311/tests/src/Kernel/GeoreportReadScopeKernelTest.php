@@ -9,6 +9,7 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
@@ -288,6 +289,11 @@ final class GeoreportReadScopeKernelTest extends KernelTestBase {
       $this->container->get('http_client'),
       $this->container->get('messenger'),
       $this->container->get('account_switcher'),
+      new StatusClassifier(
+        $this->container->get('config.factory'),
+        $this->container->get('entity_type.manager'),
+        $this->container->get('cache.default'),
+      ),
       NULL,
       $this->container->get('logger.factory')->get('markaspot_open311'),
     ) extends GeoreportProcessorService {

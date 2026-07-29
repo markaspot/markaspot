@@ -4555,7 +4555,12 @@ function _markaspot_ensure_contractor_roles(): string {
   }
 
   $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_group');
-  $group_source = new FileStorage($module_path . '/config/install');
+  // The group role lives in config/optional, NOT config/install: it depends
+  // on user.role.contractor, which only this helper creates (above). In
+  // config/install the ConfigInstaller would import it during the
+  // markaspot_group install phase and abort the whole profile install with
+  // an unmet-dependency error before this hook ever runs.
+  $group_source = new FileStorage($module_path . '/config/optional');
   $group_role_data = $group_source->read('group.role.org-contractor');
   if (!is_array($group_role_data)) {
     throw new \RuntimeException('Could not read group.role.org-contractor from markaspot_group config.');

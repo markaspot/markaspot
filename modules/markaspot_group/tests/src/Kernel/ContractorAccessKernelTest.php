@@ -661,9 +661,13 @@ final class ContractorAccessKernelTest extends KernelTestBase {
    */
   private function createGroupRole(string $role_id): void {
     $module_root = dirname(__DIR__, 3);
-    $config = Yaml::decode(file_get_contents(
-      $module_root . '/config/install/group.role.' . $role_id . '.yml',
-    ));
+    // org-contractor ships in config/optional (it depends on the
+    // hook-created user.role.contractor); the other roles in config/install.
+    $path = $module_root . '/config/install/group.role.' . $role_id . '.yml';
+    if (!file_exists($path)) {
+      $path = $module_root . '/config/optional/group.role.' . $role_id . '.yml';
+    }
+    $config = Yaml::decode(file_get_contents($path));
     GroupRole::create([
       'id' => $config['id'],
       'label' => $config['label'],
