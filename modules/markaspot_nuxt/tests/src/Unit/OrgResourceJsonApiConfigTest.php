@@ -6,42 +6,41 @@ namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Tests organisation JSON:API resource surface reduction.
- *
- * @group markaspot_nuxt
+ * Tests the organisation JSON:API management resource.
  */
-class OrgResourceJsonApiConfigTest extends UnitTestCase
-{
-  /**
-   * Tests org notification mailboxes are hidden from group--org JSON:API.
-   */
-    public function testOrgMailboxFieldIsDisabledInJsonApiResource(): void
-    {
-        $moduleRoot = dirname(__DIR__, 3);
-        $configPath = $moduleRoot . '/config/optional/jsonapi_extras.jsonapi_resource_config.group--org.yml';
-        $config = Yaml::decode(file_get_contents($configPath));
-
-        $this->assertSame('group--org', $config['id']);
-        $this->assertSame(false, $config['disabled']);
-        $mailField = $config['resourceFields']['field_head_organisation_e_mail'] ?? null;
-        $this->assertIsArray($mailField);
-        $this->assertSame(true, $mailField['disabled']);
-    }
+#[Group('markaspot_nuxt')]
+class OrgResourceJsonApiConfigTest extends UnitTestCase {
 
   /**
-   * Tests existing tenants get an update hook for the org resource lockdown.
+   * Tests the organisation contact mailbox is writable through JSON:API.
    */
-    public function testUpdate11903DisablesOrgMailboxField(): void
-    {
-        $moduleRoot = dirname(__DIR__, 3);
-        $source = file_get_contents($moduleRoot . '/markaspot_nuxt.install');
-        $this->assertIsString($source);
+  public function testOrgMailboxFieldIsEnabledInJsonApiResource(): void {
+    $moduleRoot = dirname(__DIR__, 3);
+    $configPath = $moduleRoot . '/config/optional/jsonapi_extras.jsonapi_resource_config.group--org.yml';
+    $config = Yaml::decode(file_get_contents($configPath));
 
-        $this->assertStringContainsString('function markaspot_nuxt_update_11903(): string', $source);
-        $this->assertStringContainsString('resource not enabled on this tenant', $source);
-        $this->assertStringContainsString('field_head_organisation_e_mail', $source);
-        $this->assertStringContainsString("mail_field['disabled'] = TRUE", $source);
-    }
+    $this->assertSame('group--org', $config['id']);
+    $this->assertSame(FALSE, $config['disabled']);
+    $mailField = $config['resourceFields']['field_head_organisation_e_mail'] ?? NULL;
+    $this->assertIsArray($mailField);
+    $this->assertSame(FALSE, $mailField['disabled']);
+  }
+
+  /**
+   * Tests existing tenants get an update hook for the management contract.
+   */
+  public function testUpdate11914EnablesOrgMailboxField(): void {
+    $moduleRoot = dirname(__DIR__, 3);
+    $source = file_get_contents($moduleRoot . '/markaspot_nuxt.install');
+    $this->assertIsString($source);
+
+    $this->assertStringContainsString('function markaspot_nuxt_update_11914(): string', $source);
+    $this->assertStringContainsString('organisation JSON:API resource is not installed', $source);
+    $this->assertStringContainsString('field_head_organisation_e_mail', $source);
+    $this->assertStringContainsString("'disabled' => FALSE", $source);
+  }
+
 }

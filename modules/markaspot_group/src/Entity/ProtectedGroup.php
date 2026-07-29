@@ -9,8 +9,11 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\JurisdictionParentReferenceConstraint;
+use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgJurisdictionManagementConstraint;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgParentReferenceConstraint;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgRootJurisdictionReferenceConstraint;
+use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgServiceCategoriesJurisdictionConstraint;
+use Drupal\markaspot_group\Exception\OrganisationDeleteBlockedException;
 
 /**
  * Adds Mark-a-Spot tenant delete guards before Group removes relationships.
@@ -33,6 +36,10 @@ class ProtectedGroup extends Group {
       }
     }
 
+    if ($this->bundle() === 'org') {
+      \_markaspot_group_presave_organisation_translations($this);
+    }
+
     parent::preSave($storage);
   }
 
@@ -45,6 +52,8 @@ class ProtectedGroup extends Group {
       $translation = $this->getTranslation($langcode);
       foreach ($translation->validate() as $violation) {
         if ($violation->getConstraint() instanceof OrgRootJurisdictionReferenceConstraint
+          || $violation->getConstraint() instanceof OrgJurisdictionManagementConstraint
+          || $violation->getConstraint() instanceof OrgServiceCategoriesJurisdictionConstraint
           || $violation->getConstraint() instanceof JurisdictionParentReferenceConstraint
           || $violation->getConstraint() instanceof OrgParentReferenceConstraint) {
           $all_violations[] = $violation;
@@ -66,7 +75,11 @@ class ProtectedGroup extends Group {
 
       $blockers = \_markaspot_group_delete_blockers($group, TRUE);
       if ($blockers !== []) {
-        throw new EntityStorageException(\_markaspot_group_delete_refusal_message($group, $blockers));
+        $message = \_markaspot_group_delete_refusal_message($group, $blockers);
+        if ($group->bundle() === 'org') {
+          throw new OrganisationDeleteBlockedException($message);
+        }
+        throw new EntityStorageException($message);
       }
     }
 

@@ -9,11 +9,15 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgParentReferenceConstraint;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgParentReferenceConstraintValidator;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use Symfony\Component\Validator\Violation\ConstraintViolationBuilderInterface;
+
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/OrgParentReferenceConstraint.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/OrgParentReferenceConstraintValidator.php';
 
 /**
  * Tests organisation parent reference validation.
@@ -37,6 +41,19 @@ class OrgParentReferenceConstraintValidatorTest extends UnitTestCase {
     $child = $this->org(10, 1, $parent);
 
     $validator = $this->validatorExpectingNoViolation();
+    $validator->validate($child, new OrgParentReferenceConstraint());
+  }
+
+  /**
+   * Tests a submitted child and stored root are the same tenant.
+   */
+  public function testChildAndRootJurisdictionsAreAccepted(): void {
+    $parent = $this->org(20, 6);
+    $child = $this->org(10, 9, $parent);
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->method('getRootJurisdictionId')->willReturn(6);
+
+    $validator = $this->validatorExpectingNoViolation($resolver);
     $validator->validate($child, new OrgParentReferenceConstraint());
   }
 
@@ -102,11 +119,13 @@ class OrgParentReferenceConstraintValidatorTest extends UnitTestCase {
   /**
    * Creates a validator whose context expects no violations.
    */
-  protected function validatorExpectingNoViolation(): OrgParentReferenceConstraintValidator {
+  protected function validatorExpectingNoViolation(
+    ?JurisdictionHierarchyResolverInterface $resolver = NULL,
+  ): OrgParentReferenceConstraintValidator {
     $context = $this->createMock(ExecutionContextInterface::class);
     $context->expects($this->never())->method('buildViolation');
 
-    $validator = new OrgParentReferenceConstraintValidator();
+    $validator = new OrgParentReferenceConstraintValidator($resolver);
     $validator->initialize($context);
 
     return $validator;

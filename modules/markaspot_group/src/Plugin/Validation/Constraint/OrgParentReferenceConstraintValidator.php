@@ -4,16 +4,33 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Plugin\Validation\Constraint;
 
+use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\ParentTreeResolver;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 
 /**
  * Validates organisation parent references.
  */
-class OrgParentReferenceConstraintValidator extends ConstraintValidator {
+class OrgParentReferenceConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
+
+  /**
+   * Constructs the organisation parent validator.
+   */
+  public function __construct(
+    protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+  ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): self {
+    return new self($container->get('markaspot_group.organisation_hierarchy_resolver'));
+  }
 
   /**
    * {@inheritdoc}
@@ -123,7 +140,13 @@ class OrgParentReferenceConstraintValidator extends ConstraintValidator {
       return 0;
     }
 
-    return (int) ($group->get('field_jurisdiction')->target_id ?? 0);
+    $jurisdiction_id = (int) ($group->get('field_jurisdiction')->target_id ?? 0);
+    if ($jurisdiction_id <= 0 || $this->hierarchyResolver === NULL) {
+      return $jurisdiction_id;
+    }
+
+    return $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id)
+      ?? 0;
   }
 
 }

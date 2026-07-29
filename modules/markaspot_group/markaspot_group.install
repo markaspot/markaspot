@@ -5288,3 +5288,19 @@ function markaspot_group_update_11943(): string {
   $storage->create($data)->save();
   return 'Installed the term-driven status notification ECA model.';
 }
+
+/**
+ * Grants tenant administrators permission to create organisation groups.
+ */
+function markaspot_group_update_11944(): string {
+  $role = Role::load('tenant_admin');
+  if (!$role) {
+    return 'Skipped: the tenant_admin role does not exist.';
+  }
+  if ($role->hasPermission('create org group')) {
+    return 'The tenant_admin role already has permission to create organisation groups.';
+  }
+
+  $role->grantPermission('create org group')->save();
+  return 'Granted create org group permission to the tenant_admin role.';
+}

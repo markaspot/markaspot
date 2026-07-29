@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
@@ -22,13 +23,17 @@ class OrgRootJurisdictionReferenceConstraintValidator extends ConstraintValidato
    */
   public function __construct(
     protected ?ConfigFactoryInterface $configFactory = NULL,
+    protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): self {
-    return new self($container->get('config.factory'));
+    return new self(
+      $container->get('config.factory'),
+      $container->get('markaspot_group.organisation_hierarchy_resolver'),
+    );
   }
 
   /**
@@ -55,11 +60,14 @@ class OrgRootJurisdictionReferenceConstraintValidator extends ConstraintValidato
     $jurisdictions = $jurisdiction_field->referencedEntities();
     $jurisdiction = reset($jurisdictions);
     if (!$jurisdiction instanceof GroupInterface || !$this->isJurisdictionGroup($jurisdiction)) {
+      $this->context->buildViolation($constraint->message)
+        ->atPath('field_jurisdiction')
+        ->addViolation();
       return;
     }
 
-    if ($jurisdiction->hasField('field_parent_jurisdiction')
-      && !$jurisdiction->get('field_parent_jurisdiction')->isEmpty()) {
+    if ($this->hierarchyResolver !== NULL
+      && $this->hierarchyResolver->getRootJurisdictionId((int) $jurisdiction->id()) === NULL) {
       $this->context->buildViolation($constraint->message)
         ->atPath('field_jurisdiction')
         ->addViolation();

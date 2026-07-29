@@ -273,6 +273,13 @@ class AssignServiceRequestOrganisationFromCategory extends ConfigurableActionBas
       ]);
       return NULL;
     }
+    if (method_exists($group, 'isPublished') && !$group->isPublished()) {
+      $this->logger->warning('Category term @tid maps to inactive organisation group @gid.', [
+        '@tid' => $category_id,
+        '@gid' => $mapped_group_id,
+      ]);
+      return NULL;
+    }
 
     if (!$this->groupMatchesJurisdiction($group, $node)) {
       $this->logger->warning('Category term @tid maps to organisation group @gid outside service request jurisdiction @jurisdiction.', [
@@ -302,39 +309,57 @@ class AssignServiceRequestOrganisationFromCategory extends ConfigurableActionBas
       return NULL;
     }
 
-    foreach ($organisation_bundles as $bundle) {
-      if (!$this->groupBundleHasFields($bundle, ['field_jurisdiction', 'field_service_categories'])) {
-        continue;
+    $jurisdiction_ids = [$jurisdiction_id];
+    if ($this->hierarchyResolver && method_exists($this->hierarchyResolver, 'getAncestorIds')) {
+      $jurisdiction_ids = array_merge(
+        $jurisdiction_ids,
+        $this->hierarchyResolver->getAncestorIds($jurisdiction_id),
+      );
+    }
+    elseif ($this->hierarchyResolver && method_exists($this->hierarchyResolver, 'getRootJurisdictionId')) {
+      $root_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+      if ($root_id !== NULL) {
+        $jurisdiction_ids[] = $root_id;
       }
+    }
+    $jurisdiction_ids = array_values(array_unique(array_map('intval', $jurisdiction_ids)));
 
-      try {
-        $ids = $group_storage->getQuery()
-          ->accessCheck(FALSE)
-          ->condition('type', $bundle)
-          ->condition('field_jurisdiction', $jurisdiction_id)
-          ->condition('field_service_categories', $category_id)
-          ->range(0, 2)
-          ->execute();
-      }
-      catch (\Throwable $e) {
-        $this->logger->warning('Could not derive organisation for category @tid and jurisdiction @jurisdiction: @message', [
-          '@tid' => $category_id,
-          '@jurisdiction' => $jurisdiction_id,
-          '@message' => $e->getMessage(),
-        ]);
-        continue;
-      }
+    foreach ($jurisdiction_ids as $candidate_jurisdiction_id) {
+      foreach ($organisation_bundles as $bundle) {
+        if (!$this->groupBundleHasFields($bundle, ['field_jurisdiction', 'field_service_categories'])) {
+          continue;
+        }
 
-      $ids = array_values(array_unique(array_map('intval', $ids)));
-      if (count($ids) === 1) {
-        return reset($ids);
-      }
-      if (count($ids) > 1) {
-        $this->logger->warning('Category @tid maps to multiple organisation groups in jurisdiction @jurisdiction. Skipping automatic assignment.', [
-          '@tid' => $category_id,
-          '@jurisdiction' => $jurisdiction_id,
-        ]);
-        return NULL;
+        try {
+          $ids = $group_storage->getQuery()
+            ->accessCheck(FALSE)
+            ->condition('type', $bundle)
+            ->condition('status', TRUE)
+            ->condition('field_jurisdiction', $candidate_jurisdiction_id)
+            ->condition('field_service_categories', $category_id)
+            ->range(0, 2)
+            ->execute();
+        }
+        catch (\Throwable $e) {
+          $this->logger->warning('Could not derive organisation for category @tid and jurisdiction @jurisdiction: @message', [
+            '@tid' => $category_id,
+            '@jurisdiction' => $candidate_jurisdiction_id,
+            '@message' => $e->getMessage(),
+          ]);
+          continue;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (count($ids) === 1) {
+          return reset($ids);
+        }
+        if (count($ids) > 1) {
+          $this->logger->warning('Category @tid maps to multiple organisation groups in jurisdiction @jurisdiction. Skipping automatic assignment.', [
+            '@tid' => $category_id,
+            '@jurisdiction' => $candidate_jurisdiction_id,
+          ]);
+          return NULL;
+        }
       }
     }
 

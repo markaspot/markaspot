@@ -434,9 +434,11 @@ class EscalationService implements EscalationServiceInterface {
 
     // Load and validate the target organisation group.
     $orgGroup = $groupStorage->load($targetOrgId);
-    if (!$orgGroup || $orgGroup->bundle() !== 'org') {
+    if (!$orgGroup
+      || $orgGroup->bundle() !== 'org'
+      || (method_exists($orgGroup, 'isPublished') && !$orgGroup->isPublished())) {
       throw new \InvalidArgumentException(
-        sprintf('Target group %d does not exist or is not an organisation.', $targetOrgId)
+        sprintf('Target group %d does not exist or is not an active organisation.', $targetOrgId)
       );
     }
 

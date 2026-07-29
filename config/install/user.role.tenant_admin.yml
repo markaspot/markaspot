@@ -16,6 +16,7 @@ permissions:
   - 'access open311 advanced properties'
   - 'access open311 extension'
   - 'access taxonomy overview'
+  - 'create org group'
   - 'create field_address'
   - 'create field_approved'
   - 'create field_attachment'

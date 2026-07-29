@@ -7,30 +7,33 @@ namespace Drupal\Tests\markaspot_group\Unit;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgRootJurisdictionReferenceConstraint;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgRootJurisdictionReferenceConstraintValidator;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use Symfony\Component\Validator\Violation\ConstraintViolationBuilderInterface;
 
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/OrgRootJurisdictionReferenceConstraint.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/OrgRootJurisdictionReferenceConstraintValidator.php';
+
 /**
  * Tests organisation root jurisdiction validation.
- *
- * @group markaspot_group
- * @coversDefaultClass \Drupal\markaspot_group\Plugin\Validation\Constraint\OrgRootJurisdictionReferenceConstraintValidator
  */
+#[CoversClass(OrgRootJurisdictionReferenceConstraintValidator::class)]
+#[Group('markaspot_group')]
 class OrgRootJurisdictionReferenceConstraintValidatorTest extends UnitTestCase {
 
   /**
    * Tests root jurisdictions are accepted.
-   *
-   * @covers ::validate
    */
   public function testRootJurisdictionIsAccepted(): void {
     $context = $this->createMock(ExecutionContextInterface::class);
     $context->expects($this->never())->method('buildViolation');
 
-    $validator = new OrgRootJurisdictionReferenceConstraintValidator();
+    $validator = $this->validatorWithResolvedRoot(6);
     $validator->initialize($context);
     $validator->validate(
       $this->orgReferencing($this->jurisdiction(FALSE)),
@@ -39,11 +42,24 @@ class OrgRootJurisdictionReferenceConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
-   * Tests child jurisdictions are rejected.
-   *
-   * @covers ::validate
+   * Tests child jurisdictions are accepted for presave normalization.
    */
-  public function testChildJurisdictionIsRejected(): void {
+  public function testChildJurisdictionIsAccepted(): void {
+    $context = $this->createMock(ExecutionContextInterface::class);
+    $context->expects($this->never())->method('buildViolation');
+
+    $validator = $this->validatorWithResolvedRoot(6);
+    $validator->initialize($context);
+    $validator->validate(
+      $this->orgReferencing($this->jurisdiction(TRUE)),
+      new OrgRootJurisdictionReferenceConstraint(),
+    );
+  }
+
+  /**
+   * Tests an invalid hierarchy is rejected.
+   */
+  public function testInvalidJurisdictionHierarchyIsRejected(): void {
     $constraint = new OrgRootJurisdictionReferenceConstraint();
     $builder = $this->createMock(ConstraintViolationBuilderInterface::class);
     $builder->expects($this->once())
@@ -59,21 +75,22 @@ class OrgRootJurisdictionReferenceConstraintValidatorTest extends UnitTestCase {
       ->with($constraint->message)
       ->willReturn($builder);
 
-    $validator = new OrgRootJurisdictionReferenceConstraintValidator();
+    $validator = $this->validatorWithResolvedRoot(NULL);
     $validator->initialize($context);
-    $validator->validate($this->orgReferencing($this->jurisdiction(TRUE)), $constraint);
+    $validator->validate(
+      $this->orgReferencing($this->jurisdiction(TRUE)),
+      $constraint,
+    );
   }
 
   /**
    * Tests non-organisation groups are ignored.
-   *
-   * @covers ::validate
    */
   public function testNonOrganisationGroupIsIgnored(): void {
     $context = $this->createMock(ExecutionContextInterface::class);
     $context->expects($this->never())->method('buildViolation');
 
-    $validator = new OrgRootJurisdictionReferenceConstraintValidator();
+    $validator = $this->validatorWithResolvedRoot(6);
     $validator->initialize($context);
     $validator->validate($this->jurisdiction(TRUE), new OrgRootJurisdictionReferenceConstraint());
   }
@@ -106,6 +123,7 @@ class OrgRootJurisdictionReferenceConstraintValidatorTest extends UnitTestCase {
     $parent_field->method('isEmpty')->willReturn(!$hasParent);
 
     $jurisdiction = $this->createMock(GroupInterface::class);
+    $jurisdiction->method('id')->willReturn($hasParent ? 9 : 6);
     $jurisdiction->method('bundle')->willReturn('jur');
     $jurisdiction->method('hasField')
       ->with('field_parent_jurisdiction')
@@ -115,6 +133,15 @@ class OrgRootJurisdictionReferenceConstraintValidatorTest extends UnitTestCase {
       ->willReturn($parent_field);
 
     return $jurisdiction;
+  }
+
+  /**
+   * Creates a validator whose hierarchy lookup returns the supplied root.
+   */
+  protected function validatorWithResolvedRoot(?int $root_id): OrgRootJurisdictionReferenceConstraintValidator {
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->method('getRootJurisdictionId')->willReturn($root_id);
+    return new OrgRootJurisdictionReferenceConstraintValidator(NULL, $resolver);
   }
 
 }

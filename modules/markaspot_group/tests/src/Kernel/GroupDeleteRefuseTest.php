@@ -12,6 +12,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_group\Entity\ProtectedGroup;
+use Drupal\markaspot_group\Exception\OrganisationDeleteBlockedException;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 require_once dirname(__DIR__, 3) . '/markaspot_group.module';
@@ -195,6 +196,7 @@ class GroupDeleteRefuseTest extends KernelTestBase {
       $this->fail('Expected organisation delete to be refused.');
     }
     catch (EntityStorageException $exception) {
+      $this->assertInstanceOf(OrganisationDeleteBlockedException::class, $exception);
       $message = $exception->getMessage();
       $this->assertStringContainsString('service requests via field_organisation', $message);
       $this->assertStringContainsString('service request revisions via field_organisation', $message);
@@ -202,6 +204,7 @@ class GroupDeleteRefuseTest extends KernelTestBase {
       $this->assertStringContainsString('other content revisions via field_organisation', $message);
       $this->assertStringContainsString('category mappings via field_category_gid', $message);
       $this->assertStringContainsString('category mapping revisions via field_category_gid', $message);
+      $this->assertStringContainsString('Deactivate the organisation by setting status to false instead.', $message);
       $this->assertStringNotContainsString('group content relationships', $message);
     }
   }
@@ -219,7 +222,7 @@ class GroupDeleteRefuseTest extends KernelTestBase {
   }
 
   /**
-   * Tests delete access is refused before Group preDelete removes relationships.
+   * Tests delete access is refused before relationships are removed.
    */
   public function testDeleteAccessBlocksRelationshipOnlyReferences(): void {
     $this->createFixtureTables();
@@ -267,6 +270,7 @@ class GroupDeleteRefuseTest extends KernelTestBase {
       $this->fail('Expected protected group preDelete to refuse deletion.');
     }
     catch (EntityStorageException $exception) {
+      $this->assertInstanceOf(OrganisationDeleteBlockedException::class, $exception);
       $this->assertStringContainsString('group content relationships', $exception->getMessage());
     }
   }

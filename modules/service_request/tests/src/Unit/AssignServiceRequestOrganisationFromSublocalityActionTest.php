@@ -72,6 +72,78 @@ class AssignServiceRequestOrganisationFromSublocalityActionTest extends UnitTest
   }
 
   /**
+   * Tests the most specific jurisdiction wins.
+   */
+  public function testOwnJurisdictionMatchWins(): void {
+    $queried_jurisdictions = [];
+    $action = $this->buildScopedAction(
+      [[42]],
+      [6],
+      $queried_jurisdictions,
+    );
+
+    $this->assertSame(42, $this->deriveScoped($action, 7, 9));
+    $this->assertSame([9], $queried_jurisdictions);
+  }
+
+  /**
+   * Tests routing continues to the nearest parent.
+   */
+  public function testParentJurisdictionMatchIsUsed(): void {
+    $queried_jurisdictions = [];
+    $action = $this->buildScopedAction(
+      [[], [43]],
+      [6],
+      $queried_jurisdictions,
+    );
+
+    $this->assertSame(43, $this->deriveScoped($action, 7, 9));
+    $this->assertSame([9, 6], $queried_jurisdictions);
+  }
+
+  /**
+   * Tests no match at any hierarchy level returns NULL.
+   */
+  public function testNoHierarchyMatchReturnsNull(): void {
+    $queried_jurisdictions = [];
+    $action = $this->buildScopedAction(
+      [[], []],
+      [6],
+      $queried_jurisdictions,
+    );
+
+    $this->assertNull($this->deriveScoped($action, 7, 9));
+    $this->assertSame([9, 6], $queried_jurisdictions);
+  }
+
+  /**
+   * Tests own-jurisdiction ambiguity preserves first-match routing.
+   */
+  public function testOwnJurisdictionAmbiguityUsesFirstMatchAndLogs(): void {
+    $queried_jurisdictions = [];
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        'Sublocality @tid maps to multiple organisation groups in its own jurisdiction @jurisdiction. Using first match @org_id for compatibility.',
+        [
+          '@tid' => 7,
+          '@jurisdiction' => 9,
+          '@org_id' => 42,
+        ],
+      );
+    $action = $this->buildScopedAction(
+      [[42, 43], [44]],
+      [6],
+      $queried_jurisdictions,
+      $logger,
+    );
+
+    $this->assertSame(42, $this->deriveScoped($action, 7, 9));
+    $this->assertSame([9], $queried_jurisdictions);
+  }
+
+  /**
    * Tests that exactly one matching organisation group is returned.
    */
   public function testDeriveReturnsGroupIdWhenExactlyOneMatch(): void {
@@ -141,6 +213,97 @@ class AssignServiceRequestOrganisationFromSublocalityActionTest extends UnitTest
   }
 
   /**
+   * Builds the action with deterministic jurisdiction query results.
+   *
+   * @param array<int, int[]> $query_results
+   *   Query results in execution order.
+   * @param int[] $ancestor_ids
+   *   Ancestor jurisdiction IDs, nearest first.
+   * @param int[] $queried_jurisdictions
+   *   Captured jurisdiction query conditions.
+   * @param \Psr\Log\LoggerInterface|null $logger
+   *   Optional logger mock.
+   */
+  private function buildScopedAction(
+    array $query_results,
+    array $ancestor_ids,
+    array &$queried_jurisdictions,
+    ?LoggerInterface $logger = NULL,
+  ): AssignServiceRequestOrganisationFromSublocality {
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')
+      ->willReturnCallback(function () use (&$query_results, &$queried_jurisdictions): QueryInterface {
+        $result = array_shift($query_results) ?? [];
+        $query = $this->createMock(QueryInterface::class);
+        $query->method('accessCheck')->willReturnSelf();
+        $query->method('condition')
+          ->willReturnCallback(function (string $field, mixed $value) use ($query, &$queried_jurisdictions): QueryInterface {
+            if ($field === 'field_jurisdiction') {
+              $queried_jurisdictions[] = (int) $value;
+            }
+            if ($field === 'status') {
+              $this->assertTrue($value);
+            }
+            return $query;
+          });
+        $query->method('range')->with(0, 2)->willReturnSelf();
+        $query->method('execute')->willReturn($result);
+        return $query;
+      });
+
+    $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
+    $entity_type_manager->method('getStorage')
+      ->with('group')
+      ->willReturn($storage);
+
+    $field_manager = $this->createMock(EntityFieldManagerInterface::class);
+    $field_manager->method('getFieldDefinitions')
+      ->with('group', 'org')
+      ->willReturn([
+        'field_jurisdiction' => TRUE,
+        'field_sublocality_terms' => TRUE,
+      ]);
+
+    $resolver = new class($ancestor_ids) {
+
+      /**
+       * Constructs the hierarchy resolver stub.
+       *
+       * @param int[] $ancestorIds
+       *   Ancestor jurisdiction IDs.
+       */
+      public function __construct(
+        private readonly array $ancestorIds,
+      ) {}
+
+      /**
+       * Gets ancestor jurisdiction IDs.
+       *
+       * @param int $jurisdiction_id
+       *   Starting jurisdiction ID.
+       *
+       * @return int[]
+       *   Ancestor jurisdiction IDs.
+       */
+      public function getAncestorIds(int $jurisdiction_id): array {
+        return $this->ancestorIds;
+      }
+
+    };
+
+    return new AssignServiceRequestOrganisationFromSublocality(
+      [],
+      'service_request_assign_organisation_from_sublocality',
+      ['id' => 'service_request_assign_organisation_from_sublocality'],
+      $entity_type_manager,
+      $field_manager,
+      $logger ?? $this->createMock(LoggerInterface::class),
+      $this->createMock(AccountInterface::class),
+      $resolver,
+    );
+  }
+
+  /**
    * Mocks group storage whose query returns the given group IDs.
    *
    * @param int[] $result_ids
@@ -149,7 +312,13 @@ class AssignServiceRequestOrganisationFromSublocalityActionTest extends UnitTest
   private function mockGroupStorage(array $result_ids): EntityStorageInterface {
     $query = $this->createMock(QueryInterface::class);
     $query->method('accessCheck')->willReturnSelf();
-    $query->method('condition')->willReturnSelf();
+    $query->method('condition')
+      ->willReturnCallback(function (string $field, mixed $value) use ($query): QueryInterface {
+        if ($field === 'status') {
+          $this->assertTrue($value);
+        }
+        return $query;
+      });
     $query->method('range')->willReturnSelf();
     $query->method('execute')->willReturn($result_ids);
 
@@ -222,6 +391,26 @@ class AssignServiceRequestOrganisationFromSublocalityActionTest extends UnitTest
     $method = new \ReflectionMethod($action, 'deriveOrganisationGroupId');
     $method->setAccessible(TRUE);
     return $method->invoke($action, $node, $bundles);
+  }
+
+  /**
+   * Invokes the protected jurisdiction routing method.
+   */
+  private function deriveScoped(
+    AssignServiceRequestOrganisationFromSublocality $action,
+    int $sublocality_tid,
+    int $jurisdiction_id,
+  ): ?int {
+    $method = new \ReflectionMethod(
+      $action,
+      'deriveJurisdictionOrganisationGroupId',
+    );
+    return $method->invoke(
+      $action,
+      $sublocality_tid,
+      $jurisdiction_id,
+      ['org'],
+    );
   }
 
   /**

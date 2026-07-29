@@ -52,6 +52,7 @@ permissions:
   - 'bypass mas validation'
   - 'create boilerplate content'
   - 'create content translations'
+  - 'create org group'
   - 'create field_address'
   - 'create field_approved'
   - 'create field_attachment'

@@ -246,6 +246,13 @@ class AssignServiceRequestOrganisationFromSublocality extends ConfigurableAction
     $jurisdiction_field = (string) ($this->configuration['jurisdiction_field'] ?? '');
     $org_sublocality_field = (string) $this->configuration['org_sublocality_field'];
     $jurisdiction_id = $this->getJurisdictionId($node);
+    if ($jurisdiction_id) {
+      return $this->deriveJurisdictionOrganisationGroupId(
+        $sublocality_tid,
+        $jurisdiction_id,
+        $organisation_bundles,
+      );
+    }
 
     foreach ($organisation_bundles as $bundle) {
       $required_fields = [$org_sublocality_field];
@@ -260,6 +267,7 @@ class AssignServiceRequestOrganisationFromSublocality extends ConfigurableAction
         $query = $group_storage->getQuery()
           ->accessCheck(FALSE)
           ->condition('type', $bundle)
+          ->condition('status', TRUE)
           ->condition($org_sublocality_field, $sublocality_tid)
           ->range(0, 2);
         if ($jurisdiction_field !== '' && $jurisdiction_id) {
@@ -296,6 +304,94 @@ class AssignServiceRequestOrganisationFromSublocality extends ConfigurableAction
           '@jurisdiction' => $jurisdiction_id ?? 'none',
         ]);
         return NULL;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Derives an organisation by jurisdiction and sublocality.
+   *
+   * @param int $sublocality_tid
+   *   Sublocality term ID.
+   * @param int $jurisdiction_id
+   *   Jurisdiction group ID.
+   * @param string[] $organisation_bundles
+   *   Accepted group bundle IDs.
+   */
+  protected function deriveJurisdictionOrganisationGroupId(int $sublocality_tid, int $jurisdiction_id, array $organisation_bundles): ?int {
+    $group_storage = $this->getGroupStorage();
+    if (!$group_storage) {
+      return NULL;
+    }
+
+    $org_sublocality_field = (string) $this->configuration['org_sublocality_field'];
+    $jurisdiction_ids = [$jurisdiction_id];
+    if ($this->hierarchyResolver && method_exists($this->hierarchyResolver, 'getAncestorIds')) {
+      $jurisdiction_ids = array_merge(
+        $jurisdiction_ids,
+        $this->hierarchyResolver->getAncestorIds($jurisdiction_id),
+      );
+    }
+    elseif ($this->hierarchyResolver && method_exists($this->hierarchyResolver, 'getRootJurisdictionId')) {
+      $root_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+      if ($root_id !== NULL) {
+        $jurisdiction_ids[] = $root_id;
+      }
+    }
+    $jurisdiction_ids = array_values(array_unique(array_map('intval', $jurisdiction_ids)));
+
+    foreach ($jurisdiction_ids as $level => $candidate_jurisdiction_id) {
+      foreach ($organisation_bundles as $bundle) {
+        if (!$this->groupBundleHasFields($bundle, [
+          'field_jurisdiction',
+          $org_sublocality_field,
+        ])) {
+          continue;
+        }
+
+        try {
+          $ids = $group_storage->getQuery()
+            ->accessCheck(FALSE)
+            ->condition('type', $bundle)
+            ->condition('status', TRUE)
+            ->condition('field_jurisdiction', $candidate_jurisdiction_id)
+            ->condition($org_sublocality_field, $sublocality_tid)
+            ->range(0, 2)
+            ->execute();
+        }
+        catch (\Throwable $e) {
+          $this->logger->warning('Could not derive organisation for sublocality @tid and jurisdiction @jurisdiction: @message', [
+            '@tid' => $sublocality_tid,
+            '@jurisdiction' => $candidate_jurisdiction_id,
+            '@message' => $e->getMessage(),
+          ]);
+          continue;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if ($ids !== [] && $level === 0) {
+          $group_id = (int) reset($ids);
+          if (count($ids) > 1) {
+            $this->logger->warning('Sublocality @tid maps to multiple organisation groups in its own jurisdiction @jurisdiction. Using first match @org_id for compatibility.', [
+              '@tid' => $sublocality_tid,
+              '@jurisdiction' => $candidate_jurisdiction_id,
+              '@org_id' => $group_id,
+            ]);
+          }
+          return $group_id;
+        }
+        if (count($ids) === 1) {
+          return (int) reset($ids);
+        }
+        if (count($ids) > 1) {
+          $this->logger->warning('Sublocality @tid maps to multiple organisation groups in jurisdiction @jurisdiction. Skipping automatic assignment.', [
+            '@tid' => $sublocality_tid,
+            '@jurisdiction' => $candidate_jurisdiction_id,
+          ]);
+          return NULL;
+        }
       }
     }
 

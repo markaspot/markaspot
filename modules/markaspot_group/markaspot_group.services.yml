@@ -5,6 +5,27 @@ services:
   markaspot_group.hierarchy_resolver:
     class: Drupal\markaspot_group\Service\JurisdictionHierarchyResolver
     arguments: ['@entity_type.manager', '@database', '@logger.factory', '@config.factory']
+  markaspot_group.organisation_hierarchy_resolver:
+    class: Drupal\markaspot_group\Service\JurisdictionHierarchyResolver
+    arguments:
+      - '@entity_type.manager'
+      - '@database'
+      - '@logger.factory'
+      - '@config.factory'
+      - 'closed'
+      - true
+  markaspot_group.organisation_management_access:
+    class: Drupal\markaspot_group\Service\OrganisationManagementAccess
+    arguments: ['@markaspot_group.organisation_hierarchy_resolver', '@config.factory']
+  markaspot_group.organisation_management_permission_calculator:
+    class: Drupal\markaspot_group\Service\OrganisationManagementPermissionCalculator
+    arguments: ['@markaspot_group.organisation_management_access', '@entity_type.manager']
+    tags:
+      - { name: flexible_permission_calculator, priority: -90 }
+  markaspot_group.entity_storage_exception_subscriber:
+    class: Drupal\markaspot_group\EventSubscriber\EntityStorageExceptionSubscriber
+    tags:
+      - { name: event_subscriber }
   markaspot_group.org_hierarchy_resolver:
     class: Drupal\markaspot_group\Service\OrgHierarchyResolver
     arguments: ['@entity_type.manager', '@database', '@logger.factory']

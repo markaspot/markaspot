@@ -227,6 +227,28 @@ class EscalationServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests inactive organisations cannot receive new delegations.
+   *
+   * @covers ::delegateRequest
+   */
+  public function testDelegateRequestRejectsInactiveOrganisation(): void {
+    $organisation = $this->createMock(GroupInterface::class);
+    $organisation->method('bundle')->willReturn('org');
+    $organisation->method('isPublished')->willReturn(FALSE);
+    $this->groupStorage->method('load')
+      ->with(5)
+      ->willReturn($organisation);
+
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('does not exist or is not an active organisation');
+    $this->service->delegateRequest(
+      $this->createMock(NodeInterface::class),
+      5,
+      '',
+    );
+  }
+
+  /**
    * Creates a mock jurisdiction group.
    *
    * @param int $id

@@ -172,7 +172,9 @@ class EscalationController extends ControllerBase {
     }
 
     $targetOrg = $this->entityTypeManager()->getStorage('group')->load($targetOrgId);
-    if (!$targetOrg || $targetOrg->bundle() !== 'org') {
+    if (!$targetOrg
+      || $targetOrg->bundle() !== 'org'
+      || (method_exists($targetOrg, 'isPublished') && !$targetOrg->isPublished())) {
       throw new HttpException(422, 'Invalid target organisation.');
     }
 

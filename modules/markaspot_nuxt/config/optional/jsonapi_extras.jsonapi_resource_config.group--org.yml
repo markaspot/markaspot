@@ -9,7 +9,7 @@ path: group/org
 resourceType: group--org
 resourceFields:
   field_head_organisation_e_mail:
-    disabled: true
+    disabled: false
     fieldName: field_head_organisation_e_mail
     publicName: field_head_organisation_e_mail
     enhancer:

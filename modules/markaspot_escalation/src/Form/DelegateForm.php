@@ -142,7 +142,8 @@ class DelegateForm extends FormBase {
       '#title' => $this->t('Target organisation'),
       '#description' => $this->t('Select the organisation to delegate this request to.'),
       '#options' => $options,
-      '#required' => TRUE,
+      '#required' => !empty($options),
+      '#disabled' => empty($options),
       '#empty_option' => $this->t('- Select -'),
     ];
 
@@ -164,6 +165,7 @@ class DelegateForm extends FormBase {
       '#type' => 'submit',
       '#value' => $this->t('Delegate'),
       '#button_type' => 'primary',
+      '#access' => !empty($options),
     ];
 
     $form['actions']['cancel'] = [
@@ -191,7 +193,7 @@ class DelegateForm extends FormBase {
     $targetOrgId = (int) $form_state->getValue('target_organisation');
     if ($targetOrgId > 0) {
       $targetOrg = $this->entityTypeManager->getStorage('group')->load($targetOrgId);
-      if (!$targetOrg || $targetOrg->bundle() !== 'org') {
+      if (!$targetOrg || $targetOrg->bundle() !== 'org' || !$targetOrg->isPublished()) {
         $form_state->setErrorByName('target_organisation', $this->t('Invalid target organisation.'));
       }
     }
@@ -270,7 +272,10 @@ class DelegateForm extends FormBase {
 
     // Load all org groups that belong to any of these jurisdictions.
     $orgGroupsById = [];
-    $orgGroups = $groupStorage->loadByProperties(['type' => 'org']);
+    $orgGroups = $groupStorage->loadByProperties([
+      'type' => 'org',
+      'status' => 1,
+    ]);
     foreach ($orgGroups as $orgGroup) {
       if (!$orgGroup->hasField('field_jurisdiction') || $orgGroup->get('field_jurisdiction')->isEmpty()) {
         continue;
@@ -292,7 +297,16 @@ class DelegateForm extends FormBase {
 
     $rootIds = [];
     foreach (array_keys($orgGroupsById) as $orgId) {
-      $rootId = $this->orgHierarchyResolver->getRootOrgId($orgId) ?? $orgId;
+      // Re-root the visible tree at its highest active ancestor. This keeps
+      // active descendants selectable and human-readable when an ancestor was
+      // deactivated.
+      $activeAncestorIds = array_values(array_filter(
+        $this->orgHierarchyResolver->getAncestorIds($orgId),
+        static fn(int $ancestorId): bool => isset($orgGroupsById[$ancestorId]),
+      ));
+      $rootId = $activeAncestorIds === []
+        ? $orgId
+        : (int) end($activeAncestorIds);
       $rootIds[$rootId] = $rootId;
     }
 
@@ -470,8 +484,9 @@ class DelegateForm extends FormBase {
         $labelParts[] = $orgGroupsById[(int) $ancestorId]->label();
       }
     }
+    $visibleDepth = count($labelParts);
     $labelParts[] = $orgGroup->label();
-    $label = str_repeat('  ', count($ancestorIds)) . implode(' > ', $labelParts);
+    $label = str_repeat('  ', $visibleDepth) . implode(' > ', $labelParts);
 
     if ($currentParentOrgId !== NULL && (int) $orgGroup->id() === $currentParentOrgId) {
       $label .= ' ' . (string) $this->t('(übergeordnet)');

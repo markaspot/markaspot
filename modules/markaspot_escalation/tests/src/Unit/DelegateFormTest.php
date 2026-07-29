@@ -48,7 +48,7 @@ class DelegateFormTest extends UnitTestCase {
         $leafOrg,
         $standaloneOrg,
       ): array {
-        if ($properties === ['type' => 'org']) {
+        if ($properties === ['type' => 'org', 'status' => 1]) {
           return [$rootOrg, $parentOrg, $leafOrg, $standaloneOrg];
         }
         if (($properties['type'] ?? NULL) === 'jur') {
@@ -110,6 +110,56 @@ class DelegateFormTest extends UnitTestCase {
 
     $options = $this->invokeMethod($form, 'buildOrganisationOptions', [1, 20, [30]]);
     $this->assertArrayNotHasKey(30, $options['Root Org']);
+  }
+
+  /**
+   * Tests an active child is re-rooted when its inactive parent is filtered.
+   */
+  public function testBuildOrganisationOptionsRerootsActiveChild(): void {
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    $activeChild = $this->createMockOrgGroup(20, 'Active Child', 1);
+    $groupStorage->method('loadByProperties')
+      ->willReturnCallback(
+        static fn(array $properties): array => $properties === ['type' => 'org', 'status' => 1]
+          ? [$activeChild]
+          : [],
+      );
+
+    $orgHierarchyResolver = $this->createMock(OrgHierarchyResolverInterface::class);
+    $orgHierarchyResolver->method('getAncestorIds')
+      ->with(20)
+      ->willReturn([10]);
+    $orgHierarchyResolver->method('getDescendantIds')
+      ->with(20)
+      ->willReturn([20]);
+
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn('jur');
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($open311Config);
+
+    $form = new DelegateForm(
+      $this->createMock(EscalationServiceInterface::class),
+      $entityTypeManager,
+      $this->createMock(GeoreportProcessorServiceInterface::class),
+      $configFactory,
+      $orgHierarchyResolver,
+    );
+    $form->setStringTranslation($this->getStringTranslationStub());
+
+    $this->assertSame(
+      ['Active Child' => [20 => 'Active Child']],
+      $this->invokeMethod($form, 'buildOrganisationOptions', [1, NULL, []]),
+    );
   }
 
   /**

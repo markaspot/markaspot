@@ -7,7 +7,7 @@ namespace Drupal\markaspot_group\Plugin\Validation\Constraint;
 use Symfony\Component\Validator\Constraint;
 
 /**
- * Ensures organisation groups reference a root jurisdiction.
+ * Ensures organisation groups reference a resolvable jurisdiction hierarchy.
  *
  * @Constraint(
  *   id = "OrgRootJurisdictionReference",
@@ -18,8 +18,8 @@ use Symfony\Component\Validator\Constraint;
 class OrgRootJurisdictionReferenceConstraint extends Constraint {
 
   /**
-   * Message shown when an org points to a child jurisdiction.
+   * Message shown when an org points into an invalid jurisdiction hierarchy.
    */
-  public string $message = 'Organisation groups must reference a root jurisdiction, not a child jurisdiction.';
+  public string $message = 'Organisation groups must reference a valid jurisdiction hierarchy.';
 
 }

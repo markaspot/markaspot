@@ -309,6 +309,27 @@ class EscalationControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests an inactive organisation cannot receive a new delegation.
+   *
+   * @covers ::delegate
+   */
+  public function testDelegateRejectsInactiveOrganisation(): void {
+    $node = $this->createMockNodeWithFields([]);
+    $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
+    $this->escalationService->method('canDelegate')->willReturn(TRUE);
+
+    $orgGroup = $this->createMockOrgInJurisdiction(5, 10, FALSE);
+    $this->groupStorage->method('load')->with(5)->willReturn($orgGroup);
+    $this->escalationService->expects($this->never())->method('delegateRequest');
+
+    $request = new Request([], [], [], [], [], [], '{"target_organisation":5}');
+
+    $this->expectException(HttpException::class);
+    $this->expectExceptionMessage('Invalid target organisation.');
+    $this->controller->delegate('123-2026', $request);
+  }
+
+  /**
    * Tests that escalation notes are required when the config flag is TRUE.
    *
    * @covers ::escalate
@@ -865,15 +886,22 @@ class EscalationControllerTest extends UnitTestCase {
    *   The org group ID.
    * @param int $jurId
    *   The jurisdiction group ID.
+   * @param bool $published
+   *   Whether the organisation is active.
    *
    * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked org group.
    */
-  protected function createMockOrgInJurisdiction(int $id, int $jurId): GroupInterface {
+  protected function createMockOrgInJurisdiction(
+    int $id,
+    int $jurId,
+    bool $published = TRUE,
+  ): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($id);
     $group->method('bundle')->willReturn('org');
     $group->method('label')->willReturn("Org $id");
+    $group->method('isPublished')->willReturn($published);
 
     $jurField = new class($jurId) {
 

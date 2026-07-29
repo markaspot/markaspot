@@ -13,8 +13,11 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolver;
+use Drupal\markaspot_group\Service\ParentTreeResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
+
+require_once dirname(__DIR__, 3) . '/src/Service/JurisdictionHierarchyResolver.php';
 
 /**
  * Tests the JurisdictionHierarchyResolver service.
@@ -368,7 +371,7 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
         $this->anything()
       );
 
-    // Should not loop forever and must not treat the cycled ID as a root.
+    // Cycles remain invalid in both failure modes.
     $this->assertNull($this->resolver->getRootJurisdictionId(1));
   }
 
@@ -397,18 +400,18 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   /**
    * @covers ::getRootJurisdictionId
    */
-  public function testNonExistentGroupReturnsInputId(): void {
+  public function testNonExistentGroupRetainsLegacySelfFallback(): void {
     $this->groupStorage->method('load')
       ->with(999)
       ->willReturn(NULL);
 
-    $this->assertEquals(999, $this->resolver->getRootJurisdictionId(999));
+    $this->assertSame(999, $this->resolver->getRootJurisdictionId(999));
   }
 
   /**
    * @covers ::getRootJurisdictionId
    */
-  public function testNonJurGroupTypeReturnsInputId(): void {
+  public function testNonJurGroupTypeRetainsLegacySelfFallback(): void {
     $org = $this->createMockGroup(5, 'org');
     $this->groupStorage->method('load')
       ->with(5)
@@ -421,7 +424,7 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
         $this->callback(fn(array $context): bool => $context['@id'] === 5 && $context['@bundle'] === 'org')
       );
 
-    $this->assertEquals(5, $this->resolver->getRootJurisdictionId(5));
+    $this->assertSame(5, $this->resolver->getRootJurisdictionId(5));
   }
 
   /**
@@ -445,8 +448,7 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
         $this->callback(fn(array $context): bool => $context['@id'] === 10 && $context['@bundle'] === 'org')
       );
 
-    // Should stop at child because parent is wrong bundle.
-    $this->assertEquals(20, $this->resolver->getRootJurisdictionId(20));
+    $this->assertSame(20, $this->resolver->getRootJurisdictionId(20));
   }
 
   /**
@@ -872,7 +874,7 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   /**
    * @covers ::getScopeJurisdictionIds
    */
-  public function testGetScopeJurisdictionIdsRejectsMissingRoot(): void {
+  public function testExplicitFailClosedResolverRejectsMissingRoot(): void {
     $groupA = $this->createMockGroup(1, 'jur', 2);
     $groupB = $this->createMockGroup(2, 'jur', 1);
     $this->groupStorage->method('load')
@@ -890,7 +892,22 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $this->database->expects($this->never())
       ->method('select');
 
-    $this->assertSame([], $this->resolver->getScopeJurisdictionIds(1));
+    $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
+    $loggerFactory->method('get')->willReturn($this->logger);
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturn('jur');
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+    $resolver = new JurisdictionHierarchyResolver(
+      $this->entityTypeManager,
+      $this->database,
+      $loggerFactory,
+      $configFactory,
+      ParentTreeResolver::ROOT_FAIL_CLOSED,
+      TRUE,
+    );
+
+    $this->assertSame([], $resolver->getScopeJurisdictionIds(1));
   }
 
   /**

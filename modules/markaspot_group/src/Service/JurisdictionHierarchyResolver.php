@@ -56,6 +56,16 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
   protected ?ParentTreeResolver $treeResolver = NULL;
 
   /**
+   * Failure mode used by the underlying parent-tree resolver.
+   */
+  protected string $rootFailMode;
+
+  /**
+   * Whether missing hierarchy groups should be logged.
+   */
+  protected bool $warnMissingGroups;
+
+  /**
    * Constructs a JurisdictionHierarchyResolver.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -66,17 +76,25 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
    *   The logger factory.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param string $rootFailMode
+   *   Failure mode for unresolved hierarchy roots.
+   * @param bool $warnMissingGroups
+   *   Whether missing hierarchy groups should be logged.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     Connection $database,
     LoggerChannelFactoryInterface $loggerFactory,
     ConfigFactoryInterface $configFactory,
+    string $rootFailMode = ParentTreeResolver::ROOT_FAIL_LEGACY_SELF,
+    bool $warnMissingGroups = FALSE,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->database = $database;
     $this->logger = $loggerFactory->get('markaspot_group');
     $this->configFactory = $configFactory;
+    $this->rootFailMode = $rootFailMode;
+    $this->warnMissingGroups = $warnMissingGroups;
   }
 
   /**
@@ -86,6 +104,17 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
     return $this->getTreeResolver()->getRootId(
       $groupId,
       'resolve root jurisdiction',
+      'resolve parent jurisdiction',
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getAncestorIds(int $groupId): array {
+    return $this->getTreeResolver()->getAncestorIds(
+      $groupId,
+      'load ancestor jurisdictions',
       'resolve parent jurisdiction',
     );
   }
@@ -214,8 +243,8 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
         'field_parent_jurisdiction',
         fn(mixed $group): bool => $this->isJurisdictionGroup($group),
         'jurisdiction',
-        ParentTreeResolver::ROOT_FAIL_LEGACY_SELF,
-        FALSE,
+        $this->rootFailMode,
+        $this->warnMissingGroups,
       );
     }
 
