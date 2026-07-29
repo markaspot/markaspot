@@ -190,6 +190,14 @@ class FeatureScopeResolver {
       }
     }
 
+    // Hard platform gate, applied last so no stored root or child opt-in can
+    // resurrect an enterprise-only feature on the shared platform.
+    if ($this->isSelfServicePlatform()) {
+      foreach (self::SELF_SERVICE_EXCLUDED as $key) {
+        $this->writeFeatureValue($features, $key, FALSE);
+      }
+    }
+
     return $features;
   }
 
@@ -199,6 +207,14 @@ class FeatureScopeResolver {
   public function isEditable(string $key, GroupInterface $jur): bool {
     $scope = self::SCOPE_MAP[$key] ?? NULL;
     if ($scope === 'platform') {
+      return FALSE;
+    }
+    // Enterprise-only features must never be advertised as editable on the
+    // shared platform: a settings PATCH could store the flag, but the hard
+    // gate in resolveEffectiveFeatures() would ignore it, which is exactly
+    // the silent-drop contract violation we refuse to ship.
+    if ($this->isSelfServicePlatform()
+      && in_array($key, self::SELF_SERVICE_EXCLUDED, TRUE)) {
       return FALSE;
     }
     if ($scope === 'tenant') {
@@ -229,6 +245,12 @@ class FeatureScopeResolver {
     $value = $this->readFeatureValue($this->readNuxtConfig($source), $scope_key, $default);
     if (in_array($scope_key, self::TIER_GATED, TRUE)
       && !$this->canUseTierGatedFeatures($jur)) {
+      return FALSE;
+    }
+    // Hard platform gate: enterprise-only features stay off on the shared
+    // platform even when a stored opt-in exists (see SELF_SERVICE_EXCLUDED).
+    if (in_array($scope_key, self::SELF_SERVICE_EXCLUDED, TRUE)
+      && $this->isSelfServicePlatform()) {
       return FALSE;
     }
     return $value;
@@ -262,31 +284,52 @@ class FeatureScopeResolver {
   }
 
   /**
+   * Features excluded from the self-service platform altogether.
+   *
+   * Product decision (2026-07-30, US-HOA strategy section 11): contractor
+   * management, vendor routing and facility/QR management are exclusive to
+   * enterprise stacks. On the shared SaaS platform they are FORCED OFF, a
+   * stored features.* opt-in does not bring them back; customers who need
+   * them buy a dedicated stack. This is a platform gate like TIER_GATED,
+   * not a default.
+   */
+  public const SELF_SERVICE_EXCLUDED = [
+    'organisations',
+    'facilities',
+  ];
+
+  /**
+   * Detects the shared self-service platform.
+   *
+   * An explicitly configured operating mode always wins: development
+   * environments run the fastmap module alongside a self_hosted setting and
+   * must keep the enterprise feature set. The module backstop only classifies
+   * containers that never declared a mode, so a misconfigured SaaS container
+   * still fails closed (same reasoning as canUseTierGatedFeatures()).
+   */
+  private function isSelfServicePlatform(): bool {
+    $mode = Settings::get('markaspot_operating_mode');
+    if ($mode === 'saas') {
+      return TRUE;
+    }
+    if ($mode === 'self_hosted') {
+      return FALSE;
+    }
+    return $this->moduleHandler !== NULL
+      && $this->moduleHandler->moduleExists('markaspot_fastmap');
+  }
+
+  /**
    * Resolves the effective default for a feature key.
    *
-   * Most keys use the DEFAULTS constant as-is. Organisation management and
-   * QR-sticker facility management are operating-mode aware. The latter is
-   * the premium Facility Edition selling point and follows the same tier
-   * story: shared SaaS workspaces opt in via features.organisations and
-   * features.facilities on the ROOT jurisdiction; a child-level value is
-   * overridden by the root's, same as every tenant-scoped flag. Both are
-   * enabled out of the box on self-hosted and enterprise stacks. For
-   * organisations, this is the same platform split that
-   * hasOrganisationFeatures() describes for the capability payload.
+   * Most keys use the DEFAULTS constant as-is. The SELF_SERVICE_EXCLUDED
+   * features default to the platform split: enabled on enterprise stacks,
+   * off on the shared platform (where resolveEffectiveFeatures() also forces
+   * them off regardless of stored values).
    */
   private function featureDefault(string $key, bool $default): bool {
-    if (in_array($key, ['organisations', 'facilities'], TRUE)) {
-      // Mirror the canUseTierGatedFeatures() backstop: real SaaS containers
-      // can run with the operating-mode environment variable missing, and the
-      // Settings default is 'self_hosted'. The fastmap module marks the
-      // workspace-SaaS platform even then, so a misconfigured SaaS container
-      // must fail closed to the opt-in default instead of enabling
-      // organisation management for every workspace.
-      if (Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
-        return FALSE;
-      }
-      return $this->moduleHandler === NULL
-        || !$this->moduleHandler->moduleExists('markaspot_fastmap');
+    if (in_array($key, self::SELF_SERVICE_EXCLUDED, TRUE)) {
+      return !$this->isSelfServicePlatform();
     }
     return $default;
   }

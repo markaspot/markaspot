@@ -204,15 +204,18 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
-   * Tests operating-mode aware premium defaults and root inheritance.
+   * Tests the hard self-service platform gate and enterprise inheritance.
    *
-   * The default is fail-closed on SaaS: explicit saas mode AND the
-   * misconfigured-container case (mode unset while markaspot_fastmap is
-   * installed) both resolve to FALSE, mirroring canUseTierGatedFeatures().
-   * A stored root opt-in wins in every mode and is inherited by children.
+   * Organisations and facilities are enterprise-stack exclusive: on the
+   * shared self-service platform (explicit saas mode, or mode unset while
+   * markaspot_fastmap is installed) they are forced OFF and even a stored
+   * root opt-in cannot resurrect them. On enterprise stacks (explicit
+   * self_hosted, or no fastmap module) they default ON and inherit to
+   * children.
    *
    * @covers ::isEnabledEffective
    * @covers ::resolveEffectiveFeatures
+   * @covers ::isEditable
    */
   public function testOrganisationAndFacilityDefaultsAndInheritance(): void {
     $bareRoot = $this->createGroup(1, ['field_nuxt_config' => '{}']);
@@ -249,8 +252,16 @@ final class FeatureScopeResolverTest extends UnitTestCase {
         ->isEnabledEffective('features.facilities', $child)
     );
 
-    // A premium workspace's stored root opt-in wins on SaaS and is
-    // inherited by the child workspace.
+    // Explicit self_hosted wins over module presence: a dev or enterprise
+    // stack that ships the fastmap module keeps the enterprise defaults.
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $features = $this->createResolver($bareRoot, [], TRUE)->resolveEffectiveFeatures($child);
+    $this->assertTrue($features['organisations']);
+    $this->assertTrue($features['facilities']);
+
+    // Hard platform gate: a stored root opt-in must NOT resurrect an
+    // enterprise-only feature on the shared self-service platform, and the
+    // key is not advertised as editable there.
     new Settings(['markaspot_operating_mode' => 'saas']);
     $optedInRoot = $this->createGroup(1, [
       'field_nuxt_config' => json_encode(['features' => [
@@ -258,13 +269,25 @@ final class FeatureScopeResolverTest extends UnitTestCase {
         'facilities' => TRUE,
       ]]),
     ]);
-    $features = $this->createResolver($optedInRoot, [], TRUE)->resolveEffectiveFeatures($child);
-    $this->assertTrue($features['organisations']);
-    $this->assertTrue($features['facilities']);
-    $this->assertTrue(
+    $saasResolver = $this->createResolver($optedInRoot, [], TRUE);
+    $features = $saasResolver->resolveEffectiveFeatures($child);
+    $this->assertFalse($features['organisations']);
+    $this->assertFalse($features['facilities']);
+    $this->assertFalse(
       $this->createResolver($optedInRoot, [], TRUE)
         ->isEnabledEffective('features.facilities', $child)
     );
+    $this->assertFalse($saasResolver->isEditable('organisations', $optedInRoot));
+    $this->assertFalse($saasResolver->isEditable('facilities', $optedInRoot));
+
+    // On an enterprise stack the same stored values are respected and the
+    // keys stay editable on the root (tenant-scope opt-out remains possible).
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $enterpriseResolver = $this->createResolver($optedInRoot, [], TRUE);
+    $features = $enterpriseResolver->resolveEffectiveFeatures($child);
+    $this->assertTrue($features['organisations']);
+    $this->assertTrue($features['facilities']);
+    $this->assertTrue($enterpriseResolver->isEditable('facilities', $optedInRoot));
 
     // The frontend contract requires a scalar boolean even if stale config
     // stored the feature in the resolver's supported object form.
