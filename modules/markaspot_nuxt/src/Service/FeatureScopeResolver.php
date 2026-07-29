@@ -32,9 +32,10 @@ class FeatureScopeResolver {
     'assignmentSyncsOrganisation' => 'tenant',
     'delegationNoteRequired' => 'tenant',
     'dashboard' => 'tenant',
-    // Organisation management operates on the root portfolio, so a child
-    // workspace inherits the root's opt-in (same reasoning as 'dashboard').
+    // Organisation and facility management operate on the root portfolio, so
+    // a child workspace inherits the root's opt-in (same as 'dashboard').
     'organisations' => 'tenant',
+    'facilities' => 'tenant',
     'dashboardRequestCreate' => 'tenant',
     'photoReporting' => 'jurisdiction',
     'classicReporting' => 'jurisdiction',
@@ -85,6 +86,9 @@ class FeatureScopeResolver {
     // Conservative constant; the effective default is operating-mode aware
     // via featureDefault(): opt-in on SaaS, enabled on self-hosted.
     'organisations' => FALSE,
+    // Conservative constant; the effective default is operating-mode aware
+    // via featureDefault(): opt-in on SaaS, enabled on self-hosted.
+    'facilities' => FALSE,
     'dashboardRequestCreate' => TRUE,
     'onboardingTour' => FALSE,
     'passwordless' => FALSE,
@@ -259,16 +263,18 @@ class FeatureScopeResolver {
   /**
    * Resolves the effective default for a feature key.
    *
-   * Most keys use the DEFAULTS constant as-is. Organisation management is
-   * operating-mode aware: opt-in per workspace on the shared SaaS platform
-   * (tier story: premium workspaces enable it via features.organisations on
-   * the ROOT jurisdiction; a child-level value is overridden by the root's,
-   * same as every tenant-scoped flag), enabled out of the box on self-hosted
-   * and enterprise stacks. This is the same platform split that
+   * Most keys use the DEFAULTS constant as-is. Organisation management and
+   * QR-sticker facility management are operating-mode aware. The latter is
+   * the premium Facility Edition selling point and follows the same tier
+   * story: shared SaaS workspaces opt in via features.organisations and
+   * features.facilities on the ROOT jurisdiction; a child-level value is
+   * overridden by the root's, same as every tenant-scoped flag. Both are
+   * enabled out of the box on self-hosted and enterprise stacks. For
+   * organisations, this is the same platform split that
    * hasOrganisationFeatures() describes for the capability payload.
    */
   private function featureDefault(string $key, bool $default): bool {
-    if ($key === 'organisations') {
+    if (in_array($key, ['organisations', 'facilities'], TRUE)) {
       // Mirror the canUseTierGatedFeatures() backstop: real SaaS containers
       // can run with the operating-mode environment variable missing, and the
       // Settings default is 'self_hosted'. The fastmap module marks the
@@ -410,6 +416,10 @@ class FeatureScopeResolver {
    * Writes a resolved boolean while preserving nested response shapes.
    */
   private function writeFeatureValue(array &$features, string $key, bool $value): void {
+    if ($key === 'facilities') {
+      $features[$key] = $value;
+      return;
+    }
     if (in_array($key, ['emergency', 'funFacts', 'search', 'boundaries', 'privacyNotice'], TRUE)) {
       $existing = is_array($features[$key] ?? NULL) ? $features[$key] : [];
       $features[$key] = ['enabled' => $value] + $existing;

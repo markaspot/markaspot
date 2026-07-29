@@ -204,7 +204,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
-   * Tests the operating-mode aware organisations default and root inheritance.
+   * Tests operating-mode aware premium defaults and root inheritance.
    *
    * The default is fail-closed on SaaS: explicit saas mode AND the
    * misconfigured-container case (mode unset while markaspot_fastmap is
@@ -213,7 +213,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
    *
    * @covers ::resolveEffectiveFeatures
    */
-  public function testOrganisationsDefaultAndInheritance(): void {
+  public function testOrganisationAndFacilityDefaultsAndInheritance(): void {
     $bareRoot = $this->createGroup(1, ['field_nuxt_config' => '{}']);
     $child = $this->createGroup(2, ['field_nuxt_config' => '{}']);
 
@@ -221,26 +221,43 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     new Settings(['markaspot_operating_mode' => 'self_hosted']);
     $features = $this->createResolver($bareRoot, [], FALSE)->resolveEffectiveFeatures($child);
     $this->assertTrue($features['organisations']);
+    $this->assertTrue($features['facilities']);
 
     // Explicit SaaS mode: opt-in, so absent resolves to FALSE.
     new Settings(['markaspot_operating_mode' => 'saas']);
     $features = $this->createResolver($bareRoot, [], FALSE)->resolveEffectiveFeatures($child);
     $this->assertFalse($features['organisations']);
+    $this->assertFalse($features['facilities']);
 
     // Misconfigured SaaS container: mode unset but fastmap installed must
     // fail closed instead of enabling the feature for every workspace.
     new Settings([]);
     $features = $this->createResolver($bareRoot, [], TRUE)->resolveEffectiveFeatures($child);
     $this->assertFalse($features['organisations']);
+    $this->assertFalse($features['facilities']);
 
     // A premium workspace's stored root opt-in wins on SaaS and is
     // inherited by the child workspace.
     new Settings(['markaspot_operating_mode' => 'saas']);
     $optedInRoot = $this->createGroup(1, [
-      'field_nuxt_config' => json_encode(['features' => ['organisations' => TRUE]]),
+      'field_nuxt_config' => json_encode(['features' => [
+        'organisations' => TRUE,
+        'facilities' => TRUE,
+      ]]),
     ]);
     $features = $this->createResolver($optedInRoot, [], TRUE)->resolveEffectiveFeatures($child);
     $this->assertTrue($features['organisations']);
+    $this->assertTrue($features['facilities']);
+
+    // The frontend contract requires a scalar boolean even if stale config
+    // stored the feature in the resolver's supported object form.
+    $objectRoot = $this->createGroup(1, [
+      'field_nuxt_config' => json_encode(['features' => [
+        'facilities' => ['enabled' => TRUE],
+      ]]),
+    ]);
+    $features = $this->createResolver($objectRoot, [], TRUE)->resolveEffectiveFeatures($child);
+    $this->assertTrue($features['facilities']);
   }
 
   /**
