@@ -9,6 +9,7 @@ use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
+use Drupal\taxonomy\TermInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -58,7 +59,7 @@ class StatusNoteController extends ControllerBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
-    return new static(
+    return new self(
       $container->get('entity_type.manager'),
       $container->get('markaspot_open311.processor'),
       $container->get('current_user'),
@@ -73,8 +74,23 @@ class StatusNoteController extends ControllerBase {
   public function add(Request $request) {
     $data = json_decode($request->getContent(), TRUE);
 
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body'], 400);
+    }
+
     if (empty($data['request_uuid'])) {
       return new JsonResponse(['error' => 'Missing request_uuid'], 400);
+    }
+
+    $limited_author = !$this->currentUser->hasPermission('manage dashboard notes');
+    $statusAttributes = $this->normalizeStatusAttributes($data['status_attributes'] ?? NULL);
+    if ($limited_author && (
+      $statusAttributes !== NULL
+      || !empty($data['boilerplate_uuid'])
+    )) {
+      return new JsonResponse([
+        'error' => 'Status attributes and boilerplates require status note management permission.',
+      ], 403);
     }
 
     // Load the service request.
@@ -93,7 +109,6 @@ class StatusNoteController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
-    $statusAttributes = $this->normalizeStatusAttributes($data['status_attributes'] ?? NULL);
     if ($statusAttributes !== NULL && !$this->statusAttributesEnabled($node)) {
       return new JsonResponse(['error' => 'Status attributes are not enabled for this jurisdiction.'], 403);
     }
@@ -114,7 +129,31 @@ class StatusNoteController extends ControllerBase {
           'error' => 'Status term is not available for this jurisdiction.',
         ], 400);
       }
-      $statusTermId = empty($terms) ? NULL : reset($terms)->id();
+      if (!empty($terms)) {
+        $status_term = reset($terms);
+        if ($limited_author && (
+          !$status_term instanceof TermInterface
+          || !$status_term->access('view', $this->currentUser)
+        )) {
+          return new JsonResponse(['error' => 'Status term is outside the service request jurisdiction.'], 403);
+        }
+        $statusTermId = (int) $status_term->id();
+      }
+      elseif ($limited_author) {
+        return new JsonResponse(['error' => 'Status term not found'], 400);
+      }
+    }
+    elseif ($limited_author
+      && $node->hasField('field_status')
+      && !$node->get('field_status')->isEmpty()) {
+      $statusTermId = (int) $node->get('field_status')->target_id;
+    }
+
+    if ($limited_author && $statusTermId !== NULL) {
+      // The frontend creates the note before its later form PATCH. Persist the
+      // validated status in this same node save so the audit note and request
+      // cannot disagree even if that later request fails.
+      $node->set('field_status', $statusTermId);
     }
 
     $boilerplateId = NULL;

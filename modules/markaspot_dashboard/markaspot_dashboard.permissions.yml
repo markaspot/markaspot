@@ -8,6 +8,11 @@ manage dashboard notes:
   description: 'Create and delete status notes and internal remarks on service requests.'
   restrict access: true
 
+add dashboard status notes:
+  title: 'Add Dashboard Status Notes'
+  description: 'Add status notes to service requests without permission to edit or delete notes or manage internal remarks.'
+  restrict access: true
+
 administer dashboard:
   title: 'Administer Dashboard'
   description: 'Configure dashboard settings and access administrative functions.'

@@ -8,6 +8,7 @@ dependencies:
     - field.field.node.service_request.field_category
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
+    - field.field.node.service_request.field_request_media
     - field.field.node.service_request.field_request_attributes
     - field.field.node.service_request.field_status
     - field.field.node.service_request.field_status_internal_term
@@ -20,6 +21,7 @@ dependencies:
     - address
     - field_group
     - geolocation_nominatim
+    - inline_entity_form
     - paragraphs
     - text
 third_party_settings:
@@ -73,6 +75,7 @@ third_party_settings:
         - field_status_internal_term
         - field_request_attributes
         - field_status_notes
+        - field_request_media
         - status
         - created
       parent_name: group_edit_service_request
@@ -159,6 +162,19 @@ content:
       add_mode: dropdown
       form_display_mode: default
       default_paragraph_type: ''
+    third_party_settings: {  }
+    region: content
+  field_request_media:
+    type: inline_entity_form_simple
+    weight: 20
+    settings:
+      form_mode: default
+      override_labels: false
+      label_singular: ''
+      label_plural: ''
+      collapsible: false
+      collapsed: false
+      revision: false
     third_party_settings: {  }
     region: content
   field_request_attributes:

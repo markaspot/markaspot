@@ -2,12 +2,16 @@
 
 namespace Drupal\Tests\markaspot_open311\Unit;
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_open311\Service\SearchApiQueryService;
+use Drupal\search_api\Entity\Index;
+use Drupal\search_api\Query\QueryInterface as SearchApiQueryInterface;
+use Drupal\search_api\Query\ResultSetInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
@@ -135,6 +139,42 @@ class SearchApiQueryServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests email is excluded when the account cannot view the email field.
+   *
+   * @covers ::search
+   */
+  public function testSearchExcludesEmailWithoutFieldViewPermission(): void {
+    $expected_fields = ['title', 'body', 'request_id'];
+    $this->assertSearchUsesFulltextFields(FALSE, $expected_fields);
+  }
+
+  /**
+   * Tests email is included when the account can view the email field.
+   *
+   * @covers ::search
+   */
+  public function testSearchIncludesEmailWithFieldViewPermission(): void {
+    $expected_fields = ['title', 'body', 'request_id', 'field_e_mail'];
+    $this->assertSearchUsesFulltextFields(TRUE, $expected_fields);
+  }
+
+  /**
+   * Tests the shipped request ID field supports full-text queries.
+   */
+  public function testRequestIdIsFulltextInShippedIndex(): void {
+    $path = dirname(__DIR__, 5)
+      . '/config/optional/search_api.index.service_requests.yml';
+    $contents = file_get_contents($path);
+    $this->assertIsString($contents);
+    $config = Yaml::decode($contents);
+
+    $this->assertSame(
+      'text',
+      $config['field_settings']['request_id']['type'],
+    );
+  }
+
+  /**
    * Tests getSearchableFields returns empty when index is not available.
    *
    * @covers ::getSearchableFields
@@ -220,6 +260,84 @@ class SearchApiQueryServiceTest extends UnitTestCase {
       ->method('condition');
 
     $this->assertFalse($this->service->applySafeFallbackSearch($query, 'graffiti wall'));
+  }
+
+  /**
+   * Asserts the full-text fields selected for one account.
+   *
+   * @param bool $can_view_email
+   *   Whether the account has the broad email field view permission.
+   * @param string[] $expected_fields
+   *   Expected Search API full-text field identifiers.
+   */
+  private function assertSearchUsesFulltextFields(
+    bool $can_view_email,
+    array $expected_fields,
+  ): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('search_api')
+      ->willReturn(TRUE);
+
+    $results = $this->createMock(ResultSetInterface::class);
+    $results->method('getResultItems')->willReturn([]);
+
+    $query = $this->createMock(SearchApiQueryInterface::class);
+    $query->expects($this->once())
+      ->method('setFulltextFields')
+      ->with($expected_fields)
+      ->willReturnSelf();
+    $query->method('keys')->willReturnSelf();
+    $query->method('setOption')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('execute')->willReturn($results);
+
+    $index = $this->createMock(Index::class);
+    $index->method('status')->willReturn(TRUE);
+    $index->method('query')->willReturn($query);
+
+    $user = $this->createMock(AccountInterface::class);
+    $user->expects($this->once())
+      ->method('hasPermission')
+      ->with('view field_e_mail')
+      ->willReturn($can_view_email);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $service = new class(
+      $this->entityTypeManager,
+      $this->moduleHandler,
+      $this->configFactory,
+      $this->logger,
+      $index,
+    ) extends SearchApiQueryService {
+
+      /**
+       * Constructs a testable search service with a fixed index.
+       */
+      public function __construct(
+        EntityTypeManagerInterface $entity_type_manager,
+        ModuleHandlerInterface $module_handler,
+        ConfigFactoryInterface $config_factory,
+        LoggerInterface $logger,
+        private readonly Index $index,
+      ) {
+        parent::__construct(
+          $entity_type_manager,
+          $module_handler,
+          $config_factory,
+          $logger,
+        );
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getIndex(): ?Index {
+        return $this->index;
+      }
+
+    };
+
+    $this->assertSame([], $service->search('reporter@example.test', $user));
   }
 
 }

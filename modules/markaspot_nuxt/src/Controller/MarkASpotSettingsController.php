@@ -977,6 +977,10 @@ class MarkASpotSettingsController extends ControllerBase {
     if ($is_management_form_mode && !$this->currentUserCanAccessManagementFormSettings()) {
       throw new AccessDeniedHttpException('Management form settings require dashboard staff access.');
     }
+    $is_contractor_management_form = $is_management_form_mode
+      && $entity_type === 'node'
+      && $bundle === 'service_request'
+      && $this->currentUserHasRestrictedContractorRole();
 
     // Build cache metadata.
     $cache_metadata = new CacheableMetadata();
@@ -1008,6 +1012,11 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Loop through each field in the form display and collect its settings.
     foreach ($form_display->getComponents() as $field_name => $component) {
+      if ($is_contractor_management_form
+        && !in_array($field_name, ['field_status', 'field_request_media', 'field_status_notes'], TRUE)) {
+        continue;
+      }
+
       // Load the field config and field storage for additional details.
       $field_config = FieldConfig::loadByName($entity_type, $bundle, $field_name);
       $field_storage = FieldStorageConfig::loadByName($entity_type, $field_name);
@@ -1056,7 +1065,9 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Get field groups from third_party_settings.
     $field_groups = [];
-    $third_party_settings = $form_display->getThirdPartySettings('field_group');
+    $third_party_settings = $is_contractor_management_form
+      ? []
+      : $form_display->getThirdPartySettings('field_group');
     if (!empty($third_party_settings)) {
       foreach ($third_party_settings as $group_name => $group_config) {
         $field_groups[$group_name] = [
@@ -1094,7 +1105,7 @@ class MarkASpotSettingsController extends ControllerBase {
       return FALSE;
     }
 
-    $staff_roles = ['administrator', 'moderator', 'editorial_board', 'tenant_admin'];
+    $staff_roles = ['administrator', 'moderator', 'editorial_board', 'tenant_admin', 'contractor'];
     if (array_intersect($staff_roles, $account->getRoles())) {
       return TRUE;
     }
@@ -1106,6 +1117,18 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Checks whether contractor is the account's active management boundary.
+   */
+  private function currentUserHasRestrictedContractorRole(): bool {
+    $roles = $this->currentUser()->getRoles();
+    return in_array('contractor', $roles, TRUE)
+      && array_intersect(
+        ['administrator', 'moderator', 'editorial_board', 'tenant_admin'],
+        $roles,
+      ) === [];
   }
 
   /**

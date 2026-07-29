@@ -1,0 +1,38 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - media.type.request_image
+    - node.type.service_request
+  module:
+    - field_permissions
+    - markaspot_dashboard
+    - markaspot_ui
+    - media
+    - node
+    - paragraphs
+    - system
+id: contractor
+label: Contractor
+weight: -3
+is_admin: false
+permissions:
+  - 'access content'
+  - 'add dashboard status notes'
+  - 'delete own request_image media'
+  - 'edit field_request_media'
+  - 'edit field_status'
+  - 'edit own field_request_media'
+  - 'edit own field_status'
+  - 'use service request management form'
+  - 'view field_request_media'
+  - 'view field_status'
+  - 'view field_status_note'
+  - 'view field_status_notes'
+  - 'view own field_request_media'
+  - 'view own field_status'
+  - 'view own field_status_note'
+  - 'view own field_status_notes'
+  - 'view own unpublished media'
+  - 'view own unpublished content'
+  - 'view unpublished paragraphs'

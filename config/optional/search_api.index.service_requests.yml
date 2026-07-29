@@ -224,7 +224,7 @@ field_settings:
     label: 'Request ID'
     datasource_id: 'entity:node'
     property_path: request_id
-    type: string
+    type: text
     dependencies:
       module:
         - markaspot_request_id

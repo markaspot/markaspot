@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_nuxt\Unit;
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -1452,6 +1453,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertStringContainsString('AccessDeniedHttpException', $source);
     $this->assertStringContainsString("\$cache_metadata->addCacheContexts(['user.permissions', 'user.roles'])", $source);
     $this->assertStringContainsString('edit any service_request content', $source);
+    $this->assertStringContainsString("['field_status', 'field_request_media', 'field_status_notes']", $source);
   }
 
   /**
@@ -1484,6 +1486,45 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
 
     $this->expectException(AccessDeniedHttpException::class);
     $this->controller->getFormModeSettings('node', 'service_request', 'management');
+  }
+
+  /**
+   * Contractors receive the restricted management form contract.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementFormSettingsAllowsContractors(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['authenticated', 'contractor']);
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+
+    // The mocked storage has no display. Reaching the normal 404 response
+    // proves the contractor passed the management-form access gate.
+    $this->assertSame(404, $response->getStatusCode());
+  }
+
+  /**
+   * The shipped management contract exposes contractor completion media.
+   */
+  public function testManagementDisplayContainsRequestMedia(): void {
+    $display = Yaml::decode(file_get_contents(
+      dirname(__DIR__, 4) . '/markaspot_open311/config/optional/core.entity_form_display.node.service_request.management.yml',
+    ));
+
+    $this->assertArrayHasKey('field_request_media', $display['content'] ?? []);
+    $administration_children = $display['third_party_settings']['field_group']['group_administration']['children'] ?? [];
+    $this->assertContains('field_request_media', $administration_children);
+    $this->assertContains(
+      'field.field.node.service_request.field_request_media',
+      $display['dependencies']['config'] ?? [],
+    );
+    $this->assertContains(
+      'inline_entity_form',
+      $display['dependencies']['module'] ?? [],
+    );
   }
 
   /**

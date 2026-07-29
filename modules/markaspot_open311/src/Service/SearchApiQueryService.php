@@ -67,6 +67,15 @@ class SearchApiQueryService {
   protected const MIN_QUERY_LENGTH = 2;
 
   /**
+   * Non-PII fields available to every full-text search account.
+   */
+  protected const PUBLIC_FULLTEXT_FIELDS = [
+    'title',
+    'body',
+    'request_id',
+  ];
+
+  /**
    * Constructs a SearchApiQueryService.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -163,6 +172,12 @@ class SearchApiQueryService {
     try {
       // Create the Search API query.
       $query = $index->query();
+
+      $fulltext_fields = self::PUBLIC_FULLTEXT_FIELDS;
+      if ($user->hasPermission('view field_e_mail')) {
+        $fulltext_fields[] = 'field_e_mail';
+      }
+      $query->setFulltextFields($fulltext_fields);
 
       // Set the search keys (the search text).
       $query->keys($query_string);

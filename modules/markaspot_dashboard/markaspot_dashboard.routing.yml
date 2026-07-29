@@ -98,7 +98,8 @@ markaspot_dashboard.status_note_create:
     _format: 'json'
   methods: [POST]
   requirements:
-    _permission: 'manage dashboard notes'
+    _permission: 'manage dashboard notes+add dashboard status notes'
+    _csrf_request_header_token: 'TRUE'
 
 markaspot_dashboard.status_note_delete:
   path: '/api/dashboard/status-notes/{uuid}'

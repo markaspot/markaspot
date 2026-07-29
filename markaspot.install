@@ -1297,12 +1297,14 @@ function _markaspot_ensure_api_user_link(): void {
  */
 function markaspot_install() {
   _markaspot_repair_all_role_permissions();
+  _markaspot_ensure_contractor_roles();
   _markaspot_grant_service_provider_api_perms();
   _markaspot_ensure_api_user_link();
   _markaspot_ensure_category_jurisdiction();
   _markaspot_ensure_text_formats();
   _markaspot_ensure_organisation_in_management_form();
   _markaspot_ensure_management_operational_fields();
+  _markaspot_ensure_management_request_media();
   _markaspot_import_shipped_module_translations();
 }
 
@@ -1422,6 +1424,73 @@ function _markaspot_ensure_management_operational_fields(): bool {
         $display->setThirdPartySetting('field_group', 'group_administration', $administration_group);
         $changed = TRUE;
       }
+    }
+  }
+
+  if ($changed) {
+    $display->save();
+  }
+  return $changed;
+}
+
+/**
+ * Ensures completion photos are exposed by the management form contract.
+ *
+ * @return bool
+ *   TRUE when the management form display was changed.
+ */
+function _markaspot_ensure_management_request_media(): bool {
+  $display = EntityFormDisplay::load('node.service_request.management');
+  if (
+    !$display
+    || !$display->status()
+    || !FieldConfig::loadByName('node', 'service_request', 'field_request_media')
+  ) {
+    return FALSE;
+  }
+
+  $changed = FALSE;
+  if (!$display->getComponent('field_request_media')) {
+    $display->setComponent('field_request_media', [
+      'type' => 'inline_entity_form_simple',
+      'weight' => 20,
+      'region' => 'content',
+      'settings' => [
+        'form_mode' => 'default',
+        'override_labels' => FALSE,
+        'label_singular' => '',
+        'label_plural' => '',
+        'collapsible' => FALSE,
+        'collapsed' => FALSE,
+        'revision' => FALSE,
+      ],
+      'third_party_settings' => [],
+    ]);
+    $changed = TRUE;
+  }
+
+  $administration_group = $display->getThirdPartySetting(
+    'field_group',
+    'group_administration',
+    [],
+  );
+  if (is_array($administration_group) && $administration_group !== []) {
+    $children = $administration_group['children'] ?? [];
+    if (!in_array('field_request_media', $children, TRUE)) {
+      $status_notes_position = array_search('field_status_notes', $children, TRUE);
+      if ($status_notes_position === FALSE) {
+        $children[] = 'field_request_media';
+      }
+      else {
+        array_splice($children, $status_notes_position + 1, 0, ['field_request_media']);
+      }
+      $administration_group['children'] = $children;
+      $display->setThirdPartySetting(
+        'field_group',
+        'group_administration',
+        $administration_group,
+      );
+      $changed = TRUE;
     }
   }
 
@@ -4427,6 +4496,133 @@ function markaspot_update_11932(): string {
   return $changes
     ? ucfirst(implode('; ', $changes)) . '.'
     : 'App icon field is already configured.';
+}
+
+/**
+ * Ensures the organisation-scoped contractor roles and permissions.
+ */
+function _markaspot_ensure_contractor_roles(): string {
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $profile_source = new FileStorage($profile_path . '/config/optional');
+  $role_data = $profile_source->read('user.role.contractor');
+  if (!is_array($role_data)) {
+    throw new \RuntimeException('Could not read user.role.contractor from profile optional config.');
+  }
+
+  $valid_permissions = array_keys(\Drupal::service('user.permissions')->getPermissions());
+  $permissions = array_values(array_intersect(
+    $role_data['permissions'] ?? [],
+    $valid_permissions,
+  ));
+  $role = Role::load('contractor');
+  $role_created = $role === NULL;
+  if ($role === NULL) {
+    $role = Role::create([
+      'id' => 'contractor',
+      'label' => $role_data['label'] ?? 'Contractor',
+      'weight' => $role_data['weight'] ?? -3,
+      'is_admin' => FALSE,
+    ]);
+  }
+
+  $role_changed = $role_created
+    || $role->label() !== ($role_data['label'] ?? 'Contractor')
+    || $role->getWeight() !== (int) ($role_data['weight'] ?? -3)
+    || $role->isAdmin()
+    || $role->getPermissions() !== $permissions;
+  if ($role_changed) {
+    $role
+      ->set('label', $role_data['label'] ?? 'Contractor')
+      ->set('weight', $role_data['weight'] ?? -3)
+      ->set('is_admin', FALSE)
+      ->set('permissions', $permissions)
+      ->save();
+  }
+
+  $changes = [];
+  if ($role_created) {
+    $changes[] = 'created contractor Drupal role';
+  }
+  elseif ($role_changed) {
+    $changes[] = 'aligned contractor Drupal role';
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $group_type = $entity_type_manager->getStorage('group_type')->load('org');
+  if ($group_type === NULL) {
+    $changes[] = 'skipped org-contractor because the org group type is missing';
+    return ucfirst(implode('; ', $changes)) . '.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_group');
+  $group_source = new FileStorage($module_path . '/config/install');
+  $group_role_data = $group_source->read('group.role.org-contractor');
+  if (!is_array($group_role_data)) {
+    throw new \RuntimeException('Could not read group.role.org-contractor from markaspot_group config.');
+  }
+
+  $group_role_storage = $entity_type_manager->getStorage('group_role');
+  $group_role = $group_role_storage->load('org-contractor');
+  $group_role_created = $group_role === NULL;
+  if ($group_role === NULL) {
+    $group_role = $group_role_storage->create($group_role_data);
+  }
+  else {
+    foreach ([
+      'label',
+      'weight',
+      'admin',
+      'scope',
+      'global_role',
+      'group_type',
+      'permissions',
+    ] as $key) {
+      $group_role->set($key, $group_role_data[$key]);
+    }
+  }
+  $group_role->save();
+
+  $changes[] = $group_role_created
+    ? 'created org-contractor group role'
+    : 'aligned org-contractor group role';
+
+  return ucfirst(implode('; ', $changes)) . '.';
+}
+
+/**
+ * Adds the organisation-scoped contractor roles and least-privilege access.
+ */
+function markaspot_update_11933(): string {
+  $changes = [rtrim(_markaspot_ensure_contractor_roles(), '.')];
+  if (_markaspot_ensure_management_request_media()) {
+    $changes[] = 'exposed completion media on the management form';
+  }
+  if (_markaspot_ensure_service_request_id_fulltext()) {
+    $changes[] = 'made request IDs full-text searchable and queued reindexing';
+  }
+  return implode('; ', $changes) . '.';
+}
+
+/**
+ * Ensures request IDs remain in the Search API full-text allowlist.
+ */
+function _markaspot_ensure_service_request_id_fulltext(): bool {
+  $storage = \Drupal::entityTypeManager()->getStorage('search_api_index');
+  $index = $storage->load('service_requests');
+  if (!$index) {
+    return FALSE;
+  }
+
+  $request_id = $index->getField('request_id');
+  if (!$request_id || $request_id->getType() === 'text') {
+    return FALSE;
+  }
+
+  $request_id->setType('text');
+  $index->save();
+  $index->reindex();
+
+  return TRUE;
 }
 
 /**

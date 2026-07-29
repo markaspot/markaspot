@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
+use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityTypeInterface;
@@ -96,11 +97,136 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
 function markaspot_group_entity_presave(EntityInterface $entity): void {
   _markaspot_group_presave_obsolete_eca($entity);
 
+  if ($entity instanceof NodeInterface) {
+    _markaspot_group_presave_contractor_status($entity);
+    _markaspot_group_presave_contractor_request_media($entity);
+  }
   if ($entity instanceof TermInterface) {
     _markaspot_group_presave_taxonomy_term($entity);
   }
   if ($entity instanceof GroupInterface && _markaspot_group_is_jurisdiction_group($entity)) {
     _markaspot_group_presave_jur_service_categories($entity);
+  }
+}
+
+/**
+ * Keeps contractor status changes within the request's jurisdiction catalog.
+ */
+function _markaspot_group_presave_contractor_status(NodeInterface $node): void {
+  $account = \Drupal::currentUser();
+  if ($node->bundle() !== 'service_request'
+    || $node->isNew()
+    || !_markaspot_group_account_has_restricted_contractor_access($account)
+    || !$node->hasField('field_status')) {
+    return;
+  }
+
+  $status_field = $node->get('field_status');
+  if ($status_field->isEmpty()) {
+    $original = $node->getOriginal();
+    if ($original instanceof NodeInterface
+      && $original->hasField('field_status')
+      && !$original->get('field_status')->isEmpty()) {
+      throw new AccessDeniedHttpException('Contractors may not clear the service request status.');
+    }
+    return;
+  }
+
+  $status = $status_field->entity;
+  if (!$status instanceof TermInterface
+    || !$status->hasField('field_jurisdiction')
+    || $status->get('field_jurisdiction')->isEmpty()) {
+    return;
+  }
+  if (!$node->hasField('field_jurisdiction') || $node->get('field_jurisdiction')->isEmpty()) {
+    throw new AccessDeniedHttpException('The selected status is outside the service request jurisdiction.');
+  }
+
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $status_roots = array_map(
+    static fn($id): int => $resolver->getRootJurisdictionId((int) $id) ?? (int) $id,
+    array_column($status->get('field_jurisdiction')->getValue(), 'target_id'),
+  );
+  $request_roots = array_map(
+    static fn($id): int => $resolver->getRootJurisdictionId((int) $id) ?? (int) $id,
+    array_column($node->get('field_jurisdiction')->getValue(), 'target_id'),
+  );
+  if (array_intersect($status_roots, $request_roots) === []) {
+    throw new AccessDeniedHttpException('The selected status is outside the service request jurisdiction.');
+  }
+}
+
+/**
+ * Restricts contractors to adding or removing only their own request media.
+ */
+function _markaspot_group_presave_contractor_request_media(NodeInterface $node): void {
+  $account = \Drupal::currentUser();
+  if ($node->bundle() !== 'service_request'
+    || $node->isNew()
+    || !_markaspot_group_account_has_restricted_contractor_access($account)
+    || !$node->hasField('field_request_media')) {
+    return;
+  }
+
+  $original = $node->getOriginal();
+  if (!$original instanceof NodeInterface || !$original->hasField('field_request_media')) {
+    return;
+  }
+
+  $original_ids = array_values(array_map(
+    'intval',
+    array_column($original->get('field_request_media')->getValue(), 'target_id'),
+  ));
+  $current_ids = array_values(array_map(
+    'intval',
+    array_column($node->get('field_request_media')->getValue(), 'target_id'),
+  ));
+  if ($original_ids === $current_ids) {
+    return;
+  }
+
+  if (count($current_ids) !== count(array_unique($current_ids))) {
+    throw new AccessDeniedHttpException('Contractors may not duplicate request media.');
+  }
+
+  $retained_original = array_values(array_filter(
+    $original_ids,
+    static fn(int $id): bool => in_array($id, $current_ids, TRUE),
+  ));
+  $retained_current = array_values(array_filter(
+    $current_ids,
+    static fn(int $id): bool => in_array($id, $original_ids, TRUE),
+  ));
+  $added_ids = array_values(array_diff($current_ids, $original_ids));
+  $removed_ids = array_values(array_diff($original_ids, $current_ids));
+
+  // Existing evidence keeps its relative order, and new completion images are
+  // appended after it so a contractor cannot replace the primary image.
+  if ($retained_original !== $retained_current
+    || array_slice($current_ids, 0, count($retained_current)) !== $retained_current) {
+    throw new AccessDeniedHttpException('Contractors may not reorder existing request media.');
+  }
+
+  $changed_ids = array_values(array_unique(array_merge($removed_ids, $added_ids)));
+  $media = \Drupal::entityTypeManager()
+    ->getStorage('media')
+    ->loadMultiple($changed_ids);
+  foreach ($changed_ids as $media_id) {
+    // Missing targets may have just been deleted through their own access
+    // handler. Existing targets must be request images owned by the contractor.
+    if (!isset($media[$media_id]) && in_array($media_id, $removed_ids, TRUE)) {
+      continue;
+    }
+    if (!isset($media[$media_id])) {
+      throw new AccessDeniedHttpException('Completion media was not found.');
+    }
+    $item = $media[$media_id];
+    if ($item->bundle() !== 'request_image'
+      || !method_exists($item, 'getOwnerId')
+      || (int) $item->getOwnerId() !== (int) $account->id()) {
+      throw new AccessDeniedHttpException('Contractors may only add or remove their own completion media.');
+    }
   }
 }
 
@@ -539,9 +665,301 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
 }
 
 /**
+ * Implements hook_node_access().
+ *
+ * Contractor access is a restrictive overlay on Group's additive permission
+ * model. Authenticated outsiders can normally view published grouped content,
+ * but contractors must only reach requests routed to one of their own
+ * organisations, including through direct JSON:API entity routes.
+ */
+function markaspot_group_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResult {
+  if ($node->bundle() !== 'service_request'
+    || !in_array($operation, ['view', 'update', 'delete'], TRUE)
+    || !_markaspot_group_account_has_restricted_contractor_access($account)) {
+    return AccessResult::neutral();
+  }
+
+  $organisation_ids = _markaspot_group_account_organisation_ids($account);
+  $request_organisation_ids = $node->hasField('field_organisation')
+    ? array_values(array_filter(array_map(
+      'intval',
+      array_column($node->get('field_organisation')->getValue(), 'target_id'),
+    )))
+    : [];
+
+  $has_scope = array_intersect($organisation_ids, $request_organisation_ids) !== [];
+  if (!$has_scope) {
+    $result = AccessResult::forbidden('Contractors may only access service requests routed to their organisations.');
+  }
+  elseif ($operation === 'delete') {
+    $result = AccessResult::forbidden('Contractors may not delete service requests.');
+  }
+  else {
+    // The contractor deliberately lacks Drupal's bundle-wide "edit any"
+    // permission because other routes use it as a revision-history grant.
+    // Organisation membership is the complete view/update grant instead.
+    $result = AccessResult::allowed();
+  }
+
+  return _markaspot_group_add_membership_cacheability(
+    $result,
+    $account,
+    $request_organisation_ids,
+  )->addCacheableDependency($node);
+}
+
+/**
+ * Implements hook_entity_access().
+ *
+ * Contractors add status notes through the restricted controller. Direct
+ * JSON:API writes would bypass its note, boilerplate, and audit-term checks.
+ */
+function markaspot_group_entity_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  $restricted_contractor = _markaspot_group_account_has_restricted_contractor_access($account);
+  if ($entity->getEntityTypeId() === 'media'
+    && $entity->bundle() === 'request_image'
+    && $operation === 'delete'
+    && $restricted_contractor) {
+    return _markaspot_group_contractor_media_delete_access($entity, $account);
+  }
+
+  if ($entity->getEntityTypeId() !== 'paragraph' || !$restricted_contractor) {
+    return AccessResult::neutral();
+  }
+
+  if ($entity->bundle() === 'internal_remark'
+    && in_array($operation, ['view', 'update', 'delete'], TRUE)) {
+    return AccessResult::forbidden('Internal remarks are restricted to internal staff.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.roles'])
+      ->addCacheableDependency($entity);
+  }
+
+  if ($entity->bundle() === 'status'
+    && in_array($operation, ['update', 'delete'], TRUE)) {
+    return AccessResult::forbidden('Contractors must use the restricted status-note endpoint.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.roles'])
+      ->addCacheableDependency($entity);
+  }
+
+  return AccessResult::neutral();
+}
+
+/**
+ * Scopes deletion of owned completion media to current organisation access.
+ */
+function _markaspot_group_contractor_media_delete_access(EntityInterface $media, AccountInterface $account): AccessResult {
+  if (!method_exists($media, 'getOwnerId')
+    || (int) $media->getOwnerId() !== (int) $account->id()) {
+    return AccessResult::neutral();
+  }
+
+  try {
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    $node_ids = $node_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_request_media.target_id', (int) $media->id())
+      ->execute();
+    $nodes = $node_storage->loadMultiple($node_ids);
+  }
+  catch (\Throwable) {
+    return AccessResult::forbidden('Completion media scope could not be verified.')
+      ->cachePerUser()
+      ->addCacheTags(['node_list:service_request'])
+      ->addCacheableDependency($media);
+  }
+
+  $result = AccessResult::neutral();
+  foreach ($nodes as $node) {
+    if (!$node instanceof NodeInterface || !$node->access('update', $account)) {
+      $result = AccessResult::forbidden('Contractors may not delete media from out-of-scope service requests.');
+      break;
+    }
+  }
+  foreach ($nodes as $node) {
+    if ($node instanceof NodeInterface) {
+      $result->addCacheableDependency($node);
+    }
+  }
+
+  return $result
+    ->cachePerUser()
+    ->addCacheTags(['node_list:service_request'])
+    ->addCacheableDependency($media);
+}
+
+/**
+ * Implements hook_entity_create_access().
+ */
+function markaspot_group_entity_create_access(AccountInterface $account, array $context, $entity_bundle): AccessResult {
+  $restricted_contractor = _markaspot_group_account_has_restricted_contractor_access($account);
+  if (($context['entity_type_id'] ?? NULL) === 'node'
+    && $entity_bundle === 'service_request'
+    && $restricted_contractor) {
+    return AccessResult::forbidden('Contractors may not create service requests.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.roles']);
+  }
+
+  if (($context['entity_type_id'] ?? NULL) !== 'paragraph'
+    || !in_array($entity_bundle, ['status', 'internal_remark'], TRUE)
+    || !$restricted_contractor) {
+    return AccessResult::neutral();
+  }
+
+  $reason = $entity_bundle === 'internal_remark'
+    ? 'Internal remarks are restricted to internal staff.'
+    : 'Contractors must use the restricted status-note endpoint.';
+  return AccessResult::forbidden($reason)
+    ->cachePerPermissions()
+    ->addCacheContexts(['user.roles']);
+}
+
+/**
+ * Implements hook_query_TAG_alter() for entity queries.
+ *
+ * Group's synchronized authenticated outsider role deliberately exposes
+ * published grouped content. Add an AND restriction before Group applies its
+ * normal access conditions so contractor lists only contain service requests
+ * related to one of the account's organisation memberships.
+ */
+function markaspot_group_query_entity_query_alter(AlterableInterface $query): void {
+  if (!$query instanceof SelectInterface
+    || $query->getMetaData('entity_type') !== 'node'
+    || !$query->hasTag('node_access')) {
+    return;
+  }
+
+  $account = \Drupal::currentUser();
+  if (!_markaspot_group_account_has_restricted_contractor_access($account)) {
+    return;
+  }
+
+  $base_alias = NULL;
+  $data_alias = NULL;
+  foreach ($query->getTables() as $alias => $table) {
+    if ($table['join type'] === NULL) {
+      $base_alias = $alias;
+    }
+    if ($table['table'] === 'node_field_data') {
+      $data_alias = $alias;
+    }
+  }
+  if ($base_alias === NULL) {
+    return;
+  }
+  if ($data_alias === NULL) {
+    $data_alias = $query->join(
+      'node_field_data',
+      'contractor_node_data',
+      "$base_alias.nid = %alias.nid",
+    );
+  }
+
+  $organisation_ids = _markaspot_group_account_organisation_ids($account);
+  if ($organisation_ids === []) {
+    $query->condition("$data_alias.type", 'service_request', '<>');
+    return;
+  }
+
+  // field_organisation is the routing authority used by direct entity access.
+  // Do not trust the mirrored Group relationship here: integrity repair treats
+  // relation drift as recoverable, and stale relations must fail closed.
+  $organisation_alias = $query->leftJoin(
+    'node__field_organisation',
+    'contractor_request_scope',
+    "$base_alias.nid = %alias.entity_id"
+      . ' AND %alias.deleted = 0'
+      . ' AND %alias.field_organisation_target_id IN (:contractor_organisation_ids[])',
+    [
+      ':contractor_organisation_ids[]' => $organisation_ids,
+    ],
+  );
+  $query->condition(
+    $query->orConditionGroup()
+      ->condition("$data_alias.type", 'service_request', '<>')
+      ->isNotNull("$organisation_alias.entity_id"),
+  );
+  $query->distinct();
+}
+
+/**
+ * Checks whether the contractor role is the account's active staff boundary.
+ */
+function _markaspot_group_account_has_restricted_contractor_access(AccountInterface $account): bool {
+  if ((int) $account->id() === 1) {
+    return FALSE;
+  }
+
+  $roles = $account->getRoles();
+  if (!in_array('contractor', $roles, TRUE)) {
+    return FALSE;
+  }
+
+  return array_intersect(
+    $roles,
+    ['administrator', 'tenant_admin', 'moderator', 'editorial_board'],
+  ) === [];
+}
+
+/**
+ * Returns organisation group IDs the account belongs to.
+ *
+ * @return int[]
+ *   Sorted organisation group IDs.
+ */
+function _markaspot_group_account_organisation_ids(AccountInterface $account): array {
+  if ((int) $account->id() <= 0) {
+    return [];
+  }
+
+  try {
+    $ids = [];
+    $memberships = \Drupal::entityTypeManager()
+      ->getStorage('group_relationship')
+      ->loadByProperties([
+        'entity_id' => (int) $account->id(),
+        'type' => 'org-group_membership',
+      ]);
+    foreach ($memberships as $membership) {
+      if (!$membership instanceof GroupRelationshipInterface) {
+        continue;
+      }
+      $group = $membership->getGroup();
+      if ($group->bundle() === 'org') {
+        $ids[] = (int) $group->id();
+      }
+    }
+  }
+  catch (\Throwable) {
+    return [];
+  }
+
+  $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+  sort($ids, SORT_NUMERIC);
+  return $ids;
+}
+
+/**
  * Implements hook_entity_field_access().
  */
 function markaspot_group_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  $field_entity = $items?->getEntity();
+  $is_service_request_field = $field_definition->getTargetEntityTypeId() === 'node'
+    && ($field_definition->getTargetBundle() === 'service_request'
+      || ($field_entity instanceof NodeInterface && $field_entity->bundle() === 'service_request'));
+
+  if ($is_service_request_field
+    && $operation === 'edit'
+    && _markaspot_group_account_has_restricted_contractor_access($account)
+    && !in_array($field_definition->getName(), ['field_request_media', 'field_status'], TRUE)) {
+    return AccessResult::forbidden('Contractors may only edit service request status and completion media.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.roles']);
+  }
+
   if ($field_definition->getTargetEntityTypeId() !== 'node'
     || $field_definition->getTargetBundle() !== 'service_request'
     || !in_array($field_definition->getName(), ['field_assignee', 'field_assigned_team', 'assignee_label'], TRUE)) {
