@@ -84,6 +84,14 @@ final class FacilitySettingsController extends ControllerBase {
       $data = $data['facilities'];
     }
 
+    $requests_activation = ($data['enabled'] ?? NULL) === TRUE
+      || (is_string($data['mode'] ?? NULL) && trim($data['mode']) !== 'disabled');
+    if ($requests_activation && !$this->facilityManager->hasEntitlement($group)) {
+      return new JsonResponse([
+        'error' => 'Facility management is not enabled for this workspace.',
+      ], 403);
+    }
+
     try {
       $this->facilityManager->saveDashboardSettings($group, $data);
     }

@@ -92,16 +92,17 @@ class FacilitySettingsControllerTest extends UnitTestCase {
   /**
    * @covers ::getFacilitiesSettings
    */
-  public function testGetFacilitiesSettingsReturnsNormalizedPayload(): void {
+  public function testGetFacilitiesSettingsReturnsForcedDisabledPayload(): void {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
     $group->method('isPublished')->willReturn(TRUE);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
     $this->facilityManager->method('getDashboardSettings')->with($group)->willReturn([
-      'enabled' => TRUE,
+      'enabled' => FALSE,
       'hideMapPicker' => FALSE,
       'items' => [],
+      'mode' => 'disabled',
     ]);
 
     $response = $this->controller->getFacilitiesSettings(Request::create('/api/tenant-settings/14/facilities', 'GET'), '14');
@@ -109,7 +110,8 @@ class FacilitySettingsControllerTest extends UnitTestCase {
     $data = json_decode((string) $response->getContent(), TRUE);
     $this->assertSame(200, $response->getStatusCode());
     $this->assertSame(14, $data['jurisdiction_id']);
-    $this->assertTrue($data['facilities']['enabled']);
+    $this->assertFalse($data['facilities']['enabled']);
+    $this->assertSame('disabled', $data['facilities']['mode']);
   }
 
   /**
@@ -148,6 +150,68 @@ class FacilitySettingsControllerTest extends UnitTestCase {
     );
 
     $this->assertSame(422, $response->getStatusCode());
+  }
+
+  /**
+   * @covers ::updateFacilitiesSettings
+   * @dataProvider activationPayloadProvider
+   */
+  public function testUpdateFacilitiesSettingsRejectsActivationWithoutEntitlement(
+    array $facilities,
+  ): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $this->facilityManager->expects($this->once())
+      ->method('hasEntitlement')
+      ->with($group)
+      ->willReturn(FALSE);
+    $this->facilityManager->expects($this->never())
+      ->method('saveDashboardSettings');
+
+    $response = $this->controller->updateFacilitiesSettings(
+      Request::create(
+        '/api/tenant-settings/14/facilities',
+        'PATCH',
+        [],
+        [],
+        [],
+        [],
+        json_encode([
+          'facilities' => $facilities,
+        ]),
+      ),
+      '14',
+    );
+
+    $data = json_decode((string) $response->getContent(), TRUE);
+    $this->assertSame(403, $response->getStatusCode());
+    $this->assertSame(
+      'Facility management is not enabled for this workspace.',
+      $data['error'],
+    );
+  }
+
+  /**
+   * Provides the two configuration shapes that activate facility management.
+   */
+  public static function activationPayloadProvider(): array {
+    return [
+      'enabled flag' => [[
+        'enabled' => TRUE,
+        'mode' => 'disabled',
+        'hideMapPicker' => FALSE,
+        'items' => [],
+      ]],
+      'active mode' => [[
+        'enabled' => FALSE,
+        'mode' => 'optional',
+        'hideMapPicker' => FALSE,
+        'items' => [],
+      ]],
+    ];
   }
 
 }

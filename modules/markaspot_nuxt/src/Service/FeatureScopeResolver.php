@@ -211,7 +211,7 @@ class FeatureScopeResolver {
   /**
    * Reads a boolean from the effective feature set.
    */
-  public function isEnabledEffective(string $dotPath, GroupInterface $jur, bool $default): bool {
+  public function isEnabledEffective(string $dotPath, GroupInterface $jur, ?bool $default = NULL): bool {
     $path = str_starts_with($dotPath, 'features.')
       ? substr($dotPath, strlen('features.'))
       : $dotPath;
@@ -225,6 +225,7 @@ class FeatureScopeResolver {
     }
 
     $source = $scope === 'tenant' ? $this->getRootJurisdiction($jur) : $jur;
+    $default ??= $this->featureDefault($scope_key, self::DEFAULTS[$scope_key] ?? FALSE);
     $value = $this->readFeatureValue($this->readNuxtConfig($source), $scope_key, $default);
     if (in_array($scope_key, self::TIER_GATED, TRUE)
       && !$this->canUseTierGatedFeatures($jur)) {

@@ -12,6 +12,7 @@ use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_facility\Service\FacilityManager;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -54,6 +55,9 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
     $container->register('markaspot_group.hierarchy_resolver', JurisdictionHierarchyResolverInterface::class)
       ->setSynthetic(TRUE)
       ->setPublic(TRUE);
+    $container->register('markaspot_nuxt.feature_scope_resolver', FeatureScopeResolver::class)
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
   }
 
   /**
@@ -76,6 +80,10 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
     $hierarchy_resolver->method('getRootJurisdictionId')
       ->willReturnCallback(static fn(int $gid): int => $gid);
     $this->container->set('markaspot_group.hierarchy_resolver', $hierarchy_resolver);
+
+    $feature_scope_resolver = $this->createMock(FeatureScopeResolver::class);
+    $feature_scope_resolver->method('isEnabledEffective')->willReturn(TRUE);
+    $this->container->set('markaspot_nuxt.feature_scope_resolver', $feature_scope_resolver);
 
     $this->manager = $this->container->get('markaspot_facility.manager');
   }

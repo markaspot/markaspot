@@ -1,4 +1,4 @@
 services:
   markaspot_facility.manager:
     class: Drupal\markaspot_facility\Service\FacilityManager
-    arguments: ['@entity_type.manager', '@logger.factory', '@address.country_repository', '@database', '@markaspot_group.hierarchy_resolver']
+    arguments: ['@entity_type.manager', '@logger.factory', '@address.country_repository', '@database', '@markaspot_group.hierarchy_resolver', '@markaspot_nuxt.feature_scope_resolver']

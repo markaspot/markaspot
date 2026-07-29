@@ -14,8 +14,9 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
-use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_facility\Service\FacilityManager;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -61,6 +62,18 @@ class FacilityManagerTest extends UnitTestCase {
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
+   * Feature entitlement resolver mock.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FeatureScopeResolver $featureScopeResolver;
+
+  /**
+   * Facility entitlement returned by the resolver mock.
+   */
+  protected bool $facilityEntitled = TRUE;
 
   /**
    * Facility manager under test.
@@ -110,6 +123,9 @@ class FacilityManagerTest extends UnitTestCase {
       ->willReturn($this->transaction());
 
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $this->featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $this->featureScopeResolver->method('isEnabledEffective')
+      ->willReturnCallback(fn(): bool => $this->facilityEntitled);
 
     $this->manager = new FacilityManager(
       $entity_type_manager,
@@ -117,6 +133,7 @@ class FacilityManagerTest extends UnitTestCase {
       $this->countryRepository,
       $this->database,
       $this->hierarchyResolver,
+      $this->featureScopeResolver,
     );
   }
 
@@ -189,6 +206,41 @@ class FacilityManagerTest extends UnitTestCase {
 
     $this->assertCount(1, $settings['items']);
     $this->assertSame('active_office', $settings['items'][0]['id']);
+  }
+
+  /**
+   * @covers ::getDashboardSettings
+   * @covers ::getPublicSettings
+   * @covers ::hasEntitlement
+   */
+  public function testFacilityEntitlementForcesSettingsOff(): void {
+    $this->facilityEntitled = FALSE;
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => TRUE,
+        'items' => [
+          [
+            'id' => 'premium_site',
+            'label' => 'Premium Site',
+            'lat' => 52.1,
+            'lng' => 9.1,
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+
+    $dashboard = $this->manager->getDashboardSettings($group);
+    $this->assertFalse($dashboard['enabled']);
+    $this->assertSame('disabled', $dashboard['mode']);
+    $this->assertSame(['premium_site'], array_column($dashboard['items'], 'id'));
+
+    $public = $this->manager->getPublicSettings($group);
+    $this->assertFalse($public['enabled']);
+    $this->assertSame('disabled', $public['mode']);
+    $this->assertSame([], $public['items']);
   }
 
   /**
@@ -880,6 +932,7 @@ class FacilityManagerTest extends UnitTestCase {
       $this->countryRepository,
       $this->database,
       $this->hierarchyResolver,
+      $this->featureScopeResolver,
     );
 
     $dashboard = $manager->getDashboardSettings($group);
@@ -976,6 +1029,124 @@ class FacilityManagerTest extends UnitTestCase {
       ['field_address', ['address_line1' => 'Main Street 1', 'country_code' => 'DE']],
     ], $set_calls);
     $this->assertTrue($this->manager->isAddressLocked($node));
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   * @covers ::isAddressLocked
+   */
+  public function testFacilityDerivationFailsClosedWithoutEntitlement(): void {
+    $this->facilityEntitled = FALSE;
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'address' => 'Main Street 1',
+            'organisationId' => '90',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_address',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([['field_facility', NULL]], $set_calls);
+    $this->assertFalse($this->manager->isAddressLocked($node));
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testUnchangedHistoricalFacilityIsPreservedWithoutEntitlement(): void {
+    $this->facilityEntitled = FALSE;
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $original_set_calls = [];
+    $original = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      ['field_facility', 'field_jurisdiction'],
+      $original_set_calls,
+    );
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      ['field_facility', 'field_jurisdiction'],
+      $set_calls,
+    );
+    $node->method('getOriginal')->willReturn($original);
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testHistoricalFacilityIsClearedWhenJurisdictionChanges(): void {
+    $this->facilityEntitled = FALSE;
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $original_set_calls = [];
+    $original = $this->facilityServiceRequestNode(
+      'campus_north',
+      15,
+      ['field_facility', 'field_jurisdiction'],
+      $original_set_calls,
+    );
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      ['field_facility', 'field_jurisdiction'],
+      $set_calls,
+    );
+    $node->method('getOriginal')->willReturn($original);
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([['field_facility', NULL]], $set_calls);
   }
 
   /**

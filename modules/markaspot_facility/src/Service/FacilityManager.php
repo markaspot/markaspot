@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -84,6 +85,7 @@ class FacilityManager {
     CountryRepositoryInterface $country_repository,
     Connection $database,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    private readonly FeatureScopeResolver $featureScopeResolver,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->logger = $logger_factory->get('markaspot_facility');
@@ -97,24 +99,44 @@ class FacilityManager {
    * Returns the normalized facilities object for dashboard responses.
    */
   public function getDashboardSettings(?GroupInterface $group): array {
+    $entitled = $this->hasEntitlement($group);
     $settings = $this->decodeFacilitiesField($group);
     $entity_items = $this->loadFacilityEntityItems($group, FALSE);
     if ($entity_items !== NULL) {
       $settings['items'] = $entity_items;
     }
-    return $this->normalizeStoredSettings($settings, FALSE);
+    return $this->enforceEntitlement(
+      $this->normalizeStoredSettings($settings, FALSE),
+      $entitled,
+      FALSE,
+    );
   }
 
   /**
    * Returns the normalized facilities object for public settings.
    */
   public function getPublicSettings(?GroupInterface $group): array {
+    $entitled = $this->hasEntitlement($group);
     $settings = $this->decodeFacilitiesField($group);
-    $entity_items = $this->loadFacilityEntityItems($group, TRUE);
-    if ($entity_items !== NULL) {
-      $settings['items'] = $entity_items;
+    if ($entitled) {
+      $entity_items = $this->loadFacilityEntityItems($group, TRUE);
+      if ($entity_items !== NULL) {
+        $settings['items'] = $entity_items;
+      }
     }
-    return $this->normalizeStoredSettings($settings, TRUE);
+    return $this->enforceEntitlement(
+      $this->normalizeStoredSettings($settings, TRUE),
+      $entitled,
+      TRUE,
+    );
+  }
+
+  /**
+   * Returns whether a jurisdiction may use facility management.
+   */
+  public function hasEntitlement(?GroupInterface $group): bool {
+    return $group instanceof GroupInterface
+      && $this->featureScopeResolver->isEnabledEffective('features.facilities', $group);
   }
 
   /**
@@ -180,6 +202,26 @@ class FacilityManager {
 
     $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
     if (!$group instanceof GroupInterface) {
+      return;
+    }
+
+    // Entitlement loss must also remove a newly submitted facility tag itself.
+    // Keep an unchanged historical association so unrelated edits do not
+    // destroy existing data, but never derive location or organisation from it.
+    if (!$this->hasEntitlement($group)) {
+      $original = $node->getOriginal();
+      if (
+        $original instanceof NodeInterface
+        && $original->hasField('field_facility')
+        && !$original->get('field_facility')->isEmpty()
+        && (string) $original->get('field_facility')->value === $facility_id
+        && $original->hasField('field_jurisdiction')
+        && !$original->get('field_jurisdiction')->isEmpty()
+        && (int) ($original->get('field_jurisdiction')->first()?->target_id ?? 0) === $jurisdiction_id
+      ) {
+        return;
+      }
+      $node->set('field_facility', NULL);
       return;
     }
 
@@ -338,26 +380,26 @@ class FacilityManager {
    * Returns whether the facility flow locked the node address for this save.
    */
   public function isAddressLocked(NodeInterface $node): bool {
-    if ($this->addressLocks->contains($node)) {
-      return TRUE;
-    }
-
     if (
           $node->bundle() !== 'service_request'
           || !$node->hasField('field_facility')
           || $node->get('field_facility')->isEmpty()
-          || !$node->hasField('field_address')
-          || $node->get('field_address')->isEmpty()
       ) {
       return FALSE;
     }
 
-    // Only treat a pre-existing address as locked in exclusive mode. In
-    // optional mode the citizen authored the address, so the geocoder must
-    // stay free to re-derive it from moved coordinates. Without this gate,
-    // markaspot_geocoder would freeze the address on every subsequent save
-    // of an optional-mode report that happens to carry a facility tag.
+    // Resolve the effective mode before consulting the per-save lock. A tenant
+    // losing its entitlement must stop locking addresses immediately, even
+    // when this object already recorded a lock earlier in the same request.
     if ($this->resolveEffectiveMode($node) !== 'exclusive') {
+      return FALSE;
+    }
+
+    if ($this->addressLocks->contains($node)) {
+      return TRUE;
+    }
+
+    if (!$node->hasField('field_address') || $node->get('field_address')->isEmpty()) {
       return FALSE;
     }
 
@@ -751,6 +793,30 @@ class FacilityManager {
     }
 
     return $normalized;
+  }
+
+  /**
+   * Makes entitlement authoritative over a tenant's facility configuration.
+   *
+   * Stored settings remain intact so an operator can restore access without
+   * reconstructing the catalogue. Public responses must additionally suppress
+   * that catalogue because it drives QR snapping in the citizen frontend.
+   */
+  private function enforceEntitlement(
+    array $settings,
+    bool $entitled,
+    bool $public,
+  ): array {
+    if ($entitled) {
+      return $settings;
+    }
+
+    $settings['enabled'] = FALSE;
+    $settings['mode'] = 'disabled';
+    if ($public) {
+      $settings['items'] = [];
+    }
+    return $settings;
   }
 
   /**

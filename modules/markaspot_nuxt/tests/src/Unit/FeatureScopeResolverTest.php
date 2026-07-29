@@ -211,6 +211,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
    * installed) both resolve to FALSE, mirroring canUseTierGatedFeatures().
    * A stored root opt-in wins in every mode and is inherited by children.
    *
+   * @covers ::isEnabledEffective
    * @covers ::resolveEffectiveFeatures
    */
   public function testOrganisationAndFacilityDefaultsAndInheritance(): void {
@@ -222,12 +223,20 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $features = $this->createResolver($bareRoot, [], FALSE)->resolveEffectiveFeatures($child);
     $this->assertTrue($features['organisations']);
     $this->assertTrue($features['facilities']);
+    $this->assertTrue(
+      $this->createResolver($bareRoot, [], FALSE)
+        ->isEnabledEffective('features.facilities', $child)
+    );
 
     // Explicit SaaS mode: opt-in, so absent resolves to FALSE.
     new Settings(['markaspot_operating_mode' => 'saas']);
     $features = $this->createResolver($bareRoot, [], FALSE)->resolveEffectiveFeatures($child);
     $this->assertFalse($features['organisations']);
     $this->assertFalse($features['facilities']);
+    $this->assertFalse(
+      $this->createResolver($bareRoot, [], FALSE)
+        ->isEnabledEffective('features.facilities', $child)
+    );
 
     // Misconfigured SaaS container: mode unset but fastmap installed must
     // fail closed instead of enabling the feature for every workspace.
@@ -235,6 +244,10 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $features = $this->createResolver($bareRoot, [], TRUE)->resolveEffectiveFeatures($child);
     $this->assertFalse($features['organisations']);
     $this->assertFalse($features['facilities']);
+    $this->assertFalse(
+      $this->createResolver($bareRoot, [], TRUE)
+        ->isEnabledEffective('features.facilities', $child)
+    );
 
     // A premium workspace's stored root opt-in wins on SaaS and is
     // inherited by the child workspace.
@@ -248,6 +261,10 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $features = $this->createResolver($optedInRoot, [], TRUE)->resolveEffectiveFeatures($child);
     $this->assertTrue($features['organisations']);
     $this->assertTrue($features['facilities']);
+    $this->assertTrue(
+      $this->createResolver($optedInRoot, [], TRUE)
+        ->isEnabledEffective('features.facilities', $child)
+    );
 
     // The frontend contract requires a scalar boolean even if stale config
     // stored the feature in the resolver's supported object form.
