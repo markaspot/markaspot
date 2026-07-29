@@ -634,6 +634,7 @@ class StatusSeedCommands extends DrushCommands {
       'name' => $sourceDefault->label(),
       'status' => $sourceDefault->isPublished(),
       'weight' => $sourceDefault->getWeight(),
+      'description' => $sourceDefault->get('description')->getValue(),
       'field_jurisdiction' => ['target_id' => $targetRootId],
     ] + $this->copyFieldValues($sourceDefault);
 

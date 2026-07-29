@@ -106,9 +106,10 @@ abstract class NotificationMailActionBase extends ConfigurableActionBase impleme
    * Sends one notification through the common recipient throttle.
    */
   protected function sendNotification(NodeInterface $entity, string $notificationKey): void {
-    if (empty($this->configuration['node'])) {
-      $this->configuration['node'] = $entity;
-    }
+    // Always bind the CURRENT entity. Caching the first node on the plugin
+    // instance would resolve recipient tokens against a stale node if the
+    // instance is ever reused (bulk operations) — a PII misdirection.
+    $this->configuration['node'] = $entity;
 
     $resolved_recipient = trim(Html::decodeEntities(
       $this->token->replace((string) $this->configuration['recipient'], $this->configuration)
@@ -235,8 +236,13 @@ abstract class NotificationMailActionBase extends ConfigurableActionBase impleme
         $mailboxes[] = Address::create($recipient_entry);
       }
       catch (\Throwable) {
-        // Invalid mailbox syntax must not make flood control fail the action.
-        return [];
+        // Drop ONLY the invalid entry. Hand-edited tenant models may carry
+        // unconventional recipient lists; failing the whole send would turn
+        // "delivered" into "silently skipped" after an update. Log a hash,
+        // never the raw address.
+        $this->logger->warning('Dropped an invalid recipient entry (hash @hash) while parsing the recipient list.', [
+          '@hash' => substr(hash('sha256', mb_strtolower($recipient_entry)), 0, 12),
+        ]);
       }
     }
     return $mailboxes;

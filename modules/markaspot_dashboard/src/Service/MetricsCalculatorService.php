@@ -560,7 +560,12 @@ class MetricsCalculatorService {
     if ($scope_statuses) {
       $status_ids = [];
       foreach ($jurisdiction_ids as $jurisdiction_id) {
-        $terms = $this->statusTermScope->loadByProperties(
+        // Tree pool, NOT the jurisdiction's effective selection: node_ids
+        // include descendant jurisdictions, and a child may select pool
+        // terms its parent deselected — filtering by the parent's selection
+        // would drop those rows and the bars would no longer sum to the
+        // total. Pool terms nobody uses simply count zero.
+        $terms = $this->statusTermScope->loadTreePoolByProperties(
           ['vid' => 'service_status'],
           $jurisdiction_id,
         );

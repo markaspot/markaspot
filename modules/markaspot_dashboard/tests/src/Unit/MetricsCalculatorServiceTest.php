@@ -68,7 +68,7 @@ class MetricsCalculatorServiceTest extends UnitTestCase {
    *
    * @covers ::getStatusDistribution
    */
-  public function testStatusDistributionSqlUsesEffectiveStatusSelection(): void {
+  public function testStatusDistributionSqlUsesTreePoolForStatusFilter(): void {
     $statement = $this->createMock(StatementInterface::class);
     $statement->method('fetchAll')->willReturn([]);
 
@@ -104,7 +104,7 @@ class MetricsCalculatorServiceTest extends UnitTestCase {
     $second = $this->createMock(TermInterface::class);
     $second->method('id')->willReturn(102);
     $statusTermScope->expects($this->exactly(2))
-      ->method('loadByProperties')
+      ->method('loadTreePoolByProperties')
       ->willReturnCallback(function (array $properties, int $jurisdictionId) use ($first, $second): array {
         $this->assertSame(['vid' => 'service_status'], $properties);
         return match ($jurisdictionId) {

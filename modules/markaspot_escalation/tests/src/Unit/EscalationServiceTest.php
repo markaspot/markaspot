@@ -170,6 +170,8 @@ class EscalationServiceTest extends UnitTestCase {
     $this->statusClassifier = $this->createMock(StatusClassifier::class);
     $this->statusClassifier->method('isClosed')
       ->willReturnCallback(static fn (int $tid): bool => $tid === 6);
+    $this->statusClassifier->method('closedTids')
+      ->willReturn([6]);
     $this->time = $this->createMock(TimeInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->mailManager = $this->createMock(MailManagerInterface::class);

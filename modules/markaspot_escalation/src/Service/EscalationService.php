@@ -929,8 +929,14 @@ class EscalationService implements EscalationServiceInterface {
       return FALSE;
     }
 
-    return $this->statusClassifier->isClosed(
+    // Use the same closed-set as the cron query (term-closed UNION legacy
+    // map). isClosed()'s legacy fallback treats "not in status_open" as
+    // closed, which silently drops unmapped-term nodes out of escalation on
+    // tenants with stale status_open maps — and diverges from the cron path.
+    return in_array(
       (int) $node->get('field_status')->target_id,
+      $this->statusClassifier->closedTids(),
+      TRUE,
     );
   }
 

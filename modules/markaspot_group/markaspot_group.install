@@ -5249,3 +5249,42 @@ function markaspot_group_update_11942(): string {
     ? 'The service status selection field already exists.'
     : 'Created ' . implode(', ', $created) . '.';
 }
+
+/**
+ * Installs the term-driven status notification ECA model on existing sites.
+ *
+ * The model ships in config/optional, which never reaches installed sites —
+ * while the field (10014), the term-form widget (10015) and the mail texts do.
+ * Without this import an operator fills in a notification key exactly as the
+ * widget instructs and no mail ever sends, silently. Importing is behaviour-
+ * neutral: every notification key is empty after deployment, so the model is
+ * a no-op until an operator deliberately keys a status term. Saved through
+ * the ECA entity API — a raw config write would skip the entity hooks that
+ * register the model's event triggers (verified on dev).
+ */
+function markaspot_group_update_11943(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('eca')) {
+    return 'Skipped: the ECA module is not installed.';
+  }
+
+  $storage = $entity_type_manager->getStorage('eca');
+  if ($storage->load('process_notify_status_term')) {
+    return 'The term-driven status notification model is already installed.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_group');
+  $file = $module_path . '/config/optional/eca.eca.process_notify_status_term.yml';
+  if (!is_file($file)) {
+    return 'Skipped: the shipped model file is missing.';
+  }
+
+  $data = Yaml::decode((string) file_get_contents($file));
+  if (!is_array($data) || ($data['id'] ?? '') !== 'process_notify_status_term') {
+    return 'Skipped: the shipped model file is not readable.';
+  }
+  unset($data['uuid'], $data['_core']);
+
+  $storage->create($data)->save();
+  return 'Installed the term-driven status notification ECA model.';
+}
