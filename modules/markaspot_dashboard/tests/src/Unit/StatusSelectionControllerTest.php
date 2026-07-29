@@ -147,7 +147,7 @@ final class StatusSelectionControllerTest extends UnitTestCase {
       ->with(12)
       ->willReturn(7);
     $this->statusTermScope->method('loadTreePoolByProperties')
-      ->with(['vid' => 'service_status'], 12)
+      ->with(['vid' => 'service_status', 'status' => 1], 12)
       ->willReturn([$term]);
 
     $response = $this->controller->patchSelection(
@@ -222,7 +222,7 @@ final class StatusSelectionControllerTest extends UnitTestCase {
       ->with(12)
       ->willReturn(7);
     $this->statusTermScope->method('loadTreePoolByProperties')
-      ->with(['vid' => 'service_status'], 12)
+      ->with(['vid' => 'service_status', 'status' => 1], 12)
       ->willReturn([$first, $second]);
 
     $group->expects($this->once())
@@ -274,7 +274,7 @@ final class StatusSelectionControllerTest extends UnitTestCase {
       ->with(7)
       ->willReturn(7);
     $this->statusTermScope->method('loadTreePoolByProperties')
-      ->with(['vid' => 'service_status'], 7)
+      ->with(['vid' => 'service_status', 'status' => 1], 7)
       ->willReturn([$later, $first]);
 
     $response = $this->controller->getSelection('7');

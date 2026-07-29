@@ -74,7 +74,11 @@ markaspot_dashboard.duplicates_pending:
   methods: [GET]
 
 markaspot_dashboard.duplicates_review:
-  path: '/ai/duplicates/{match_id}/review'
+  # Owns the browser-facing /api path: the markaspot_ai twin route pointed at
+  # a service that only flips the match row (no auto-close, no 409), so the
+  # hardened flow here was unreachable from the client. The markaspot_ai
+  # route was retired in the same change.
+  path: '/api/ai/duplicates/{match_id}/review'
   defaults:
     _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::reviewMatch'
   requirements:
@@ -82,6 +86,9 @@ markaspot_dashboard.duplicates_review:
     _permission: 'review ai duplicates'
     match_id: \d+
   methods: [POST]
+  options:
+    _auth: ['cookie', 'api_key_auth']
+    _format: 'json'
 
 # Status Notes API (Staff/Dashboard feature)
 markaspot_dashboard.status_note_create:

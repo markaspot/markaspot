@@ -22,19 +22,6 @@ markaspot_ai.duplicates:
       node:
         type: entity:node
 
-markaspot_ai.duplicate_review:
-  path: '/api/ai/duplicates/{match}/review'
-  defaults:
-    _controller: '\Drupal\markaspot_ai\Controller\DuplicateController::reviewMatch'
-    _title: 'Review Duplicate Match'
-  methods: [POST]
-  requirements:
-    _permission: 'review ai duplicates'
-    match: \d+
-  options:
-    _auth: ['cookie', 'api_key_auth']
-    _format: 'json'
-
 markaspot_ai.duplicate_scan:
   path: '/api/ai/duplicates/{node}/scan'
   defaults:

@@ -87,6 +87,16 @@ final class StatusSelectionController implements ContainerInjectionInterface {
       'group_list',
     ];
 
+    // Site administrators bypass the membership requirement, mirroring
+    // DashboardController::access(). Without this the dev/site admin (role
+    // administrator, no tenant_admin membership) gets 403 and the whole
+    // statuses settings page degrades to an error card.
+    if ($account->hasPermission('administer site configuration')) {
+      return AccessResult::allowed()
+        ->addCacheableDependency($group)
+        ->addCacheContexts(['user.permissions']);
+    }
+
     if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
       return AccessResult::forbidden('User is not a tenant admin for this jurisdiction.')
         ->addCacheableDependency($group)
@@ -237,7 +247,12 @@ final class StatusSelectionController implements ContainerInjectionInterface {
   private function buildPool(int $group_id): array {
     $terms = array_values(array_filter(
       $this->statusTermScope->loadTreePoolByProperties(
-        ['vid' => 'service_status'],
+        // Published only: the live catalog (MarkASpotSettingsController)
+        // filters on status 1, so unpublished terms would be selectable
+        // here yet never appear anywhere. Selection validation uses the
+        // same pool, which is safe while no pre-existing selections can
+        // reference unpublished terms.
+        ['vid' => 'service_status', 'status' => 1],
         $group_id,
       ),
       static fn(mixed $term): bool => $term instanceof TermInterface,
