@@ -5,26 +5,26 @@ declare(strict_types=1);
 namespace Drupal\markaspot_health\Plugin\HealthCheck;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_health\HealthCheckPluginBase;
 use Drupal\markaspot_health\HealthCheckResult;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Detects jurisdictions with no taxonomy_term:service_category attached.
+ * Detects jurisdictions with no resolvable service categories.
  *
- * A jur without categories cannot accept a categorised report submission —
- * the GeoReport endpoint rejects POSTs whose service_code maps to a term
- * outside the tenant's allowed list. Upstream of `eca_tid_mismatch`: a
- * tenant with no categories cannot have mismatched tids in the first
- * place.
+ * A jur without categories cannot advertise a categorised report form or map
+ * an advertised service code to a tenant-owned term. Upstream of
+ * `eca_tid_mismatch`: a tenant with no categories cannot have mismatched tids
+ * in the first place.
  *
- * Two relationship sources are checked because the profile uses both:
- * - field_jurisdiction ON THE TERM (canonical, used by
- *   GeoreportProcessorService::mapServiceCodeToTaxonomy)
- * - field_service_categories on the jur group (forward-looking, populated
- *   on newer tenants)
+ * Category resolution mirrors the runtime Open311 service catalog:
+ * - resolve a child jurisdiction to its root category owner
+ * - load service_category terms owned by that root
+ * - apply field_service_categories when the requested jurisdiction narrows
+ *   the inherited catalog
  *
- * Pass when at least one source resolves to ≥1 term for the tenant.
+ * Direct and inherited coverage pass.
  *
  * Severity `error`: misconfigured tenants fail citizen submissions silently
  * from end-user perspective.
@@ -33,7 +33,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   id = "tenant_service_categories_assigned",
  *   label = @Translation("Tenants without service categories"),
  *   severity = "error",
- *   description = @Translation("Asserts every jurisdiction has at least one taxonomy_term:service_category attached, via field_jurisdiction on the term or field_service_categories on the group."),
+ *   description = @Translation("Asserts every jurisdiction resolves at least one taxonomy_term:service_category through its root hierarchy and optional field_service_categories restriction."),
  *   fix_hint = @Translation("Open the jurisdiction edit form and assign at least one service_category — or back-fill field_jurisdiction on existing terms via a seed script."),
  * )
  */
@@ -46,6 +46,7 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
     string $plugin_id,
     $plugin_definition,
     protected EntityTypeManagerInterface $entityTypeManager,
+    protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -59,6 +60,9 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
       $plugin_id,
       $plugin_definition,
       $container->get('entity_type.manager'),
+      $container->has('markaspot_group.hierarchy_resolver')
+        ? $container->get('markaspot_group.hierarchy_resolver')
+        : NULL,
     );
   }
 
@@ -66,7 +70,8 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
    * {@inheritdoc}
    */
   public function run(array $context = []): HealthCheckResult {
-    if (!$this->entityTypeManager->hasDefinition('group')) {
+    if (!$this->entityTypeManager->hasDefinition('group')
+      || $this->hierarchyResolver === NULL) {
       return $this->pass('group entity type not available; check skipped.');
     }
 
@@ -76,63 +81,54 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
     }
 
     $errorDetails = [];
-    $warnDetails = [];
+    $infoDetails = [];
     $errorCount = 0;
-    $warnCount = 0;
+    $infoCount = 0;
     foreach ($jurisdictions as $jur) {
       $jurId = (int) $jur->id();
       $termSide = $this->countTermsByJurisdiction($jurId);
       $groupSide = $this->countGroupSideAssignments($jur);
-      if ($termSide > 0) {
-        continue;
-      }
+      $resolvedCount = $this->countResolvedCategories($jurId);
       $detail = [
         'jurisdiction' => $jurId,
         'jur_label' => (string) $jur->label(),
         'term_side_count' => $termSide,
         'group_side_count' => $groupSide,
+        'resolved_count' => $resolvedCount,
       ];
-      if ($groupSide > 0) {
-        // Group-side-only assignment is not submission-safe: GeoReport's
-        // mapServiceCodeToTaxonomy() resolves via field_jurisdiction on
-        // the term, so a tenant with categories listed only on the group
-        // still 404s on every categorised POST. Warn instead of pass to
-        // surface the gap without escalating to a release-blocking error.
-        $warnCount++;
-        if (count($warnDetails) < self::DETAILS_LIMIT) {
-          $warnDetails[] = $detail;
+      if ($resolvedCount === 0) {
+        $errorCount++;
+        if (count($errorDetails) < self::DETAILS_LIMIT) {
+          $errorDetails[] = $detail;
         }
         continue;
       }
-      $errorCount++;
-      if (count($errorDetails) < self::DETAILS_LIMIT) {
-        $errorDetails[] = $detail;
+
+      if ($termSide === 0 && $groupSide === 0) {
+        $infoCount++;
+        if (count($infoDetails) < self::DETAILS_LIMIT) {
+          $infoDetails[] = $detail;
+        }
       }
     }
 
-    if ($errorCount === 0 && $warnCount === 0) {
-      return $this->pass('Every jurisdiction has at least one service_category term targeting it via field_jurisdiction.');
+    if ($errorCount === 0 && $infoCount === 0) {
+      return $this->pass('Every jurisdiction resolves at least one service_category through direct coverage.');
     }
 
     if ($errorCount > 0) {
-      // Count reflects error-severity items only — the SmokeCommands CI
-      // gate counts `failed() && severity==='error'` results as 1 each,
-      // and the `count` field is the per-result tally consumed by
-      // dashboards. Warnings travel via evidence + tagged details so a
-      // mixed result does not silently promote group-side-only rows to
-      // error.
       $details = array_merge(
         array_map(static fn(array $d) => $d + ['severity' => 'error'], $errorDetails),
-        array_map(static fn(array $d) => $d + ['severity' => 'warning'], $warnDetails),
+        array_map(static fn(array $d) => $d + ['severity' => 'info'], $infoDetails),
       );
-      $truncated = ($errorCount + $warnCount) - count($details);
+      $truncated = ($errorCount + $infoCount) - count($details);
       return $this->failWithSeverity(
         'error',
         $errorCount,
         sprintf(
-          '%d jurisdiction(s) without categorised submission coverage (plus %d warning(s) for group-side-only assignments).',
+          '%d jurisdiction(s) resolve no service categories (plus %d inherited-only coverage info item(s)).',
           $errorCount,
-          $warnCount,
+          $infoCount,
         ),
         $details,
         max(0, $truncated),
@@ -140,16 +136,11 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
       );
     }
 
-    // Only group-side-only entries → degrade to warning severity.
-    return $this->failWithSeverity(
-      'warning',
-      $warnCount,
+    return $this->pass(
       sprintf(
-        '%d jurisdiction(s) carry service categories on the group side only; Open311 mapping needs field_jurisdiction on the term too.',
-        $warnCount,
+        'Every jurisdiction resolves service categories; %d use inheritance.',
+        $infoCount,
       ),
-      array_map(static fn(array $d) => $d + ['severity' => 'warning'], $warnDetails),
-      max(0, $warnCount - count($warnDetails)),
       $context['jurisdiction'] ?? NULL,
     );
   }
@@ -174,10 +165,9 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
   /**
    * Counts service_category terms whose field_jurisdiction targets this jur.
    *
-   * Mirrors GeoreportProcessorService::mapServiceCodeToTaxonomy(); the
-   * canonical relation in the running profile.
+   * Mirrors GeoreportProcessorService::getTaxonomyTree().
    */
-  protected function countTermsByJurisdiction(int $jurisdictionId): int {
+  protected function countTermsByJurisdiction(int $jurisdictionId, ?array $allowedIds = NULL): int {
     if (!$this->entityTypeManager->hasDefinition('taxonomy_term')) {
       return 0;
     }
@@ -190,12 +180,37 @@ class TenantServiceCategoriesAssignedCheck extends HealthCheckPluginBase {
     if ($fieldDefs === []) {
       return 0;
     }
-    return (int) $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
+    $query = $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
       ->accessCheck(FALSE)
       ->condition('vid', 'service_category')
       ->condition('field_jurisdiction', $jurisdictionId)
-      ->count()
-      ->execute();
+      ->condition('status', 1);
+    if ($allowedIds !== NULL) {
+      if ($allowedIds === []) {
+        return 0;
+      }
+      $query->condition('tid', $allowedIds, 'IN');
+    }
+    return (int) $query->count()->execute();
+  }
+
+  /**
+   * Counts categories exposed by the runtime hierarchy resolver.
+   */
+  protected function countResolvedCategories(int $jurisdictionId): int {
+    if ($this->hierarchyResolver === NULL) {
+      return 0;
+    }
+    $rootId = $this->hierarchyResolver
+      ->getRootJurisdictionId($jurisdictionId);
+    if ($rootId === NULL) {
+      return 0;
+    }
+
+    return $this->countTermsByJurisdiction(
+      $rootId,
+      $this->hierarchyResolver->getAllowedCategoryIds($jurisdictionId),
+    );
   }
 
   /**
