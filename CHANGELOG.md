@@ -1,5 +1,22 @@
 # Changelog
 
+## [11.9.175](https://github.com/markaspot/markaspot/compare/11.9.174...11.9.175) (2026-07-30)
+
+### Features
+
+* allow tenant admins to manage organisations via JSON:API ([fd81770](https://github.com/markaspot/markaspot/commit/fd8177009f6a9bc87f14cef22ee16368daa09cc7))
+* enforce workspace visibility on every stack ([cac6866](https://github.com/markaspot/markaspot/commit/cac6866c7cb5e7647c640ab71152c9abcea1142a))
+* per community tiers with a hard self-service tier gate ([02ef3dc](https://github.com/markaspot/markaspot/commit/02ef3dc456ad2a00d405852332b22b1a8269ca28))
+
+### Bug Fixes
+
+* enforce the facility entitlement in markaspot_facility ([8367975](https://github.com/markaspot/markaspot/commit/8367975035d8db9082d6128acbe3d87e649f8e2c))
+* exclude organisations and facilities from the self-service platform ([a060f70](https://github.com/markaspot/markaspot/commit/a060f704889e9da5d74705623d5534b467f830f7))
+* gate the facility feature behind an operating mode aware flag ([addc127](https://github.com/markaspot/markaspot/commit/addc1272babf2fe3b78fb408bca389fca1fd9f48))
+* harden notification mail and user switching ([023d070](https://github.com/markaspot/markaspot/commit/023d0705bdb08ac8596e08c6bfe47540d7cd6688))
+* inherit the organisations feature opt-in from the root jurisdiction ([a925d8c](https://github.com/markaspot/markaspot/commit/a925d8cdebd2f834280d8dd98afee26d6f6c9297))
+* unblock fresh profile installs broken by the contractor group role ([92816a4](https://github.com/markaspot/markaspot/commit/92816a4f12e06d1bb6a526a22ab0c589a93f5fa1))
+
 ## [11.9.174](https://github.com/markaspot/markaspot/compare/11.9.173...11.9.174) (2026-07-29)
 
 ### Features
