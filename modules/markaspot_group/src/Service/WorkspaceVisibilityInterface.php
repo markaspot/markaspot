@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Service;
 
+use Drupal\Core\Session\AccountInterface;
+
 /**
  * Public contract for workspace visibility decisions.
  *
@@ -32,6 +34,30 @@ interface WorkspaceVisibilityInterface {
    *   Restricted jurisdiction group IDs.
    */
   public function getRestrictedJurisdictionIds(): array;
+
+  /**
+   * Gets jurisdictions the supplied account may not read.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   *
+   * @return int[]
+   *   Jurisdiction group IDs whose requests must be excluded.
+   */
+  public function getUnreadableJurisdictionIds(AccountInterface $account): array;
+
+  /**
+   * Whether an account can read requests in a workspace.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return bool
+   *   TRUE when the account may read requests in the workspace.
+   */
+  public function allowsReadFor(AccountInterface $account, int $groupId): bool;
 
   /**
    * Whether anonymous users can view requests in this workspace.

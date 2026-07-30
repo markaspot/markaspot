@@ -7,7 +7,9 @@ namespace Drupal\markaspot_group\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 
 /**
@@ -38,11 +40,35 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
   ];
 
   /**
+   * Jurisdiction role suffixes that bypass read visibility restrictions.
+   */
+  private const ELEVATED_JURISDICTION_ROLE_SUFFIXES = [
+    'admin',
+    'editorial',
+    'moderator',
+    'tenant_admin',
+  ];
+
+  /**
    * Static cache of visibility values keyed by group ID.
    *
    * @var array<int, string>
    */
   protected array $cache = [];
+
+  /**
+   * Cached restrictive jurisdiction IDs for this request.
+   *
+   * @var int[]|null
+   */
+  protected ?array $restrictedJurisdictionIds = NULL;
+
+  /**
+   * Cached elevated jurisdiction IDs keyed by account ID.
+   *
+   * @var array<int, int[]>
+   */
+  protected array $elevatedJurisdictionIds = [];
 
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
@@ -94,16 +120,20 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
   /**
    * Gets jurisdictions with an explicitly restrictive visibility value.
    *
-   * This hot-path lookup deliberately bypasses entity loading and request
-   * caching. One EntityQuery returns only explicit restrictions; missing and
-   * empty values do not match and therefore retain the fail-open public
-   * contract. Running the query fresh also avoids a second cache that group
-   * save hooks would need to invalidate alongside the per-group cache.
+   * This hot-path lookup uses one EntityQuery for explicit restrictions;
+   * missing and empty values do not match and therefore retain the fail-open
+   * public contract. The result is cached for the request because JSON:API
+   * executes separate count and data queries. Existing group lifecycle hooks
+   * invalidate it together with the per-group visibility cache.
    *
    * @return int[]
    *   Restricted jurisdiction group IDs.
    */
   public function getRestrictedJurisdictionIds(): array {
+    if ($this->restrictedJurisdictionIds !== NULL) {
+      return $this->restrictedJurisdictionIds;
+    }
+
     $definitions = $this->entityFieldManager->getFieldStorageDefinitions('group');
     if (!array_key_exists('field_visibility', $definitions)) {
       // The field arrives with markaspot_group_update_11946(). Querying it
@@ -111,7 +141,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
       // list into a 500 instead of a working public map. Without the field no
       // workspace can carry a restrictive mode anyway, so the fail-open
       // answer is an empty exclusion list.
-      return [];
+      return $this->restrictedJurisdictionIds = [];
     }
 
     $candidates = $this->entityTypeManager->getStorage('group')->getQuery()
@@ -141,7 +171,58 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
       }
     }
 
-    return $restricted;
+    return $this->restrictedJurisdictionIds = $restricted;
+  }
+
+  /**
+   * Gets jurisdictions the supplied account may not read.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   *
+   * @return int[]
+   *   Jurisdiction group IDs whose requests must be excluded.
+   */
+  public function getUnreadableJurisdictionIds(AccountInterface $account): array {
+    if ($this->hasSiteBypass($account)) {
+      return [];
+    }
+
+    return array_values(array_filter(
+      $this->getRestrictedJurisdictionIds(),
+      fn(int $groupId): bool => !$this->allowsReadFor($account, $groupId),
+    ));
+  }
+
+  /**
+   * Whether an account can read requests in a workspace.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return bool
+   *   TRUE when the account may read requests in the workspace.
+   */
+  public function allowsReadFor(AccountInterface $account, int $groupId): bool {
+    if ($this->hasSiteBypass($account)) {
+      return TRUE;
+    }
+
+    if ($account->isAnonymous()) {
+      return $this->canAnonymousView($groupId);
+    }
+
+    if (!$this->isBlocked($groupId)) {
+      return TRUE;
+    }
+
+    return in_array(
+      $groupId,
+      $this->getElevatedJurisdictionIds($account),
+      TRUE,
+    );
   }
 
   /**
@@ -195,12 +276,69 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    *   cache is cleared.
    */
   public function resetCache(?int $groupId = NULL): void {
+    $this->restrictedJurisdictionIds = NULL;
+
     if ($groupId === NULL) {
       $this->cache = [];
       return;
     }
 
     unset($this->cache[$groupId]);
+  }
+
+  /**
+   * Gets jurisdictions where an account holds an elevated group role.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   *
+   * @return int[]
+   *   Jurisdiction group IDs.
+   */
+  protected function getElevatedJurisdictionIds(AccountInterface $account): array {
+    $accountId = (int) $account->id();
+    if ($accountId <= 0) {
+      return [];
+    }
+    if (isset($this->elevatedJurisdictionIds[$accountId])) {
+      return $this->elevatedJurisdictionIds[$accountId];
+    }
+
+    $groupType = $this->jurisdictionGroupType();
+    $roleIds = [];
+    foreach (self::ELEVATED_JURISDICTION_ROLE_SUFFIXES as $suffix) {
+      $roleIds[] = $groupType . '-' . $suffix;
+      $roleIds[] = 'jur-' . $suffix;
+    }
+
+    $jurisdictionIds = [];
+    foreach (GroupMembership::loadByUser(
+      $account,
+      array_values(array_unique($roleIds)),
+    ) as $membership) {
+      $group = $membership->getGroup();
+      if ($group instanceof GroupInterface && $group->bundle() === $groupType) {
+        $jurisdictionIds[] = (int) $group->id();
+      }
+    }
+
+    return $this->elevatedJurisdictionIds[$accountId] = array_values(
+      array_unique($jurisdictionIds),
+    );
+  }
+
+  /**
+   * Checks whether an account bypasses workspace read restrictions site-wide.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   *
+   * @return bool
+   *   TRUE for user 1 and accounts with the administrator site role.
+   */
+  protected function hasSiteBypass(AccountInterface $account): bool {
+    return (int) $account->id() === 1
+      || in_array('administrator', $account->getRoles(), TRUE);
   }
 
   /**

@@ -15,7 +15,9 @@ use Drupal\Core\Url;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\Sql\SqlEntityStorageInterface;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
@@ -33,6 +35,7 @@ use Drupal\markaspot_group\Exception\OrganisationDeleteBlockedException;
 use Drupal\markaspot_group\Field\AssigneeLabelItemList;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\TenantAdminHelper;
+use Drupal\markaspot_group\WorkspaceVisibilityNodeAccessControlHandler;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
@@ -99,6 +102,7 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
  * - group (org bundle): Normalizes the jurisdiction reference.
  */
 function markaspot_group_entity_presave(EntityInterface $entity): void {
+  _markaspot_group_enforce_workspace_visibility_presave($entity);
   _markaspot_group_presave_obsolete_eca($entity);
 
   if ($entity instanceof NodeInterface) {
@@ -681,6 +685,13 @@ function markaspot_group_user_delete(UserInterface $account): void {
  * Implements hook_entity_type_alter().
  */
 function markaspot_group_entity_type_alter(array &$entity_types): void {
+  if (isset($entity_types['node'])) {
+    $entity_types['node']->setHandlerClass(
+      'access',
+      WorkspaceVisibilityNodeAccessControlHandler::class,
+    );
+  }
+
   if (!isset($entity_types['group'])) {
     return;
   }
@@ -748,10 +759,19 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
  * organisations, including through direct JSON:API entity routes.
  */
 function markaspot_group_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResult {
+  $workspace_access = _markaspot_group_workspace_visibility_node_access(
+    $node,
+    $operation,
+    $account,
+  );
+  if ($workspace_access->isForbidden()) {
+    return $workspace_access;
+  }
+
   if ($node->bundle() !== 'service_request'
     || !in_array($operation, ['view', 'update', 'delete'], TRUE)
     || !_markaspot_group_account_has_restricted_contractor_access($account)) {
-    return AccessResult::neutral();
+    return $workspace_access;
   }
 
   $organisation_ids = _markaspot_group_account_organisation_ids($account);
@@ -780,7 +800,9 @@ function markaspot_group_node_access(NodeInterface $node, string $operation, Acc
     $result,
     $account,
     $request_organisation_ids,
-  )->addCacheableDependency($node);
+  )
+    ->addCacheableDependency($workspace_access)
+    ->addCacheableDependency($node);
 }
 
 /**
@@ -790,6 +812,15 @@ function markaspot_group_node_access(NodeInterface $node, string $operation, Acc
  * JSON:API writes would bypass its note, boilerplate, and audit-term checks.
  */
 function markaspot_group_entity_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  $workspace_access = _markaspot_group_workspace_visibility_entity_access(
+    $entity,
+    $operation,
+    $account,
+  );
+  if ($workspace_access->isForbidden()) {
+    return $workspace_access;
+  }
+
   $restricted_contractor = _markaspot_group_account_has_restricted_contractor_access($account);
   if ($entity->getEntityTypeId() === 'media'
     && $entity->bundle() === 'request_image'
@@ -799,7 +830,7 @@ function markaspot_group_entity_access(EntityInterface $entity, string $operatio
   }
 
   if ($entity->getEntityTypeId() !== 'paragraph' || !$restricted_contractor) {
-    return AccessResult::neutral();
+    return $workspace_access;
   }
 
   if ($entity->bundle() === 'internal_remark'
@@ -819,6 +850,328 @@ function markaspot_group_entity_access(EntityInterface $entity, string $operatio
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Applies workspace visibility to direct node access.
+ */
+function _markaspot_group_workspace_visibility_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResult {
+  if ($operation !== 'view') {
+    return AccessResult::neutral();
+  }
+
+  $jurisdiction_ids = _markaspot_group_workspace_visibility_jurisdiction_ids($node);
+  if ($jurisdiction_ids === []) {
+    return AccessResult::neutral();
+  }
+
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
+  foreach ($jurisdiction_ids as $jurisdiction_id) {
+    $allowed = $node->bundle() === 'service_request'
+      ? $service->allowsReadFor($account, $jurisdiction_id)
+      : !$account->isAnonymous() || $service->canAnonymousView($jurisdiction_id);
+    if (!$allowed) {
+      return AccessResult::forbidden('Workspace visibility prevents viewing this content.')
+        ->cachePerUser()
+        ->addCacheTags(_markaspot_group_workspace_visibility_cache_tags(
+          $jurisdiction_ids,
+          $account,
+        ));
+    }
+  }
+
+  return AccessResult::neutral()
+    ->cachePerUser()
+    ->addCacheTags(_markaspot_group_workspace_visibility_cache_tags(
+      $jurisdiction_ids,
+      $account,
+    ));
+}
+
+/**
+ * Applies blocked-workspace rules to generic entity access.
+ */
+function _markaspot_group_workspace_visibility_entity_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  if (!in_array($operation, ['view', 'update', 'delete'], TRUE)) {
+    return AccessResult::neutral();
+  }
+
+  // Node view access is handled by hook_node_access(). Accounts with the core
+  // bypass permission are checked before that bypass by the custom node access
+  // control handler.
+  if ($operation === 'view'
+    && $entity instanceof NodeInterface
+    && $entity->bundle() === 'service_request') {
+    return AccessResult::neutral();
+  }
+
+  $jurisdiction_ids = _markaspot_group_workspace_visibility_jurisdiction_ids($entity);
+  if ($jurisdiction_ids === []) {
+    return AccessResult::neutral();
+  }
+
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
+  foreach ($jurisdiction_ids as $jurisdiction_id) {
+    $blocked = $service->isBlocked($jurisdiction_id)
+      && !_markaspot_group_account_can_bypass_workspace_block($account);
+    if ($blocked) {
+      return AccessResult::forbidden('Workspace visibility prevents this operation.')
+        ->cachePerUser()
+        ->addCacheTags(_markaspot_group_workspace_visibility_cache_tags(
+          $jurisdiction_ids,
+          $account,
+        ));
+    }
+  }
+
+  return AccessResult::neutral()
+    ->cachePerUser()
+    ->addCacheTags(_markaspot_group_workspace_visibility_cache_tags(
+      $jurisdiction_ids,
+      $account,
+    ));
+}
+
+/**
+ * Blocks saves of content assigned to a blocked workspace.
+ */
+function _markaspot_group_enforce_workspace_visibility_presave(EntityInterface $entity): void {
+  if (_markaspot_group_account_can_bypass_workspace_block(\Drupal::currentUser())
+    || !_markaspot_group_entity_is_blockable_workspace_content($entity)) {
+    return;
+  }
+
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
+  $jurisdiction_ids = _markaspot_group_workspace_visibility_jurisdiction_ids($entity);
+  $submitted_jurisdiction_ids = $jurisdiction_ids;
+  $original = $entity->getOriginal();
+  if ($original instanceof EntityInterface && $original !== $entity) {
+    $jurisdiction_ids = array_values(array_unique(array_merge(
+      $jurisdiction_ids,
+      _markaspot_group_workspace_visibility_jurisdiction_ids($original),
+    )));
+  }
+  $blocked_jurisdiction_id = NULL;
+  foreach ($jurisdiction_ids as $jurisdiction_id) {
+    if ($service->isBlocked($jurisdiction_id)) {
+      $blocked_jurisdiction_id = $jurisdiction_id;
+      break;
+    }
+  }
+
+  if ($blocked_jurisdiction_id === NULL
+    && $submitted_jurisdiction_ids === []
+    && $entity instanceof NodeInterface
+    && $entity->bundle() === 'service_request') {
+    $claimed_jurisdiction_id = _markaspot_group_request_jurisdiction_id()
+      ?? _markaspot_group_workspace_category_root_jurisdiction_id($entity);
+    [$lat, $lng] = _markaspot_group_workspace_request_coordinates($entity);
+    if ($service->isBlockedForSubmission(
+      $claimed_jurisdiction_id,
+      $lat,
+      $lng,
+    )) {
+      $blocked_jurisdiction_id = $claimed_jurisdiction_id ?? 0;
+    }
+  }
+
+  if ($blocked_jurisdiction_id === NULL) {
+    return;
+  }
+
+  $uid = (int) \Drupal::currentUser()->id();
+  $flood_key = 'markaspot_group.blocked_presave.'
+    . $blocked_jurisdiction_id . '.' . $uid;
+  $flood = \Drupal::service('flood');
+  if ($flood->isAllowed($flood_key, 1, 60)) {
+    $flood->register($flood_key, 60);
+    \Drupal::logger('markaspot_group')->warning(
+      'Blocked workspace save rejected: entity_type=@type bundle=@bundle id=@id jid=@jid uid=@uid',
+      [
+        '@type' => $entity->getEntityTypeId(),
+        '@bundle' => $entity->bundle(),
+        '@id' => $entity->id() ?: 'new',
+        '@jid' => $blocked_jurisdiction_id,
+        '@uid' => $uid,
+      ],
+    );
+  }
+
+  throw new AccessDeniedHttpException('Workspace is blocked.');
+}
+
+/**
+ * Gets jurisdiction IDs that control visibility for an entity.
+ *
+ * @return int[]
+ *   Jurisdiction group IDs.
+ */
+function _markaspot_group_workspace_visibility_jurisdiction_ids(EntityInterface $entity): array {
+  if (!_markaspot_group_entity_is_blockable_workspace_content($entity)) {
+    return [];
+  }
+
+  $jurisdiction_ids = [];
+  if ($entity instanceof ContentEntityInterface
+    && $entity->hasField('field_jurisdiction')
+    && !$entity->get('field_jurisdiction')->isEmpty()) {
+    $jurisdiction_ids = array_values(array_unique(array_filter(array_map(
+      'intval',
+      array_column($entity->get('field_jurisdiction')->getValue(), 'target_id'),
+    ))));
+  }
+
+  if ($jurisdiction_ids === []
+    && $entity instanceof NodeInterface
+    && $entity->bundle() === 'service_request') {
+    $fallback_id = _markaspot_group_request_jurisdiction_id()
+      ?? _markaspot_group_workspace_category_root_jurisdiction_id($entity);
+    if ($fallback_id !== NULL) {
+      $jurisdiction_ids[] = $fallback_id;
+    }
+  }
+
+  if ($jurisdiction_ids === []) {
+    return [];
+  }
+
+  $groups = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->loadMultiple($jurisdiction_ids);
+
+  return array_values(array_filter(
+    $jurisdiction_ids,
+    static fn(int $id): bool => _markaspot_group_is_jurisdiction_group(
+      $groups[$id] ?? NULL,
+    ),
+  ));
+}
+
+/**
+ * Checks whether an entity type and bundle carry workspace visibility.
+ */
+function _markaspot_group_entity_is_blockable_workspace_content(EntityInterface $entity): bool {
+  if ($entity instanceof NodeInterface) {
+    return in_array($entity->bundle(), ['service_request', 'page'], TRUE);
+  }
+
+  return $entity->getEntityTypeId() === 'taxonomy_term'
+    && in_array($entity->bundle(), [
+      'service_category',
+      'service_status',
+    ], TRUE);
+}
+
+/**
+ * Checks whether an account can modify content in a blocked workspace.
+ */
+function _markaspot_group_account_can_bypass_workspace_block(AccountInterface $account): bool {
+  return (int) $account->id() === 1
+    || in_array('administrator', $account->getRoles(), TRUE);
+}
+
+/**
+ * Builds cache tags for a membership-dependent visibility decision.
+ *
+ * @param int[] $jurisdiction_ids
+ *   Jurisdiction group IDs.
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The viewing account.
+ *
+ * @return string[]
+ *   Group and membership-list cache tags.
+ */
+function _markaspot_group_workspace_visibility_cache_tags(array $jurisdiction_ids, AccountInterface $account): array {
+  $tags = array_map(
+    static fn(int $id): string => 'group:' . $id,
+    $jurisdiction_ids,
+  );
+  $account_id = (int) $account->id();
+  if ($account_id > 0) {
+    $tags[] = 'group_relationship_list:plugin:group_membership:entity:'
+      . $account_id;
+  }
+  foreach ($jurisdiction_ids as $jurisdiction_id) {
+    $tags[] = 'group_relationship_list:plugin:group_membership:group:'
+      . $jurisdiction_id;
+  }
+
+  return array_values(array_unique($tags));
+}
+
+/**
+ * Gets the root jurisdiction attached to a request category.
+ */
+function _markaspot_group_workspace_category_root_jurisdiction_id(NodeInterface $node): ?int {
+  if (!$node->hasField('field_category')
+    || $node->get('field_category')->isEmpty()) {
+    return NULL;
+  }
+
+  $category = $node->get('field_category')->entity;
+  if (!$category instanceof TermInterface
+    || !$category->hasField('field_jurisdiction')
+    || $category->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $jurisdiction_id = (int) $category->get('field_jurisdiction')->target_id;
+  if ($jurisdiction_id <= 0) {
+    return NULL;
+  }
+
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  return $resolver->getRootJurisdictionId($jurisdiction_id);
+}
+
+/**
+ * Gets an explicitly claimed jurisdiction from the active request.
+ */
+function _markaspot_group_request_jurisdiction_id(): ?int {
+  $request = \Drupal::request();
+  $jurisdiction_id = $request->request->get('jurisdiction_id')
+    ?? $request->query->get('jurisdiction_id');
+
+  if (!$jurisdiction_id) {
+    $content = $request->getContent();
+    if ($content !== '') {
+      $data = json_decode($content, TRUE);
+      if (is_array($data)) {
+        $jurisdiction_id = $data['jurisdiction_id']
+          ?? $data['jurisdiction']
+          ?? $data['gid']
+          ?? NULL;
+      }
+    }
+  }
+
+  return $jurisdiction_id ? (int) $jurisdiction_id : NULL;
+}
+
+/**
+ * Gets usable coordinates from a service request.
+ *
+ * @return array{float|null, float|null}
+ *   Latitude and longitude, or two NULL values when unavailable.
+ */
+function _markaspot_group_workspace_request_coordinates(NodeInterface $node): array {
+  if (!$node->hasField('field_geolocation')
+    || $node->get('field_geolocation')->isEmpty()) {
+    return [NULL, NULL];
+  }
+
+  $geolocation = $node->get('field_geolocation')->first();
+  $lat = (float) $geolocation->get('lat')->getValue();
+  $lng = (float) $geolocation->get('lng')->getValue();
+  if ($lat === 0.0 && $lng === 0.0) {
+    return [NULL, NULL];
+  }
+
+  return [$lat, $lng];
 }
 
 /**
@@ -900,6 +1253,184 @@ function markaspot_group_entity_create_access(AccountInterface $account, array $
   return AccessResult::forbidden($reason)
     ->cachePerPermissions()
     ->addCacheContexts(['user.roles']);
+}
+
+/**
+ * Implements hook_query_TAG_alter() for node_access.
+ *
+ * Excludes service requests assigned to any jurisdiction the current account
+ * may not read. The anti-subquery makes a restrictive target win for
+ * multi-value field_jurisdiction assignments.
+ */
+function markaspot_group_query_node_access_alter(AlterableInterface $query): void {
+  if (!$query instanceof SelectInterface
+    || $query->getMetaData('entity_type') !== 'node'
+    || $query->hasTag('markaspot_open311_workspace_visibility')) {
+    return;
+  }
+
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
+  $account = \Drupal::currentUser();
+  $unreadable_ids = $service->getUnreadableJurisdictionIds(
+    $account,
+  );
+  _markaspot_group_bubble_workspace_query_cacheability($account);
+  if ($unreadable_ids === []) {
+    return;
+  }
+
+  _markaspot_group_exclude_unreadable_workspace_requests(
+    $query,
+    $unreadable_ids,
+  );
+}
+
+/**
+ * Bubbles workspace query dependencies into JSON:API's render context.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The account whose visibility and memberships scoped the query.
+ */
+function _markaspot_group_bubble_workspace_query_cacheability(AccountInterface $account): void {
+  if (!\Drupal::hasService('renderer')) {
+    return;
+  }
+
+  /** @var \Drupal\Core\Render\RendererInterface $renderer */
+  $renderer = \Drupal::service('renderer');
+  if (!$renderer->hasRenderContext()) {
+    return;
+  }
+
+  $tags = ['group_list'];
+  $account_id = (int) $account->id();
+  if ($account_id > 0) {
+    $tags[] = 'group_relationship_list:plugin:group_membership:entity:'
+      . $account_id;
+  }
+
+  $build = [
+    '#cache' => [
+      'contexts' => ['user'],
+      'tags' => $tags,
+    ],
+  ];
+  $renderer->render($build);
+}
+
+/**
+ * Adds a workspace-visibility anti-subquery to a node entity query.
+ *
+ * @param \Drupal\Core\Database\Query\SelectInterface $query
+ *   The node entity query.
+ * @param int[] $unreadable_jurisdiction_ids
+ *   Jurisdiction IDs whose requests must be excluded.
+ */
+function _markaspot_group_exclude_unreadable_workspace_requests(SelectInterface $query, array $unreadable_jurisdiction_ids): void {
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+  $field_storage_definitions = \Drupal::service('entity_field.manager')
+    ->getFieldStorageDefinitions('node');
+  $field_storage = $field_storage_definitions['field_jurisdiction'] ?? NULL;
+  if (!$node_storage instanceof SqlEntityStorageInterface
+    || $field_storage === NULL) {
+    _markaspot_group_exclude_all_service_requests($query);
+    return;
+  }
+
+  try {
+    $table_mapping = $node_storage->getTableMapping();
+    $field_table = $table_mapping->getFieldTableName('field_jurisdiction');
+    $target_column = $table_mapping->getFieldColumnName(
+      $field_storage,
+      'target_id',
+    );
+    $field_table_columns = $table_mapping->getAllColumns($field_table);
+    $schema = \Drupal::database()->schema();
+    $physical_columns_exist = $schema->tableExists($field_table)
+      && $schema->fieldExists($field_table, 'bundle')
+      && $schema->fieldExists($field_table, 'entity_id')
+      && $schema->fieldExists($field_table, 'deleted')
+      && $schema->fieldExists($field_table, $target_column);
+  }
+  catch (\Throwable) {
+    _markaspot_group_exclude_all_service_requests($query);
+    return;
+  }
+
+  if (!in_array('bundle', $field_table_columns, TRUE)
+    || !in_array('entity_id', $field_table_columns, TRUE)
+    || !in_array('deleted', $field_table_columns, TRUE)
+    || !in_array($target_column, $field_table_columns, TRUE)
+    || !$physical_columns_exist) {
+    _markaspot_group_exclude_all_service_requests($query);
+    return;
+  }
+
+  $base_alias = _markaspot_group_node_query_base_alias($query);
+  if ($base_alias === NULL) {
+    _markaspot_group_exclude_all_service_requests($query);
+    return;
+  }
+
+  $restricted_nodes = \Drupal::database()
+    ->select($field_table, 'unreadable_workspace');
+  $restricted_nodes->addField('unreadable_workspace', 'entity_id');
+  $restricted_nodes
+    ->condition('unreadable_workspace.bundle', 'service_request')
+    ->condition('unreadable_workspace.deleted', 0)
+    ->condition(
+      'unreadable_workspace.' . $target_column,
+      array_values(array_unique(array_map(
+        'intval',
+        $unreadable_jurisdiction_ids,
+      ))),
+      'IN',
+    );
+  $query->condition($base_alias . '.nid', $restricted_nodes, 'NOT IN');
+}
+
+/**
+ * Fails closed for service requests while preserving all other node bundles.
+ */
+function _markaspot_group_exclude_all_service_requests(SelectInterface $query): void {
+  $data_alias = NULL;
+  $base_alias = NULL;
+  foreach ($query->getTables() as $alias => $table) {
+    if ($table['join type'] === NULL) {
+      $base_alias = $alias;
+    }
+    if ($table['table'] === 'node_field_data') {
+      $data_alias = $alias;
+    }
+  }
+
+  if ($data_alias === NULL && $base_alias !== NULL) {
+    $data_alias = $query->join(
+      'node_field_data',
+      'workspace_visibility_node_data',
+      "$base_alias.nid = %alias.nid",
+    );
+  }
+  if ($data_alias === NULL) {
+    $query->where('1 = 0');
+    return;
+  }
+
+  $query->condition($data_alias . '.type', 'service_request', '<>');
+}
+
+/**
+ * Gets the base table alias from a node entity query.
+ */
+function _markaspot_group_node_query_base_alias(SelectInterface $query): ?string {
+  foreach ($query->getTables() as $alias => $table) {
+    if ($table['join type'] === NULL) {
+      return $alias;
+    }
+  }
+
+  return NULL;
 }
 
 /**
