@@ -374,6 +374,601 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Creates a stale group backed by independently mutable persisted fields.
+   *
+   * Saving copies the loaded entity state to the persisted state, matching the
+   * stale full-entity write that these regression tests exercise.
+   *
+   * @param array $fields
+   *   Additional loaded field values.
+   * @param array $persistedFields
+   *   Persisted field values, returned by reference for out-of-band mutation.
+   * @param string[] $saveEvents
+   *   Save ordering events, returned by reference.
+   * @param bool $blockOnSecondRefresh
+   *   Whether to apply a block between the general policy check and save.
+   *
+   * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The stale group entity.
+   */
+  private function createConcurrentBlockGroup(
+    array $fields,
+    ?array &$persistedFields,
+    ?array &$saveEvents,
+    bool $blockOnSecondRefresh = FALSE,
+  ): GroupInterface {
+    $loadedFields = $fields + ['field_visibility' => 'public'];
+    $persistedFields = $loadedFields;
+    $saveEvents = [];
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(
+        static function (string $name) use (&$loadedFields): bool {
+          return array_key_exists($name, $loadedFields);
+        },
+      );
+    $group->method('get')
+      ->willReturnCallback(
+        function (string $name) use (&$loadedFields): object {
+          return $this->createStatefulFieldItem($loadedFields[$name] ?? NULL);
+        },
+      );
+    $group->method('set')
+      ->willReturnCallback(
+        function (string $name, mixed $value) use (&$loadedFields, $group) {
+          if (is_array($value)
+            && isset($value[0])
+            && is_array($value[0])
+            && array_key_exists('value', $value[0])) {
+            $value = $value[0]['value'];
+          }
+          elseif (is_array($value) && array_key_exists('target_id', $value)) {
+            $value = [$value];
+          }
+          $loadedFields[$name] = $value;
+          return $group;
+        },
+      );
+    $group->method('save')
+      ->willReturnCallback(
+        function () use (&$loadedFields, &$persistedFields, &$saveEvents): int {
+          $saveEvents[] = 'save';
+          $persistedFields = $loadedFields;
+          return 2;
+        },
+      );
+
+    $freshGroup = $this->createMock(GroupInterface::class);
+    $freshGroup->method('id')->willReturn('14');
+    $freshGroup->method('hasField')
+      ->willReturnCallback(
+        static function (string $name) use (&$persistedFields): bool {
+          return array_key_exists($name, $persistedFields);
+        },
+      );
+    $freshGroup->method('get')
+      ->willReturnCallback(
+        function (string $name) use (&$persistedFields): object {
+          return $this->createStatefulFieldItem($persistedFields[$name] ?? NULL);
+        },
+      );
+
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $this->groupStorage->method('loadUnchanged')
+      ->willReturnCallback(
+        function () use (
+          $freshGroup,
+          &$persistedFields,
+          &$saveEvents,
+          $blockOnSecondRefresh,
+        ): GroupInterface {
+          if ($blockOnSecondRefresh && in_array('refresh', $saveEvents, TRUE)) {
+            $persistedFields['field_visibility'] = 'blocked';
+          }
+          $saveEvents[] = 'refresh';
+          return $freshGroup;
+        },
+      );
+
+    // Prime the stale entity before the test mutates persistedFields. The
+    // controller then receives this same already-loaded entity from storage.
+    $this->groupStorage->load(14);
+
+    return $group;
+  }
+
+  /**
+   * Creates the minimal mutable field item used by race regression tests.
+   *
+   * @param mixed $value
+   *   The current field value.
+   *
+   * @return object
+   *   A field item list test double.
+   */
+  private function createStatefulFieldItem(mixed $value): object {
+    return new class ($value) {
+
+      /**
+       * The scalar field value.
+       *
+       * @var mixed
+       */
+      public mixed $value;
+
+      /**
+       * Constructs the field item list test double.
+       */
+      public function __construct(private readonly mixed $rawValue) {
+        $this->value = is_array($rawValue) ? NULL : $rawValue;
+      }
+
+      /**
+       * Returns whether the field is empty.
+       */
+      public function isEmpty(): bool {
+        return $this->rawValue === NULL
+          || $this->rawValue === ''
+          || $this->rawValue === [];
+      }
+
+      /**
+       * Returns the full field value.
+       */
+      public function getValue(): array {
+        if ($this->rawValue === NULL) {
+          return [];
+        }
+        if (is_array($this->rawValue)) {
+          return $this->rawValue;
+        }
+        return [['value' => $this->rawValue]];
+      }
+
+      /**
+       * Returns no validation violations.
+       */
+      public function validate(): array {
+        return [];
+      }
+
+    };
+  }
+
+  /**
+   * Tests logo uploads preserve a concurrent workspace block.
+   *
+   * @covers ::uploadLogo
+   * @covers ::saveGroupWithProtectedFields
+   */
+  public function testUploadLogoPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_logo_light' => NULL],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $this->fileSystem->method('prepareDirectory')->willReturn(TRUE);
+    $file = $this->createMock(FileInterface::class);
+    $file->method('id')->willReturn('88');
+    $file->method('getFileUri')->willReturn('public://jurisdictions/14/logos/logo.svg');
+    $this->fileRepository->method('writeData')->willReturn($file);
+
+    $temporaryFile = tempnam(sys_get_temp_dir(), 'tenant-logo-');
+    $this->assertIsString($temporaryFile);
+    file_put_contents(
+      $temporaryFile,
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>',
+    );
+    $uploadedFile = new UploadedFile(
+      $temporaryFile,
+      'logo.svg',
+      'image/svg+xml',
+      NULL,
+      TRUE,
+    );
+    $request = Request::create(
+      '/api/tenant/14/logo',
+      'POST',
+      [],
+      [],
+      ['logo_light' => $uploadedFile],
+    );
+
+    $response = $this->controller->uploadLogo($request, '14');
+    unlink($temporaryFile);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests logo deletion preserves a concurrent workspace block.
+   *
+   * @covers ::deleteLogo
+   */
+  public function testDeleteLogoPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      [
+        'field_logo_light' => [['target_id' => 77]],
+        'field_logo_dark' => [],
+        'field_favicon' => [],
+      ],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/logo?variant=logo_light',
+      'DELETE',
+    );
+    $response = $this->controller->deleteLogo($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests general settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsPreservesConcurrentBlock(): void {
+    $this->currentUser->method('id')->willReturn('1');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated']);
+
+    $this->createConcurrentBlockGroup(
+      ['field_platform_name' => 'Old name'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_platform_name' => 'New name']),
+    );
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame('New name', $persistedFields['field_platform_name']);
+    $this->assertSame(['refresh', 'refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests tenant admins retain the concurrent general-settings block policy.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsTenantAdminRejectsConcurrentBlock(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $this->createConcurrentBlockGroup(
+      ['field_platform_name' => 'Old name'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_platform_name' => 'New name']),
+    );
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(403, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame('Old name', $persistedFields['field_platform_name']);
+    $this->assertSame(['refresh'], $saveEvents);
+  }
+
+  /**
+   * Tests a block landing after the general policy check still wins.
+   *
+   * @covers ::updateGeneralSettings
+   * @covers ::saveGroupWithProtectedFields
+   */
+  public function testUpdateGeneralSettingsRejectsBlockBeforeFinalRefresh(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $this->createConcurrentBlockGroup(
+      [],
+      $persistedFields,
+      $saveEvents,
+      TRUE,
+    );
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => 'authenticated']),
+    );
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(403, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'refresh'], $saveEvents);
+  }
+
+  /**
+   * Tests language settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateLanguageSettings
+   */
+  public function testUpdateLanguageSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/languages',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['available' => ['de'], 'default' => 'de']),
+    );
+    $response = $this->controller->updateLanguageSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests text override settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['overrides' => new \stdClass()]),
+    );
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests branding settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateBrandingSettings
+   */
+  public function testUpdateBrandingSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_custom_css' => ''],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/branding',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['custom_css' => '.brand { color: red; }']),
+    );
+    $response = $this->controller->updateBrandingSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests branding completion preserves a concurrent workspace block.
+   *
+   * @covers ::markBrandingSetupCompleted
+   */
+  public function testMarkBrandingSetupCompletedPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $response = $this->controller->markBrandingSetupCompleted('14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests feature settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['voting' => TRUE]),
+    );
+    $response = $this->controller->updateFeatureSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests map settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateMapSettings
+   */
+  public function testUpdateMapSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/map',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['zoom' => 12]),
+    );
+    $response = $this->controller->updateMapSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests boundary settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateBoundarySettings
+   */
+  public function testUpdateBoundarySettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_boundary' => NULL],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/boundary',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['boundary' => NULL]),
+    );
+    $response = $this->controller->updateBoundarySettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests navigation settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateNavigationSettings
+   */
+  public function testUpdateNavigationSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/navigation',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['navigation' => []]),
+    );
+    $response = $this->controller->updateNavigationSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests dashboard settings preserve a concurrent workspace block.
+   *
+   * @covers ::updateDashboardSettings
+   */
+  public function testUpdateDashboardSettingsPreservesConcurrentBlock(): void {
+    $this->createConcurrentBlockGroup(
+      ['field_nuxt_config' => '{}'],
+      $persistedFields,
+      $saveEvents,
+    );
+    $persistedFields['field_visibility'] = 'blocked';
+
+    $request = Request::create(
+      '/api/tenant/14/dashboard',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['columns' => ['status' => TRUE]]),
+    );
+    $response = $this->controller->updateDashboardSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('blocked', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'save'], $saveEvents);
+  }
+
+  /**
    * Tests accessCheck() returns forbidden for nonexistent jurisdiction.
    *
    * @covers ::accessCheck
@@ -1394,6 +1989,10 @@ class TenantSettingsControllerTest extends UnitTestCase {
       'field_visibility' => 'blocked',
     ]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $freshGroup = $this->createMockGroup([
+      'field_visibility' => 'blocked',
+    ]);
+    $this->groupStorage->method('loadUnchanged')->with('14')->willReturn($freshGroup);
 
     $request = Request::create(
       '/api/tenant/14/general',
@@ -1408,6 +2007,153 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $response = $this->controller->updateGeneralSettings($request, '14');
 
     $this->assertEquals(403, $response->getStatusCode());
+  }
+
+  /**
+   * Tests tenant admins can make a workspace authenticated-only.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsTenantAdminCanRequireAuthentication(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $this->createConcurrentBlockGroup([], $persistedFields, $saveEvents);
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => 'authenticated']),
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('authenticated', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests tenant admins can make a workspace submission-only.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsTenantAdminCanLimitToSubmissions(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $this->createConcurrentBlockGroup([], $persistedFields, $saveEvents);
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => 'submission_only']),
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('submission_only', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests tenant admins can return a non-blocked workspace to public.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsTenantAdminCanMakeWorkspacePublic(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $this->createConcurrentBlockGroup(
+      ['field_visibility' => 'authenticated'],
+      $persistedFields,
+      $saveEvents,
+    );
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => 'public']),
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('public', $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Tests platform administrators can legitimately change visibility.
+   *
+   * @param string $userId
+   *   The current user ID.
+   * @param string[] $roles
+   *   The current user roles.
+   * @param string $initialVisibility
+   *   The persisted visibility before the request.
+   * @param string $requestedVisibility
+   *   The visibility requested by the platform administrator.
+   *
+   * @dataProvider platformAdministratorProvider
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsPlatformAdminCanChangeVisibility(
+    string $userId,
+    array $roles,
+    string $initialVisibility,
+    string $requestedVisibility,
+  ): void {
+    $this->currentUser->method('id')->willReturn($userId);
+    $this->currentUser->method('getRoles')->willReturn($roles);
+
+    $this->createConcurrentBlockGroup(
+      ['field_visibility' => $initialVisibility],
+      $persistedFields,
+      $saveEvents,
+    );
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => $requestedVisibility]),
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($requestedVisibility, $persistedFields['field_visibility']);
+    $this->assertSame(['refresh', 'refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Provides both platform administrator authorization branches.
+   */
+  public static function platformAdministratorProvider(): array {
+    return [
+      'user 1 unblocks' => ['1', ['authenticated'], 'blocked', 'authenticated'],
+      'administrator role unblocks' => ['8', ['authenticated', 'administrator'], 'blocked', 'authenticated'],
+      'user 1 blocks' => ['1', ['authenticated'], 'public', 'blocked'],
+      'administrator role blocks' => ['8', ['authenticated', 'administrator'], 'public', 'blocked'],
+    ];
   }
 
   /**
@@ -1452,57 +2198,6 @@ class TenantSettingsControllerTest extends UnitTestCase {
         '<strong>Footer</strong>',
       ),
     );
-  }
-
-  /**
-   * C-1 regression.
-   *
-   * Tenant PATCH without field_visibility cannot clobber a concurrent admin
-   * block.
-   *
-   * Without the multi-field guard, $group->save() would write the in-memory
-   * field_visibility (initial: 'public') back over the freshly-set 'blocked'
-   * state, silently unblocking the workspace from a non-admin caller.
-   *
-   * @covers ::updateGeneralSettings
-   */
-  public function testUpdateGeneralSettingsMultiFieldPatchPreservesAdminBlock(): void {
-    $this->currentUser->method('id')->willReturn('7');
-    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
-
-    // Initial load: 'public'. Simulates the read before an admin's concurrent
-    // block lands.
-    $group = $this->createMockGroup([
-      'field_visibility' => 'public',
-      'field_platform_name' => 'Old name',
-    ]);
-    $this->groupStorage->method('load')->with(14)->willReturn($group);
-
-    // loadUnchanged returns the post-admin-block fresh state.
-    $fresh = $this->createMockGroup([
-      'field_visibility' => 'blocked',
-      'field_platform_name' => 'Old name',
-    ]);
-    $this->groupStorage->method('loadUnchanged')->with(14)->willReturn($fresh);
-
-    // Tenant sends a PATCH that does NOT touch field_visibility — only
-    // field_platform_name. Pre-fix this would have slipped past both guards
-    // and $group->save() would have re-written the public visibility.
-    $request = Request::create(
-      '/api/tenant/14/general',
-      'PATCH',
-      [],
-      [],
-      [],
-      ['CONTENT_TYPE' => 'application/json'],
-      json_encode(['field_platform_name' => 'New name'])
-    );
-
-    $response = $this->controller->updateGeneralSettings($request, '14');
-
-    $this->assertEquals(403, $response->getStatusCode());
-    $data = json_decode($response->getContent(), TRUE);
-    $this->assertStringContainsString('platform administrators', $data['error']);
   }
 
   /**

@@ -31,6 +31,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * Controller for tenant settings API endpoints.
@@ -265,6 +266,13 @@ final class TenantSettingsController extends ControllerBase {
   ];
 
   /**
+   * Group fields whose persisted values must survive unrelated saves.
+   */
+  private const PROTECTED_GROUP_FIELDS = [
+    'field_visibility',
+  ];
+
+  /**
    * The stream wrapper manager.
    *
    * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
@@ -454,6 +462,63 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     return $group;
+  }
+
+  /**
+   * Saves a group without overwriting protected fields with stale values.
+   *
+   * Protected fields are refreshed from storage immediately before saving.
+   * A protected field retains its requested in-memory value only when the
+   * calling endpoint marks that change as legitimate. Visibility changes
+   * receive a final blocked-state check against the refreshed entity.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group entity to save.
+   * @param string[] $legitimatelyChangedFields
+   *   Protected fields legitimately changed by the current request.
+   *
+   * @return void
+   */
+  private function saveGroupWithProtectedFields(
+    GroupInterface $group,
+    array $legitimatelyChangedFields = [],
+  ): void {
+    $allowedChangedFields = array_intersect(
+      $legitimatelyChangedFields,
+      self::PROTECTED_GROUP_FIELDS,
+    );
+    $freshGroup = $this->entityTypeManager
+      ->getStorage('group')
+      ->loadUnchanged($group->id());
+
+    foreach (self::PROTECTED_GROUP_FIELDS as $fieldName) {
+      if (!$group->hasField($fieldName)) {
+        continue;
+      }
+      if (!$freshGroup instanceof GroupInterface
+        || !$freshGroup->hasField($fieldName)) {
+        throw new \RuntimeException("Cannot refresh protected group field $fieldName.");
+      }
+      if (in_array($fieldName, $allowedChangedFields, TRUE)) {
+        if ($fieldName === 'field_visibility'
+          && !$this->currentUserCanManageWorkspaceBlock()) {
+          $freshVisibility = $freshGroup->get($fieldName)->isEmpty()
+            ? 'public'
+            : (string) $freshGroup->get($fieldName)->value;
+          $requestedVisibility = $group->get($fieldName)->isEmpty()
+            ? 'public'
+            : (string) $group->get($fieldName)->value;
+          if ($freshVisibility === 'blocked'
+            || $requestedVisibility === 'blocked') {
+            throw new AccessDeniedHttpException('Only platform administrators can block or unblock a workspace.');
+          }
+        }
+        continue;
+      }
+      $group->set($fieldName, $freshGroup->get($fieldName)->getValue());
+    }
+
+    $group->save();
   }
 
   /**
@@ -739,7 +804,7 @@ final class TenantSettingsController extends ControllerBase {
     // If any valid branding asset was processed, save the group entity.
     if (!empty($logos) || $appIconUrl !== NULL) {
       try {
-        $group->save();
+        $this->saveGroupWithProtectedFields($group);
       }
       catch (\Exception $e) {
         $this->getLogger('markaspot_nuxt')->error(
@@ -1372,7 +1437,7 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -1528,35 +1593,24 @@ final class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'No valid fields provided.'], 400);
     }
 
-    if (array_key_exists('field_visibility', $data)) {
-      $currentVisibility = $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()
-        ? (string) $group->get('field_visibility')->value
+    // Preserve the existing policy that a tenant admin cannot update general
+    // settings after a concurrent platform block. The centralized save helper
+    // still performs the final refresh to protect the remaining race window.
+    $freshGroup = $this->entityTypeManager
+      ->getStorage('group')
+      ->loadUnchanged($group->id());
+    $freshVisibility = $freshGroup instanceof GroupInterface
+      && $freshGroup->hasField('field_visibility')
+      && !$freshGroup->get('field_visibility')->isEmpty()
+        ? (string) $freshGroup->get('field_visibility')->value
         : 'public';
-      $requestedVisibility = is_string($data['field_visibility']) ? $data['field_visibility'] : '';
-      if (($currentVisibility === 'blocked' || $requestedVisibility === 'blocked')
-        && !$this->currentUserCanManageWorkspaceBlock()) {
-        return new JsonResponse(['error' => 'Only platform administrators can block or unblock a workspace.'], 403);
-      }
-    }
-
-    // TOCTOU recheck against the freshest DB state. Runs even when the PATCH
-    // does not touch field_visibility, because $group->save() writes the full
-    // entity row: an in-memory field_visibility loaded BEFORE an admin's
-    // concurrent block would otherwise silently overwrite that block. Placed
-    // before field validation so blocked-workspace rejections short-circuit
-    // and don't spend cycles validating fields that won't be saved.
-    $fresh = $this->entityTypeManager->getStorage('group')->loadUnchanged($group->id());
-    $freshVisibility = $fresh && $fresh->hasField('field_visibility') && !$fresh->get('field_visibility')->isEmpty()
-      ? (string) $fresh->get('field_visibility')->value
-      : 'public';
-    if ($freshVisibility === 'blocked' && !$this->currentUserCanManageWorkspaceBlock()) {
+    $requestedVisibility = array_key_exists('field_visibility', $data)
+      && is_string($data['field_visibility'])
+        ? $data['field_visibility']
+        : '';
+    if (($freshVisibility === 'blocked' || $requestedVisibility === 'blocked')
+      && !$this->currentUserCanManageWorkspaceBlock()) {
       return new JsonResponse(['error' => 'Only platform administrators can block or unblock a workspace.'], 403);
-    }
-    // For privileged callers on a fresh-blocked workspace who did not patch
-    // field_visibility themselves, preserve the fresh blocked state so the
-    // in-memory stale value doesn't get re-written by save().
-    if ($freshVisibility === 'blocked' && !array_key_exists('field_visibility', $data)) {
-      $group->set('field_visibility', 'blocked');
     }
 
     // Validate each supplied field before touching the entity.
@@ -1601,7 +1655,13 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     try {
-      $group->save();
+      $legitimatelyChangedFields = array_key_exists('field_visibility', $data)
+        ? ['field_visibility']
+        : [];
+      $this->saveGroupWithProtectedFields($group, $legitimatelyChangedFields);
+    }
+    catch (AccessDeniedHttpException $e) {
+      return new JsonResponse(['error' => $e->getMessage()], 403);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -1780,7 +1840,7 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -1952,7 +2012,7 @@ final class TenantSettingsController extends ControllerBase {
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -2137,7 +2197,7 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -2188,7 +2248,7 @@ final class TenantSettingsController extends ControllerBase {
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -2460,7 +2520,7 @@ final class TenantSettingsController extends ControllerBase {
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -2659,7 +2719,7 @@ final class TenantSettingsController extends ControllerBase {
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -2765,7 +2825,7 @@ final class TenantSettingsController extends ControllerBase {
     );
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -2968,7 +3028,7 @@ final class TenantSettingsController extends ControllerBase {
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
@@ -3265,7 +3325,7 @@ final class TenantSettingsController extends ControllerBase {
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
     try {
-      $group->save();
+      $this->saveGroupWithProtectedFields($group);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
