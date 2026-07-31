@@ -1,5 +1,14 @@
 # Changelog
 
+## [11.9.177](https://github.com/markaspot/markaspot/compare/11.9.176...11.9.177) (2026-07-31)
+
+### Features
+
+* apply a vertical vocabulary to a portfolio root ([a1063ee](https://github.com/markaspot/markaspot/commit/a1063eef04c6f65406bfc73c21e90a84a6ac605c))
+* deliver the tenant entity vocabulary from the portfolio root ([02a5379](https://github.com/markaspot/markaspot/commit/02a5379b6d9fae66b52c7506431908476bd1ef9d))
+* merge tenant text overrides from the portfolio root ([ccfa8d7](https://github.com/markaspot/markaspot/commit/ccfa8d7b631df24a15cf0e3c0bd8dcb7f9b47c38))
+* resolve the wording preset from the portfolio root ([4121948](https://github.com/markaspot/markaspot/commit/4121948542314ae9fbb536da121517bdc7fb75ad))
+
 ## [11.9.176](https://github.com/markaspot/markaspot/compare/11.9.175...11.9.176) (2026-07-31)
 
 ### Bug Fixes
