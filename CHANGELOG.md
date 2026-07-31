@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.176](https://github.com/markaspot/markaspot/compare/11.9.175...11.9.176) (2026-07-31)
+
+### Bug Fixes
+
+* enforce workspace visibility on node entity queries ([436c548](https://github.com/markaspot/markaspot/commit/436c548ee75d5ca345a04ae08815a947ba6dd693))
+* preserve workspace visibility across tenant settings saves ([13bbb38](https://github.com/markaspot/markaspot/commit/13bbb38dc831da321a2ba394a970d201cdc19c76))
+* resolve inherited categories and verify service wiring ([678dc6e](https://github.com/markaspot/markaspot/commit/678dc6e6221ec43f3fddca5ccad65c8f1863b068))
+
 ## [11.9.175](https://github.com/markaspot/markaspot/compare/11.9.174...11.9.175) (2026-07-30)
 
 ### Features
