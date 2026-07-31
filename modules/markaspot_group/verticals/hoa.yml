@@ -1,0 +1,90 @@
+# Measured production vocabulary. English overrides are copied verbatim from
+# the customer wording inventory. German entity labels complete the vocabulary.
+id: hoa
+label: 'Homeowner associations'
+entities:
+  en:
+    jurisdiction:
+      singular: Community
+      plural: Communities
+    organisation:
+      singular: Contractor
+      plural: Contractors
+  de:
+    jurisdiction:
+      singular: Gemeinschaft
+      plural: Gemeinschaften
+    organisation:
+      singular: Dienstleister
+      plural: Dienstleister
+overrides:
+  en:
+    dashboard.assignment.assigned_success_with_organisation: 'Assigned to {name}, contractor: {organisation}'
+    dashboard.assignment.consequence_team: 'Saves immediately. Email to {organisation} (contractor mailbox or active members).'
+    dashboard.assignment.organisation_tag_aria: '{name}, contractor {organisation}'
+    dashboard.assignment.teams_section: 'Contractors'
+    dashboard.detail.descriptions.organisation_notification: 'When saved, assigning a contractor sends an email to the contractor mailbox. If no mailbox is stored, active members of that contractor are notified.'
+    dashboard.detail.placeholders.no_organisation: 'No contractor assigned'
+    dashboard.detail.placeholders.select_organisation: 'Select contractor...'
+    dashboard.detail.sections.organisation: 'Contractor'
+    dashboard.escalation.organisations_section: 'Contractors · {jurisdiction}'
+    dashboard.filters.my_organisation: 'My Contractor'
+    dashboard.members.group_type_org: 'Contractors'
+    dashboard.members.popover_org_title: 'Contractor: {name} ({jurisdiction})'
+    dashboard.members.popover_org_unassigned: 'Contractor: {name} (Unassigned)'
+    dashboard.members.tab_org: 'Contractors'
+    dashboard.nav.organisations: 'Contractors'
+    dashboard.notifications.mail_sent_group: 'Contractor notified'
+    dashboard.notifications.summary_orgs_notified: 'Contractors notified {count}'
+    dashboard.requests.columns.group: 'Contractor'
+    dashboard.requests.empty.disable_organisation_filter: 'Disable contractor filter'
+    dashboard.requests.empty.organisation_filter_description: 'Only requests matching the active contractor filter are shown.'
+    dashboard.revisions.fields.organisation: 'Contractors'
+    dashboard.service_provider.boilerplate_empty: 'No templates match. Check contractor or type.'
+    dashboard.service_provider.no_providers_for_organisation: 'No providers are available for this contractor.'
+    dashboard.settings.dashboard.col_group_desc: 'Assigned Contractors'
+    dashboard.settings.dashboard.section_organisation: 'Contractor'
+    dashboard.settings.facilities.field_organisation_id: 'Contractors ID'
+    dashboard.settings.general_organization: 'Contractor'
+    dashboard.settings.general_organization_placeholder: 'Contractors Name'
+    dashboard.settings.organisations.activate_success: 'Contractors activated'
+    dashboard.settings.organisations.categories_help: 'Reports in these categories can be routed automatically to this contractor.'
+    dashboard.settings.organisations.categories_load_error: 'Routing categories could not be loaded. Contractor data remains available, but category assignments cannot be changed right now.'
+    dashboard.settings.organisations.create_first: 'Create first contractor'
+    dashboard.settings.organisations.create_success: 'Contractor created'
+    dashboard.settings.organisations.create_title: 'New Contractor'
+    dashboard.settings.organisations.deactivate_success: 'Contractor deactivated'
+    dashboard.settings.organisations.delete_blocked_description: 'This contractor is still referenced by reports. Deactivate it instead so existing assignments remain intact.'
+    dashboard.settings.organisations.delete_blocked_title: 'Contractor cannot be deleted'
+    dashboard.settings.organisations.delete_confirm: 'Are you sure you want to permanently delete "{name}"? Deactivation is the safer option when the contractor has already received reports.'
+    dashboard.settings.organisations.delete_error: 'Failed to delete contractor'
+    dashboard.settings.organisations.delete_forbidden_description: 'You may not have access to this jurisdiction, or the contractor may still be referenced by reports. If it belongs to your account, deactivate it instead.'
+    dashboard.settings.organisations.delete_forbidden_title: 'Contractor could not be deleted'
+    dashboard.settings.organisations.delete_success: 'Contractor deleted'
+    dashboard.settings.organisations.delete_title: 'Delete Contractor'
+    dashboard.settings.organisations.edit_title: 'Edit Contractor'
+    dashboard.settings.organisations.email_help: 'Assignment notifications for this contractor are sent to this address.'
+    dashboard.settings.organisations.empty: 'No contractors configured for this jurisdiction.'
+    dashboard.settings.organisations.field_parent: 'Parent contractor'
+    dashboard.settings.organisations.field_routing_categories: 'Categories routed to this contractor'
+    dashboard.settings.organisations.load_error: 'Contractors could not be loaded.'
+    dashboard.settings.organisations.load_error_title: 'Contractors unavailable'
+    dashboard.settings.organisations.name_placeholder: 'Contractor name'
+    dashboard.settings.organisations.new: 'New Contractor'
+    dashboard.settings.organisations.parent_label: 'Parent contractor'
+    dashboard.settings.organisations.parent_none: 'No parent contractor'
+    dashboard.settings.organisations.save_error: 'Failed to save contractor'
+    dashboard.settings.organisations.scope_error_description: 'This jurisdiction is not part of your account or you do not have permission to manage its contractors.'
+    dashboard.settings.organisations.status_error: 'Failed to change contractor status'
+    dashboard.settings.organisations.title: 'Contractors'
+    dashboard.settings.organisations.unknown_parent: 'Unknown contractor'
+    dashboard.settings.organisations.update_success: 'Contractor updated'
+    dashboard.settings.organisations.validation_error_description: 'Check the contractor jurisdiction and routing categories, then try again.'
+    dashboard.settings.organisations.validation_error_title: 'Contractor validation failed'
+    entities.organisation.plural: 'Contractors'
+    entities.organisation.singular: 'Contractor'
+    print.organisation: 'Contractor'
+statuses:
+  en:
+    - match: 'Assigned to Vendor'
+      name: 'Assigned to Contractor'

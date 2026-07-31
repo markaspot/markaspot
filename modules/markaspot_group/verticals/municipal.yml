@@ -1,0 +1,7 @@
+# Shipped identity vocabulary. Empty sections preserve the implicit municipal
+# defaults and keep field_nuxt_config byte-identical.
+id: municipal
+label: 'Municipal administration'
+entities: {}
+overrides: {}
+statuses: {}
