@@ -14,6 +14,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Symfony\Component\HttpFoundation\Request;
@@ -274,6 +275,19 @@ class MarkASpotSettingsController extends ControllerBase {
       return $error_response;
     }
 
+    // Load the resolved portfolio root once for tenant-scoped settings.
+    $rootGroup = $group;
+    if ($group instanceof GroupInterface
+      && $taxonomyJurisdictionId !== (int) $group->id()) {
+      $resolvedRoot = $this->entityTypeManager
+        ->getStorage('group')
+        ->load($taxonomyJurisdictionId);
+      if ($resolvedRoot instanceof GroupInterface) {
+        $rootGroup = $resolvedRoot;
+        $cache_metadata->addCacheableDependency($resolvedRoot);
+      }
+    }
+
     if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
       $nuxt_json = $group->get('field_nuxt_config')->value;
       $jurisdiction_config = json_decode($nuxt_json, TRUE);
@@ -393,6 +407,13 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     if ($group instanceof GroupInterface) {
+      if (!isset($settings['i18n']) || !is_array($settings['i18n'])) {
+        $settings['i18n'] = [];
+      }
+      $settings['i18n']['wording'] = $this->resolveWordingPreset(
+        $rootGroup,
+        $group,
+      );
       $settings['features'] = $this->featureScopeResolver->resolveEffectiveFeatures($group);
       // The GDPR consent requirement only couples to an EXPLICIT operator
       // decision. An unset platform flag keeps the legacy behaviour: the
@@ -481,14 +502,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // gate reads fail-closed. Evaluate the gate against the root instead,
     // matching EnterpriseFeatureAccessCheck's resolution — children inherit
     // the tier the same way they inherit the service catalog.
-    $tierGroup = $group;
-    if ($group instanceof GroupInterface && $taxonomyJurisdictionId !== (int) $group->id()) {
-      $rootGroup = $this->entityTypeManager->getStorage('group')->load($taxonomyJurisdictionId);
-      if ($rootGroup instanceof GroupInterface) {
-        $tierGroup = $rootGroup;
-        $cache_metadata->addCacheableDependency($rootGroup);
-      }
-    }
+    $tierGroup = $rootGroup;
     if ($this->enterpriseFeatureGate->isEnterpriseFeatureAllowed($tierGroup, 'mail_text_editor')) {
       $settings['features']['mailTextEditor'] = $this->readBooleanFeatureFlag(
         $settings['features']['mailTextEditor'] ?? TRUE
@@ -1650,6 +1664,55 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     return (int) $jurisdiction->id();
+  }
+
+  /**
+   * Resolves the tenant wording preset with a jurisdiction fallback.
+   *
+   * @param \Drupal\group\Entity\GroupInterface|null $root
+   *   The resolved root jurisdiction, or NULL when no jurisdiction was loaded.
+   * @param \Drupal\group\Entity\GroupInterface $jurisdiction
+   *   The currently requested jurisdiction.
+   *
+   * @return string
+   *   A supported wording preset ID.
+   */
+  private function resolveWordingPreset(
+    ?GroupInterface $root,
+    GroupInterface $jurisdiction,
+  ): string {
+    $rootWording = $root instanceof GroupInterface
+      ? $this->readStoredWordingPreset($root)
+      : NULL;
+    $wording = $rootWording ?? $this->readStoredWordingPreset($jurisdiction);
+
+    return CitizenWordingResolver::isSupportedPreset($wording)
+      ? $wording
+      : CitizenWordingResolver::DEFAULT_PRESET;
+  }
+
+  /**
+   * Reads a non-empty stored wording preset candidate from a jurisdiction.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $jurisdiction
+   *   The jurisdiction group.
+   *
+   * @return string|null
+   *   The stored candidate, or NULL when it is missing or empty.
+   */
+  private function readStoredWordingPreset(GroupInterface $jurisdiction): ?string {
+    if (!$jurisdiction->hasField('field_nuxt_config')
+      || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+      return NULL;
+    }
+
+    $config = json_decode(
+      (string) $jurisdiction->get('field_nuxt_config')->value,
+      TRUE,
+    );
+    $wording = is_array($config) ? ($config['i18n']['wording'] ?? NULL) : NULL;
+
+    return is_string($wording) && trim($wording) !== '' ? $wording : NULL;
   }
 
   /**

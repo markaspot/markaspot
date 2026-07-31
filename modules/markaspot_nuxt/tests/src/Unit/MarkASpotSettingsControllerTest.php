@@ -25,6 +25,7 @@ use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\Core\Site\Settings;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
@@ -600,6 +601,105 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(50.73, $data['center_lat']);
     $this->assertEquals(7.1, $data['center_lng']);
     $this->assertEquals(14, $data['zoom_initial']);
+  }
+
+  /**
+   * Tests wording inheritance without changing jurisdiction overrides.
+   *
+   * @param string|null $rootWording
+   *   The wording stored on the root jurisdiction.
+   * @param string|null $childWording
+   *   The wording stored on the requested jurisdiction.
+   * @param bool $isSingleJurisdiction
+   *   Whether the requested jurisdiction is also the root.
+   * @param string $expectedWording
+   *   The expected resolved wording preset.
+   *
+   * @dataProvider wordingPresetScopeProvider
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsResolvesWordingFromPortfolioRoot(
+    ?string $rootWording,
+    ?string $childWording,
+    bool $isSingleJurisdiction,
+    string $expectedWording,
+  ): void {
+    $overrides = [
+      'en' => [
+        'header.app_name' => 'Community requests',
+      ],
+    ];
+    $childI18n = ['overrides' => $overrides];
+    if ($childWording !== NULL) {
+      $childI18n['wording'] = $childWording;
+    }
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => $childI18n]),
+    ], 14);
+
+    $root = $child;
+    $rootId = 14;
+    if (!$isSingleJurisdiction) {
+      $rootI18n = [];
+      if ($rootWording !== NULL) {
+        $rootI18n['wording'] = $rootWording;
+      }
+      $root = $this->createMockGroup([
+        'field_nuxt_config' => json_encode(['i18n' => $rootI18n]),
+      ], 10);
+      $rootId = 10;
+    }
+
+    $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchyResolver->method('getRootJurisdictionId')
+      ->willReturnCallback(
+        static fn(int $id): int => $id === 14 ? $rootId : $id,
+      );
+    $this->groupStorage->method('load')
+      ->willReturnCallback(
+        static fn(int $id): ?GroupInterface => match ($id) {
+          14 => $child,
+          10 => $root,
+          default => NULL,
+        },
+      );
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $hierarchyResolver,
+    );
+    $controller = new MarkASpotSettingsController(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->streamWrapperManager,
+      $hierarchyResolver,
+      new EnterpriseFeatureGate($featureScopeResolver),
+      $this->organisationMetadataBuilder,
+      $featureScopeResolver,
+      $this->statusTermScope,
+    );
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($expectedWording, $data['i18n']['wording']);
+    $this->assertSame($overrides, $data['i18n']['overrides']);
+  }
+
+  /**
+   * Provides root, child, single-jurisdiction, default, and invalid presets.
+   */
+  public static function wordingPresetScopeProvider(): array {
+    return [
+      'root only' => ['suggestion', NULL, FALSE, 'suggestion'],
+      'child fallback' => [NULL, 'entry', FALSE, 'entry'],
+      'root wins' => ['contribution', 'suggestion', FALSE, 'contribution'],
+      'single jurisdiction unchanged' => [NULL, 'entry', TRUE, 'entry'],
+      'neither uses default' => [NULL, NULL, FALSE, CitizenWordingResolver::DEFAULT_PRESET],
+      'invalid root does not leak' => ['unknown', 'suggestion', FALSE, CitizenWordingResolver::DEFAULT_PRESET],
+    ];
   }
 
   /**
