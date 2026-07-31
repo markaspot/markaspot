@@ -24,6 +24,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
+use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
@@ -39,6 +40,7 @@ require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdRes
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
 require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/TenantSettingsController.php';
 
 /**
  * Tests the MarkASpotSettingsController.
@@ -763,6 +765,274 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       'neither uses default' => [NULL, NULL, FALSE, CitizenWordingResolver::DEFAULT_PRESET],
       'invalid root does not leak' => ['unknown', 'suggestion', FALSE, CitizenWordingResolver::DEFAULT_PRESET],
     ];
+  }
+
+  /**
+   * Tests an absent root override block leaves the i18n payload byte-identical.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsWithoutRootOverridesKeepsI18nPayloadByteIdentical(): void {
+    $overrides = [
+      'en' => [
+        'header.app_name' => 'Municipal requests',
+        'report.buttons.submit' => 'Send request',
+      ],
+    ];
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => $overrides,
+        ],
+      ]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => []]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame(
+      '{"overrides":{"en":{"header.app_name":"Municipal requests","report.buttons.submit":"Send request"}},"wording":"report"}',
+      json_encode($data['i18n']),
+    );
+  }
+
+  /**
+   * Tests text override merging from the portfolio root.
+   *
+   * @param array|null $rootOverrides
+   *   The text overrides stored on the root jurisdiction.
+   * @param array|null $childOverrides
+   *   The text overrides stored on the requested jurisdiction.
+   * @param array $expectedOverrides
+   *   The expected merged text overrides.
+   *
+   * @dataProvider textOverrideScopeProvider
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsMergesTextOverridesFromPortfolioRoot(
+    ?array $rootOverrides,
+    ?array $childOverrides,
+    array $expectedOverrides,
+  ): void {
+    $rootI18n = [];
+    if ($rootOverrides !== NULL) {
+      $rootI18n['overrides'] = $rootOverrides;
+    }
+    $childI18n = [];
+    if ($childOverrides !== NULL) {
+      $childI18n['overrides'] = $childOverrides;
+    }
+
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => $childI18n]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => $rootI18n]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($expectedOverrides, $data['i18n']['overrides']);
+    $this->assertContains(
+      'group:10',
+      $response->getCacheableMetadata()->getCacheTags(),
+    );
+  }
+
+  /**
+   * Provides root, child, collision, per-key, and per-locale merge cases.
+   *
+   * @return array<string, array{0: array|null, 1: array|null, 2: array}>
+   *   Text override merge cases.
+   */
+  public static function textOverrideScopeProvider(): array {
+    return [
+      'root only' => [
+        ['en' => ['header.app_name' => 'Portfolio requests']],
+        NULL,
+        ['en' => ['header.app_name' => 'Portfolio requests']],
+      ],
+      'child only' => [
+        NULL,
+        ['en' => ['header.app_name' => 'Workspace requests']],
+        ['en' => ['header.app_name' => 'Workspace requests']],
+      ],
+      'both with disjoint keys' => [
+        ['en' => ['header.app_name' => 'Portfolio requests']],
+        ['en' => ['report.buttons.submit' => 'Send workspace request']],
+        [
+          'en' => [
+            'header.app_name' => 'Portfolio requests',
+            'report.buttons.submit' => 'Send workspace request',
+          ],
+        ],
+      ],
+      'child wins collision' => [
+        ['en' => ['header.app_name' => 'Portfolio requests']],
+        ['en' => ['header.app_name' => 'Workspace requests']],
+        ['en' => ['header.app_name' => 'Workspace requests']],
+      ],
+      'child changes one of many root keys' => [
+        [
+          'en' => [
+            'header.app_name' => 'Portfolio requests',
+            'report.buttons.submit' => 'Send request',
+            'dashboard.nav.organisations' => 'Contractors',
+          ],
+        ],
+        ['en' => ['report.buttons.submit' => 'Submit workspace request']],
+        [
+          'en' => [
+            'header.app_name' => 'Portfolio requests',
+            'report.buttons.submit' => 'Submit workspace request',
+            'dashboard.nav.organisations' => 'Contractors',
+          ],
+        ],
+      ],
+      'different locales' => [
+        ['en' => ['header.app_name' => 'Portfolio requests']],
+        ['de' => ['header.app_name' => 'Mängelmelder']],
+        [
+          'en' => ['header.app_name' => 'Portfolio requests'],
+          'de' => ['header.app_name' => 'Mängelmelder'],
+        ],
+      ],
+    ];
+  }
+
+  /**
+   * Tests malformed root overrides are skipped without discarding the child.
+   *
+   * @param mixed $rootOverrides
+   *   The malformed or unsafe root override block.
+   *
+   * @dataProvider malformedRootTextOverrideProvider
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsMalformedRootOverridesKeepChildOverridesIntact(
+    mixed $rootOverrides,
+  ): void {
+    $childOverrides = [
+      'en' => [
+        'header.app_name' => 'Workspace requests',
+        'report.buttons.submit' => 'Send workspace request',
+      ],
+    ];
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => $childOverrides,
+        ],
+      ]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => $rootOverrides,
+        ],
+      ]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($childOverrides, $data['i18n']['overrides']);
+  }
+
+  /**
+   * Provides malformed and unsafe root text override blocks.
+   *
+   * @return array<string, array{0: mixed}>
+   *   Root override blocks that must not be inherited.
+   */
+  public static function malformedRootTextOverrideProvider(): array {
+    $tooManyKeys = [];
+    for ($index = 0; $index <= TenantSettingsController::TEXT_OVERRIDES_MAX_KEYS_PER_LOCALE; $index++) {
+      $tooManyKeys["header.key_$index"] = 'Value';
+    }
+
+    return [
+      'scalar block' => ['not a locale map'],
+      'unsupported locale' => [
+        ['xx' => ['header.app_name' => 'Unsafe root']],
+      ],
+      'invalid dotted key' => [
+        ['en' => ['header' => 'Unsafe root']],
+      ],
+      'prototype path' => [
+        ['en' => ['header.__proto__.label' => 'Unsafe root']],
+      ],
+      'blocked full key' => [
+        ['en' => ['fields.field_terms_of_use' => 'Unsafe root']],
+      ],
+      'HTML value' => [
+        ['en' => ['header.app_name' => '<strong>Unsafe root</strong>']],
+      ],
+      'malformed placeholder' => [
+        ['en' => ['report.status' => 'Unsafe {count']],
+      ],
+      'too many keys' => [
+        ['en' => $tooManyKeys],
+      ],
+      'oversized payload' => [
+        [
+          'en' => [
+            'header.app_name' => str_repeat(
+              'x',
+              TenantSettingsController::TEXT_OVERRIDES_MAX_PAYLOAD_BYTES,
+            ),
+          ],
+        ],
+      ],
+    ];
+  }
+
+  /**
+   * Tests a root jurisdiction delivers its own overrides byte-identically.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsRootKeepsOwnOverridesByteIdentical(): void {
+    $rootOverrides = [
+      'en' => [
+        'report.buttons.submit' => 'Send request',
+        'header.app_name' => 'Portfolio requests',
+      ],
+      'de' => [
+        'header.app_name' => 'Mängelmelder',
+      ],
+    ];
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => $rootOverrides,
+        ],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame(
+      json_encode($rootOverrides),
+      json_encode($data['i18n']['overrides']),
+    );
   }
 
   /**

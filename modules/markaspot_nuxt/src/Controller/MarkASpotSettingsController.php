@@ -433,6 +433,13 @@ class MarkASpotSettingsController extends ControllerBase {
         $rootGroup,
         $group,
       );
+      $inheritedTextOverrides = $this->resolveInheritedTextOverrides(
+        $rootGroup,
+        $group,
+      );
+      if ($inheritedTextOverrides !== NULL) {
+        $settings['i18n']['overrides'] = $inheritedTextOverrides;
+      }
       $entityVocabulary = $this->resolveEntityVocabulary(
         $rootGroup,
         $group,
@@ -1740,6 +1747,178 @@ class MarkASpotSettingsController extends ControllerBase {
     $wording = is_array($config) ? ($config['i18n']['wording'] ?? NULL) : NULL;
 
     return is_string($wording) && trim($wording) !== '' ? $wording : NULL;
+  }
+
+  /**
+   * Resolves inherited text overrides without changing local-only payloads.
+   *
+   * Root overrides provide defaults per locale and key. Overrides stored on
+   * the requested jurisdiction replace matching keys and extend that default.
+   * A NULL result means the existing jurisdiction payload must stay unchanged.
+   *
+   * @param \Drupal\group\Entity\GroupInterface|null $root
+   *   The resolved root jurisdiction, or NULL when no jurisdiction was loaded.
+   * @param \Drupal\group\Entity\GroupInterface $jurisdiction
+   *   The currently requested jurisdiction.
+   *
+   * @return array<string, array<string, string>>|null
+   *   The inherited override map, or NULL when no inheritance should apply.
+   */
+  private function resolveInheritedTextOverrides(
+    ?GroupInterface $root,
+    GroupInterface $jurisdiction,
+  ): ?array {
+    if (!$root instanceof GroupInterface
+      || (int) $root->id() === (int) $jurisdiction->id()) {
+      return NULL;
+    }
+
+    $rootOverrides = $this->readStoredTextOverrides($root);
+    if (!$this->isMergeableTextOverrideMap($rootOverrides)
+      || $rootOverrides === []) {
+      return NULL;
+    }
+
+    $jurisdictionOverrides = $this->readStoredTextOverrides($jurisdiction);
+    if ($jurisdictionOverrides === NULL) {
+      return $rootOverrides;
+    }
+    if (!$this->isMergeableTextOverrideMap($jurisdictionOverrides)) {
+      return NULL;
+    }
+
+    $mergedOverrides = $rootOverrides;
+    foreach ($jurisdictionOverrides as $locale => $localeOverrides) {
+      $mergedOverrides[$locale] = array_replace(
+        $mergedOverrides[$locale] ?? [],
+        $localeOverrides,
+      );
+    }
+
+    return $mergedOverrides;
+  }
+
+  /**
+   * Reads the stored text override block from a jurisdiction.
+   *
+   * The raw value is retained so malformed root blocks can be distinguished
+   * from missing blocks and skipped without replacing a valid child payload.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $jurisdiction
+   *   The jurisdiction group.
+   *
+   * @return mixed
+   *   The stored candidate, or NULL when it is missing.
+   */
+  private function readStoredTextOverrides(GroupInterface $jurisdiction): mixed {
+    if (!$jurisdiction->hasField('field_nuxt_config')
+      || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+      return NULL;
+    }
+
+    $config = json_decode(
+      (string) $jurisdiction->get('field_nuxt_config')->value,
+      TRUE,
+    );
+
+    return is_array($config)
+      ? ($config['i18n']['overrides'] ?? NULL)
+      : NULL;
+  }
+
+  /**
+   * Checks whether a text override block can be merged without reshaping it.
+   *
+   * Storage-time key and value safety validation remains authoritative. This
+   * structural check prevents malformed root data from replacing child data.
+   *
+   * @param mixed $overrides
+   *   The stored text override candidate.
+   *
+   * @return bool
+   *   TRUE when the candidate is a locale-to-string-map override block.
+   */
+  private function isMergeableTextOverrideMap(mixed $overrides): bool {
+    if (!is_array($overrides)) {
+      return FALSE;
+    }
+
+    $encodedOverrides = json_encode(
+      ['overrides' => $overrides],
+      JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+    );
+    if (!is_string($encodedOverrides)
+      || strlen($encodedOverrides) > TenantSettingsController::TEXT_OVERRIDES_MAX_PAYLOAD_BYTES) {
+      return FALSE;
+    }
+
+    $supportedLocales = array_keys(TenantSettingsController::SUPPORTED_LOCALES);
+    foreach ($overrides as $locale => $localeOverrides) {
+      if (!is_string($locale)
+        || !in_array($locale, $supportedLocales, TRUE)
+        || !is_array($localeOverrides)
+        || count($localeOverrides) > TenantSettingsController::TEXT_OVERRIDES_MAX_KEYS_PER_LOCALE) {
+        return FALSE;
+      }
+      foreach ($localeOverrides as $key => $value) {
+        if (!is_string($key)
+          || !preg_match(TenantSettingsController::TEXT_OVERRIDE_KEY_PATTERN, $key)
+          || in_array($key, TenantSettingsController::TEXT_OVERRIDE_BLOCKED_KEYS, TRUE)
+          || !$this->textOverrideKeySegmentsAreSafe($key)
+          || !is_string($value)
+          || str_contains($value, '<')
+          || str_contains($value, '>')
+          || !$this->textOverrideBracesAreSafe($value)) {
+          return FALSE;
+        }
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Checks dotted override keys for unsafe object path segments.
+   *
+   * @param string $key
+   *   The flat dotted override key.
+   *
+   * @return bool
+   *   TRUE when the key has no prototype-polluting path segment.
+   */
+  private function textOverrideKeySegmentsAreSafe(string $key): bool {
+    foreach (explode('.', $key) as $segment) {
+      if (in_array(
+        $segment,
+        TenantSettingsController::TEXT_OVERRIDE_BLOCKED_PATH_SEGMENTS,
+        TRUE,
+      )) {
+        return FALSE;
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Checks that braces only occur in complete vue-i18n placeholders.
+   *
+   * @param string $value
+   *   The text override value.
+   *
+   * @return bool
+   *   TRUE when all braces belong to supported placeholder tokens.
+   */
+  private function textOverrideBracesAreSafe(string $value): bool {
+    $withoutPlaceholders = preg_replace(
+      TenantSettingsController::TEXT_OVERRIDE_PLACEHOLDER_PATTERN,
+      '',
+      $value,
+    );
+
+    return is_string($withoutPlaceholders)
+      && !str_contains($withoutPlaceholders, '{')
+      && !str_contains($withoutPlaceholders, '}');
   }
 
   /**
