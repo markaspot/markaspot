@@ -106,6 +106,13 @@ class OrganisationsControllerTest extends UnitTestCase {
   protected AccountInterface $currentUser;
 
   /**
+   * The mocked language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected LanguageManagerInterface $languageManager;
+
+  /**
    * The Drupal container.
    *
    * @var \Drupal\Core\DependencyInjection\ContainerBuilder
@@ -176,8 +183,8 @@ class OrganisationsControllerTest extends UnitTestCase {
     // Language manager.
     $language = $this->createMock(LanguageInterface::class);
     $language->method('getId')->willReturn('en');
-    $languageManager = $this->createMock(LanguageManagerInterface::class);
-    $languageManager->method('getCurrentLanguage')->willReturn($language);
+    $this->languageManager = $this->createMock(LanguageManagerInterface::class);
+    $this->languageManager->method('getCurrentLanguage')->willReturn($language);
 
     // Cache contexts manager for CacheableJsonResponse.
     $cacheContextsManager = $this->createMock(CacheContextsManager::class);
@@ -196,7 +203,7 @@ class OrganisationsControllerTest extends UnitTestCase {
     $this->container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
     $this->container->set('markaspot_group.organisation_metadata_builder', $this->organisationMetadataBuilder);
     $this->container->set('module_handler', $moduleHandler);
-    $this->container->set('language_manager', $languageManager);
+    $this->container->set('language_manager', $this->languageManager);
     $this->container->set('cache_contexts_manager', $cacheContextsManager);
     $this->container->set('current_user', $this->currentUser);
     \Drupal::setContainer($this->container);
@@ -229,6 +236,7 @@ class OrganisationsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
+      $this->languageManager,
     );
   }
 

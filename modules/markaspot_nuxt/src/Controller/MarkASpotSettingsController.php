@@ -21,6 +21,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\field\Entity\FieldConfig;
@@ -32,6 +33,11 @@ use Drupal\field\Entity\FieldStorageConfig;
 class MarkASpotSettingsController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
+
+  /**
+   * Maximum length of an entity vocabulary label.
+   */
+  private const ENTITY_VOCABULARY_MAX_LENGTH = 64;
 
   /**
    * The stream wrapper manager service.
@@ -76,6 +82,13 @@ class MarkASpotSettingsController extends ControllerBase {
   protected StatusTermScope $statusTermScope;
 
   /**
+   * The language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected LanguageManagerInterface $entityVocabularyLanguageManager;
+
+  /**
    * Constructs a MarkASpotSettingsController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -94,6 +107,8 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The effective feature scope resolver.
    * @param \Drupal\markaspot_group\Service\StatusTermScope $status_term_scope
    *   The effective service status resolver.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -104,6 +119,7 @@ class MarkASpotSettingsController extends ControllerBase {
     OrganisationMetadataBuilder $organisation_metadata_builder,
     FeatureScopeResolver $feature_scope_resolver,
     StatusTermScope $status_term_scope,
+    LanguageManagerInterface $language_manager,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
@@ -113,6 +129,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $this->organisationMetadataBuilder = $organisation_metadata_builder;
     $this->featureScopeResolver = $feature_scope_resolver;
     $this->statusTermScope = $status_term_scope;
+    $this->entityVocabularyLanguageManager = $language_manager;
   }
 
   /**
@@ -128,6 +145,7 @@ class MarkASpotSettingsController extends ControllerBase {
       $container->get('markaspot_group.organisation_metadata_builder'),
       $container->get('markaspot_nuxt.feature_scope_resolver'),
       $container->get('markaspot_group.status_term_scope'),
+      $container->get('language_manager'),
     );
   }
 
@@ -169,6 +187,7 @@ class MarkASpotSettingsController extends ControllerBase {
       'config:markaspot_nuxt.settings',
       'config:markaspot_sso.settings',
       'config:core.extension',
+      'config:configurable_language_list',
       // Invalidate when duplicate_detection.enabled is toggled in markaspot_ai.
       'config:markaspot_ai.settings',
     ]);
@@ -414,6 +433,14 @@ class MarkASpotSettingsController extends ControllerBase {
         $rootGroup,
         $group,
       );
+      $entityVocabulary = $this->resolveEntityVocabulary(
+        $rootGroup,
+        $group,
+      );
+      unset($settings['i18n']['entities']);
+      if ($entityVocabulary !== NULL) {
+        $settings['i18n']['entities'] = $entityVocabulary;
+      }
       $settings['features'] = $this->featureScopeResolver->resolveEffectiveFeatures($group);
       // The GDPR consent requirement only couples to an EXPLICIT operator
       // decision. An unset platform flag keeps the legacy behaviour: the
@@ -1713,6 +1740,125 @@ class MarkASpotSettingsController extends ControllerBase {
     $wording = is_array($config) ? ($config['i18n']['wording'] ?? NULL) : NULL;
 
     return is_string($wording) && trim($wording) !== '' ? $wording : NULL;
+  }
+
+  /**
+   * Resolves and validates the root-scoped entity vocabulary.
+   *
+   * @param \Drupal\group\Entity\GroupInterface|null $root
+   *   The resolved root jurisdiction, or NULL when no jurisdiction was loaded.
+   * @param \Drupal\group\Entity\GroupInterface $jurisdiction
+   *   The currently requested jurisdiction.
+   *
+   * @return array<string, array<string, array<string, string>>>|null
+   *   The validated vocabulary, or NULL when it must be omitted.
+   */
+  private function resolveEntityVocabulary(
+    ?GroupInterface $root,
+    GroupInterface $jurisdiction,
+  ): ?array {
+    $rootVocabulary = $root instanceof GroupInterface
+      ? $this->readStoredEntityVocabulary($root)
+      : NULL;
+    $vocabulary = $rootVocabulary
+      ?? $this->readStoredEntityVocabulary($jurisdiction);
+
+    if ($vocabulary === NULL) {
+      return NULL;
+    }
+
+    $validated = $this->validateEntityVocabulary($vocabulary);
+    return $validated === [] ? NULL : $validated;
+  }
+
+  /**
+   * Reads a non-empty stored entity vocabulary candidate.
+   *
+   * Malformed candidates are returned so that a present root value still
+   * takes precedence and can be rejected without exposing a child value.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $jurisdiction
+   *   The jurisdiction group.
+   *
+   * @return mixed
+   *   The stored candidate, or NULL when it is missing or empty.
+   */
+  private function readStoredEntityVocabulary(GroupInterface $jurisdiction): mixed {
+    if (!$jurisdiction->hasField('field_nuxt_config')
+      || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+      return NULL;
+    }
+
+    $config = json_decode(
+      (string) $jurisdiction->get('field_nuxt_config')->value,
+      TRUE,
+    );
+    $entities = is_array($config) ? ($config['i18n']['entities'] ?? NULL) : NULL;
+
+    if ($entities === NULL
+      || $entities === []
+      || (is_string($entities) && trim($entities) === '')) {
+      return NULL;
+    }
+
+    return $entities;
+  }
+
+  /**
+   * Validates entity vocabulary labels for delivery to browsers.
+   *
+   * @param mixed $vocabulary
+   *   The stored entity vocabulary candidate.
+   *
+   * @return array<string, array<string, array<string, string>>>
+   *   The valid subset of the vocabulary.
+   */
+  private function validateEntityVocabulary(mixed $vocabulary): array {
+    if (!is_array($vocabulary)) {
+      return [];
+    }
+
+    $knownLocales = array_keys($this->entityVocabularyLanguageManager->getLanguages());
+    $validated = [];
+    foreach ($vocabulary as $locale => $localeVocabulary) {
+      if (!is_string($locale)
+        || !in_array($locale, $knownLocales, TRUE)
+        || !is_array($localeVocabulary)) {
+        continue;
+      }
+
+      foreach (['jurisdiction', 'organisation'] as $entity) {
+        $entityVocabulary = $localeVocabulary[$entity] ?? NULL;
+        if (!is_array($entityVocabulary)) {
+          continue;
+        }
+
+        foreach (['singular', 'plural'] as $form) {
+          $value = $entityVocabulary[$form] ?? NULL;
+          if (!is_string($value)) {
+            continue;
+          }
+
+          $value = preg_replace(
+            '/[\p{Cc}\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u',
+            '',
+            $value,
+          );
+          if (!is_string($value)) {
+            continue;
+          }
+
+          $value = trim($value);
+          if ($value === '' || mb_strlen($value) > self::ENTITY_VOCABULARY_MAX_LENGTH) {
+            continue;
+          }
+
+          $validated[$locale][$entity][$form] = $value;
+        }
+      }
+    }
+
+    return $validated;
   }
 
   /**

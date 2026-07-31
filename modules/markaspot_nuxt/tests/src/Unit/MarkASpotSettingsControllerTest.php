@@ -105,6 +105,13 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   protected ModuleHandlerInterface $moduleHandler;
 
   /**
+   * The mocked language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected LanguageManagerInterface $languageManager;
+
+  /**
    * The controller under test.
    *
    * @var \Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController
@@ -196,8 +203,12 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     // Language manager.
     $language = $this->createMock(LanguageInterface::class);
     $language->method('getId')->willReturn('en');
-    $languageManager = $this->createMock(LanguageManagerInterface::class);
-    $languageManager->method('getCurrentLanguage')->willReturn($language);
+    $this->languageManager = $this->createMock(LanguageManagerInterface::class);
+    $this->languageManager->method('getCurrentLanguage')->willReturn($language);
+    $this->languageManager->method('getLanguages')->willReturn([
+      'en' => $language,
+      'de' => $language,
+    ]);
 
     // Set up container for CacheableJsonResponse cache contexts.
     $cacheContextsManager = $this->createMock(CacheContextsManager::class);
@@ -212,7 +223,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $container->set('markaspot_group.organisation_metadata_builder', $this->organisationMetadataBuilder);
     $container->set('markaspot_group.status_term_scope', $this->statusTermScope);
     $container->set('module_handler', $this->moduleHandler);
-    $container->set('language_manager', $languageManager);
+    $container->set('language_manager', $this->languageManager);
     $container->set('cache_contexts_manager', $cacheContextsManager);
     \Drupal::setContainer($container);
 
@@ -225,6 +236,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $this->featureScopeResolver,
       $this->statusTermScope,
+      $this->languageManager,
     );
   }
 
@@ -300,6 +312,53 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       });
 
     return $group;
+  }
+
+  /**
+   * Creates a settings controller for a child and its portfolio root.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $child
+   *   The requested child jurisdiction.
+   * @param \Drupal\group\Entity\GroupInterface $root
+   *   The resolved portfolio root.
+   *
+   * @return \Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController
+   *   The configured controller.
+   */
+  protected function createRootScopedSettingsController(
+    GroupInterface $child,
+    GroupInterface $root,
+  ): MarkASpotSettingsController {
+    $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchyResolver->method('getRootJurisdictionId')
+      ->willReturnCallback(
+        static fn(int $id): int => $id === 14 ? 10 : $id,
+      );
+    $this->groupStorage->method('load')
+      ->willReturnCallback(
+        static fn(int $id): ?GroupInterface => match ($id) {
+          14 => $child,
+          10 => $root,
+          default => NULL,
+        },
+      );
+    $featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $hierarchyResolver,
+    );
+
+    return new MarkASpotSettingsController(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->streamWrapperManager,
+      $hierarchyResolver,
+      new EnterpriseFeatureGate($featureScopeResolver),
+      $this->organisationMetadataBuilder,
+      $featureScopeResolver,
+      $this->statusTermScope,
+      $this->languageManager,
+    );
   }
 
   /**
@@ -381,6 +440,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
+      $this->languageManager,
     );
 
     $data = json_decode($controller->getJurisdictions()->getContent(), TRUE);
@@ -455,6 +515,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
+      $this->languageManager,
     );
 
     $request = Request::create('/api/mark-a-spot-settings', 'GET');
@@ -523,6 +584,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
+      $this->languageManager,
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -677,6 +739,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $featureScopeResolver,
       $this->statusTermScope,
+      $this->languageManager,
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -700,6 +763,237 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       'neither uses default' => [NULL, NULL, FALSE, CitizenWordingResolver::DEFAULT_PRESET],
       'invalid root does not leak' => ['unknown', 'suggestion', FALSE, CitizenWordingResolver::DEFAULT_PRESET],
     ];
+  }
+
+  /**
+   * Tests entity vocabulary resolution from the portfolio root.
+   *
+   * @param array|null $rootVocabulary
+   *   The entity vocabulary stored on the root jurisdiction.
+   * @param array|null $childVocabulary
+   *   The entity vocabulary stored on the requested jurisdiction.
+   * @param array $expectedVocabulary
+   *   The expected resolved entity vocabulary.
+   *
+   * @dataProvider entityVocabularyScopeProvider
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsResolvesEntityVocabularyFromPortfolioRoot(
+    ?array $rootVocabulary,
+    ?array $childVocabulary,
+    array $expectedVocabulary,
+  ): void {
+    $overrides = [
+      'en' => [
+        'header.app_name' => 'Workspace-specific requests',
+      ],
+    ];
+    $childI18n = ['overrides' => $overrides];
+    if ($childVocabulary !== NULL) {
+      $childI18n['entities'] = $childVocabulary;
+    }
+    $rootI18n = [];
+    if ($rootVocabulary !== NULL) {
+      $rootI18n['entities'] = $rootVocabulary;
+    }
+
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => $childI18n]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => $rootI18n]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($expectedVocabulary, $data['i18n']['entities']);
+    $this->assertSame($overrides, $data['i18n']['overrides']);
+    $this->assertContains(
+      'config:configurable_language_list',
+      $response->getCacheableMetadata()->getCacheTags(),
+    );
+  }
+
+  /**
+   * Provides root-only, child fallback, and root-wins vocabularies.
+   */
+  public static function entityVocabularyScopeProvider(): array {
+    $rootVocabulary = [
+      'en' => [
+        'jurisdiction' => [
+          'singular' => 'Community',
+          'plural' => 'Communities',
+        ],
+      ],
+    ];
+    $childVocabulary = [
+      'en' => [
+        'jurisdiction' => [
+          'singular' => 'Branch',
+          'plural' => 'Branches',
+        ],
+      ],
+    ];
+
+    return [
+      'root only' => [$rootVocabulary, NULL, $rootVocabulary],
+      'child fallback' => [NULL, $childVocabulary, $childVocabulary],
+      'root wins' => [$rootVocabulary, $childVocabulary, $rootVocabulary],
+    ];
+  }
+
+  /**
+   * Tests an absent vocabulary leaves the existing i18n payload byte-identical.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsWithoutEntityVocabularyKeepsPayloadByteIdentical(): void {
+    $overrides = [
+      'en' => [
+        'header.app_name' => 'Municipal requests',
+      ],
+    ];
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => $overrides,
+        ],
+      ]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['i18n' => []]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertArrayNotHasKey('entities', $data['i18n']);
+    $this->assertSame(
+      '{"overrides":{"en":{"header.app_name":"Municipal requests"}},"wording":"report"}',
+      json_encode($data['i18n']),
+    );
+    $this->assertSame($overrides, $data['i18n']['overrides']);
+  }
+
+  /**
+   * Tests a malformed root vocabulary does not expose the child vocabulary.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsMalformedRootVocabularySuppressesChildFallback(): void {
+    $overrides = [
+      'en' => [
+        'header.app_name' => 'Workspace-specific requests',
+      ],
+    ];
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'entities' => [
+            'en' => [
+              'jurisdiction' => [
+                'singular' => 'Branch',
+                'plural' => 'Branches',
+              ],
+            ],
+          ],
+          'overrides' => $overrides,
+        ],
+      ]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'entities' => '0',
+        ],
+      ]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertArrayNotHasKey('entities', $data['i18n']);
+    $this->assertSame($overrides, $data['i18n']['overrides']);
+  }
+
+  /**
+   * Tests malformed vocabulary is filtered without breaking the endpoint.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsFiltersMalformedEntityVocabulary(): void {
+    $overrides = [
+      'en' => [
+        'header.app_name' => 'Workspace-specific requests',
+      ],
+    ];
+    $malformedVocabulary = [
+      'en' => [
+        'jurisdiction' => [
+          'singular' => " \x00Community\n\u{0085}\u{061C}\u{200E}\u{200F}\u{202E}",
+          'plural' => str_repeat('x', 65),
+          'unknown' => 'Ignored',
+        ],
+        'organisation' => [
+          'singular' => ' ',
+          'plural' => 'Contractors',
+          'unknown' => 'Ignored',
+        ],
+        'vendor' => [
+          'singular' => 'Vendor',
+          'plural' => 'Vendors',
+        ],
+      ],
+      'xx' => [
+        'jurisdiction' => [
+          'singular' => 'Unknown locale',
+          'plural' => 'Unknown locales',
+        ],
+      ],
+      'de' => 'not an entity map',
+    ];
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => $overrides,
+        ],
+      ]),
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'entities' => $malformedVocabulary,
+        ],
+      ]),
+    ], 10);
+    $controller = $this->createRootScopedSettingsController($child, $root);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame([
+      'en' => [
+        'jurisdiction' => [
+          'singular' => 'Community',
+        ],
+        'organisation' => [
+          'plural' => 'Contractors',
+        ],
+      ],
+    ], $data['i18n']['entities']);
+    $this->assertSame($overrides, $data['i18n']['overrides']);
   }
 
   /**
@@ -1366,6 +1660,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->organisationMetadataBuilder,
       $featureScopeResolver,
       $this->createMock(StatusTermScope::class),
+      $this->languageManager,
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
