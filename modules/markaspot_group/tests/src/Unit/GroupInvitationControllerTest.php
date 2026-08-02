@@ -29,6 +29,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -498,7 +499,218 @@ class GroupInvitationControllerTest extends UnitTestCase {
     // would hide the reason from the operator.
     $this->assertSame(409, $response->getStatusCode());
     $this->assertSame(
-      ['error' => 'Invitation email delivery is temporarily unavailable.'],
+      [
+        'error' => 'Invitation email delivery is temporarily unavailable.',
+        'code' => 'invitation_delivery_unconfigured',
+      ],
+      json_decode((string) $response->getContent(), TRUE)
+    );
+  }
+
+  /**
+   * @covers ::invite
+   * @covers ::checkMemberLimit
+   */
+  #[DataProvider('memberLimitConflicts')]
+  public function testInviteReturnsStructuredMemberLimitConflict(string $tier, int $limit, string $expectedError): void {
+    $group = $this->createGroup('jur', NULL, NULL, $tier);
+    $group->method('id')->willReturn(5);
+
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')
+      ->with(5)
+      ->willReturn($group);
+    $groupStorage->method('loadByProperties')
+      ->with([
+        'type' => 'org',
+        'field_jurisdiction' => 5,
+      ])
+      ->willReturn([]);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    $pendingStatement = $this->createMock(StatementInterface::class);
+    $pendingStatement->method('fetchField')->willReturn(0);
+    $pendingSelect = $this->createMock(SelectInterface::class);
+    $pendingSelect->method('condition')->willReturnSelf();
+    $pendingSelect->method('isNull')->willReturnSelf();
+    $pendingSelect->method('countQuery')->willReturnSelf();
+    $pendingSelect->method('execute')->willReturn($pendingStatement);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('select')
+      ->with('markaspot_group_invitations', 'i')
+      ->willReturn($pendingSelect);
+    $database->expects($this->never())->method('insert');
+
+    $currentAccount = $this->createMock(AccountInterface::class);
+    $currentAccount->method('id')->willReturn(1);
+    $currentAccount->method('getRoles')->willReturn([]);
+
+    $tierConfig = new class($limit) {
+
+      /**
+       * Constructs the test tier config.
+       */
+      public function __construct(private readonly int $limit) {}
+
+      /**
+       * Gets the configured member limit.
+       */
+      public function getMemberLimit(string $tier): int {
+        return $this->limit;
+      }
+
+      /**
+       * Counts current group members.
+       */
+      public function countMembers(int $groupId): int {
+        return $this->limit;
+      }
+
+    };
+
+    $controller = new GroupInvitationController(
+      $database,
+      $entityTypeManager,
+      $this->createMock(MailManagerInterface::class),
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(LoggerInterface::class),
+      $this->createMock(GroupMembershipLoaderInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $currentAccount,
+      $this->createMock(FloodInterface::class),
+      $this->createMock(LockBackendInterface::class),
+      $tierConfig,
+    );
+
+    $request = Request::create(
+      '/api/group-members/invite',
+      'POST',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'email' => 'invitee@example.com',
+        'group_id' => 5,
+        'roles' => [],
+      ])
+    );
+
+    $response = $controller->invite($request);
+
+    $this->assertSame(409, $response->getStatusCode());
+    $this->assertSame(
+      [
+        'error' => $expectedError,
+        'code' => 'member_limit_reached',
+        'tier' => $tier,
+        'limit' => $limit,
+      ],
+      json_decode((string) $response->getContent(), TRUE)
+    );
+  }
+
+  /**
+   * Provides singular and plural member-limit conflicts.
+   *
+   * @return array<string, array{string, int, string}>
+   *   Member-limit response cases.
+   */
+  public static function memberLimitConflicts(): array {
+    return [
+      'singular' => [
+        'free',
+        1,
+        "Member limit reached for the 'free' tier (1 member). Upgrade to add more members.",
+      ],
+      'plural' => [
+        'starter',
+        5,
+        "Member limit reached for the 'starter' tier (5 members). Upgrade to add more members.",
+      ],
+    ];
+  }
+
+  /**
+   * @covers ::invite
+   */
+  public function testInviteReturnsPendingInvitationCode(): void {
+    $group = $this->createGroup('jur');
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')
+      ->with(5)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(99);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('isNull')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('select')
+      ->with('markaspot_group_invitations', 'i')
+      ->willReturn($select);
+    $database->expects($this->never())->method('insert');
+
+    $currentAccount = $this->createMock(AccountInterface::class);
+    $currentAccount->method('id')->willReturn(1);
+    $currentAccount->method('getRoles')->willReturn([]);
+
+    $frontendUrlService = $this->createMock(FrontendUrlService::class);
+    $frontendUrlService->method('getNotificationFrontendBaseUrl')
+      ->willReturn('https://civicspot.example.com');
+
+    $controller = new GroupInvitationController(
+      $database,
+      $entityTypeManager,
+      $this->createMock(MailManagerInterface::class),
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(LoggerInterface::class),
+      $this->createMock(GroupMembershipLoaderInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $currentAccount,
+      $this->createMock(FloodInterface::class),
+      $this->createMock(LockBackendInterface::class),
+      NULL,
+      NULL,
+      $frontendUrlService,
+    );
+
+    $request = Request::create(
+      '/api/group-members/invite',
+      'POST',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'email' => 'invitee@example.com',
+        'group_id' => 5,
+        'roles' => [],
+      ])
+    );
+
+    $response = $controller->invite($request);
+
+    $this->assertSame(409, $response->getStatusCode());
+    $this->assertSame(
+      [
+        'error' => 'A pending invitation for this email and group already exists.',
+        'code' => 'invitation_pending',
+      ],
       json_decode((string) $response->getContent(), TRUE)
     );
   }
@@ -907,6 +1119,134 @@ class GroupInvitationControllerTest extends UnitTestCase {
 
     $this->assertSame(200, $response->getStatusCode());
     $this->assertSame('claimed', json_decode((string) $response->getContent(), TRUE)['status']);
+  }
+
+  /**
+   * @covers ::claimInvitation
+   */
+  public function testClaimInvitationReturnsStructuredMemberLimitConflict(): void {
+    $token = str_repeat('e', 64);
+
+    $update = $this->createMock(Update::class);
+    $update->method('fields')->willReturnSelf();
+    $update->method('condition')->willReturnSelf();
+    $update->method('isNull')->willReturnSelf();
+    $update->method('execute')->willReturn(1);
+
+    $invitation = [
+      'id' => 101,
+      'email' => 'invitee@example.com',
+      'group_id' => 5,
+      'roles' => json_encode(['jur-member']),
+      'invited_by' => 1,
+      'created' => time() - 60,
+      'expires' => time() + 3600,
+      'claimed' => time(),
+    ];
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn($invitation);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('update')
+      ->with('markaspot_group_invitations')
+      ->willReturn($update);
+    $database->method('select')
+      ->with('markaspot_group_invitations', 'i')
+      ->willReturn($select);
+
+    $group = $this->createGroup('jur');
+    $group->method('id')->willReturn(5);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')
+      ->with(5)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    $currentAccount = $this->createMock(AccountInterface::class);
+    $currentAccount->method('isAnonymous')->willReturn(TRUE);
+
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->method('isAllowed')->willReturn(TRUE);
+
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->once())
+      ->method('acquire')
+      ->with('markaspot_group:membership_group:5', 120.0)
+      ->willReturn(TRUE);
+    $lock->expects($this->once())
+      ->method('release')
+      ->with('markaspot_group:membership_group:5');
+
+    $controller = new class(
+      $database,
+      $entityTypeManager,
+      $this->createMock(MailManagerInterface::class),
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(LoggerInterface::class),
+      $this->createMock(GroupMembershipLoaderInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $currentAccount,
+      $flood,
+      $lock,
+    ) extends GroupInvitationController {
+
+      /**
+       * The invitation ID restored by the conflict path.
+       */
+      public ?int $unclaimedInvitationId = NULL;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function checkMemberLimit(GroupInterface $group): ?array {
+        return [
+          'error' => "Member limit reached for the 'starter' tier (5 members). Upgrade to add more members.",
+          'code' => 'member_limit_reached',
+          'tier' => 'starter',
+          'limit' => 5,
+        ];
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function unclaimInvitation(int $invitationId): void {
+        $this->unclaimedInvitationId = $invitationId;
+      }
+
+    };
+
+    $request = Request::create(
+      '/api/group-members/claim/' . $token,
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.13'],
+    );
+
+    $response = $controller->claimInvitation($token, $request);
+
+    $this->assertSame(409, $response->getStatusCode());
+    $this->assertSame(
+      [
+        'error' => "Member limit reached for the 'starter' tier (5 members). Upgrade to add more members.",
+        'code' => 'member_limit_reached',
+        'tier' => 'starter',
+        'limit' => 5,
+      ],
+      json_decode((string) $response->getContent(), TRUE)
+    );
+    $this->assertSame(101, $controller->unclaimedInvitationId);
   }
 
   /**

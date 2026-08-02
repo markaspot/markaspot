@@ -244,7 +244,7 @@ class GroupInvitationController extends ControllerBase {
     // Check member limit if markaspot_fastmap is available.
     $limitError = $this->checkMemberLimit($group);
     if ($limitError !== NULL) {
-      return new JsonResponse(['error' => $limitError], 409);
+      return new JsonResponse($limitError, 409);
     }
 
     // Invitations carry a bearer token. Never create one unless a validated
@@ -257,6 +257,7 @@ class GroupInvitationController extends ControllerBase {
       $this->logger->error('Cannot create group invitation: no public frontend URL is configured for invitation emails.');
       return new JsonResponse([
         'error' => 'Invitation email delivery is temporarily unavailable.',
+        'code' => 'invitation_delivery_unconfigured',
       ], 409);
     }
 
@@ -271,7 +272,10 @@ class GroupInvitationController extends ControllerBase {
       ->fetchField();
 
     if ($existing) {
-      return new JsonResponse(['error' => 'A pending invitation for this email and group already exists.'], 409);
+      return new JsonResponse([
+        'error' => 'A pending invitation for this email and group already exists.',
+        'code' => 'invitation_pending',
+      ], 409);
     }
 
     // Generate token and insert invitation.
@@ -517,7 +521,7 @@ class GroupInvitationController extends ControllerBase {
       $limitError = $this->checkMemberLimit($group);
       if ($limitError !== NULL) {
         $this->unclaimInvitation((int) $invitation['id']);
-        return new JsonResponse(['error' => $limitError], 409);
+        return new JsonResponse($limitError, 409);
       }
 
       $email = $invitation['email'];
@@ -695,10 +699,10 @@ class GroupInvitationController extends ControllerBase {
    * @param \Drupal\group\Entity\GroupInterface $group
    *   The group to check.
    *
-   * @return string|null
-   *   Error message if limit is exceeded, NULL if within limits.
+   * @return array{error: string, code: string, tier: string, limit: int}|null
+   *   Error response data if limit is exceeded, NULL if within limits.
    */
-  protected function checkMemberLimit(GroupInterface $group): ?string {
+  protected function checkMemberLimit(GroupInterface $group): ?array {
     if (!$this->tierConfigService) {
       return NULL;
     }
@@ -709,7 +713,7 @@ class GroupInvitationController extends ControllerBase {
       return NULL;
     }
 
-    $tier = $jurGroup->get('field_tier')->value;
+    $tier = (string) $jurGroup->get('field_tier')->value;
     $limit = $this->tierConfigService->getMemberLimit($tier);
 
     if ($limit === NULL) {
@@ -744,7 +748,13 @@ class GroupInvitationController extends ControllerBase {
       ->fetchField();
 
     if (($currentMembers + $pendingInvites) >= $limit) {
-      return "Member limit reached for the '$tier' tier ($limit members). Upgrade to add more members.";
+      $memberLabel = $limit === 1 ? 'member' : 'members';
+      return [
+        'error' => "Member limit reached for the '$tier' tier ($limit $memberLabel). Upgrade to add more members.",
+        'code' => 'member_limit_reached',
+        'tier' => $tier,
+        'limit' => $limit,
+      ];
     }
 
     return NULL;
