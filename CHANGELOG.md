@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.178](https://github.com/markaspot/markaspot/compare/11.9.177...11.9.178) (2026-08-03)
+
+### Bug Fixes
+
+* add machine-readable error codes to group-invitation 409 responses ([162fb7f](https://github.com/markaspot/markaspot/commit/162fb7fa18d01d4370dafc388fbec2836a26296c))
+
 ## [11.9.177](https://github.com/markaspot/markaspot/compare/11.9.176...11.9.177) (2026-07-31)
 
 ### Features
