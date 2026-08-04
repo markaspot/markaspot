@@ -10,6 +10,7 @@ use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
+use Drupal\Core\Utility\UpdateException;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\locale\Gettext;
@@ -4628,6 +4629,115 @@ function _markaspot_ensure_service_request_id_fulltext(): bool {
   $index->reindex();
 
   return TRUE;
+}
+
+/**
+ * Makes the denormalized Search API body column safe for four-byte UTF-8.
+ *
+ * Search API DB uses MySQL's three-byte `utf8` character set for its
+ * denormalized index table to preserve indexed identifier lengths. The body
+ * prefix column inherits that character set and rejects content containing
+ * emoji. Only this non-identifier column is converted, leaving item_id, the
+ * existing secondary index, and the table default unchanged.
+ *
+ * @param \Drupal\Core\Database\Connection $database
+ *   The active database connection.
+ *
+ * @return string
+ *   A description of the repair or why it was skipped.
+ *
+ * @throws \Drupal\Core\Utility\UpdateException
+ *   Thrown when an existing column has an unexpected shape or the conversion
+ *   cannot be verified.
+ */
+function _markaspot_ensure_search_api_body_utf8mb4($database): string {
+  if ($database->databaseType() !== 'mysql') {
+    return 'Search API UTF-8 repair is only required on MySQL.';
+  }
+
+  $table = 'search_api_db_service_requests';
+  $column = 'body';
+  $schema = $database->schema();
+
+  if (!$schema->tableExists($table)) {
+    return "Skipped Search API UTF-8 repair: table $table is absent.";
+  }
+  if (!$schema->fieldExists($table, $column)) {
+    throw new UpdateException("Expected Search API column $table.$column is absent.");
+  }
+
+  $read_column = static function () use ($database, $table, $column): array {
+    $info = $database->query(
+      "SHOW FULL COLUMNS FROM {{$table}} WHERE Field = :column",
+      [':column' => $column],
+    )->fetchAssoc();
+
+    if (!$info) {
+      throw new UpdateException("Could not inspect $table.$column.");
+    }
+
+    return $info;
+  };
+
+  $info = $read_column();
+  $type = strtolower((string) ($info['Type'] ?? ''));
+  $nullable = strtoupper((string) ($info['Null'] ?? ''));
+  $default = $info['Default'] ?? NULL;
+  $key = strtoupper((string) ($info['Key'] ?? ''));
+  $extra = (string) ($info['Extra'] ?? '');
+  $comment = (string) ($info['Comment'] ?? '');
+  if (
+    $type !== 'varchar(30)' ||
+    $nullable !== 'YES' ||
+    $default !== NULL ||
+    $key !== 'MUL' ||
+    $extra !== '' ||
+    $comment !== "The field's value for this item"
+  ) {
+    $default_label = $default === NULL ? 'NULL' : (string) $default;
+    throw new UpdateException("Unexpected definition for $table.$column: type=$type, null=$nullable, default=$default_label, key=$key, extra=$extra, comment=$comment.");
+  }
+
+  $collation = strtolower((string) ($info['Collation'] ?? ''));
+  if ($collation === 'utf8mb4_bin') {
+    return "Search API column $table.$column already uses utf8mb4_bin.";
+  }
+  if (!in_array($collation, ['utf8_general_ci', 'utf8mb3_general_ci'], TRUE)) {
+    throw new UpdateException("Unexpected collation for $table.$column: $collation.");
+  }
+
+  $database->query(
+    "ALTER TABLE {{$table}} MODIFY [body] VARCHAR(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL COMMENT 'The field''s value for this item'",
+  );
+
+  $updated_info = $read_column();
+  $updated_type = strtolower((string) ($updated_info['Type'] ?? ''));
+  $updated_collation = strtolower((string) ($updated_info['Collation'] ?? ''));
+  $updated_nullable = strtoupper((string) ($updated_info['Null'] ?? ''));
+  $updated_default = $updated_info['Default'] ?? NULL;
+  $updated_key = strtoupper((string) ($updated_info['Key'] ?? ''));
+  $updated_extra = (string) ($updated_info['Extra'] ?? '');
+  $updated_comment = (string) ($updated_info['Comment'] ?? '');
+  if (
+    $updated_type !== 'varchar(30)' ||
+    $updated_collation !== 'utf8mb4_bin' ||
+    $updated_nullable !== 'YES' ||
+    $updated_default !== NULL ||
+    $updated_key !== 'MUL' ||
+    $updated_extra !== '' ||
+    $updated_comment !== "The field's value for this item"
+  ) {
+    throw new UpdateException("Failed to convert $table.$column to utf8mb4_bin.");
+  }
+
+  return "Converted Search API column $table.$column to utf8mb4_bin.";
+}
+
+/**
+ * Allows Search API DB to index reports containing emoji on MySQL.
+ */
+function markaspot_update_11934(): string {
+  return _markaspot_ensure_search_api_body_utf8mb4(\Drupal::database());
 }
 
 /**
