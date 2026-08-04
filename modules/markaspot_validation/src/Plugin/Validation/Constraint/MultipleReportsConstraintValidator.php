@@ -148,7 +148,7 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
     // $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
     $status = $this->configFactory->get('multiple_reports');
     $max_count = $this->configFactory->get('max_count') ? $this->configFactory->get('max_count') : 5;
-    if ($status === 0) {
+    if ($status === FALSE || $status === 0) {
       return;
     }
     $user = $this->account;

@@ -134,12 +134,16 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
   /**
    * Tests that validation is skipped when multiple_reports is disabled.
    *
+   * @param mixed $status
+   *   The disabled configuration value.
+   *
    * @covers ::validate
+   * @dataProvider disabledStatusProvider
    */
-  public function testSkippedWhenDisabled(): void {
+  public function testSkippedWhenDisabled(mixed $status): void {
     $this->editableConfig->method('get')
       ->willReturnCallback(fn(string $key) => match ($key) {
-        'multiple_reports' => 0,
+        'multiple_reports' => $status,
         default => NULL,
       });
 
@@ -151,6 +155,19 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Provides supported disabled configuration values.
+   *
+   * @return array<string, array{mixed}>
+   *   Disabled values keyed by their storage representation.
+   */
+  public static function disabledStatusProvider(): array {
+    return [
+      'legacy integer' => [0],
+      'schema boolean' => [FALSE],
+    ];
+  }
+
+  /**
    * Tests that bypass permission skips the count check.
    *
    * @covers ::validate
@@ -158,7 +175,7 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
   public function testBypassPermissionSkipsCheck(): void {
     $this->editableConfig->method('get')
       ->willReturnCallback(fn(string $key) => match ($key) {
-        'multiple_reports' => 1,
+        'multiple_reports' => TRUE,
         'max_count' => 5,
         default => NULL,
       });
@@ -184,7 +201,7 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
   public function testViolationWhenAtMaxCount(): void {
     $this->editableConfig->method('get')
       ->willReturnCallback(fn(string $key) => match ($key) {
-        'multiple_reports' => 1,
+        'multiple_reports' => TRUE,
         'max_count' => 5,
         default => NULL,
       });
