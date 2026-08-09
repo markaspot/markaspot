@@ -14,6 +14,8 @@ use Psr\Log\NullLogger;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
+require_once dirname(__DIR__, 3) . '/src/Service/JurisdictionScopeValidator.php';
+
 /**
  * Tests API-key jurisdiction scope reconciliation.
  *
@@ -41,9 +43,15 @@ class JurisdictionScopeValidatorTest extends UnitTestCase {
   public function testMultipleMembershipsRequireExplicitJurisdiction(): void {
     $validator = $this->validatorWithAllowed([11, 12]);
 
-    $this->expectException(BadRequestHttpException::class);
-    $this->expectExceptionMessage('jurisdiction_id required');
-    $validator->resolveSubmissionJurisdiction(NULL, $this->account(7));
+    try {
+      $validator->resolveSubmissionJurisdiction(NULL, $this->account(7));
+      $this->fail('Multiple jurisdiction memberships must require a claim.');
+    }
+    catch (BadRequestHttpException $exception) {
+      $this->assertSame('jurisdiction_id required', $exception->getMessage());
+      $this->assertStringNotContainsString('11', $exception->getMessage());
+      $this->assertStringNotContainsString('12', $exception->getMessage());
+    }
   }
 
   /**

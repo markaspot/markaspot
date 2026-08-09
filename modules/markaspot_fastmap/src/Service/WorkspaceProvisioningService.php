@@ -506,10 +506,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         // 6. Add user as group member with admin role.
         $this->addGroupMembership($group, $user);
 
-        // 7. Create demo service requests.
+        // 7. Add the API key owner as a jurisdiction group member.
+        $this->addApiUserMembership($group);
+
+        // 8. Create demo service requests.
         $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
 
-        // 8. Create welcome start page.
+        // 9. Create welcome start page.
         try {
           $this->createStartPage($group, $name, $defaultLang, $startPageContent, $startPageTranslations, $availableLanguages);
         }
@@ -571,6 +574,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     try {
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
       $userStorage = $this->entityTypeManager->getStorage('user');
+      $apiUsers = (array) $userStorage->loadByProperties(['name' => 'api_user']);
+      $apiUser = reset($apiUsers);
+      $apiUserId = $apiUser instanceof UserInterface
+        ? (int) $apiUser->id()
+        : NULL;
 
       // 1. Delete nodes belonging to this jurisdiction.
       $nodeStorage = $this->entityTypeManager->getStorage('node');
@@ -615,7 +623,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       // 4. Delete users that have no other group memberships.
       foreach ($memberUserIds as $uid) {
-        if ($uid <= 1) {
+        if ($uid <= 1 || $uid === $apiUserId) {
           continue;
         }
         $user = $userStorage->load($uid);
@@ -1242,6 +1250,63 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $membership = $group->addRelationship($user, 'group_membership');
     $membership->set('group_roles', MembershipRoleNormalizer::normalize([$jurisdictionType . '-tenant_admin'], $jurisdictionType));
     $membership->save();
+  }
+
+  /**
+   * Adds the API key owner as a jurisdiction member when it exists.
+   */
+  private function addApiUserMembership(GroupInterface $group): void {
+    $userStorage = $this->entityTypeManager->getStorage('user');
+    $apiUsers = (array) $userStorage->loadByProperties(['name' => 'api_user']);
+    $apiUser = reset($apiUsers);
+    if (!$apiUser instanceof UserInterface) {
+      $this->logger->warning('Could not add api_user to workspace @gid because the account does not exist.', [
+        '@gid' => $group->id(),
+      ]);
+      return;
+    }
+
+    $jurisdictionType = $this->jurisdictionGroupType();
+    $memberRoleId = $jurisdictionType . '-member';
+    $roleExists = (bool) $this->entityTypeManager
+      ->getStorage('group_role')
+      ->load($memberRoleId);
+    if (!$roleExists) {
+      $this->logger->warning('Could not assign group role @role to api_user in workspace @gid because the role does not exist.', [
+        '@role' => $memberRoleId,
+        '@gid' => $group->id(),
+      ]);
+    }
+
+    $relationshipStorage = $this->entityTypeManager
+      ->getStorage('group_relationship');
+    $existing = $relationshipStorage->loadByProperties([
+      'gid' => $group->id(),
+      'entity_id' => $apiUser->id(),
+      'plugin_id' => 'group_membership',
+    ]);
+    $membership = reset($existing);
+    if (!$membership) {
+      $membership = $group->addRelationship($apiUser, 'group_membership');
+      if ($roleExists) {
+        $membership->set('group_roles', [$memberRoleId]);
+      }
+      $membership->save();
+      return;
+    }
+
+    if (!$roleExists || !$membership->hasField('group_roles')) {
+      return;
+    }
+
+    $roleIds = array_column(
+      $membership->get('group_roles')->getValue(),
+      'target_id',
+    );
+    if (!in_array($memberRoleId, $roleIds, TRUE)) {
+      $membership->get('group_roles')->appendItem($memberRoleId);
+      $membership->save();
+    }
   }
 
   /**

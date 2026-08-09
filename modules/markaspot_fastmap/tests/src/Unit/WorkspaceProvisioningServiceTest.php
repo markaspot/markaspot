@@ -35,6 +35,8 @@ use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 
+require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceProvisioningService.php';
+
 /**
  * Tests the WorkspaceProvisioningService.
  *
@@ -98,6 +100,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected EntityStorageInterface $relationshipStorage;
+
+  /**
+   * The mocked group role storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $groupRoleStorage;
 
   /**
    * The mocked node storage.
@@ -168,6 +177,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->userStorage = $this->createMock(EntityStorageInterface::class);
     $this->relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $this->groupRoleStorage = $this->createMock(EntityStorageInterface::class);
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->langStorage = $this->createMock(EntityStorageInterface::class);
@@ -183,6 +193,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         'user' => $this->userStorage,
         'node' => $this->nodeStorage,
         'group_relationship' => $this->relationshipStorage,
+        'group_role' => $this->groupRoleStorage,
         'configurable_language' => $this->langStorage,
         default => $this->createMock(EntityStorageInterface::class),
       });
@@ -1214,8 +1225,11 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $existingUser = $this->createMock(UserInterface::class);
     $existingUser->method('id')->willReturn(99);
     $this->userStorage->method('loadByProperties')
-      ->with(['mail' => 'admin@example.com'])
-      ->willReturn([$existingUser]);
+      ->willReturnCallback(
+        static fn(array $properties): array => $properties === ['mail' => 'admin@example.com']
+          ? [$existingUser]
+          : [],
+      );
     // create() should NOT be called since user exists.
     $this->userStorage->expects($this->never())->method('create');
 
@@ -1264,6 +1278,95 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that provisioning scopes api_user with the base member role.
+   *
+   * @covers ::addApiUserMembership
+   */
+  public function testApiUserMembershipGetsMemberRole(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $apiUser = $this->createMock(UserInterface::class);
+    $apiUser->method('id')->willReturn(77);
+    $this->userStorage->method('loadByProperties')
+      ->with(['name' => 'api_user'])
+      ->willReturn([$apiUser]);
+    $this->groupRoleStorage->method('load')
+      ->with('jur-member')
+      ->willReturn($this->createMock(EntityInterface::class));
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([]);
+
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->expects($this->once())
+      ->method('set')
+      ->with('group_roles', ['jur-member'])
+      ->willReturnSelf();
+    $membership->expects($this->once())->method('save');
+    $group->expects($this->once())
+      ->method('addRelationship')
+      ->with($apiUser, 'group_membership')
+      ->willReturn($membership);
+
+    $method = new \ReflectionMethod($this->service, 'addApiUserMembership');
+    $method->invoke($this->service, $group);
+  }
+
+  /**
+   * Tests that a missing member role is logged without blocking membership.
+   *
+   * @covers ::addApiUserMembership
+   */
+  public function testMissingApiUserMemberRoleStillCreatesMembership(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $apiUser = $this->createMock(UserInterface::class);
+    $apiUser->method('id')->willReturn(77);
+    $this->userStorage->method('loadByProperties')->willReturn([$apiUser]);
+    $this->groupRoleStorage->method('load')->willReturn(NULL);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('role does not exist'),
+        ['@role' => 'jur-member', '@gid' => 42],
+      );
+
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->expects($this->never())->method('set');
+    $membership->expects($this->once())->method('save');
+    $group->expects($this->once())
+      ->method('addRelationship')
+      ->with($apiUser, 'group_membership')
+      ->willReturn($membership);
+
+    $method = new \ReflectionMethod($this->service, 'addApiUserMembership');
+    $method->invoke($this->service, $group);
+  }
+
+  /**
+   * Tests that a missing api_user does not block workspace provisioning.
+   *
+   * @covers ::addApiUserMembership
+   */
+  public function testMissingApiUserIsLoggedAndSkipped(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $this->userStorage->method('loadByProperties')
+      ->with(['name' => 'api_user'])
+      ->willReturn([]);
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('account does not exist'),
+        ['@gid' => 42],
+      );
+    $group->expects($this->never())->method('addRelationship');
+
+    $method = new \ReflectionMethod($this->service, 'addApiUserMembership');
+    $method->invoke($this->service, $group);
+  }
+
+  /**
    * Tests teardown of a workspace.
    *
    * @covers ::teardownWorkspace
@@ -1276,14 +1379,21 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // Memberships.
     $memberUser = $this->createMock(UserInterface::class);
     $memberUser->method('id')->willReturn(10);
+    $apiUser = $this->createMock(UserInterface::class);
+    $apiUser->method('id')->willReturn(11);
+    $this->userStorage->method('loadByProperties')
+      ->with(['name' => 'api_user'])
+      ->willReturn([$apiUser]);
 
     $membershipEntity = $this->createMock(GroupRelationshipInterface::class);
     $membershipEntity->method('getEntity')->willReturn($memberUser);
+    $apiMembershipEntity = $this->createMock(GroupRelationshipInterface::class);
+    $apiMembershipEntity->method('getEntity')->willReturn($apiUser);
 
     $this->relationshipStorage->method('loadByProperties')
-      ->willReturnCallback(function (array $props) use ($membershipEntity) {
+      ->willReturnCallback(function (array $props) use ($membershipEntity, $apiMembershipEntity) {
         if (isset($props['gid'])) {
-          return [$membershipEntity];
+          return [$membershipEntity, $apiMembershipEntity];
         }
         return [];
       });

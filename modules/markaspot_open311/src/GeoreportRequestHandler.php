@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Path\CurrentPathStack;
 use Drupal\Core\Routing\RouteMatchInterface;
@@ -15,6 +16,8 @@ use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Acts as intermediate request forwarder for resource plugins.
+ *
+ * @phpstan-consistent-constructor
  */
 class GeoreportRequestHandler implements ContainerInjectionInterface {
 
@@ -33,16 +36,26 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
   protected CurrentPathStack $currentPath;
 
   /**
+   * The configuration factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected ConfigFactoryInterface $configFactory;
+
+  /**
    * Implements constructor for create class object.
    *
    * @param \Symfony\Component\Serializer\SerializerInterface $serializer
    *   The serializer.
    * @param \Drupal\Core\Path\CurrentPathStack $current_path
    *   The current path service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
    */
-  public function __construct(SerializerInterface $serializer, CurrentPathStack $current_path) {
+  public function __construct(SerializerInterface $serializer, CurrentPathStack $current_path, ConfigFactoryInterface $config_factory) {
     $this->serializer = $serializer;
     $this->currentPath = $current_path;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -52,6 +65,7 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     return new static(
       $container->get('serializer'),
       $container->get('path.current'),
+      $container->get('config.factory'),
     );
   }
 
@@ -189,8 +203,15 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
    */
   protected function isCredentialedRequest(Request $request): bool {
     $queryString = $request->getQueryString() ?: '';
+    $settings = $this->configFactory->get('services_api_key_auth.settings');
+    $headerName = $settings->get('api_key_request_header_name');
+    $postName = $settings->get('api_key_post_parameter_name');
+    $queryName = $settings->get('api_key_get_parameter_name');
 
-    return str_contains($queryString, 'api_key')
+    return ($queryName && !empty($request->query->get($queryName)))
+      || ($postName && !empty($request->request->get($postName)))
+      || ($headerName && !empty($request->headers->get($headerName)))
+      || str_contains($queryString, 'api_key')
       || $request->query->has('api_key')
       || $request->request->has('api_key')
       || $request->headers->has('api_key')

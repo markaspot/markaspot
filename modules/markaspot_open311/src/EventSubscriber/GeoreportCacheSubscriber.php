@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\EventSubscriber;
 
 use Drupal\Core\Cache\CacheableResponseInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
@@ -15,6 +16,16 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * serving cached translations for the wrong language.
  */
 class GeoreportCacheSubscriber implements EventSubscriberInterface {
+
+  /**
+   * Constructs a GeoReport cache subscriber.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The configuration factory.
+   */
+  public function __construct(
+    protected ConfigFactoryInterface $configFactory,
+  ) {}
 
   /**
    * {@inheritdoc}
@@ -44,10 +55,14 @@ class GeoreportCacheSubscriber implements EventSubscriberInterface {
 
     // Add Vary header for Accept-Language to ensure HTTP caches
     // serve different responses for different languages.
-    $response->setVary(array_merge(
-      $response->getVary(),
-      ['Accept-Language']
-    ));
+    $varyHeaders = ['Accept-Language'];
+    $configuredHeader = $this->configFactory
+      ->get('services_api_key_auth.settings')
+      ->get('api_key_request_header_name');
+    if (is_string($configuredHeader) && $configuredHeader !== '') {
+      $varyHeaders[] = $configuredHeader;
+    }
+    $response->setVary(array_merge($response->getVary(), $varyHeaders));
 
     // For cacheable responses, add the language cache context.
     if ($response instanceof CacheableResponseInterface) {
@@ -85,8 +100,15 @@ class GeoreportCacheSubscriber implements EventSubscriberInterface {
    */
   protected function isCredentialedRequest(Request $request): bool {
     $queryString = $request->getQueryString() ?: '';
+    $settings = $this->configFactory->get('services_api_key_auth.settings');
+    $headerName = $settings->get('api_key_request_header_name');
+    $postName = $settings->get('api_key_post_parameter_name');
+    $queryName = $settings->get('api_key_get_parameter_name');
 
-    return str_contains($queryString, 'api_key')
+    return ($queryName && !empty($request->query->get($queryName)))
+      || ($postName && !empty($request->request->get($postName)))
+      || ($headerName && !empty($request->headers->get($headerName)))
+      || str_contains($queryString, 'api_key')
       || $request->query->has('api_key')
       || $request->request->has('api_key')
       || $request->headers->has('api_key')

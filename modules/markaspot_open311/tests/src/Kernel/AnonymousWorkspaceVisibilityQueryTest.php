@@ -130,6 +130,17 @@ final class AnonymousWorkspaceVisibilityQueryTest extends KernelTestBase {
   }
 
   /**
+   * A direct ID lookup cannot return a restricted request.
+   */
+  public function testDirectIdLookupExcludesRestrictedRequest(): void {
+    $query = $this->baseQuery();
+    $query->condition('base_table.nid', $this->requestIds[2]);
+    markaspot_open311_query_markaspot_open311_workspace_visibility_alter($query);
+
+    $this->assertSame([], $query->execute()->fetchCol());
+  }
+
+  /**
    * A missing mapped field table fails closed instead of throwing.
    */
   public function testMissingMappedFieldTableFailsClosed(): void {

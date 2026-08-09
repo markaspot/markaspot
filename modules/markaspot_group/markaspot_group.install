@@ -12,6 +12,19 @@ use Drupal\markaspot_mail\Service\EcaMailMigrator;
 use Drupal\user\Entity\Role;
 
 /**
+ * Implements hook_update_dependencies().
+ */
+function markaspot_group_update_dependencies(): array {
+  return [
+    'markaspot_group' => [
+      11947 => [
+        'markaspot' => 11925,
+      ],
+    ],
+  ];
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_group_requirements(string $phase): array {
@@ -5550,4 +5563,84 @@ function _markaspot_group_visibility_allowed_values(array $allowed_values): arra
   }
 
   return $allowed_values;
+}
+
+/**
+ * Backfills api_user jurisdiction memberships and the base member role.
+ */
+function markaspot_group_update_11947(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $jurisdiction_group_type = _markaspot_group_update_jurisdiction_group_type();
+  $groups = $entity_type_manager
+    ->getStorage('group')
+    ->loadByProperties(['type' => $jurisdiction_group_type]);
+  $users = $entity_type_manager
+    ->getStorage('user')
+    ->loadByProperties(['name' => 'api_user']);
+  $api_user = reset($users);
+  if (!$api_user instanceof \Drupal\user\UserInterface) {
+    return sprintf(
+      'Skipped api_user jurisdiction membership backfill because the account does not exist; created 0, repaired 0, skipped %d.',
+      count($groups),
+    );
+  }
+
+  $member_role_id = $jurisdiction_group_type . '-member';
+  $member_role_exists = (bool) $entity_type_manager
+    ->getStorage('group_role')
+    ->load($member_role_id);
+  if (!$member_role_exists) {
+    \Drupal::logger('markaspot_group')->warning('The @role group role does not exist. New api_user memberships will be created without a role.', [
+      '@role' => $member_role_id,
+    ]);
+  }
+
+  $relationship_storage = $entity_type_manager
+    ->getStorage('group_relationship');
+  $created = 0;
+  $repaired = 0;
+  $skipped = 0;
+
+  foreach ($groups as $group) {
+    $relationships = $relationship_storage->loadByProperties([
+      'gid' => $group->id(),
+      'entity_id' => $api_user->id(),
+      'plugin_id' => 'group_membership',
+    ]);
+    $relationship = reset($relationships);
+    if (!$relationship) {
+      $relationship = $group->addRelationship($api_user, 'group_membership');
+      if ($member_role_exists) {
+        $relationship->set('group_roles', [$member_role_id]);
+      }
+      $relationship->save();
+      $created++;
+      continue;
+    }
+
+    if (!$member_role_exists || !$relationship->hasField('group_roles')) {
+      $skipped++;
+      continue;
+    }
+
+    $role_ids = array_column(
+      $relationship->get('group_roles')->getValue(),
+      'target_id',
+    );
+    if (in_array($member_role_id, $role_ids, TRUE)) {
+      $skipped++;
+      continue;
+    }
+
+    $relationship->get('group_roles')->appendItem($member_role_id);
+    $relationship->save();
+    $repaired++;
+  }
+
+  return sprintf(
+    'Backfilled api_user jurisdiction memberships: created %d, repaired %d, skipped %d.',
+    $created,
+    $repaired,
+    $skipped,
+  );
 }

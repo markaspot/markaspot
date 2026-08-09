@@ -485,13 +485,9 @@ class GeoreportRequestResource extends ResourceBase {
     $postName = $this->apiKeyAuthConfig->get('api_key_post_parameter_name');
     $queryName = $this->apiKeyAuthConfig->get('api_key_get_parameter_name');
 
-    return ($queryName && $request->query->has($queryName))
-      || ($postName && $request->request->has($postName))
-      || ($headerName && $request->headers->has($headerName))
-      || $request->query->has('api_key')
-      || $request->request->has('api_key')
-      || $request->headers->has('apikey')
-      || $request->headers->has('x-api-key');
+    return ($queryName && !empty($request->query->get($queryName)))
+      || ($postName && !empty($request->request->get($postName)))
+      || ($headerName && !empty($request->headers->get($headerName)));
   }
 
   /**
@@ -537,7 +533,11 @@ class GeoreportRequestResource extends ResourceBase {
       if (!$node instanceof ContentEntityInterface) {
         continue;
       }
-      if (!$this->requestNodeMatchesScope($node, $scopeJurisdictionIds)) {
+      if (!$this->requestNodeMatchesScope(
+        $node,
+        $scopeJurisdictionIds,
+        !$enforceMembership && $this->currentRequestUsesApiKey(),
+      )) {
         continue;
       }
       $matches[(int) $node->id()] = $node;
@@ -583,7 +583,9 @@ class GeoreportRequestResource extends ResourceBase {
       $jurisdictionId = $this->georeportProcessor
         ->resolveJurisdictionId($parameters);
       if (!$jurisdictionId || !$this->isJurisdictionGroupId($jurisdictionId)) {
-        if (!$this->currentUser->isAnonymous()) {
+        $anonymousEquivalentRead = $this->currentUser->isAnonymous()
+          || (!$enforceMembership && $this->currentRequestUsesApiKey());
+        if (!$anonymousEquivalentRead) {
           if ($this->jurisdictionScopeValidator) {
             $this->jurisdictionScopeValidator->logViolation(
               (int) $this->currentUser->id(),
@@ -609,6 +611,9 @@ class GeoreportRequestResource extends ResourceBase {
             ->resolveSubmissionJurisdiction($jurisdictionId, $this->currentUser);
         }
         else {
+          if (!$this->workspaceVisibility->canAnonymousView($jurisdictionId)) {
+            return [0];
+          }
           return $this->jurisdictionScopeValidator
             ->resolveReadScope($jurisdictionId, $this->currentUser);
         }
@@ -649,15 +654,20 @@ class GeoreportRequestResource extends ResourceBase {
   /**
    * Checks whether a loaded request node matches the resolved scope.
    */
-  protected function requestNodeMatchesScope(ContentEntityInterface $node, ?array $scopeJurisdictionIds): bool {
+  protected function requestNodeMatchesScope(
+    ContentEntityInterface $node,
+    ?array $scopeJurisdictionIds,
+    bool $apiKeyRead = FALSE,
+  ): bool {
     $jurisdictionIds = $this->resolveNodeJurisdictionIds($node);
-    if ($this->currentUser->isAnonymous()
+    $anonymousEquivalentRead = $this->currentUser->isAnonymous() || $apiKeyRead;
+    if ($anonymousEquivalentRead
       && $this->featureScopeResolver?->isSelfServicePlatform() === TRUE
       && $jurisdictionIds === []) {
       return FALSE;
     }
 
-    if ($this->currentUser->isAnonymous()) {
+    if ($anonymousEquivalentRead) {
       foreach ($jurisdictionIds as $jurisdictionId) {
         if (!$this->workspaceVisibility->canAnonymousView($jurisdictionId)) {
           return FALSE;

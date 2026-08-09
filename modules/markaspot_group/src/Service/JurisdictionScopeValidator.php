@@ -80,7 +80,7 @@ class JurisdictionScopeValidator {
       }
 
       $this->logViolation($uid, NULL, $allowed, 400, 'ambiguous_scope');
-      throw new BadRequestHttpException('jurisdiction_id required (allowed: ' . implode(',', $allowed) . ')');
+      throw new BadRequestHttpException('jurisdiction_id required');
     }
 
     if (!in_array($claimedJurisdictionId, $allowed, TRUE)) {

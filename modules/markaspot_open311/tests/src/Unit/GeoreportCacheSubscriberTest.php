@@ -4,6 +4,8 @@ namespace Drupal\Tests\markaspot_open311\Unit;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\markaspot_open311\EventSubscriber\GeoreportCacheSubscriber;
 use Drupal\Tests\UnitTestCase;
@@ -12,6 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
+
+require_once dirname(__DIR__, 3) . '/src/EventSubscriber/GeoreportCacheSubscriber.php';
 
 /**
  * Tests the GeoreportCacheSubscriber event subscriber.
@@ -41,7 +45,20 @@ class GeoreportCacheSubscriberTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
 
-    $this->subscriber = new GeoreportCacheSubscriber();
+    $settings = $this->createMock(ImmutableConfig::class);
+    $settings->method('get')->willReturnCallback(
+      static fn (string $key): ?string => match ($key) {
+        'api_key_request_header_name' => 'X-Client-Token',
+        'api_key_post_parameter_name' => 'api_key',
+        'api_key_get_parameter_name' => 'api_key',
+        default => NULL,
+      },
+    );
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('services_api_key_auth.settings')
+      ->willReturn($settings);
+    $this->subscriber = new GeoreportCacheSubscriber($configFactory);
     $this->kernel = $this->createMock(HttpKernelInterface::class);
 
     // Set up container for Cache::mergeContexts() calls.
@@ -86,6 +103,7 @@ class GeoreportCacheSubscriberTest extends UnitTestCase {
     $this->subscriber->onResponse($event);
 
     $this->assertContains('Accept-Language', $response->getVary());
+    $this->assertContains('X-Client-Token', $response->getVary());
   }
 
   /**
@@ -132,6 +150,22 @@ class GeoreportCacheSubscriberTest extends UnitTestCase {
     $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
     $this->assertContains('Authorization', $response->getVary());
     $this->assertContains('Cookie', $response->getVary());
+  }
+
+  /**
+   * @covers ::onResponse
+   */
+  public function testConfiguredCustomHeaderIsPrivateNoStore(): void {
+    $request = Request::create('/georeport/v2/requests.json', 'GET');
+    $request->headers->set('X-Client-Token', 'secret');
+    $response = new Response('content', 200);
+    $event = new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
+
+    $this->subscriber->onResponse($event);
+
+    $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
+    $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+    $this->assertSame('private, no-store', $response->headers->get('X-Cache-Policy'));
   }
 
   /**

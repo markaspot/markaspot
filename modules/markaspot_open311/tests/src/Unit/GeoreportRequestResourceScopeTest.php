@@ -64,11 +64,25 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
     $validator->expects($this->once())
       ->method('logViolation')
       ->with(7, NULL, [1, 4], 400, 'invalid_claim');
-    $resource = $this->resource([], [], [], TRUE, FALSE, [1, 4], $validator);
+    $resource = $this->resource([], [], [], FALSE, FALSE, [1, 4], $validator);
 
     $this->expectException(BadRequestHttpException::class);
     $this->expectExceptionMessage('Invalid jurisdiction_id.');
     $resource->loadForRead('REQ-101', ['jurisdiction_id' => 999]);
+  }
+
+  /**
+   * API-key invalid claims keep the workspace existence oracle closed.
+   *
+   * @covers ::resolveSingleRequestJurisdictionScope
+   */
+  public function testApiKeyInvalidClaimReturnsEmptyLookup(): void {
+    $resource = $this->resource([1], [], [], TRUE, FALSE, [1]);
+
+    $this->assertNull($resource->loadForRead(
+      'REQ-101',
+      ['jurisdiction_id' => 999],
+    ));
   }
 
   /**
@@ -107,6 +121,57 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
   }
 
   /**
+   * A restricted API-key candidate is hidden like an anonymous read.
+   *
+   * @covers ::loadScopedRequestNode
+   * @covers ::requestNodeMatchesScope
+   */
+  public function testApiKeyRestrictedJurisdictionIsUnreadable(): void {
+    $node = $this->node(101);
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('canAnonymousView')->with(1)->willReturn(FALSE);
+    $resource = $this->resource(
+      [1],
+      [101 => 1],
+      [$node],
+      TRUE,
+      FALSE,
+      [1],
+      NULL,
+      $visibility,
+    );
+
+    $this->assertNull($resource->loadForRead('REQ-101', []));
+  }
+
+  /**
+   * Any restrictive target hides a mixed request from API-key reads.
+   *
+   * @covers ::loadScopedRequestNode
+   * @covers ::requestNodeMatchesScope
+   */
+  public function testApiKeyMixedJurisdictionsAreUnreadable(): void {
+    $node = $this->node(101);
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('canAnonymousView')->willReturnMap([
+      [1, TRUE],
+      [2, FALSE],
+    ]);
+    $resource = $this->resource(
+      [1, 2],
+      [101 => [1, 2]],
+      [$node],
+      TRUE,
+      FALSE,
+      [1, 2],
+      NULL,
+      $visibility,
+    );
+
+    $this->assertNull($resource->loadForRead('REQ-101', []));
+  }
+
+  /**
    * A jurisdiction claim outside the key scope remains forbidden.
    *
    * @covers ::loadScopedRequestNode
@@ -118,6 +183,32 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
     $this->expectException(AccessDeniedHttpException::class);
     $this->expectExceptionMessage('key not authorized for jur 5');
     $resource->loadForRead('REQ-101', ['jurisdiction_id' => 5]);
+  }
+
+  /**
+   * A restricted foreign claim is indistinguishable from an invalid claim.
+   *
+   * @covers ::loadScopedRequestNode
+   * @covers ::resolveSingleRequestJurisdictionScope
+   */
+  public function testRestrictedForeignJurisdictionClaimReturnsEmpty(): void {
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('canAnonymousView')->with(5)->willReturn(FALSE);
+    $resource = $this->resource(
+      [1, 4],
+      [],
+      [],
+      TRUE,
+      FALSE,
+      [1, 4, 5],
+      NULL,
+      $visibility,
+    );
+
+    $this->assertNull($resource->loadForRead(
+      'REQ-101',
+      ['jurisdiction_id' => 5],
+    ));
   }
 
   /**
@@ -377,13 +468,18 @@ final class GeoreportRequestResourceScopeTest extends UnitTestCase {
     $featureScopeResolver->method('isSelfServicePlatform')
       ->willReturn($selfServicePlatform);
 
+    if ($workspaceVisibility === NULL) {
+      $workspaceVisibility = $this->createMock(WorkspaceVisibilityInterface::class);
+      $workspaceVisibility->method('canAnonymousView')->willReturn(TRUE);
+    }
+
     return new ScopeTestGeoreportRequestResource(
       $account,
       $config,
       $entityTypeManager,
       $processor,
       $validator ?? $this->validatorWithAllowed($allowedJurisdictionIds),
-      $workspaceVisibility ?? $this->createMock(WorkspaceVisibilityInterface::class),
+      $workspaceVisibility,
       $featureScopeResolver,
       $usesApiKey,
       $nodeJurisdictionIds,
@@ -518,7 +614,9 @@ final class ScopeTestGeoreportRequestResource extends GeoreportRequestResource {
    * {@inheritdoc}
    */
   protected function nodeBelongsToJurisdiction(ContentEntityInterface $node, int $jurisdictionId): bool {
-    return ($this->nodeJurisdictionIds[(int) $node->id()] ?? NULL) === $jurisdictionId;
+    $jurisdictionIds = $this->nodeJurisdictionIds[(int) $node->id()] ?? [];
+    $jurisdictionIds = is_array($jurisdictionIds) ? $jurisdictionIds : [$jurisdictionIds];
+    return in_array($jurisdictionId, $jurisdictionIds, TRUE);
   }
 
   /**

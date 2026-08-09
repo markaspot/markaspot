@@ -14,6 +14,8 @@ use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_open311\Plugin\rest\resource\GeoreportRequestIndexResource;
 use Drupal\Tests\UnitTestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 require_once dirname(dirname(__DIR__, 3)) . '/markaspot_group/src/Service/WorkspaceVisibilityInterface.php';
 require_once dirname(__DIR__, 3) . '/src/Plugin/rest/resource/GeoreportRequestIndexResource.php';
@@ -126,6 +128,70 @@ final class GeoreportRequestIndexVisibilityScopeTest extends UnitTestCase {
   }
 
   /**
+   * API-key claims use anonymous visibility without revealing restrictions.
+   *
+   * @covers ::anonymousJurisdictionClaimIsUnreadable
+   */
+  public function testApiKeyRestrictedClaimIsUnreadable(): void {
+    $resource = $this->resource(
+      FALSE,
+      [10],
+      [10],
+      [10],
+      FALSE,
+      TRUE,
+    );
+
+    $this->assertTrue($this->claimIsUnreadable(
+      $resource,
+      ['jurisdiction_id' => 10],
+      10,
+    ));
+  }
+
+  /**
+   * API-key invalid claims use the anonymous empty-result behavior.
+   *
+   * @covers ::applyInvalidJurisdictionClaimScope
+   */
+  public function testApiKeyInvalidClaimIsScopedToEmpty(): void {
+    $resource = $this->resource(FALSE, [], [], [], FALSE, TRUE);
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('nid', [0], 'IN')
+      ->willReturnSelf();
+
+    $this->applyInvalidClaimScope(
+      $resource,
+      $query,
+      ['jurisdiction_id' => 999],
+      NULL,
+    );
+  }
+
+  /**
+   * API-key reads reuse the multi-value-safe restricted target exclusion.
+   *
+   * @covers ::applyAnonymousWorkspaceReadScope
+   */
+  public function testApiKeyReadAddsRestrictedWorkspaceAntiSubquery(): void {
+    $resource = $this->resource(TRUE, [10, 11], [10], [], FALSE, TRUE);
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->never())->method('condition');
+    $query->expects($this->once())
+      ->method('addTag')
+      ->with('markaspot_open311_workspace_visibility')
+      ->willReturnSelf();
+    $query->expects($this->once())
+      ->method('addMetaData')
+      ->with('markaspot_open311_restricted_jurisdiction_ids', [10])
+      ->willReturnSelf();
+
+    $this->applyAnonymousScope($resource, $query);
+  }
+
+  /**
    * Builds a resource with deterministic platform and visibility behavior.
    *
    * @param bool $selfService
@@ -136,15 +202,24 @@ final class GeoreportRequestIndexVisibilityScopeTest extends UnitTestCase {
    *   Explicitly restricted jurisdiction IDs.
    * @param int[] $loadableJurisdictionIds
    *   IDs that load as configured jurisdiction groups.
+   * @param bool $anonymous
+   *   Whether the current account is anonymous.
+   * @param bool $apiKey
+   *   Whether the request carries an API key.
+   * @param bool $configuredApiKey
+   *   Whether api_key is a configured query carrier.
    */
   private function resource(
     bool $selfService,
     array $jurisdictionIds,
     array $restrictedJurisdictionIds,
     array $loadableJurisdictionIds = [],
+    bool $anonymous = TRUE,
+    bool $apiKey = FALSE,
+    bool $configuredApiKey = TRUE,
   ): GeoreportRequestIndexResource {
     $account = $this->createMock(AccountProxyInterface::class);
-    $account->method('isAnonymous')->willReturn(TRUE);
+    $account->method('isAnonymous')->willReturn($anonymous);
 
     $groupQuery = $this->createMock(QueryInterface::class);
     $groupQuery->method('accessCheck')->willReturnSelf();
@@ -152,7 +227,7 @@ final class GeoreportRequestIndexVisibilityScopeTest extends UnitTestCase {
     $groupQuery->method('execute')->willReturn($jurisdictionIds);
 
     $groupStorage = $this->createMock(EntityStorageInterface::class);
-    if ($selfService) {
+    if ($selfService && $anonymous) {
       $groupStorage->expects($this->once())
         ->method('getQuery')
         ->willReturn($groupQuery);
@@ -191,6 +266,16 @@ final class GeoreportRequestIndexVisibilityScopeTest extends UnitTestCase {
       ->with('jurisdiction_group_type')
       ->willReturn('jur');
 
+    $requestStack = new RequestStack();
+    $requestStack->push(new Request($apiKey ? ['api_key' => 'test-key'] : []));
+    $apiKeyConfig = $this->createMock(Config::class);
+    $apiKeyConfig->method('get')->willReturnCallback(
+      static fn(string $name): string => $name === 'api_key_get_parameter_name'
+        && $configuredApiKey
+          ? 'api_key'
+          : '',
+    );
+
     $reflection = new \ReflectionClass(GeoreportRequestIndexResource::class);
     $resource = $reflection->newInstanceWithoutConstructor();
     $this->setProperty($resource, 'currentUser', $account);
@@ -198,6 +283,8 @@ final class GeoreportRequestIndexVisibilityScopeTest extends UnitTestCase {
     $this->setProperty($resource, 'workspaceVisibility', $visibility);
     $this->setProperty($resource, 'featureScopeResolver', $scopeResolver);
     $this->setProperty($resource, 'config', $config);
+    $this->setProperty($resource, 'requestStack', $requestStack);
+    $this->setProperty($resource, 'apiKeyAuthConfig', $apiKeyConfig);
     return $resource;
   }
 
@@ -222,6 +309,19 @@ final class GeoreportRequestIndexVisibilityScopeTest extends UnitTestCase {
   ): bool {
     $method = new \ReflectionMethod($resource, 'anonymousJurisdictionClaimIsUnreadable');
     return (bool) $method->invoke($resource, $parameters, $jurisdictionId);
+  }
+
+  /**
+   * Invokes the protected invalid-claim scope.
+   */
+  private function applyInvalidClaimScope(
+    GeoreportRequestIndexResource $resource,
+    QueryInterface $query,
+    array $parameters,
+    ?int $jurisdictionId,
+  ): void {
+    $method = new \ReflectionMethod($resource, 'applyInvalidJurisdictionClaimScope');
+    $method->invoke($resource, $query, $parameters, $jurisdictionId);
   }
 
   /**

@@ -468,8 +468,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
     // Direct NID lookup is also fast.
     if (isset($parameters['nids'])) {
-      $nids = explode(',', $parameters['nids']);
-      $query->condition('nid', $nids, 'IN');
+      self::applyRequestNidFilter($query, $parameters['nids']);
     }
     else {
       $sort = $this->georeportProcessor->normalizeRequestListSort($parameters);
@@ -946,6 +945,19 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
     $allowedJurisdictionIds = $this->jurisdictionScopeValidator
       ->getAllowedJurisdictionIds($this->currentUser);
+    if (count($allowedJurisdictionIds) > 1
+      && !$this->isRequestIdLookup($parameters)
+      && $this->featureScopeResolver?->isSelfServicePlatform() === TRUE) {
+      $this->jurisdictionScopeValidator->logViolation(
+        (int) $this->currentUser->id(),
+        NULL,
+        $allowedJurisdictionIds,
+        400,
+        'unscoped_list_read',
+      );
+      throw new GeoreportException('jurisdiction_id required', 400);
+    }
+
     if ($allowedJurisdictionIds === []) {
       $query->condition('nid', [0], 'IN');
       return;
@@ -965,27 +977,33 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       'intval',
       $scopeJurisdictionIds
     )));
+    $scopeJurisdictionIds = array_values(array_diff(
+      $scopeJurisdictionIds,
+      $this->workspaceVisibility->getRestrictedJurisdictionIds(),
+    ));
     $query->condition('field_jurisdiction', $scopeJurisdictionIds ?: [0], 'IN');
   }
 
   /**
-   * Restricts anonymous reads to publicly visible workspaces.
+   * Restricts anonymous-equivalent reads to publicly visible workspaces.
    */
   protected function applyAnonymousWorkspaceReadScope(QueryInterface $query): void {
-    if (!$this->currentUser->isAnonymous()) {
+    $isAnonymous = $this->currentUser->isAnonymous();
+    if (!$isAnonymous && !$this->currentRequestUsesApiKey()) {
       return;
     }
 
     $restricted = $this->workspaceVisibility
       ->getRestrictedJurisdictionIds();
-    if ($this->featureScopeResolver?->isSelfServicePlatform() === TRUE) {
+    if ($isAnonymous
+      && $this->featureScopeResolver?->isSelfServicePlatform() === TRUE) {
       $query->condition(
         'field_jurisdiction',
         $this->getAnonymousVisibleJurisdictionIds($restricted) ?: [0],
         'IN',
       );
     }
-    elseif ($restricted === []) {
+    elseif ($isAnonymous && $restricted === []) {
       // Municipal stacks historically had no anonymous jurisdiction filter.
       // Preserve that behavior until an operator explicitly restricts one.
       return;
@@ -1040,7 +1058,8 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       return;
     }
 
-    if (!$this->currentUser->isAnonymous()) {
+    if (!$this->currentUser->isAnonymous()
+      && !$this->currentRequestUsesApiKey()) {
       throw new GeoreportException('Invalid jurisdiction_id.', 400);
     }
 
@@ -1050,10 +1069,10 @@ final class GeoreportRequestIndexResource extends ResourceBase {
   }
 
   /**
-   * Checks whether an anonymous jurisdiction claim must resolve as empty.
+   * Checks whether an anonymous-equivalent claim must resolve as empty.
    */
   protected function anonymousJurisdictionClaimIsUnreadable(array $parameters, ?int $resolvedJurisdictionId): bool {
-    if (!$this->currentUser->isAnonymous()
+    if ((!$this->currentUser->isAnonymous() && !$this->currentRequestUsesApiKey())
       || !$this->hasJurisdictionClaim($parameters)) {
       // Outside self-service, an unclaimed municipal list must remain
       // unscoped. Explicit claims still honor an operator-set restriction.
@@ -1065,6 +1084,13 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     return !$this->workspaceVisibility->canAnonymousView($resolvedJurisdictionId);
+  }
+
+  /**
+   * Checks whether the request targets explicit service request IDs.
+   */
+  protected function isRequestIdLookup(array $parameters): bool {
+    return isset($parameters['id']) || isset($parameters['nids']);
   }
 
   /**
@@ -1104,13 +1130,9 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     $postName = $this->apiKeyAuthConfig->get('api_key_post_parameter_name');
     $queryName = $this->apiKeyAuthConfig->get('api_key_get_parameter_name');
 
-    return ($queryName && $request->query->has($queryName))
-      || ($postName && $request->request->has($postName))
-      || ($headerName && $request->headers->has($headerName))
-      || $request->query->has('api_key')
-      || $request->request->has('api_key')
-      || $request->headers->has('apikey')
-      || $request->headers->has('x-api-key');
+    return ($queryName && !empty($request->query->get($queryName)))
+      || ($postName && !empty($request->request->get($postName)))
+      || ($headerName && !empty($request->headers->get($headerName)));
   }
 
   /**
@@ -1321,14 +1343,9 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    *   Raw id query parameter value.
    *
    * @throws \Drupal\markaspot_open311\Exception\GeoreportException
-   *   Throws 400 when the comma-separated list exceeds the hard cap.
+   *   Throws 400 when the ID list exceeds the hard cap or is nested.
    */
   public static function applyRequestIdFilter(QueryInterface $query, mixed $requestId): void {
-    if (!is_string($requestId)) {
-      $query->condition('request_id', $requestId);
-      return;
-    }
-
     $requestIds = self::normaliseRequestIdFilter($requestId);
     if (is_array($requestIds)) {
       $query->condition('request_id', $requestIds, 'IN');
@@ -1339,20 +1356,55 @@ final class GeoreportRequestIndexResource extends ResourceBase {
   }
 
   /**
+   * Applies the direct node ID filter with the request ID batch limit.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The entity query being filtered.
+   * @param mixed $requestNids
+   *   Raw nids query parameter value.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 400 when more than MAX_REQUEST_IDS non-empty IDs are provided.
+   */
+  public static function applyRequestNidFilter(QueryInterface $query, mixed $requestNids): void {
+    $requestNids = self::normaliseRequestIdFilter($requestNids);
+    if ($requestNids === '') {
+      $requestNids = [0];
+    }
+    elseif (!is_array($requestNids)) {
+      $requestNids = [$requestNids];
+    }
+
+    $query->condition('nid', $requestNids, 'IN');
+  }
+
+  /**
    * Normalises the id query parameter into single-value or IN-list shape.
+   *
+   * @param mixed $requestId
+   *   A scalar, comma-separated string, or flat scalar array.
    *
    * @return string|string[]
    *   Empty string for empty/all-empty input, a string for one ID, or a string
    *   list for multiple IDs.
    *
    * @throws \Drupal\markaspot_open311\Exception\GeoreportException
-   *   Throws 400 when more than MAX_REQUEST_IDS non-empty IDs are provided.
+   *   Throws 400 for nested values or more than MAX_REQUEST_IDS IDs.
    */
-  private static function normaliseRequestIdFilter(string $requestId): string|array {
-    $requestIds = array_values(array_filter(
-      array_map('trim', explode(',', $requestId)),
-      fn($id) => $id !== ''
-    ));
+  private static function normaliseRequestIdFilter(mixed $requestId): string|array {
+    $rawValues = is_array($requestId) ? $requestId : [$requestId];
+    $requestIds = [];
+    foreach ($rawValues as $rawValue) {
+      if (!is_scalar($rawValue)) {
+        throw new GeoreportException('Invalid ids in request.', 400);
+      }
+      foreach (explode(',', (string) $rawValue) as $id) {
+        $id = trim($id);
+        if ($id !== '') {
+          $requestIds[] = $id;
+        }
+      }
+    }
 
     if ($requestIds === []) {
       return '';
