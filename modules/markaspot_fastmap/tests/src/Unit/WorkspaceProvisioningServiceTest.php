@@ -1312,32 +1312,27 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that a missing member role is logged without blocking membership.
+   * Tests that a missing member role skips the api_user membership.
    *
    * @covers ::addApiUserMembership
    */
-  public function testMissingApiUserMemberRoleStillCreatesMembership(): void {
+  public function testMissingApiUserMemberRoleSkipsMembership(): void {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn(42);
     $apiUser = $this->createMock(UserInterface::class);
     $apiUser->method('id')->willReturn(77);
     $this->userStorage->method('loadByProperties')->willReturn([$apiUser]);
     $this->groupRoleStorage->method('load')->willReturn(NULL);
-    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
     $this->logger->expects($this->once())
-      ->method('warning')
+      ->method('error')
       ->with(
         $this->stringContains('role does not exist'),
         ['@role' => 'jur-member', '@gid' => 42],
       );
 
-    $membership = $this->createMock(GroupRelationshipInterface::class);
-    $membership->expects($this->never())->method('set');
-    $membership->expects($this->once())->method('save');
-    $group->expects($this->once())
-      ->method('addRelationship')
-      ->with($apiUser, 'group_membership')
-      ->willReturn($membership);
+    $this->relationshipStorage->expects($this->never())
+      ->method('loadByProperties');
+    $group->expects($this->never())->method('addRelationship');
 
     $method = new \ReflectionMethod($this->service, 'addApiUserMembership');
     $method->invoke($this->service, $group);

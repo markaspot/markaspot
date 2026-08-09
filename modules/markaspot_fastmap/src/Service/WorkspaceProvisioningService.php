@@ -1272,10 +1272,12 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       ->getStorage('group_role')
       ->load($memberRoleId);
     if (!$roleExists) {
-      $this->logger->warning('Could not assign group role @role to api_user in workspace @gid because the role does not exist.', [
-        '@role' => $memberRoleId,
-        '@gid' => $group->id(),
-      ]);
+      $this->logger->error(
+        'Could not add api_user to workspace @gid because the required ' .
+        'group role @role does not exist.',
+        ['@role' => $memberRoleId, '@gid' => $group->id()],
+      );
+      return;
     }
 
     $relationshipStorage = $this->entityTypeManager
@@ -1288,14 +1290,12 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $membership = reset($existing);
     if (!$membership) {
       $membership = $group->addRelationship($apiUser, 'group_membership');
-      if ($roleExists) {
-        $membership->set('group_roles', [$memberRoleId]);
-      }
+      $membership->set('group_roles', [$memberRoleId]);
       $membership->save();
       return;
     }
 
-    if (!$roleExists || !$membership->hasField('group_roles')) {
+    if (!$membership->hasField('group_roles')) {
       return;
     }
 

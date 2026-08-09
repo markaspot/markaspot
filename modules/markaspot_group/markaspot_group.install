@@ -10,6 +10,7 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\markaspot_mail\Service\EcaMailMigrator;
 use Drupal\user\Entity\Role;
+use Drupal\user\UserInterface;
 
 /**
  * Implements hook_update_dependencies().
@@ -5578,7 +5579,7 @@ function markaspot_group_update_11947(): string {
     ->getStorage('user')
     ->loadByProperties(['name' => 'api_user']);
   $api_user = reset($users);
-  if (!$api_user instanceof \Drupal\user\UserInterface) {
+  if (!$api_user instanceof UserInterface) {
     return sprintf(
       'Skipped api_user jurisdiction membership backfill because the account does not exist; created 0, repaired 0, skipped %d.',
       count($groups),
@@ -5590,9 +5591,17 @@ function markaspot_group_update_11947(): string {
     ->getStorage('group_role')
     ->load($member_role_id);
   if (!$member_role_exists) {
-    \Drupal::logger('markaspot_group')->warning('The @role group role does not exist. New api_user memberships will be created without a role.', [
-      '@role' => $member_role_id,
-    ]);
+    \Drupal::logger('markaspot_group')->error(
+      'The required @role group role does not exist. ' .
+      'No api_user memberships were created.',
+      ['@role' => $member_role_id],
+    );
+    return sprintf(
+      'Skipped api_user jurisdiction membership backfill because the required ' .
+      'group role %s does not exist; created 0, repaired 0, skipped %d.',
+      $member_role_id,
+      count($groups),
+    );
   }
 
   $relationship_storage = $entity_type_manager
@@ -5610,15 +5619,13 @@ function markaspot_group_update_11947(): string {
     $relationship = reset($relationships);
     if (!$relationship) {
       $relationship = $group->addRelationship($api_user, 'group_membership');
-      if ($member_role_exists) {
-        $relationship->set('group_roles', [$member_role_id]);
-      }
+      $relationship->set('group_roles', [$member_role_id]);
       $relationship->save();
       $created++;
       continue;
     }
 
-    if (!$member_role_exists || !$relationship->hasField('group_roles')) {
+    if (!$relationship->hasField('group_roles')) {
       $skipped++;
       continue;
     }

@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_group\Kernel;
 
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
@@ -128,6 +129,27 @@ final class ApiUserMembershipBackfillKernelTest extends KernelTestBase {
   }
 
   /**
+   * A missing member role leaves all membership states unchanged.
+   */
+  public function testBackfillSkipsWhenMemberRoleDoesNotExist(): void {
+    $apiUser = $this->createApiUser();
+    $missingMembership = $this->createJurisdiction('Missing membership');
+    $existingMembership = $this->createJurisdiction('Existing membership');
+    $existingMembership
+      ->addRelationship($apiUser, 'group_membership')
+      ->save();
+    GroupRole::load('jur-member')->delete();
+
+    $this->assertSame(
+      'Skipped api_user jurisdiction membership backfill because the required ' .
+      'group role jur-member does not exist; created 0, repaired 0, skipped 2.',
+      markaspot_group_update_11947(),
+    );
+    $this->assertNull($this->membership($missingMembership, $apiUser));
+    $this->assertSame([], $this->membershipRoles($existingMembership, $apiUser));
+  }
+
+  /**
    * The profile user-link repair runs before the membership backfill.
    */
   public function testBackfillDependsOnApiUserLinkUpdate(): void {
@@ -168,6 +190,21 @@ final class ApiUserMembershipBackfillKernelTest extends KernelTestBase {
    *   Group role IDs.
    */
   private function membershipRoles(GroupInterface $group, UserInterface $user): array {
+    $relationship = $this->membership($group, $user);
+    $this->assertNotNull($relationship);
+    return array_column(
+      $relationship->get('group_roles')->getValue(),
+      'target_id',
+    );
+  }
+
+  /**
+   * Gets a user's group membership when it exists.
+   */
+  private function membership(
+    GroupInterface $group,
+    UserInterface $user,
+  ): ?GroupRelationshipInterface {
     $relationships = $this->container->get('entity_type.manager')
       ->getStorage('group_relationship')
       ->loadByProperties([
@@ -176,11 +213,7 @@ final class ApiUserMembershipBackfillKernelTest extends KernelTestBase {
         'plugin_id' => 'group_membership',
       ]);
     $relationship = reset($relationships);
-    $this->assertNotFalse($relationship);
-    return array_column(
-      $relationship->get('group_roles')->getValue(),
-      'target_id',
-    );
+    return $relationship ?: NULL;
   }
 
 }
