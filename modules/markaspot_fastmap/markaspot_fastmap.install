@@ -1433,3 +1433,64 @@ function markaspot_fastmap_update_11924(): string {
 
   return 'Backfilled markaspot_fastmap.mail key(s): ' . implode(', ', $backfilled) . '.';
 }
+
+/**
+ * Removes the provisioned 64px header height from jurisdiction configs.
+ */
+function markaspot_fastmap_update_11925(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+  $groups = $storage->loadByProperties(['type' => 'jur']);
+  if ($groups === []) {
+    return 'No jurisdiction groups found, nothing to clean up.';
+  }
+
+  $cleaned = 0;
+  $kept = 0;
+  $skipped = 0;
+
+  foreach ($groups as $group) {
+    if (!$group->hasField('field_nuxt_config') || $group->get('field_nuxt_config')->isEmpty()) {
+      $skipped++;
+      continue;
+    }
+
+    $raw = $group->get('field_nuxt_config')->value;
+    $config = json_decode((string) $raw, TRUE);
+    if (!is_array($config) || !isset($config['ui']['headerHeight'])) {
+      $skipped++;
+      continue;
+    }
+
+    // Only drop the value the provisioning wrote. An operator who chose a
+    // different height did so deliberately and keeps it, even if it is also
+    // too small: overriding a deliberate choice is not this hook's job.
+    if ($config['ui']['headerHeight'] !== '64px') {
+      $kept++;
+      continue;
+    }
+
+    unset($config['ui']['headerHeight']);
+    $encoded = json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($encoded === FALSE) {
+      // Never write a truncated config: leaving the header too small is a
+      // cosmetic defect, losing the tenant configuration is not.
+      \Drupal::logger('markaspot_fastmap')->error(
+        'Could not re-encode field_nuxt_config for group @gid; header height left unchanged.',
+        ['@gid' => $group->id()],
+      );
+      $skipped++;
+      continue;
+    }
+
+    $group->set('field_nuxt_config', $encoded);
+    $group->save();
+    $cleaned++;
+  }
+
+  return sprintf(
+    'Header height cleanup: %d cleared, %d kept (custom value), %d skipped.',
+    $cleaned,
+    $kept,
+    $skipped,
+  );
+}

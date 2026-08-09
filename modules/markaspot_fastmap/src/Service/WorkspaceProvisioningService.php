@@ -773,8 +773,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'fields' => [
         'field_gdpr' => ['required' => FALSE],
       ],
+      // headerHeight is deliberately NOT written here. The frontend default
+      // (config/clients/default.ts) sizes the header for its own content:
+      // logo, tenant name and slogan need about 82px, and the logo alone
+      // renders at 100px. Writing a fixed 64px made every provisioned
+      // workspace clip its header, because a value present in the tenant
+      // config always wins over the frontend default. Two sources for one
+      // number, and the smaller one silently won everywhere except on the
+      // single tenant created before this line existed.
       'ui' => [
-        'headerHeight' => '64px',
         'sidebar' => ['width' => '420px', 'enabled' => TRUE],
         'bottomSheet' => [
           'position' => 'medium',
