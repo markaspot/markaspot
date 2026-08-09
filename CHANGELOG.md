@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.180](https://github.com/markaspot/markaspot/compare/11.9.179...11.9.180) (2026-08-09)
+
+### Features
+
+* **health:** detect jurisdictions unreadable by the shared api_user ([bd03fb6](https://github.com/markaspot/markaspot/commit/bd03fb66a6685a02a2bb0c1cd65860a3fc67e2c3))
+
 ## [11.9.179](https://github.com/markaspot/markaspot/compare/11.9.178...11.9.179) (2026-08-09)
 
 ### Features
