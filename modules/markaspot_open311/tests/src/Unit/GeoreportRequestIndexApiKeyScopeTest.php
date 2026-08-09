@@ -100,6 +100,55 @@ final class GeoreportRequestIndexApiKeyScopeTest extends UnitTestCase {
   }
 
   /**
+   * An empty key scope denies instead of returning an unfiltered list.
+   *
+   * This is the state that caused the outage the enumeration guard was built
+   * for: api_user held no jurisdiction memberships, so the derived scope was
+   * empty. Without a jurisdiction claim that produces no exception and no log
+   * entry, only a well-formed 200 with an empty list. The public map then
+   * looks like a jurisdiction without reports and the follow list looks like
+   * a user who follows nothing, which is why it went unnoticed for days.
+   *
+   * The assertion pins the deny sentinel: an empty scope must narrow the
+   * query to the impossible node ID, never leave it unconstrained.
+   *
+   * @covers ::applyApiKeyJurisdictionReadScope
+   */
+  public function testEmptyKeyScopeDeniesInsteadOfReturningEverything(): void {
+    $resource = $this->resource([], TRUE);
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('nid', [0], 'IN')
+      ->willReturnSelf();
+
+    $this->applyApiKeyScope($resource, $query, []);
+  }
+
+  /**
+   * An empty key scope denies ID lookups as well.
+   *
+   * ID lookups are exempt from the enumeration guard so that anonymous detail
+   * pages and cross-jurisdiction follows keep working. That exemption must not
+   * turn into a way around the scope itself.
+   *
+   * @covers ::applyApiKeyJurisdictionReadScope
+   * @covers ::isRequestIdLookup
+   */
+  public function testEmptyKeyScopeAlsoDeniesIdLookups(): void {
+    foreach ([['id' => 'ABC-1'], ['nids' => '101,102']] as $parameters) {
+      $resource = $this->resource([], TRUE);
+      $query = $this->createMock(QueryInterface::class);
+      $query->expects($this->once())
+        ->method('condition')
+        ->with('nid', [0], 'IN')
+        ->willReturnSelf();
+
+      $this->applyApiKeyScope($resource, $query, $parameters);
+    }
+  }
+
+  /**
    * Restricted hierarchy targets are removed from unclaimed key scope.
    *
    * @covers ::applyApiKeyJurisdictionReadScope
