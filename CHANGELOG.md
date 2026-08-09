@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.179](https://github.com/markaspot/markaspot/compare/11.9.178...11.9.179) (2026-08-09)
+
+### Features
+
+* add dump scrubbing script for pulled production databases ([07a48d0](https://github.com/markaspot/markaspot/commit/07a48d0f89ff7170eebe9c1333f39addd9e5ac93))
+
+### Bug Fixes
+
+* enforce jurisdiction scope, visibility and api_user provisioning for key reads ([4cc83b0](https://github.com/markaspot/markaspot/commit/4cc83b0b3d6ca6f1493875d89dab9181264ea0cc))
+* honor boolean multiple report setting ([20266e6](https://github.com/markaspot/markaspot/commit/20266e6bad6104e7f4e76339900379ae49906882))
+* index reports containing emoji ([d8a5c06](https://github.com/markaspot/markaspot/commit/d8a5c06a18a44494ea2e126a5a8c3f71990073f0))
+* skip api_user membership when the jurisdiction member role is missing ([e311448](https://github.com/markaspot/markaspot/commit/e3114484e81289b3e77807ff8edb86c072d0eb25))
+
 ## [11.9.178](https://github.com/markaspot/markaspot/compare/11.9.177...11.9.178) (2026-08-03)
 
 ### Bug Fixes
