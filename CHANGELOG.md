@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.181](https://github.com/markaspot/markaspot/compare/11.9.180...11.9.181) (2026-08-10)
+
+### Bug Fixes
+
+* **fastmap:** stop provisioning a header height that clips tenant headers ([5ba9124](https://github.com/markaspot/markaspot/commit/5ba91248af26425db2f7d9c3f4356880ae2ce6ee))
+
 ## [11.9.180](https://github.com/markaspot/markaspot/compare/11.9.179...11.9.180) (2026-08-09)
 
 ### Features
