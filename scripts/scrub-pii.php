@@ -210,7 +210,12 @@ if ($verify) {
     exit(1);
   }
   print "\nVERIFY PASSED for the carriers this tool covers.\n";
-  exit(0);
+  // No exit(0) here: exit() aborts drush's command lifecycle, which logs
+  // "terminated abnormally" and yields a non-zero process exit even on
+  // success, breaking automated gates. A plain return ends `drush scr`
+  // cleanly with exit code 0. The exit(1) above must stay: a hard non-zero
+  // is exactly what the failure path is for.
+  return;
 }
 
 // --- Service requests -------------------------------------------------------
