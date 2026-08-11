@@ -243,18 +243,20 @@ foreach (array_chunk($nids, SCRUB_BATCH) as $chunk) {
       continue;
     }
 
-    $transaction = $database->startTransaction();
-    try {
-      $node->setNewRevision(TRUE);
-      $node->setRevisionLogMessage(SCRUB_REVISION_LOG);
-      scrub_anonymize_entity($node, $fields);
-      $node->save();
-      unset($transaction);
-    }
-    catch (\Throwable $e) {
-      $transaction->rollBack();
-      throw $e;
-    }
+    scrub_with_retriable_conflict(function () use ($database, $node, $fields): void {
+      $transaction = $database->startTransaction();
+      try {
+        $node->setNewRevision(TRUE);
+        $node->setRevisionLogMessage(SCRUB_REVISION_LOG);
+        scrub_anonymize_entity($node, $fields);
+        $node->save();
+        unset($transaction);
+      }
+      catch (\Throwable $e) {
+        $transaction->rollBack();
+        throw $e;
+      }
+    });
   }
   $node_storage->resetCache($chunk);
   gc_collect_cycles();
@@ -328,7 +330,9 @@ foreach (array_chunk($uids, SCRUB_BATCH) as $chunk) {
       }
     }
     $account->setPassword(bin2hex(random_bytes(16)));
-    $account->save();
+    scrub_with_retriable_conflict(function () use ($account): void {
+      $account->save();
+    });
   }
   $user_storage->resetCache($chunk);
 }
@@ -371,6 +375,37 @@ if ($apply) {
 }
 else {
   print "\nNothing was written. Re-run with --apply to perform the scrub.\n";
+}
+
+/**
+ * Runs an operation, retrying briefly on transient storage-engine conflicts.
+ *
+ * The scrub rewrites tens of thousands of revisions while the tenant keeps
+ * serving requests, so its writes collide with concurrent cache and cron
+ * writes. MariaDB reports those collisions in more than one shape: 1213
+ * deadlocks (SQLSTATE 40001) and 1020 "record has changed since last read"
+ * on the Aria cache tables. Both end in "try restarting transaction", which
+ * is the marker used here, because a retriable conflict must not kill a run
+ * that takes hours. Anything else, or a conflict surviving every attempt,
+ * is rethrown.
+ */
+function scrub_with_retriable_conflict(callable $operation, int $attempts = 5): void {
+  for ($try = 1; TRUE; $try++) {
+    try {
+      $operation();
+      return;
+    }
+    catch (\Throwable $e) {
+      $message = $e->getMessage();
+      $retriable = str_contains($message, 'try restarting transaction')
+        || str_contains($message, '40001')
+        || str_contains($message, 'Deadlock');
+      if (!$retriable || $try >= $attempts) {
+        throw $e;
+      }
+      usleep(250000 * $try);
+    }
+  }
 }
 
 /**
@@ -678,7 +713,9 @@ function scrub_sweep_table(string $table, string $field_name): void {
   if (!scrub_apply_unscrubbed_condition($update, $column, $type)) {
     return;
   }
-  $update->execute();
+  scrub_with_retriable_conflict(function () use ($update): void {
+    $update->execute();
+  });
 }
 
 /**
