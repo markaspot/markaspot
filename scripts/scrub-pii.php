@@ -23,6 +23,7 @@
  *   --keep-admin            leave uid 1 completely untouched
  *   --keep-body             leave the report description untouched
  *   --accept-uncovered      acknowledge carriers this tool does not scrub
+ *   --sweep-only            rewrite field tables directly, skip per-node saves
  *   --allow-unset-mail-mode proceed outside DDEV when no mail mode is declared
  */
 
@@ -77,6 +78,7 @@ $keep_usernames = in_array('--keep-usernames', $args, TRUE);
 $keep_admin = in_array('--keep-admin', $args, TRUE);
 $keep_body = in_array('--keep-body', $args, TRUE);
 $accept_uncovered = in_array('--accept-uncovered', $args, TRUE);
+$sweep_only = in_array('--sweep-only', $args, TRUE);
 $allow_unset_mail = in_array('--allow-unset-mail-mode', $args, TRUE);
 $mode = $verify ? 'VERIFY' : ($apply ? 'APPLY' : 'DRY-RUN');
 
@@ -229,7 +231,19 @@ $nids = array_values(array_map('intval', $nids));
 $touched = 0;
 $clean = 0;
 
-foreach (array_chunk($nids, SCRUB_BATCH) as $chunk) {
+// Saving every node individually keeps the revision history readable, but on a
+// large tenant it means tens of thousands of entity saves, each writing cache
+// entries inside its own transaction. On a busy database those cache writes
+// collide (deadlock 1213, "record has changed" 1020) and a failed rollback then
+// aborts the whole run. --sweep-only skips the per-node path entirely and lets
+// the storage sweep below rewrite the same values directly in the field and
+// revision tables, which is what a shared test copy actually needs.
+$node_chunks = $sweep_only ? [] : array_chunk($nids, SCRUB_BATCH);
+if ($sweep_only) {
+  print "Sweep-only mode: skipping per-node saves, rewriting storage directly.\n";
+}
+
+foreach ($node_chunks as $chunk) {
   foreach ($node_storage->loadMultiple($chunk) as $node) {
     if (!$node instanceof NodeInterface) {
       continue;
@@ -262,13 +276,18 @@ foreach (array_chunk($nids, SCRUB_BATCH) as $chunk) {
   gc_collect_cycles();
 }
 
-printf(
-  "Service requests: %d total, %d with reporter data in the current revision%s, %d already clean\n",
-  count($nids),
-  $touched,
-  $apply ? ' anonymized' : ' would be anonymized',
-  $clean
-);
+if ($sweep_only) {
+  printf("Service requests: %d total, per-node pass skipped\n", count($nids));
+}
+else {
+  printf(
+    "Service requests: %d total, %d with reporter data in the current revision%s, %d already clean\n",
+    count($nids),
+    $touched,
+    $apply ? ' anonymized' : ' would be anonymized',
+    $clean
+  );
+}
 
 // --- Storage sweep ----------------------------------------------------------
 // Rewrites every remaining value directly in the field tables. This is what
