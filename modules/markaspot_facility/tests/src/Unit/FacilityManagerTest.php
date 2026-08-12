@@ -43,6 +43,13 @@ class FacilityManagerTest extends UnitTestCase {
   protected EntityStorageInterface $facilityStorage;
 
   /**
+   * Facility category entity storage mock.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $facilityCategoryStorage;
+
+  /**
    * Country repository mock.
    *
    * @var \CommerceGuys\Addressing\Country\CountryRepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -98,13 +105,26 @@ class FacilityManagerTest extends UnitTestCase {
     $this->facilityStorage->method('getQuery')->willReturn($facility_query);
     $this->facilityStorage->method('loadMultiple')->willReturn([]);
 
+    $this->facilityCategoryStorage = $this->createMock(EntityStorageInterface::class);
+    $category_query = $this->createMock(QueryInterface::class);
+    $category_query->method('accessCheck')->willReturnSelf();
+    $category_query->method('condition')->willReturnSelf();
+    $category_query->method('sort')->willReturnSelf();
+    $category_query->method('execute')->willReturn([]);
+    $this->facilityCategoryStorage->method('getQuery')->willReturn($category_query);
+    $this->facilityCategoryStorage->method('loadMultiple')->willReturn([]);
+
     $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
     $entity_type_manager->method('hasDefinition')
-      ->willReturnCallback(static fn(string $type): bool => $type === 'markaspot_facility');
+      ->willReturnCallback(static fn(string $type): bool => in_array($type, [
+        'markaspot_facility',
+        'markaspot_facility_category',
+      ], TRUE));
     $entity_type_manager->method('getStorage')
       ->willReturnCallback(fn(string $type) => match ($type) {
             'group' => $this->groupStorage,
             'markaspot_facility' => $this->facilityStorage,
+            'markaspot_facility_category' => $this->facilityCategoryStorage,
             default => $this->createMock(EntityStorageInterface::class),
       });
 
@@ -157,6 +177,7 @@ class FacilityManagerTest extends UnitTestCase {
     $this->assertSame([
       'enabled' => FALSE,
       'hideMapPicker' => FALSE,
+      'categories' => [],
       'items' => [],
       'mode' => 'disabled',
     ], $settings);
@@ -400,6 +421,152 @@ class FacilityManagerTest extends UnitTestCase {
     $this->assertSame(52.5, $normalized['items'][0]['lat']);
     $this->assertSame(13.4, $normalized['items'][0]['lng']);
     $this->assertSame(TRUE, $normalized['items'][0]['active']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsCanonicalizesFacilityCategories(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [
+        [
+          'id' => 'playgrounds',
+          'label' => 'Playgrounds',
+          'icon' => 'lucide:ferris-wheel',
+          'weight' => 17,
+        ],
+      ],
+      'items' => [
+        [
+          'id' => 'park_north',
+          'label' => 'Park North',
+          'lat' => 51.3,
+          'lng' => 6.6,
+          'categoryId' => 'playgrounds',
+        ],
+      ],
+    ]);
+
+    $this->assertSame([
+      'id' => 'playgrounds',
+      'label' => 'Playgrounds',
+      'icon' => 'i-lucide-ferris-wheel',
+      'weight' => 17,
+    ], $normalized['categories'][0]);
+    $this->assertSame('playgrounds', $normalized['items'][0]['categoryId']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsInvalidCategoryWeight(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('categories[0].weight must be an integer between -10000 and 10000.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [[
+        'id' => 'playgrounds',
+        'label' => 'Playgrounds',
+        'icon' => 'i-lucide-ferris-wheel',
+        'weight' => '1',
+      ]],
+      'items' => [],
+    ]);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsUnknownFacilityCategory(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('items[0].categoryId must reference a submitted facility category.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [],
+      'items' => [
+        [
+          'id' => 'park_north',
+          'label' => 'Park North',
+          'lat' => 51.3,
+          'lng' => 6.6,
+          'categoryId' => 'other-tenant',
+        ],
+      ],
+    ]);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsNonLucideCategoryIcon(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('categories[0].icon must be an i-lucide-* or lucide:* icon name.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [
+        [
+          'id' => 'playgrounds',
+          'label' => 'Playgrounds',
+          'icon' => 'fa-ferris-wheel',
+        ],
+      ],
+      'items' => [],
+    ]);
+  }
+
+  /**
+   * Facility category keys use the same hyphenated contract as the dashboard.
+   *
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsUnderscoreInCategoryKey(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('categories[0].id must contain only lowercase letters, numbers, and hyphens.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [
+        [
+          'id' => 'school_types',
+          'label' => 'School types',
+          'icon' => 'i-lucide-school',
+        ],
+      ],
+      'items' => [],
+    ]);
+  }
+
+  /**
+   * Existing facility icon overrides keep their legacy text-only contract.
+   *
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsPreservesLegacyFacilityIcon(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [],
+      'items' => [
+        [
+          'id' => 'legacy-school',
+          'label' => 'Legacy school',
+          'lat' => 51.3,
+          'lng' => 6.5,
+          'icon' => 'fa-trash',
+        ],
+      ],
+    ]);
+
+    self::assertSame('fa-trash', $normalized['items'][0]['icon']);
   }
 
   /**

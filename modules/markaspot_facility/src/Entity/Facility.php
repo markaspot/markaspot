@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\markaspot_facility\Entity;
 
 use Drupal\Core\Entity\ContentEntityBase;
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 
@@ -42,6 +44,26 @@ use Drupal\Core\Field\BaseFieldDefinition;
  * )
  */
 class Facility extends ContentEntityBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  public function preSave(EntityStorageInterface $storage): void {
+    parent::preSave($storage);
+
+    if ($this->get('category_id')->isEmpty()) {
+      return;
+    }
+
+    $category = $this->get('category_id')->entity;
+    $facility_jurisdiction_id = (int) $this->get('jurisdiction_id')->target_id;
+    $category_jurisdiction_id = $category === NULL
+      ? 0
+      : (int) $category->get('jurisdiction_id')->target_id;
+    if ($facility_jurisdiction_id <= 0 || $category_jurisdiction_id !== $facility_jurisdiction_id) {
+      throw new EntityStorageException('A facility category must belong to the same jurisdiction as its facility.');
+    }
+  }
 
   /**
    * {@inheritdoc}
@@ -86,6 +108,12 @@ class Facility extends ContentEntityBase {
       ->setLabel(t('Organisation id'))
       ->setDescription(t('Optional default organisation id for future routing decisions.'))
       ->setSetting('max_length', 255);
+
+    $fields['category_id'] = BaseFieldDefinition::create('entity_reference')
+      ->setLabel(t('Facility category'))
+      ->setDescription(t('Optional tenant-scoped category for display and filtering.'))
+      ->setSetting('target_type', 'markaspot_facility_category')
+      ->setSetting('handler', 'default');
 
     $fields['active'] = BaseFieldDefinition::create('boolean')
       ->setLabel(t('Active'))
