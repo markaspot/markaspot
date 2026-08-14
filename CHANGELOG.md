@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.183](https://github.com/markaspot/markaspot/compare/11.9.182...11.9.183) (2026-08-14)
+
+### Bug Fixes
+
+* **sec:** allow diff 2.1 to resolve SA-CONTRIB-2026-096 access bypass ([4e973b4](https://github.com/markaspot/markaspot/commit/4e973b4f479e8874f031227d39fccfd84812e454))
+
 ## [11.9.182](https://github.com/markaspot/markaspot/compare/11.9.181...11.9.182) (2026-08-14)
 
 ### Features
