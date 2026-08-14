@@ -29,6 +29,13 @@ use Psr\Log\LoggerInterface;
  */
 class FacilityManagerTest extends UnitTestCase {
   /**
+   * Entity type manager mock.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
    * Group storage mock.
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -41,6 +48,13 @@ class FacilityManagerTest extends UnitTestCase {
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected EntityStorageInterface $facilityStorage;
+
+  /**
+   * Facility category entity storage mock.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $facilityCategoryStorage;
 
   /**
    * Country repository mock.
@@ -98,13 +112,26 @@ class FacilityManagerTest extends UnitTestCase {
     $this->facilityStorage->method('getQuery')->willReturn($facility_query);
     $this->facilityStorage->method('loadMultiple')->willReturn([]);
 
-    $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
-    $entity_type_manager->method('hasDefinition')
-      ->willReturnCallback(static fn(string $type): bool => $type === 'markaspot_facility');
-    $entity_type_manager->method('getStorage')
+    $this->facilityCategoryStorage = $this->createMock(EntityStorageInterface::class);
+    $category_query = $this->createMock(QueryInterface::class);
+    $category_query->method('accessCheck')->willReturnSelf();
+    $category_query->method('condition')->willReturnSelf();
+    $category_query->method('sort')->willReturnSelf();
+    $category_query->method('execute')->willReturn([]);
+    $this->facilityCategoryStorage->method('getQuery')->willReturn($category_query);
+    $this->facilityCategoryStorage->method('loadMultiple')->willReturn([]);
+
+    $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $this->entityTypeManager->method('hasDefinition')
+      ->willReturnCallback(static fn(string $type): bool => in_array($type, [
+        'markaspot_facility',
+        'markaspot_facility_category',
+      ], TRUE));
+    $this->entityTypeManager->method('getStorage')
       ->willReturnCallback(fn(string $type) => match ($type) {
             'group' => $this->groupStorage,
             'markaspot_facility' => $this->facilityStorage,
+            'markaspot_facility_category' => $this->facilityCategoryStorage,
             default => $this->createMock(EntityStorageInterface::class),
       });
 
@@ -128,7 +155,7 @@ class FacilityManagerTest extends UnitTestCase {
       ->willReturnCallback(fn(): bool => $this->facilityEntitled);
 
     $this->manager = new FacilityManager(
-      $entity_type_manager,
+      $this->entityTypeManager,
       $logger_factory,
       $this->countryRepository,
       $this->database,
@@ -157,6 +184,7 @@ class FacilityManagerTest extends UnitTestCase {
     $this->assertSame([
       'enabled' => FALSE,
       'hideMapPicker' => FALSE,
+      'categories' => [],
       'items' => [],
       'mode' => 'disabled',
     ], $settings);
@@ -400,6 +428,152 @@ class FacilityManagerTest extends UnitTestCase {
     $this->assertSame(52.5, $normalized['items'][0]['lat']);
     $this->assertSame(13.4, $normalized['items'][0]['lng']);
     $this->assertSame(TRUE, $normalized['items'][0]['active']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsCanonicalizesFacilityCategories(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [
+        [
+          'id' => 'playgrounds',
+          'label' => 'Playgrounds',
+          'icon' => 'lucide:ferris-wheel',
+          'weight' => 17,
+        ],
+      ],
+      'items' => [
+        [
+          'id' => 'park_north',
+          'label' => 'Park North',
+          'lat' => 51.3,
+          'lng' => 6.6,
+          'categoryId' => 'playgrounds',
+        ],
+      ],
+    ]);
+
+    $this->assertSame([
+      'id' => 'playgrounds',
+      'label' => 'Playgrounds',
+      'icon' => 'i-lucide-ferris-wheel',
+      'weight' => 17,
+    ], $normalized['categories'][0]);
+    $this->assertSame('playgrounds', $normalized['items'][0]['categoryId']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsInvalidCategoryWeight(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('categories[0].weight must be an integer between -10000 and 10000.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [[
+        'id' => 'playgrounds',
+        'label' => 'Playgrounds',
+        'icon' => 'i-lucide-ferris-wheel',
+        'weight' => '1',
+      ]],
+      'items' => [],
+    ]);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsUnknownFacilityCategory(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('items[0].categoryId must reference a submitted facility category.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [],
+      'items' => [
+        [
+          'id' => 'park_north',
+          'label' => 'Park North',
+          'lat' => 51.3,
+          'lng' => 6.6,
+          'categoryId' => 'other-tenant',
+        ],
+      ],
+    ]);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsNonLucideCategoryIcon(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('categories[0].icon must be an i-lucide-* or lucide:* icon name.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [
+        [
+          'id' => 'playgrounds',
+          'label' => 'Playgrounds',
+          'icon' => 'fa-ferris-wheel',
+        ],
+      ],
+      'items' => [],
+    ]);
+  }
+
+  /**
+   * Facility category keys use the same hyphenated contract as the dashboard.
+   *
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsRejectsUnderscoreInCategoryKey(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('categories[0].id must contain only lowercase letters, numbers, and hyphens.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [
+        [
+          'id' => 'school_types',
+          'label' => 'School types',
+          'icon' => 'i-lucide-school',
+        ],
+      ],
+      'items' => [],
+    ]);
+  }
+
+  /**
+   * Existing facility icon overrides keep their legacy text-only contract.
+   *
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsPreservesLegacyFacilityIcon(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'categories' => [],
+      'items' => [
+        [
+          'id' => 'legacy-school',
+          'label' => 'Legacy school',
+          'lat' => 51.3,
+          'lng' => 6.5,
+          'icon' => 'fa-trash',
+        ],
+      ],
+    ]);
+
+    self::assertSame('fa-trash', $normalized['items'][0]['icon']);
   }
 
   /**
@@ -987,6 +1161,10 @@ class FacilityManagerTest extends UnitTestCase {
             public function first(): object {
               return (object) ['target_id' => 14];
                 }
+
+            public function getValue(): array {
+              return [['target_id' => 14]];
+                }
       };
       $address_field = new class() {
             public function isEmpty(): bool {
@@ -1029,6 +1207,165 @@ class FacilityManagerTest extends UnitTestCase {
       ['field_address', ['address_line1' => 'Main Street 1', 'country_code' => 'DE']],
     ], $set_calls);
     $this->assertTrue($this->manager->isAddressLocked($node));
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testAnonymousCreatePersistsResolvedFacilityOwnerBeforeDerivation(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('400');
+    $this->groupStorage->method('load')->with(400)->willReturn($group);
+
+    $manager = $this->getMockBuilder(FacilityManager::class)
+      ->setConstructorArgs([
+        $this->entityTypeManager,
+        $this->loggerFactory(),
+        $this->countryRepository,
+        $this->database,
+        $this->hierarchyResolver,
+        $this->featureScopeResolver,
+      ])
+      ->onlyMethods([
+        'resolveFacilityOwnerFromCategory',
+        'getPublicSettings',
+      ])
+      ->getMock();
+    $manager->expects($this->once())
+      ->method('resolveFacilityOwnerFromCategory')
+      ->willReturn(400);
+    $manager->expects($this->once())
+      ->method('getPublicSettings')
+      ->with($group)
+      ->willReturn([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'items' => [[
+          'id' => 'child_playground',
+          'lat' => 51.33,
+          'lng' => 6.56,
+          'active' => TRUE,
+        ]],
+      ]);
+
+    // phpcs:disable
+    $facility_field = new class() {
+      public string $value = 'child_playground';
+      public function isEmpty(): bool { return FALSE; }
+    };
+    $jurisdiction_field = new class() {
+      public function isEmpty(): bool { return TRUE; }
+      public function first(): ?object { return NULL; }
+      public function getValue(): array { return []; }
+    };
+    // phpcs:enable
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('isNew')->willReturn(TRUE);
+    $node->method('hasField')
+      ->willReturnCallback(static fn(string $field): bool => in_array($field, [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+      ], TRUE));
+    $node->method('get')
+      ->willReturnCallback(fn(string $field): mixed => match ($field) {
+        'field_facility' => $facility_field,
+        'field_jurisdiction' => $jurisdiction_field,
+        default => $this->createMock(FieldItemListInterface::class),
+      });
+    $set_calls = [];
+    $node->method('set')
+      ->willReturnCallback(static function (string $field, mixed $value) use (&$set_calls): void {
+        $set_calls[] = [$field, $value];
+      });
+
+    $manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_jurisdiction', ['target_id' => 400]],
+      ['field_geolocation', ['lat' => 51.33, 'lng' => 6.56]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::resolveFacilityOwnerFromCategory
+   */
+  public function testCategoryFacilityOwnerUsesOneBulkLegacyLookupAndCachesResult(): void {
+    $root = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'items' => [],
+      ]),
+    ], 100);
+    $child = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'items' => [[
+          'id' => 'child_playground',
+          'label' => 'Child playground',
+          'lat' => 51.33,
+          'lng' => 6.56,
+          'active' => TRUE,
+        ]],
+      ]),
+    ], 400);
+
+    $group_storage = $this->createMock(EntityStorageInterface::class);
+    $group_storage->expects($this->once())
+      ->method('loadMultiple')
+      ->with([100, 400])
+      ->willReturn([100 => $root, 400 => $child]);
+    $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
+    $entity_type_manager->method('hasDefinition')->willReturn(FALSE);
+    $entity_type_manager->method('getStorage')
+      ->with('group')
+      ->willReturn($group_storage);
+
+    $hierarchy_resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchy_resolver->method('getRootJurisdictionId')->with(100)->willReturn(100);
+    $hierarchy_resolver->method('getDescendantIds')->with(100)->willReturn([100, 400]);
+    $manager = new FacilityManager(
+      $entity_type_manager,
+      $this->loggerFactory(),
+      $this->countryRepository,
+      $this->database,
+      $hierarchy_resolver,
+      $this->featureScopeResolver,
+    );
+
+    // phpcs:disable
+    $category_jurisdiction = new class() {
+      public int $target_id = 100;
+      public function isEmpty(): bool { return FALSE; }
+    };
+    // phpcs:enable
+    $category = $this->createMock(ContentEntityInterface::class);
+    $category->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $category->method('get')->with('field_jurisdiction')->willReturn($category_jurisdiction);
+    // phpcs:disable
+    $category_field = new class($category) {
+      public function __construct(public ContentEntityInterface $entity) {}
+      public function isEmpty(): bool { return FALSE; }
+    };
+    // phpcs:enable
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('hasField')->with('field_category')->willReturn(TRUE);
+    $node->method('get')->with('field_category')->willReturn($category_field);
+
+    $this->assertSame(400, $manager->resolveFacilityOwnerFromCategory(
+      $node,
+      'child_playground',
+      TRUE,
+    ));
+    $this->assertSame(400, $manager->resolveFacilityOwnerFromCategory(
+      $node,
+      'child_playground',
+      TRUE,
+    ));
   }
 
   /**
@@ -1147,6 +1484,112 @@ class FacilityManagerTest extends UnitTestCase {
     $this->manager->applyToServiceRequest($node);
 
     $this->assertSame([['field_facility', NULL]], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testProgrammaticSaveRetainsOnlyOneReportingJurisdiction(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'optional',
+        'items' => [[
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'active' => TRUE,
+        ]],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      [14, 99],
+      ['field_facility', 'field_jurisdiction'],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_jurisdiction', ['target_id' => 14]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testNewAssignmentCannotReactivateInactiveFacility(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'items' => [[
+          'id' => 'retired_playground',
+          'label' => 'Retired playground',
+          'lat' => 51.33,
+          'lng' => 6.56,
+          'active' => FALSE,
+        ]],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'retired_playground',
+      14,
+      ['field_facility', 'field_jurisdiction'],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([['field_facility', NULL]], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testUnchangedInactiveHistoricalFacilityIsPreserved(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'items' => [[
+          'id' => 'retired_playground',
+          'label' => 'Retired playground',
+          'lat' => 51.33,
+          'lng' => 6.56,
+          'active' => FALSE,
+        ]],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $original_calls = [];
+    $original = $this->facilityServiceRequestNode(
+      'retired_playground',
+      14,
+      ['field_facility', 'field_jurisdiction'],
+      $original_calls,
+    );
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'retired_playground',
+      14,
+      ['field_facility', 'field_jurisdiction'],
+      $set_calls,
+    );
+    $node->method('getOriginal')->willReturn($original);
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([], $set_calls);
   }
 
   /**
@@ -1532,6 +1975,8 @@ class FacilityManagerTest extends UnitTestCase {
             public function isEmpty(): bool { return FALSE; }
 
             public function first(): object { return (object) ['target_id' => 14]; }
+
+            public function getValue(): array { return [['target_id' => 14]]; }
       };
       $address_field = new class() {
             public function isEmpty(): bool { return TRUE; }
@@ -1621,6 +2066,8 @@ class FacilityManagerTest extends UnitTestCase {
             public function isEmpty(): bool { return FALSE; }
 
             public function first(): object { return (object) ['target_id' => 14]; }
+
+            public function getValue(): array { return [['target_id' => 14]]; }
       };
       $address_field = new class() {
             public function isEmpty(): bool { return TRUE; }
@@ -1696,6 +2143,8 @@ class FacilityManagerTest extends UnitTestCase {
             public function isEmpty(): bool { return FALSE; }
 
             public function first(): object { return (object) ['target_id' => 14]; }
+
+            public function getValue(): array { return [['target_id' => 14]]; }
       };
       // phpcs:enable
 
@@ -1730,7 +2179,10 @@ class FacilityManagerTest extends UnitTestCase {
    * @covers ::applyToServiceRequest
    * @dataProvider nonExclusiveModeProvider
    */
-  public function testApplyToServiceRequestSkipsOverwriteOutsideExclusiveMode(string $mode): void {
+  public function testApplyToServiceRequestSkipsOverwriteOutsideExclusiveMode(
+    string $mode,
+    bool $clears_tag,
+  ): void {
     $group = $this->createMockGroup([
       'field_facilities' => json_encode([
         'enabled' => TRUE,
@@ -1766,6 +2218,10 @@ class FacilityManagerTest extends UnitTestCase {
             public function first(): object {
               return (object) ['target_id' => 14];
                 }
+
+            public function getValue(): array {
+              return [['target_id' => 14]];
+                }
       };
       // phpcs:enable
 
@@ -1785,7 +2241,10 @@ class FacilityManagerTest extends UnitTestCase {
             default => $this->createMock(FieldItemListInterface::class),
       });
 
-    $node->expects($this->never())->method('set');
+    $set_expectation = $clears_tag ? $this->once() : $this->never();
+    $node->expects($set_expectation)
+      ->method('set')
+      ->with('field_facility', NULL);
 
     $this->manager->applyToServiceRequest($node);
   }
@@ -1795,8 +2254,8 @@ class FacilityManagerTest extends UnitTestCase {
    */
   public static function nonExclusiveModeProvider(): array {
     return [
-      'optional mode preserves position' => ['optional'],
-      'disabled mode preserves position' => ['disabled'],
+      'optional mode preserves position and tag' => ['optional', FALSE],
+      'disabled mode removes the unavailable tag' => ['disabled', TRUE],
     ];
   }
 
@@ -1842,6 +2301,10 @@ class FacilityManagerTest extends UnitTestCase {
 
             public function first(): object {
               return (object) ['target_id' => 14];
+                }
+
+            public function getValue(): array {
+              return [['target_id' => 14]];
                 }
       };
       $address_field = new class() {
@@ -1934,8 +2397,8 @@ class FacilityManagerTest extends UnitTestCase {
    *
    * @param string $facility_id
    *   Selected facility machine key.
-   * @param int $jurisdiction_id
-   *   Referenced jurisdiction id.
+   * @param int|int[] $jurisdiction_id
+   *   Referenced jurisdiction id or ids.
    * @param array<int, string> $available_fields
    *   Fields reported as present by hasField().
    * @param array<int, array{0: string, 1: mixed}> $set_calls
@@ -1945,7 +2408,7 @@ class FacilityManagerTest extends UnitTestCase {
    */
   private function facilityServiceRequestNode(
     string $facility_id,
-    int $jurisdiction_id,
+    int|array $jurisdiction_id,
     array $available_fields,
     array &$set_calls,
     array $organisation_ids = [],
@@ -1957,11 +2420,27 @@ class FacilityManagerTest extends UnitTestCase {
             public function isEmpty(): bool { return FALSE; }
       };
       $jurisdiction_field = new class($jurisdiction_id) {
-            public function __construct(private int $targetId) {}
+            /** @var int[] */
+            private array $targetIds;
 
-            public function isEmpty(): bool { return FALSE; }
+            public function __construct(int|array $targetIds) {
+              $this->targetIds = is_array($targetIds) ? array_values($targetIds) : [$targetIds];
+                }
 
-            public function first(): object { return (object) ['target_id' => $this->targetId]; }
+            public function isEmpty(): bool { return $this->targetIds === []; }
+
+            public function first(): ?object {
+              return $this->targetIds === []
+                ? NULL
+                : (object) ['target_id' => $this->targetIds[0]];
+                }
+
+            public function getValue(): array {
+              return array_map(
+                static fn(int $id): array => ['target_id' => $id],
+                $this->targetIds,
+              );
+                }
       };
       $organisation_field = new class($organisation_ids) {
             /**

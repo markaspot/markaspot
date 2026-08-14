@@ -33,7 +33,10 @@ function markaspot_facility_markaspot_nuxt_settings_alter(
 ): void {
   $settings['facilities'] = \Drupal::service('markaspot_facility.manager')
     ->getPublicSettings($group);
-  $cache_metadata?->addCacheTags(['markaspot_facility_list']);
+  $cache_metadata?->addCacheTags([
+    'markaspot_facility_list',
+    'markaspot_facility_category_list',
+  ]);
 }
 
 /**

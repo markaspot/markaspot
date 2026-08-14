@@ -25,6 +25,11 @@ class FacilityManager {
   private const MAX_ITEMS = 500;
 
   /**
+   * Maximum number of facility categories per jurisdiction.
+   */
+  private const MAX_CATEGORIES = 100;
+
+  /**
    * Canonical facility modes accepted by the client runtime.
    *
    * Kept in sync with FacilityMode in types/clientConfig.ts. Anything outside
@@ -77,6 +82,13 @@ class FacilityManager {
   private \SplObjectStorage $addressLocks;
 
   /**
+   * Caches category-derived facility owners for the current entity lifecycle.
+   *
+   * @var \SplObjectStorage<\Drupal\node\NodeInterface, array{facilityId: string, public: bool, rootId: int, jurisdictionId: int}>
+   */
+  private \SplObjectStorage $resolvedFacilityOwners;
+
+  /**
    * Constructs the facility manager.
    */
   public function __construct(
@@ -93,6 +105,7 @@ class FacilityManager {
     $this->database = $database;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->addressLocks = new \SplObjectStorage();
+    $this->resolvedFacilityOwners = new \SplObjectStorage();
   }
 
   /**
@@ -101,7 +114,15 @@ class FacilityManager {
   public function getDashboardSettings(?GroupInterface $group): array {
     $entitled = $this->hasEntitlement($group);
     $settings = $this->decodeFacilitiesField($group);
-    $entity_items = $this->loadFacilityEntityItems($group, FALSE);
+    $category_catalogue = $this->loadFacilityCategoryCatalogue($group);
+    if ($category_catalogue !== NULL) {
+      $settings['categories'] = $category_catalogue['items'];
+    }
+    $entity_items = $this->loadFacilityEntityItems(
+      $group,
+      FALSE,
+      $category_catalogue['keysByEntityId'] ?? [],
+    );
     if ($entity_items !== NULL) {
       $settings['items'] = $entity_items;
     }
@@ -119,7 +140,15 @@ class FacilityManager {
     $entitled = $this->hasEntitlement($group);
     $settings = $this->decodeFacilitiesField($group);
     if ($entitled) {
-      $entity_items = $this->loadFacilityEntityItems($group, TRUE);
+      $category_catalogue = $this->loadFacilityCategoryCatalogue($group);
+      if ($category_catalogue !== NULL) {
+        $settings['categories'] = $category_catalogue['items'];
+      }
+      $entity_items = $this->loadFacilityEntityItems(
+        $group,
+        TRUE,
+        $category_catalogue['keysByEntityId'] ?? [],
+      );
       if ($entity_items !== NULL) {
         $settings['items'] = $entity_items;
       }
@@ -140,11 +169,71 @@ class FacilityManager {
   }
 
   /**
+   * Resolves one facility owner inside the selected category's tenant tree.
+   *
+   * Anonymous JSON:API creates omit field_jurisdiction. Service categories
+   * point at the canonical root, while facility catalogues may belong to a
+   * child jurisdiction. A facility key must resolve to exactly one entitled
+   * catalogue in that tree; duplicate keys fail closed.
+   */
+  public function resolveFacilityOwnerFromCategory(
+    NodeInterface $node,
+    string $facility_id,
+    bool $public,
+  ): ?int {
+    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+      return NULL;
+    }
+    $category = $node->get('field_category')->entity;
+    if (!$category instanceof ContentEntityInterface
+      || !$category->hasField('field_jurisdiction')
+      || $category->get('field_jurisdiction')->isEmpty()) {
+      return NULL;
+    }
+
+    $category_jurisdiction_id = (int) $category->get('field_jurisdiction')->target_id;
+    $root_id = $category_jurisdiction_id > 0
+      ? $this->hierarchyResolver->getRootJurisdictionId($category_jurisdiction_id)
+      : NULL;
+    if ($root_id === NULL) {
+      return NULL;
+    }
+
+    if ($this->resolvedFacilityOwners->contains($node)) {
+      $cached = $this->resolvedFacilityOwners[$node];
+      if ($cached['facilityId'] === $facility_id
+        && $cached['public'] === $public
+        && $cached['rootId'] === $root_id) {
+        return $cached['jurisdictionId'];
+      }
+    }
+
+    $owners = $this->findFacilityOwners(
+      $facility_id,
+      $this->hierarchyResolver->getDescendantIds($root_id),
+      $public,
+    );
+    if (count($owners) !== 1) {
+      return NULL;
+    }
+
+    $jurisdiction_id = $owners[0];
+    $this->resolvedFacilityOwners[$node] = [
+      'facilityId' => $facility_id,
+      'public' => $public,
+      'rootId' => $root_id,
+      'jurisdictionId' => $jurisdiction_id,
+    ];
+    return $jurisdiction_id;
+  }
+
+  /**
    * Validates and stores the facilities blob on a jurisdiction group.
    */
   public function saveDashboardSettings(GroupInterface $group, array $payload): array {
     $normalized = $this->normalizeSubmittedSettings($payload);
     $clear_items = ($payload['clearItems'] ?? FALSE) === TRUE;
+    $manages_categories = array_key_exists('categories', $payload);
     $source = $this->getSourceGroup($group);
 
     if (!$source->hasField('field_facilities')) {
@@ -157,7 +246,25 @@ class FacilityManager {
 
     $transaction = $this->database->startTransaction();
     try {
-      $this->syncFacilityEntities($source, $normalized['items'], $clear_items);
+      $category_entity_ids = NULL;
+      $stale_categories = [];
+      if ($manages_categories) {
+        [$category_entity_ids, $stale_categories] = $this->syncFacilityCategoryEntities(
+          $source,
+          $normalized['categories'],
+        );
+      }
+      $this->syncFacilityEntities(
+        $source,
+        $normalized['items'],
+        $clear_items,
+        $category_entity_ids,
+      );
+      if ($stale_categories !== []) {
+        $this->entityTypeManager
+          ->getStorage('markaspot_facility_category')
+          ->delete($stale_categories);
+      }
 
       // Store only the catalogue-level settings in the legacy JSON field. The
       // normalized item catalogue now lives in markaspot_facility entities.
@@ -165,6 +272,9 @@ class FacilityManager {
       // writable copy of the facility list.
       $stored_settings = $normalized;
       $stored_settings['items'] = [];
+      if ($manages_categories) {
+        $stored_settings['categories'] = [];
+      }
       $source->set(
             'field_facilities',
             json_encode($stored_settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
@@ -188,15 +298,55 @@ class FacilityManager {
           || !$node->hasField('field_facility')
           || $node->get('field_facility')->isEmpty()
           || !$node->hasField('field_jurisdiction')
-          || $node->get('field_jurisdiction')->isEmpty()
       ) {
       return;
     }
 
     $facility_id = (string) $node->get('field_facility')->value;
-    $jurisdiction_item = $node->get('field_jurisdiction')->first();
-    $jurisdiction_id = (int) ($jurisdiction_item->target_id ?? 0);
+    $public_catalogue = $this->requiresPublicCatalogue($node, $facility_id);
+    $jurisdiction_id = 0;
+    $jurisdiction_field = $node->get('field_jurisdiction');
+    if (!$jurisdiction_field->isEmpty()) {
+      $jurisdiction_values = $jurisdiction_field->getValue();
+      if (count($jurisdiction_values) !== 1) {
+        // Entity validation rejects multiple reporting jurisdictions. Mirror
+        // that invariant for ECA/import saves that skip validate(), otherwise
+        // extra values expand workspace visibility while the remaining
+        // facility pipeline only evaluates first().
+        $first_jurisdiction_id = (int) ($jurisdiction_values[0]['target_id'] ?? 0);
+        $node->set(
+          'field_jurisdiction',
+          $first_jurisdiction_id > 0
+            ? ['target_id' => $first_jurisdiction_id]
+            : NULL,
+        );
+        $jurisdiction_values = $first_jurisdiction_id > 0
+          ? [['target_id' => $first_jurisdiction_id]]
+          : [];
+        $this->logger->warning(
+          'Multiple jurisdictions were submitted for service request @node; only the first valid jurisdiction was retained.',
+          ['@node' => $node->id() ?? 'new'],
+        );
+      }
+      $jurisdiction_item = $jurisdiction_values[0] ?? [];
+      $jurisdiction_id = (int) ($jurisdiction_item['target_id'] ?? 0);
+    }
+    else {
+      // Validation has already proven that the public facility key resolves
+      // uniquely inside the selected category's tenant tree. Persist that
+      // owner before insert hooks derive boundary and group relationships, so
+      // the same catalogue drives validation and presave derivation.
+      $jurisdiction_id = $this->resolveFacilityOwnerFromCategory(
+        $node,
+        $facility_id,
+        $public_catalogue,
+      ) ?? 0;
+      if ($jurisdiction_id > 0) {
+        $node->set('field_jurisdiction', ['target_id' => $jurisdiction_id]);
+      }
+    }
     if ($jurisdiction_id <= 0) {
+      $node->set('field_facility', NULL);
       return;
     }
 
@@ -225,7 +375,100 @@ class FacilityManager {
       return;
     }
 
-    $settings = $this->getDashboardSettings($group);
+    $settings = $public_catalogue
+      ? $this->getPublicSettings($group)
+      : $this->getDashboardSettings($group);
+    $facility = $this->findFacilityInSettings(
+      $settings,
+      $facility_id,
+      $public_catalogue,
+    );
+    $facility_group = $group;
+
+    // A request routed to a child jurisdiction may legitimately reference a
+    // facility managed by its canonical root. Keep presave ownership aligned
+    // with the validator's existing child-to-root acceptance rule.
+    if ($facility === NULL) {
+      $root_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+      if ($root_id !== NULL && $root_id !== $jurisdiction_id) {
+        $root_group = $this->entityTypeManager->getStorage('group')->load($root_id);
+        if ($root_group instanceof GroupInterface) {
+          $root_settings = $public_catalogue
+            ? $this->getPublicSettings($root_group)
+            : $this->getDashboardSettings($root_group);
+          $root_facility = $this->findFacilityInSettings(
+            $root_settings,
+            $facility_id,
+            $public_catalogue,
+          );
+          if ($root_facility !== NULL) {
+            $settings = $root_settings;
+            $facility = $root_facility;
+            $facility_group = $root_group;
+          }
+        }
+      }
+    }
+
+    // During node_insert, geographic routing may replace the validated owner
+    // with a nested child jurisdiction (or with the root under root strategy)
+    // before triggering a second save. Reuse the cached owner only when that
+    // new reporting jurisdiction is compatible with the owner's hierarchy.
+    if ($facility === NULL) {
+      $resolved_owner = $this->cachedFacilityOwner($node, $facility_id);
+      if ($resolved_owner === NULL) {
+        $resolved_owner_id = $this->resolveFacilityOwnerFromCategory(
+          $node,
+          $facility_id,
+          $public_catalogue,
+        );
+        $resolved_owner = $resolved_owner_id === NULL
+          ? NULL
+          : $this->cachedFacilityOwner($node, $facility_id);
+      }
+      if ($resolved_owner !== NULL
+        && $this->facilityOwnerMatchesJurisdiction(
+          $resolved_owner['jurisdictionId'],
+          $jurisdiction_id,
+          $resolved_owner['rootId'],
+        )) {
+        $owner_group = $this->entityTypeManager
+          ->getStorage('group')
+          ->load($resolved_owner['jurisdictionId']);
+        if ($owner_group instanceof GroupInterface) {
+          $owner_settings = $resolved_owner['public']
+            ? $this->getPublicSettings($owner_group)
+            : $this->getDashboardSettings($owner_group);
+          $owner_facility = $this->findFacilityInSettings(
+            $owner_settings,
+            $facility_id,
+            $resolved_owner['public'],
+          );
+          if ($owner_facility !== NULL) {
+            $settings = $owner_settings;
+            $facility = $owner_facility;
+            $facility_group = $owner_group;
+          }
+        }
+      }
+    }
+
+    if ($facility === NULL) {
+      // The facility id is not in this jurisdiction's catalogue. On validated
+      // write paths (Open311, JSON:API) the FacilityOwnership constraint
+      // already rejected this before save; this is defence in depth for
+      // programmatic paths that skip validate().
+      $node->set('field_facility', NULL);
+      $this->logger->warning(
+        'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node; the foreign facility tag was cleared.',
+        [
+          '@facility' => $facility_id,
+          '@jurisdiction' => $jurisdiction_id,
+          '@node' => $node->id() ?? 'new',
+        ],
+      );
+      return;
+    }
 
     // In optional mode the citizen chose the position; the facility tag is
     // auto-derived from it and must not override the picked coordinates or
@@ -236,46 +479,105 @@ class FacilityManager {
       return;
     }
 
-    foreach ($settings['items'] as $facility) {
-      if (($facility['id'] ?? '') !== $facility_id) {
-        continue;
-      }
-
-      if ($node->hasField('field_geolocation')) {
-        $node->set('field_geolocation', [
-          'lat' => $facility['lat'],
-          'lng' => $facility['lng'],
-        ]);
-      }
-
-      if (!empty($facility['address']) && $node->hasField('field_address')) {
-        $address = $this->buildFieldAddressFromFacility($facility['address'], $node, $group);
-        if ($address !== NULL) {
-          $node->set('field_address', $address);
-          $this->addressLocks[$node] = TRUE;
-        }
-      }
-
-      $this->applyFacilityOrganisation($node, $facility, $jurisdiction_id);
-
-      return;
+    if ($node->hasField('field_geolocation')) {
+      $node->set('field_geolocation', [
+        'lat' => $facility['lat'],
+        'lng' => $facility['lng'],
+      ]);
     }
 
-    // The facility id is not in this jurisdiction's catalogue. On validated
-    // write paths (Open311, JSON:API) the FacilityOwnership constraint already
-    // rejected this before save; reaching here means a programmatic path that
-    // skipped validate() (ECA action, import script, bulk update). Fail secure:
-    // drop the foreign tag rather than persisting a cross-tenant value with no
-    // resolvable geodata (#367 defence in depth).
-    $node->set('field_facility', NULL);
-    $this->logger->warning(
-          'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node; the foreign facility tag was cleared.',
-          [
-            '@facility' => $facility_id,
-            '@jurisdiction' => $jurisdiction_id,
-            '@node' => $node->id() ?? 'new',
-          ]
-      );
+    if (!empty($facility['address']) && $node->hasField('field_address')) {
+      $address = $this->buildFieldAddressFromFacility($facility['address'], $node, $facility_group);
+      if ($address !== NULL) {
+        $node->set('field_address', $address);
+        $this->addressLocks[$node] = TRUE;
+      }
+    }
+
+    $this->applyFacilityOrganisation($node, $facility, $jurisdiction_id);
+  }
+
+  /**
+   * Returns one facility item from normalized settings.
+   */
+  private function findFacilityInSettings(
+    array $settings,
+    string $facility_id,
+    bool $public_catalogue,
+  ): ?array {
+    if ($public_catalogue
+      && (empty($settings['enabled']) || ($settings['mode'] ?? 'disabled') === 'disabled')) {
+      return NULL;
+    }
+    foreach ($settings['items'] ?? [] as $facility) {
+      if (is_array($facility) && ($facility['id'] ?? '') === $facility_id) {
+        return $facility;
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Returns whether this write must use the active public catalogue.
+   */
+  private function requiresPublicCatalogue(NodeInterface $node, string $facility_id): bool {
+    if ($node->isNew()) {
+      return TRUE;
+    }
+    $original = $node->getOriginal();
+    if (!$original instanceof NodeInterface
+      || !$original->hasField('field_facility')
+      || $original->get('field_facility')->isEmpty()
+      || trim((string) $original->get('field_facility')->value) !== $facility_id) {
+      return TRUE;
+    }
+
+    $current_jurisdiction = $node->hasField('field_jurisdiction')
+      && !$node->get('field_jurisdiction')->isEmpty()
+      ? (int) ($node->get('field_jurisdiction')->first()?->target_id ?? 0)
+      : 0;
+    $original_jurisdiction = $original->hasField('field_jurisdiction')
+      && !$original->get('field_jurisdiction')->isEmpty()
+      ? (int) ($original->get('field_jurisdiction')->first()?->target_id ?? 0)
+      : 0;
+    return $current_jurisdiction !== $original_jurisdiction;
+  }
+
+  /**
+   * Returns the cached category-derived owner for this facility and node.
+   *
+   * @return array{facilityId: string, public: bool, rootId: int, jurisdictionId: int}|null
+   *   Cached owner metadata, or NULL when validation resolved another value.
+   */
+  private function cachedFacilityOwner(NodeInterface $node, string $facility_id): ?array {
+    if (!$this->resolvedFacilityOwners->contains($node)) {
+      return NULL;
+    }
+    $cached = $this->resolvedFacilityOwners[$node];
+    return $cached['facilityId'] === $facility_id ? $cached : NULL;
+  }
+
+  /**
+   * Checks whether boundary routing remains inside the validated owner scope.
+   */
+  public function facilityOwnerMatchesJurisdiction(
+    int $owner_id,
+    int $jurisdiction_id,
+    int $root_id,
+  ): bool {
+    $jurisdiction_root_id = $this->hierarchyResolver
+      ->getRootJurisdictionId($jurisdiction_id);
+    if ($jurisdiction_root_id !== $root_id) {
+      return FALSE;
+    }
+    if ($jurisdiction_id === $owner_id || $jurisdiction_id === $root_id) {
+      return TRUE;
+    }
+    return in_array(
+      $jurisdiction_id,
+      $this->hierarchyResolver->getDescendantIds($owner_id),
+      TRUE,
+    );
   }
 
   /**
@@ -457,6 +759,168 @@ class FacilityManager {
   }
 
   /**
+   * Finds tenant-tree catalogue owners for a facility machine key.
+   *
+   * Normalized facility entities are queried in one operation. Legacy JSON
+   * catalogues are checked from one bulk group load, avoiding a full
+   * getDashboardSettings() query stack for every jurisdiction in the tree.
+   *
+   * @param string $facility_id
+   *   Facility machine key.
+   * @param int[] $jurisdiction_ids
+   *   Jurisdiction IDs in the canonical tenant tree.
+   * @param bool $public
+   *   Whether only active facilities from an enabled public catalogue pass.
+   *
+   * @return int[]
+   *   Unique jurisdiction owner IDs.
+   */
+  private function findFacilityOwners(
+    string $facility_id,
+    array $jurisdiction_ids,
+    bool $public,
+  ): array {
+    $jurisdiction_ids = array_values(array_unique(array_filter(
+      array_map('intval', $jurisdiction_ids),
+      static fn(int $id): bool => $id > 0,
+    )));
+    if ($jurisdiction_ids === []) {
+      return [];
+    }
+
+    $entity_owners = [];
+    if ($this->entityTypeManager->hasDefinition('markaspot_facility')) {
+      try {
+        $storage = $this->entityTypeManager->getStorage('markaspot_facility');
+        $ids = $storage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('jurisdiction_id', $jurisdiction_ids, 'IN')
+          ->condition('machine_name', $facility_id)
+          ->execute();
+        foreach ($storage->loadMultiple($ids) as $entity) {
+          if (!$entity instanceof ContentEntityInterface
+            || ($public && !$this->facilityEntityBool($entity, 'active', TRUE))) {
+            continue;
+          }
+          $owner_id = (int) $this->facilityEntityString($entity, 'jurisdiction_id');
+          if ($owner_id > 0 && in_array($owner_id, $jurisdiction_ids, TRUE)) {
+            $entity_owners[$owner_id] = TRUE;
+          }
+        }
+      }
+      catch (\Throwable $e) {
+        $this->logger->warning(
+          'Facility owner lookup fell back to legacy catalogues for "@facility": @message',
+          [
+            '@facility' => $facility_id,
+            '@message' => $e->getMessage(),
+          ],
+        );
+      }
+    }
+
+    $owners = [];
+    $groups = $this->entityTypeManager
+      ->getStorage('group')
+      ->loadMultiple($jurisdiction_ids);
+    foreach ($jurisdiction_ids as $jurisdiction_id) {
+      $group = $groups[$jurisdiction_id] ?? NULL;
+      if (!$group instanceof GroupInterface
+        || ($public && !$this->hasEntitlement($group))) {
+        continue;
+      }
+
+      $stored = $this->decodeFacilitiesField($group);
+      if ($public && (
+        empty($stored['enabled'])
+        || $this->resolveStoredMode($stored, TRUE) === 'disabled'
+      )) {
+        continue;
+      }
+      if (isset($entity_owners[$jurisdiction_id])) {
+        $owners[$jurisdiction_id] = TRUE;
+      }
+
+      foreach ($stored['items'] ?? [] as $item) {
+        if (!is_array($item)
+          || ($item['id'] ?? '') !== $facility_id
+          || ($public && array_key_exists('active', $item) && !$item['active'])) {
+          continue;
+        }
+        $owners[$jurisdiction_id] = TRUE;
+        break;
+      }
+    }
+
+    return array_map('intval', array_keys($owners));
+  }
+
+  /**
+   * Loads the normalized facility category catalogue for a jurisdiction.
+   *
+   * @return array{items: array<int, array<string, mixed>>, keysByEntityId: array<int, string>}|null
+   *   Category response items and a reference lookup, or NULL when no
+   *   normalized category catalogue exists for this jurisdiction yet.
+   */
+  private function loadFacilityCategoryCatalogue(?GroupInterface $group): ?array {
+    if (!$group instanceof GroupInterface
+      || !$this->entityTypeManager->hasDefinition('markaspot_facility_category')) {
+      return NULL;
+    }
+
+    $source = $this->getSourceGroup($group);
+    try {
+      $storage = $this->entityTypeManager->getStorage('markaspot_facility_category');
+      $ids = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('jurisdiction_id', (int) $source->id())
+        ->sort('weight')
+        ->sort('label')
+        ->sort('machine_name')
+        ->execute();
+      if ($ids === []) {
+        return NULL;
+      }
+
+      $items = [];
+      $keys_by_entity_id = [];
+      foreach ($storage->loadMultiple($ids) as $entity) {
+        if (!$entity instanceof ContentEntityInterface) {
+          continue;
+        }
+        $key = $this->facilityEntityString($entity, 'machine_name');
+        $label = $this->facilityEntityString($entity, 'label');
+        $icon = $this->facilityEntityString($entity, 'icon');
+        if ($key === '' || $label === '' || $icon === '') {
+          continue;
+        }
+        $items[] = [
+          'id' => $key,
+          'label' => $label,
+          'icon' => $icon,
+          'weight' => (int) $entity->get('weight')->getString(),
+        ];
+        $keys_by_entity_id[(int) $entity->id()] = $key;
+      }
+
+      return [
+        'items' => $items,
+        'keysByEntityId' => $keys_by_entity_id,
+      ];
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning(
+        'Facility category catalogue could not be loaded for jurisdiction @jurisdiction; falling back to legacy field_facilities. Error: @message',
+        [
+          '@jurisdiction' => $source->id() ?? 'unknown',
+          '@message' => $e->getMessage(),
+        ]
+      );
+      return NULL;
+    }
+  }
+
+  /**
    * Loads normalized facility catalogue items from the entity store.
    *
    * @return array<int, array<string, mixed>>|null
@@ -466,7 +930,11 @@ class FacilityManager {
    *   triggers the legacy field_facilities fallback so existing tenants do not
    *   need an automatic migration.
    */
-  private function loadFacilityEntityItems(?GroupInterface $group, bool $public): ?array {
+  private function loadFacilityEntityItems(
+    ?GroupInterface $group,
+    bool $public,
+    array $category_keys_by_entity_id = [],
+  ): ?array {
     if (!$group instanceof GroupInterface) {
       return NULL;
     }
@@ -498,7 +966,7 @@ class FacilityManager {
         if ($public && !$this->facilityEntityBool($entity, 'active', TRUE)) {
           continue;
         }
-        $item = $this->facilityEntityToItem($entity);
+        $item = $this->facilityEntityToItem($entity, $category_keys_by_entity_id);
         if ($item !== NULL) {
           $items[] = $item;
         }
@@ -527,6 +995,65 @@ class FacilityManager {
   }
 
   /**
+   * Reconciles submitted facility categories with tenant-owned entities.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   Source jurisdiction group.
+   * @param array<int, array<string, mixed>> $categories
+   *   Normalized category items.
+   *
+   * @return array{0: array<string, int>, 1: array<int, \Drupal\Core\Entity\ContentEntityInterface>}
+   *   Category entity IDs keyed by machine key and stale entities to delete
+   *   after facility references have been reconciled.
+   */
+  private function syncFacilityCategoryEntities(GroupInterface $group, array $categories): array {
+    if (!$this->entityTypeManager->hasDefinition('markaspot_facility_category')) {
+      throw new \RuntimeException('markaspot_facility_category storage is not installed.');
+    }
+
+    $storage = $this->entityTypeManager->getStorage('markaspot_facility_category');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('jurisdiction_id', (int) $group->id())
+      ->execute();
+    $existing_by_key = [];
+    $stale_entities = [];
+    foreach ($storage->loadMultiple($ids) as $entity) {
+      if (!$entity instanceof ContentEntityInterface) {
+        continue;
+      }
+      $key = $this->facilityEntityString($entity, 'machine_name');
+      if ($key === '' || isset($existing_by_key[$key])) {
+        $stale_entities[] = $entity;
+        continue;
+      }
+      $existing_by_key[$key] = $entity;
+    }
+
+    $entity_ids_by_key = [];
+    foreach (array_values($categories) as $category) {
+      $key = (string) $category['id'];
+      $entity = $existing_by_key[$key] ?? $storage->create([
+        'jurisdiction_id' => (int) $group->id(),
+        'machine_name' => $key,
+      ]);
+      if (!$entity instanceof ContentEntityInterface) {
+        throw new \RuntimeException('markaspot_facility_category storage returned a non-content entity.');
+      }
+      $entity->set('jurisdiction_id', (int) $group->id());
+      $entity->set('machine_name', $key);
+      $entity->set('label', (string) $category['label']);
+      $entity->set('icon', (string) $category['icon']);
+      $entity->set('weight', (int) $category['weight']);
+      $entity->save();
+      $entity_ids_by_key[$key] = (int) $entity->id();
+      unset($existing_by_key[$key]);
+    }
+
+    return [$entity_ids_by_key, [...$stale_entities, ...array_values($existing_by_key)]];
+  }
+
+  /**
    * Synchronizes normalized submitted facility items into content entities.
    *
    * Dashboard saves are explicit operator actions, so this is the conversion
@@ -539,8 +1066,16 @@ class FacilityManager {
    *   Normalized facility items.
    * @param bool $clear_items
    *   Whether an empty submitted catalogue is an explicit operator clear.
+   * @param array<string, int>|null $category_entity_ids
+   *   Submitted category entity IDs keyed by machine key. NULL preserves
+   *   existing references for legacy clients that do not manage categories.
    */
-  private function syncFacilityEntities(GroupInterface $group, array $items, bool $clear_items): void {
+  private function syncFacilityEntities(
+    GroupInterface $group,
+    array $items,
+    bool $clear_items,
+    ?array $category_entity_ids = NULL,
+  ): void {
     if (!$this->entityTypeManager->hasDefinition('markaspot_facility')) {
       throw new \RuntimeException('markaspot_facility entity storage is not installed.');
     }
@@ -588,7 +1123,13 @@ class FacilityManager {
         throw new \RuntimeException('markaspot_facility storage returned a non-content entity.');
       }
 
-      $this->applyItemToFacilityEntity($entity, $item, $group, $weight);
+      $this->applyItemToFacilityEntity(
+        $entity,
+        $item,
+        $group,
+        $weight,
+        $category_entity_ids,
+      );
       $entity->save();
       unset($existing_by_key[$key]);
     }
@@ -609,12 +1150,15 @@ class FacilityManager {
    *   Source jurisdiction group.
    * @param int $weight
    *   Facility sort weight.
+   * @param array<string, int>|null $category_entity_ids
+   *   Submitted category entity IDs keyed by machine key.
    */
   private function applyItemToFacilityEntity(
     ContentEntityInterface $entity,
     array $item,
     GroupInterface $group,
     int $weight,
+    ?array $category_entity_ids,
   ): void {
     $entity->set('jurisdiction_id', (int) $group->id());
     $entity->set('machine_name', (string) $item['id']);
@@ -630,6 +1174,13 @@ class FacilityManager {
         : ''
     );
     $entity->set('organisation_id', (string) ($item['organisationId'] ?? ''));
+    if ($category_entity_ids !== NULL) {
+      $category_key = (string) ($item['categoryId'] ?? '');
+      $entity->set(
+        'category_id',
+        $category_key !== '' ? ($category_entity_ids[$category_key] ?? NULL) : NULL,
+      );
+    }
     $entity->set('icon', (string) ($item['icon'] ?? ''));
     $entity->set('description', (string) ($item['description'] ?? ''));
     $entity->set('url', (string) ($item['url'] ?? ''));
@@ -641,7 +1192,10 @@ class FacilityManager {
    * @return array<string, mixed>|null
    *   Normalized facility item, or NULL when required fields are incomplete.
    */
-  private function facilityEntityToItem(ContentEntityInterface $entity): ?array {
+  private function facilityEntityToItem(
+    ContentEntityInterface $entity,
+    array $category_keys_by_entity_id = [],
+  ): ?array {
     $id = $this->facilityEntityString($entity, 'machine_name');
     $label = $this->facilityEntityString($entity, 'label');
     $lat = $this->facilityEntityFloat($entity, 'lat');
@@ -666,6 +1220,13 @@ class FacilityManager {
     $organisation_id = $this->facilityEntityString($entity, 'organisation_id');
     if ($organisation_id !== '') {
       $item['organisationId'] = $organisation_id;
+    }
+
+    if ($entity->hasField('category_id') && !$entity->get('category_id')->isEmpty()) {
+      $category_entity_id = (int) ($entity->get('category_id')->target_id ?? 0);
+      if (isset($category_keys_by_entity_id[$category_entity_id])) {
+        $item['categoryId'] = $category_keys_by_entity_id[$category_entity_id];
+      }
     }
 
     foreach (['icon', 'description', 'url'] as $field_name) {
@@ -733,6 +1294,7 @@ class FacilityManager {
     $normalized = [
       'enabled' => !empty($settings['enabled']),
       'hideMapPicker' => !empty($settings['hideMapPicker']),
+      'categories' => [],
       'items' => [],
     ];
 
@@ -750,6 +1312,23 @@ class FacilityManager {
     }
 
     $normalized['mode'] = $this->resolveStoredMode($settings, $normalized['enabled']);
+
+    if (!empty($settings['categories']) && is_array($settings['categories'])) {
+      foreach ($settings['categories'] as $weight => $category) {
+        if (!is_array($category)
+          || empty($category['id'])
+          || empty($category['label'])
+          || empty($category['icon'])) {
+          continue;
+        }
+        $normalized['categories'][] = [
+          'id' => (string) $category['id'],
+          'label' => (string) $category['label'],
+          'icon' => (string) $category['icon'],
+          'weight' => isset($category['weight']) ? (int) $category['weight'] : $weight,
+        ];
+      }
+    }
 
     if (!empty($settings['items']) && is_array($settings['items'])) {
       foreach ($settings['items'] as $item) {
@@ -779,6 +1358,9 @@ class FacilityManager {
         }
         if (!empty($item['organisationId']) && is_string($item['organisationId'])) {
           $normalized_item['organisationId'] = $item['organisationId'];
+        }
+        if (!empty($item['categoryId']) && is_string($item['categoryId'])) {
+          $normalized_item['categoryId'] = $item['categoryId'];
         }
         // Display metadata (#368), re-emitted as stored. Values were
         // validated on write (HTML-stripped text; http(s)-only url).
@@ -814,6 +1396,7 @@ class FacilityManager {
     $settings['enabled'] = FALSE;
     $settings['mode'] = 'disabled';
     if ($public) {
+      $settings['categories'] = [];
       $settings['items'] = [];
     }
     return $settings;
@@ -843,7 +1426,7 @@ class FacilityManager {
    * Validates dashboard payloads and returns canonical storage data.
    */
   public function normalizeSubmittedSettings(array $payload): array {
-    $allowed_keys = ['enabled', 'label', 'mode', 'hideMapPicker', 'items', 'clearItems'];
+    $allowed_keys = ['enabled', 'label', 'mode', 'hideMapPicker', 'categories', 'items', 'clearItems'];
     $unknown = array_diff(array_keys($payload), $allowed_keys);
     if ($unknown !== []) {
       throw new \InvalidArgumentException('Unknown facilities settings keys: ' . implode(', ', $unknown) . '.');
@@ -864,10 +1447,17 @@ class FacilityManager {
     if (count($payload['items']) > self::MAX_ITEMS) {
       throw new \InvalidArgumentException('items exceeds the maximum allowed number of facilities.');
     }
+    if (array_key_exists('categories', $payload) && !is_array($payload['categories'])) {
+      throw new \InvalidArgumentException('categories must be an array when provided.');
+    }
+    if (count($payload['categories'] ?? []) > self::MAX_CATEGORIES) {
+      throw new \InvalidArgumentException('categories exceeds the maximum allowed number of facility categories.');
+    }
 
     $normalized = [
       'enabled' => $payload['enabled'],
       'hideMapPicker' => $payload['hideMapPicker'],
+      'categories' => [],
       'items' => [],
     ];
 
@@ -909,6 +1499,33 @@ class FacilityManager {
       $normalized['mode'] = $mode;
     }
 
+    $seen_category_ids = [];
+    foreach (array_values($payload['categories'] ?? []) as $index => $category) {
+      if (!is_array($category)) {
+        throw new \InvalidArgumentException("categories[$index] must be an object.");
+      }
+      $category_unknown = array_diff(array_keys($category), ['id', 'label', 'icon', 'weight']);
+      if ($category_unknown !== []) {
+        throw new \InvalidArgumentException("categories[$index] contains unknown keys: " . implode(', ', $category_unknown) . '.');
+      }
+      $id = $this->validateCategoryKey($category['id'] ?? NULL, "categories[$index].id");
+      if (isset($seen_category_ids[$id])) {
+        throw new \InvalidArgumentException("categories[$index].id must be unique.");
+      }
+      $seen_category_ids[$id] = TRUE;
+      $normalized['categories'][] = [
+        'id' => $id,
+        'label' => $this->validateTextValue($category['label'] ?? NULL, "categories[$index].label", 255),
+        'icon' => $this->validateLucideIcon($category['icon'] ?? NULL, "categories[$index].icon", FALSE),
+        'weight' => $this->validateIntegerValue(
+          $category['weight'] ?? $index,
+          "categories[$index].weight",
+          -10000,
+          10000,
+        ),
+      ];
+    }
+
     $seen_ids = [];
     foreach (array_values($payload['items']) as $index => $item) {
       if (!is_array($item)) {
@@ -922,6 +1539,7 @@ class FacilityManager {
         'lng',
         'address',
         'organisationId',
+        'categoryId',
         'active',
         // Display metadata added for #381 (FacilityRow icon/description/url),
         // sent by the Vue admin (facilities.vue). Validated and stored below
@@ -965,6 +1583,14 @@ class FacilityManager {
           );
       }
 
+      if (array_key_exists('categoryId', $item)) {
+        $category_id = $this->validateCategoryKey($item['categoryId'], "items[$index].categoryId");
+        if (!isset($seen_category_ids[$category_id])) {
+          throw new \InvalidArgumentException("items[$index].categoryId must reference a submitted facility category.");
+        }
+        $normalized_item['categoryId'] = $category_id;
+      }
+
       // Display metadata (#368). icon/description are HTML-stripped plain text
       // (validateTextValue rejects any markup); empty values are dropped so the
       // write/read paths agree (normalizeStoredSettings only re-emits truthy
@@ -978,6 +1604,10 @@ class FacilityManager {
             TRUE
             );
           if ($value !== '') {
+            // Facility-specific icons predate category icons and may still use
+            // legacy FontAwesome identifiers. Keep that existing plain-text
+            // contract so adding categories does not make an unchanged tenant
+            // catalogue impossible to save. Category icons remain Lucide-only.
             $normalized_item[$display_field] = $value;
           }
         }
@@ -1014,6 +1644,53 @@ class FacilityManager {
       throw new \InvalidArgumentException("$path must match /^[a-z0-9][a-z0-9_-]{0,127}$/.");
     }
     return $value;
+  }
+
+  /**
+   * Validates stable facility category keys used by the dashboard and API.
+   */
+  private function validateCategoryKey(mixed $value, string $path): string {
+    if (!is_string($value)) {
+      throw new \InvalidArgumentException("$path must be a string.");
+    }
+    $value = trim($value);
+    if (!preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $value) || strlen($value) > 128) {
+      throw new \InvalidArgumentException("$path must contain only lowercase letters, numbers, and hyphens.");
+    }
+    return $value;
+  }
+
+  /**
+   * Validates a bounded integer value without coercing strings or floats.
+   */
+  private function validateIntegerValue(mixed $value, string $path, int $minimum, int $maximum): int {
+    if (!is_int($value) || $value < $minimum || $value > $maximum) {
+      throw new \InvalidArgumentException("$path must be an integer between $minimum and $maximum.");
+    }
+    return $value;
+  }
+
+  /**
+   * Validates and normalizes a Lucide Iconify identifier.
+   */
+  private function validateLucideIcon(mixed $value, string $path, bool $allow_plain = TRUE): string {
+    if (!is_string($value)) {
+      throw new \InvalidArgumentException("$path must be a string.");
+    }
+    $trimmed = strtolower(trim($value));
+    if (preg_match('/^i-lucide-[a-z0-9][a-z0-9-]*$/', $trimmed)) {
+      return $trimmed;
+    }
+    if (preg_match('/^lucide:[a-z0-9][a-z0-9-]*$/', $trimmed)) {
+      return 'i-lucide-' . substr($trimmed, 7);
+    }
+    if ($allow_plain && preg_match('/^[a-z0-9][a-z0-9-]*$/', $trimmed)) {
+      return 'i-lucide-' . $trimmed;
+    }
+    $expected = $allow_plain
+      ? 'an i-lucide-*, lucide:*, or Lucide icon name'
+      : 'an i-lucide-* or lucide:* icon name';
+    throw new \InvalidArgumentException("$path must be $expected.");
   }
 
   /**

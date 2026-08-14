@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_facility\Kernel;
 
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -70,6 +71,7 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
     $this->installEntitySchema('group');
     $this->installEntitySchema('group_relationship');
     $this->installEntitySchema('group_config_wrapper');
+    $this->installEntitySchema('markaspot_facility_category');
     $this->installEntitySchema('markaspot_facility');
     $this->installConfig(['system', 'user', 'field', 'filter', 'group']);
 
@@ -110,7 +112,7 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
       ],
     ]);
 
-    $this->manager->saveDashboardSettings($group, $this->payload([
+    $payload = $this->payload([
       [
         'id' => 'school_a',
         'label' => 'School A',
@@ -123,6 +125,7 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
           'postal_code' => '50667',
         ],
         'organisationId' => 'org-a',
+        'categoryId' => 'schools',
         'active' => TRUE,
         'icon' => 'i-lucide-school',
         'description' => 'Primary school.',
@@ -135,7 +138,15 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
         'lng' => 8.2,
         'active' => FALSE,
       ],
-    ]));
+    ]);
+    $payload['categories'] = [
+      [
+        'id' => 'schools',
+        'label' => 'Schools',
+        'icon' => 'lucide:school',
+      ],
+    ];
+    $this->manager->saveDashboardSettings($group, $payload);
 
     $entities = $this->loadFacilityEntities($group);
     $this->assertSame(['school_a', 'school_b'], array_keys($entities));
@@ -143,6 +154,9 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
     $this->assertSame('org-a', $entities['school_a']->get('organisation_id')->value);
     $this->assertSame('i-lucide-school', $entities['school_a']->get('icon')->value);
     $this->assertSame('https://example.org/school-a', $entities['school_a']->get('url')->value);
+    $category = $entities['school_a']->get('category_id')->entity;
+    $this->assertSame('schools', $category->get('machine_name')->getString());
+    $this->assertSame('i-lucide-school', $category->get('icon')->getString());
 
     $stored_settings = $this->storedFacilitiesSettings($group);
     $this->assertSame([], $stored_settings['items']);
@@ -151,9 +165,95 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
     $dashboard = $this->manager->getDashboardSettings($this->reloadGroup($group));
     $this->assertSame(['school_a', 'school_b'], array_column($dashboard['items'], 'id'));
     $this->assertSame('A Street 1', $dashboard['items'][0]['address']['address_line1']);
+    $this->assertSame('schools', $dashboard['items'][0]['categoryId']);
+    $this->assertSame('schools', $dashboard['categories'][0]['id']);
 
     $public = $this->manager->getPublicSettings($this->reloadGroup($group));
     $this->assertSame(['school_a'], array_column($public['items'], 'id'));
+    $this->assertSame('schools', $public['categories'][0]['id']);
+  }
+
+  /**
+   * Category deletion leaves affected facilities uncategorized.
+   *
+   * @covers ::saveDashboardSettings
+   */
+  public function testCategoryDeletionClearsFacilityReference(): void {
+    $group = $this->createJurisdiction();
+    $payload = $this->payload([[
+      'id' => 'school_a',
+      'label' => 'School A',
+      'lat' => 50.1,
+      'lng' => 8.1,
+      'active' => TRUE,
+      'categoryId' => 'schools',
+    ]]);
+    $payload['categories'] = [[
+      'id' => 'schools',
+      'label' => 'Schools',
+      'icon' => 'i-lucide-school',
+    ]];
+    $this->manager->saveDashboardSettings($group, $payload);
+
+    $payload['categories'] = [];
+    unset($payload['items'][0]['categoryId']);
+    $this->manager->saveDashboardSettings($this->reloadGroup($group), $payload);
+
+    $facility = $this->loadFacilityEntities($group)['school_a'];
+    $this->assertTrue($facility->get('category_id')->isEmpty());
+    $this->assertSame([], $this->manager->getDashboardSettings($this->reloadGroup($group))['categories']);
+  }
+
+  /**
+   * Category keys are unique only within their jurisdiction.
+   */
+  public function testCategoryMachineKeyIsTenantScopedUnique(): void {
+    $first_group = $this->createJurisdiction();
+    $second_group = $this->createJurisdiction();
+    $storage = $this->container->get('entity_type.manager')->getStorage('markaspot_facility_category');
+    $category_values = [
+      'machine_name' => 'schools',
+      'label' => 'Schools',
+      'icon' => 'i-lucide-school',
+    ];
+    $storage->create($category_values + ['jurisdiction_id' => $first_group->id()])->save();
+    $storage->create($category_values + ['jurisdiction_id' => $second_group->id()])->save();
+
+    $this->expectException(EntityStorageException::class);
+    $this->expectExceptionMessage('already exists for jurisdiction');
+    $storage->create($category_values + ['jurisdiction_id' => $first_group->id()])->save();
+  }
+
+  /**
+   * Facility category references cannot cross tenant boundaries.
+   */
+  public function testFacilityCategoryReferenceMustMatchJurisdiction(): void {
+    $facility_group = $this->createJurisdiction();
+    $foreign_group = $this->createJurisdiction();
+    $category = $this->container->get('entity_type.manager')
+      ->getStorage('markaspot_facility_category')
+      ->create([
+        'jurisdiction_id' => $foreign_group->id(),
+        'machine_name' => 'schools',
+        'label' => 'Schools',
+        'icon' => 'i-lucide-school',
+      ]);
+    $category->save();
+
+    $facility = $this->container->get('entity_type.manager')
+      ->getStorage('markaspot_facility')
+      ->create([
+        'jurisdiction_id' => $facility_group->id(),
+        'machine_name' => 'school-a',
+        'label' => 'School A',
+        'lat' => 51.0,
+        'lng' => 7.0,
+        'category_id' => $category->id(),
+      ]);
+
+    $this->expectException(EntityStorageException::class);
+    $this->expectExceptionMessage('same jurisdiction');
+    $facility->save();
   }
 
   /**

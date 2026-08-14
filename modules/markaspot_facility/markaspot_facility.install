@@ -7,6 +7,7 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\GroupInterface;
@@ -123,6 +124,42 @@ function markaspot_facility_update_11003(): string {
   }
 
   return 'markaspot_facility entity storage already exists. Existing field_facilities data was not migrated.';
+}
+
+/**
+ * Adds normalized facility categories and category references.
+ */
+function markaspot_facility_update_11004(): string {
+  $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $changes = [];
+
+  if ($entity_type_manager->hasDefinition('markaspot_facility_category')) {
+    $category_type = $entity_type_manager->getDefinition('markaspot_facility_category');
+    if ($definition_update_manager->getEntityType($category_type->id()) === NULL) {
+      $definition_update_manager->installEntityType($category_type);
+      $changes[] = 'facility category entity storage';
+    }
+  }
+
+  if ($definition_update_manager->getFieldStorageDefinition('category_id', 'markaspot_facility') === NULL) {
+    $category_field = BaseFieldDefinition::create('entity_reference')
+      ->setLabel(t('Facility category'))
+      ->setDescription(t('Optional tenant-scoped category for display and filtering.'))
+      ->setSetting('target_type', 'markaspot_facility_category')
+      ->setSetting('handler', 'default');
+    $definition_update_manager->installFieldStorageDefinition(
+      'category_id',
+      'markaspot_facility',
+      'markaspot_facility',
+      $category_field,
+    );
+    $changes[] = 'facility category reference';
+  }
+
+  return $changes !== []
+    ? 'Installed ' . implode(' and ', $changes) . '.'
+    : 'Facility category storage already exists.';
 }
 
 /**
