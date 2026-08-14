@@ -82,6 +82,13 @@ class FacilityManager {
   private \SplObjectStorage $addressLocks;
 
   /**
+   * Caches category-derived facility owners for the current entity lifecycle.
+   *
+   * @var \SplObjectStorage<\Drupal\node\NodeInterface, array{facilityId: string, public: bool, rootId: int, jurisdictionId: int}>
+   */
+  private \SplObjectStorage $resolvedFacilityOwners;
+
+  /**
    * Constructs the facility manager.
    */
   public function __construct(
@@ -98,6 +105,7 @@ class FacilityManager {
     $this->database = $database;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->addressLocks = new \SplObjectStorage();
+    $this->resolvedFacilityOwners = new \SplObjectStorage();
   }
 
   /**
@@ -158,6 +166,65 @@ class FacilityManager {
   public function hasEntitlement(?GroupInterface $group): bool {
     return $group instanceof GroupInterface
       && $this->featureScopeResolver->isEnabledEffective('features.facilities', $group);
+  }
+
+  /**
+   * Resolves one facility owner inside the selected category's tenant tree.
+   *
+   * Anonymous JSON:API creates omit field_jurisdiction. Service categories
+   * point at the canonical root, while facility catalogues may belong to a
+   * child jurisdiction. A facility key must resolve to exactly one entitled
+   * catalogue in that tree; duplicate keys fail closed.
+   */
+  public function resolveFacilityOwnerFromCategory(
+    NodeInterface $node,
+    string $facility_id,
+    bool $public,
+  ): ?int {
+    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+      return NULL;
+    }
+    $category = $node->get('field_category')->entity;
+    if (!$category instanceof ContentEntityInterface
+      || !$category->hasField('field_jurisdiction')
+      || $category->get('field_jurisdiction')->isEmpty()) {
+      return NULL;
+    }
+
+    $category_jurisdiction_id = (int) $category->get('field_jurisdiction')->target_id;
+    $root_id = $category_jurisdiction_id > 0
+      ? $this->hierarchyResolver->getRootJurisdictionId($category_jurisdiction_id)
+      : NULL;
+    if ($root_id === NULL) {
+      return NULL;
+    }
+
+    if ($this->resolvedFacilityOwners->contains($node)) {
+      $cached = $this->resolvedFacilityOwners[$node];
+      if ($cached['facilityId'] === $facility_id
+        && $cached['public'] === $public
+        && $cached['rootId'] === $root_id) {
+        return $cached['jurisdictionId'];
+      }
+    }
+
+    $owners = $this->findFacilityOwners(
+      $facility_id,
+      $this->hierarchyResolver->getDescendantIds($root_id),
+      $public,
+    );
+    if (count($owners) !== 1) {
+      return NULL;
+    }
+
+    $jurisdiction_id = $owners[0];
+    $this->resolvedFacilityOwners[$node] = [
+      'facilityId' => $facility_id,
+      'public' => $public,
+      'rootId' => $root_id,
+      'jurisdictionId' => $jurisdiction_id,
+    ];
+    return $jurisdiction_id;
   }
 
   /**
@@ -231,15 +298,55 @@ class FacilityManager {
           || !$node->hasField('field_facility')
           || $node->get('field_facility')->isEmpty()
           || !$node->hasField('field_jurisdiction')
-          || $node->get('field_jurisdiction')->isEmpty()
       ) {
       return;
     }
 
     $facility_id = (string) $node->get('field_facility')->value;
-    $jurisdiction_item = $node->get('field_jurisdiction')->first();
-    $jurisdiction_id = (int) ($jurisdiction_item->target_id ?? 0);
+    $public_catalogue = $this->requiresPublicCatalogue($node, $facility_id);
+    $jurisdiction_id = 0;
+    $jurisdiction_field = $node->get('field_jurisdiction');
+    if (!$jurisdiction_field->isEmpty()) {
+      $jurisdiction_values = $jurisdiction_field->getValue();
+      if (count($jurisdiction_values) !== 1) {
+        // Entity validation rejects multiple reporting jurisdictions. Mirror
+        // that invariant for ECA/import saves that skip validate(), otherwise
+        // extra values expand workspace visibility while the remaining
+        // facility pipeline only evaluates first().
+        $first_jurisdiction_id = (int) ($jurisdiction_values[0]['target_id'] ?? 0);
+        $node->set(
+          'field_jurisdiction',
+          $first_jurisdiction_id > 0
+            ? ['target_id' => $first_jurisdiction_id]
+            : NULL,
+        );
+        $jurisdiction_values = $first_jurisdiction_id > 0
+          ? [['target_id' => $first_jurisdiction_id]]
+          : [];
+        $this->logger->warning(
+          'Multiple jurisdictions were submitted for service request @node; only the first valid jurisdiction was retained.',
+          ['@node' => $node->id() ?? 'new'],
+        );
+      }
+      $jurisdiction_item = $jurisdiction_values[0] ?? [];
+      $jurisdiction_id = (int) ($jurisdiction_item['target_id'] ?? 0);
+    }
+    else {
+      // Validation has already proven that the public facility key resolves
+      // uniquely inside the selected category's tenant tree. Persist that
+      // owner before insert hooks derive boundary and group relationships, so
+      // the same catalogue drives validation and presave derivation.
+      $jurisdiction_id = $this->resolveFacilityOwnerFromCategory(
+        $node,
+        $facility_id,
+        $public_catalogue,
+      ) ?? 0;
+      if ($jurisdiction_id > 0) {
+        $node->set('field_jurisdiction', ['target_id' => $jurisdiction_id]);
+      }
+    }
     if ($jurisdiction_id <= 0) {
+      $node->set('field_facility', NULL);
       return;
     }
 
@@ -268,7 +375,100 @@ class FacilityManager {
       return;
     }
 
-    $settings = $this->getDashboardSettings($group);
+    $settings = $public_catalogue
+      ? $this->getPublicSettings($group)
+      : $this->getDashboardSettings($group);
+    $facility = $this->findFacilityInSettings(
+      $settings,
+      $facility_id,
+      $public_catalogue,
+    );
+    $facility_group = $group;
+
+    // A request routed to a child jurisdiction may legitimately reference a
+    // facility managed by its canonical root. Keep presave ownership aligned
+    // with the validator's existing child-to-root acceptance rule.
+    if ($facility === NULL) {
+      $root_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+      if ($root_id !== NULL && $root_id !== $jurisdiction_id) {
+        $root_group = $this->entityTypeManager->getStorage('group')->load($root_id);
+        if ($root_group instanceof GroupInterface) {
+          $root_settings = $public_catalogue
+            ? $this->getPublicSettings($root_group)
+            : $this->getDashboardSettings($root_group);
+          $root_facility = $this->findFacilityInSettings(
+            $root_settings,
+            $facility_id,
+            $public_catalogue,
+          );
+          if ($root_facility !== NULL) {
+            $settings = $root_settings;
+            $facility = $root_facility;
+            $facility_group = $root_group;
+          }
+        }
+      }
+    }
+
+    // During node_insert, geographic routing may replace the validated owner
+    // with a nested child jurisdiction (or with the root under root strategy)
+    // before triggering a second save. Reuse the cached owner only when that
+    // new reporting jurisdiction is compatible with the owner's hierarchy.
+    if ($facility === NULL) {
+      $resolved_owner = $this->cachedFacilityOwner($node, $facility_id);
+      if ($resolved_owner === NULL) {
+        $resolved_owner_id = $this->resolveFacilityOwnerFromCategory(
+          $node,
+          $facility_id,
+          $public_catalogue,
+        );
+        $resolved_owner = $resolved_owner_id === NULL
+          ? NULL
+          : $this->cachedFacilityOwner($node, $facility_id);
+      }
+      if ($resolved_owner !== NULL
+        && $this->facilityOwnerMatchesJurisdiction(
+          $resolved_owner['jurisdictionId'],
+          $jurisdiction_id,
+          $resolved_owner['rootId'],
+        )) {
+        $owner_group = $this->entityTypeManager
+          ->getStorage('group')
+          ->load($resolved_owner['jurisdictionId']);
+        if ($owner_group instanceof GroupInterface) {
+          $owner_settings = $resolved_owner['public']
+            ? $this->getPublicSettings($owner_group)
+            : $this->getDashboardSettings($owner_group);
+          $owner_facility = $this->findFacilityInSettings(
+            $owner_settings,
+            $facility_id,
+            $resolved_owner['public'],
+          );
+          if ($owner_facility !== NULL) {
+            $settings = $owner_settings;
+            $facility = $owner_facility;
+            $facility_group = $owner_group;
+          }
+        }
+      }
+    }
+
+    if ($facility === NULL) {
+      // The facility id is not in this jurisdiction's catalogue. On validated
+      // write paths (Open311, JSON:API) the FacilityOwnership constraint
+      // already rejected this before save; this is defence in depth for
+      // programmatic paths that skip validate().
+      $node->set('field_facility', NULL);
+      $this->logger->warning(
+        'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node; the foreign facility tag was cleared.',
+        [
+          '@facility' => $facility_id,
+          '@jurisdiction' => $jurisdiction_id,
+          '@node' => $node->id() ?? 'new',
+        ],
+      );
+      return;
+    }
 
     // In optional mode the citizen chose the position; the facility tag is
     // auto-derived from it and must not override the picked coordinates or
@@ -279,46 +479,105 @@ class FacilityManager {
       return;
     }
 
-    foreach ($settings['items'] as $facility) {
-      if (($facility['id'] ?? '') !== $facility_id) {
-        continue;
-      }
-
-      if ($node->hasField('field_geolocation')) {
-        $node->set('field_geolocation', [
-          'lat' => $facility['lat'],
-          'lng' => $facility['lng'],
-        ]);
-      }
-
-      if (!empty($facility['address']) && $node->hasField('field_address')) {
-        $address = $this->buildFieldAddressFromFacility($facility['address'], $node, $group);
-        if ($address !== NULL) {
-          $node->set('field_address', $address);
-          $this->addressLocks[$node] = TRUE;
-        }
-      }
-
-      $this->applyFacilityOrganisation($node, $facility, $jurisdiction_id);
-
-      return;
+    if ($node->hasField('field_geolocation')) {
+      $node->set('field_geolocation', [
+        'lat' => $facility['lat'],
+        'lng' => $facility['lng'],
+      ]);
     }
 
-    // The facility id is not in this jurisdiction's catalogue. On validated
-    // write paths (Open311, JSON:API) the FacilityOwnership constraint already
-    // rejected this before save; reaching here means a programmatic path that
-    // skipped validate() (ECA action, import script, bulk update). Fail secure:
-    // drop the foreign tag rather than persisting a cross-tenant value with no
-    // resolvable geodata (#367 defence in depth).
-    $node->set('field_facility', NULL);
-    $this->logger->warning(
-          'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node; the foreign facility tag was cleared.',
-          [
-            '@facility' => $facility_id,
-            '@jurisdiction' => $jurisdiction_id,
-            '@node' => $node->id() ?? 'new',
-          ]
-      );
+    if (!empty($facility['address']) && $node->hasField('field_address')) {
+      $address = $this->buildFieldAddressFromFacility($facility['address'], $node, $facility_group);
+      if ($address !== NULL) {
+        $node->set('field_address', $address);
+        $this->addressLocks[$node] = TRUE;
+      }
+    }
+
+    $this->applyFacilityOrganisation($node, $facility, $jurisdiction_id);
+  }
+
+  /**
+   * Returns one facility item from normalized settings.
+   */
+  private function findFacilityInSettings(
+    array $settings,
+    string $facility_id,
+    bool $public_catalogue,
+  ): ?array {
+    if ($public_catalogue
+      && (empty($settings['enabled']) || ($settings['mode'] ?? 'disabled') === 'disabled')) {
+      return NULL;
+    }
+    foreach ($settings['items'] ?? [] as $facility) {
+      if (is_array($facility) && ($facility['id'] ?? '') === $facility_id) {
+        return $facility;
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Returns whether this write must use the active public catalogue.
+   */
+  private function requiresPublicCatalogue(NodeInterface $node, string $facility_id): bool {
+    if ($node->isNew()) {
+      return TRUE;
+    }
+    $original = $node->getOriginal();
+    if (!$original instanceof NodeInterface
+      || !$original->hasField('field_facility')
+      || $original->get('field_facility')->isEmpty()
+      || trim((string) $original->get('field_facility')->value) !== $facility_id) {
+      return TRUE;
+    }
+
+    $current_jurisdiction = $node->hasField('field_jurisdiction')
+      && !$node->get('field_jurisdiction')->isEmpty()
+      ? (int) ($node->get('field_jurisdiction')->first()?->target_id ?? 0)
+      : 0;
+    $original_jurisdiction = $original->hasField('field_jurisdiction')
+      && !$original->get('field_jurisdiction')->isEmpty()
+      ? (int) ($original->get('field_jurisdiction')->first()?->target_id ?? 0)
+      : 0;
+    return $current_jurisdiction !== $original_jurisdiction;
+  }
+
+  /**
+   * Returns the cached category-derived owner for this facility and node.
+   *
+   * @return array{facilityId: string, public: bool, rootId: int, jurisdictionId: int}|null
+   *   Cached owner metadata, or NULL when validation resolved another value.
+   */
+  private function cachedFacilityOwner(NodeInterface $node, string $facility_id): ?array {
+    if (!$this->resolvedFacilityOwners->contains($node)) {
+      return NULL;
+    }
+    $cached = $this->resolvedFacilityOwners[$node];
+    return $cached['facilityId'] === $facility_id ? $cached : NULL;
+  }
+
+  /**
+   * Checks whether boundary routing remains inside the validated owner scope.
+   */
+  public function facilityOwnerMatchesJurisdiction(
+    int $owner_id,
+    int $jurisdiction_id,
+    int $root_id,
+  ): bool {
+    $jurisdiction_root_id = $this->hierarchyResolver
+      ->getRootJurisdictionId($jurisdiction_id);
+    if ($jurisdiction_root_id !== $root_id) {
+      return FALSE;
+    }
+    if ($jurisdiction_id === $owner_id || $jurisdiction_id === $root_id) {
+      return TRUE;
+    }
+    return in_array(
+      $jurisdiction_id,
+      $this->hierarchyResolver->getDescendantIds($owner_id),
+      TRUE,
+    );
   }
 
   /**
@@ -497,6 +756,103 @@ class FacilityManager {
 
     $decoded = json_decode((string) $source->get('field_facilities')->value, TRUE);
     return is_array($decoded) ? $decoded : [];
+  }
+
+  /**
+   * Finds tenant-tree catalogue owners for a facility machine key.
+   *
+   * Normalized facility entities are queried in one operation. Legacy JSON
+   * catalogues are checked from one bulk group load, avoiding a full
+   * getDashboardSettings() query stack for every jurisdiction in the tree.
+   *
+   * @param string $facility_id
+   *   Facility machine key.
+   * @param int[] $jurisdiction_ids
+   *   Jurisdiction IDs in the canonical tenant tree.
+   * @param bool $public
+   *   Whether only active facilities from an enabled public catalogue pass.
+   *
+   * @return int[]
+   *   Unique jurisdiction owner IDs.
+   */
+  private function findFacilityOwners(
+    string $facility_id,
+    array $jurisdiction_ids,
+    bool $public,
+  ): array {
+    $jurisdiction_ids = array_values(array_unique(array_filter(
+      array_map('intval', $jurisdiction_ids),
+      static fn(int $id): bool => $id > 0,
+    )));
+    if ($jurisdiction_ids === []) {
+      return [];
+    }
+
+    $entity_owners = [];
+    if ($this->entityTypeManager->hasDefinition('markaspot_facility')) {
+      try {
+        $storage = $this->entityTypeManager->getStorage('markaspot_facility');
+        $ids = $storage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('jurisdiction_id', $jurisdiction_ids, 'IN')
+          ->condition('machine_name', $facility_id)
+          ->execute();
+        foreach ($storage->loadMultiple($ids) as $entity) {
+          if (!$entity instanceof ContentEntityInterface
+            || ($public && !$this->facilityEntityBool($entity, 'active', TRUE))) {
+            continue;
+          }
+          $owner_id = (int) $this->facilityEntityString($entity, 'jurisdiction_id');
+          if ($owner_id > 0 && in_array($owner_id, $jurisdiction_ids, TRUE)) {
+            $entity_owners[$owner_id] = TRUE;
+          }
+        }
+      }
+      catch (\Throwable $e) {
+        $this->logger->warning(
+          'Facility owner lookup fell back to legacy catalogues for "@facility": @message',
+          [
+            '@facility' => $facility_id,
+            '@message' => $e->getMessage(),
+          ],
+        );
+      }
+    }
+
+    $owners = [];
+    $groups = $this->entityTypeManager
+      ->getStorage('group')
+      ->loadMultiple($jurisdiction_ids);
+    foreach ($jurisdiction_ids as $jurisdiction_id) {
+      $group = $groups[$jurisdiction_id] ?? NULL;
+      if (!$group instanceof GroupInterface
+        || ($public && !$this->hasEntitlement($group))) {
+        continue;
+      }
+
+      $stored = $this->decodeFacilitiesField($group);
+      if ($public && (
+        empty($stored['enabled'])
+        || $this->resolveStoredMode($stored, TRUE) === 'disabled'
+      )) {
+        continue;
+      }
+      if (isset($entity_owners[$jurisdiction_id])) {
+        $owners[$jurisdiction_id] = TRUE;
+      }
+
+      foreach ($stored['items'] ?? [] as $item) {
+        if (!is_array($item)
+          || ($item['id'] ?? '') !== $facility_id
+          || ($public && array_key_exists('active', $item) && !$item['active'])) {
+          continue;
+        }
+        $owners[$jurisdiction_id] = TRUE;
+        break;
+      }
+    }
+
+    return array_map('intval', array_keys($owners));
   }
 
   /**
