@@ -340,17 +340,6 @@ function markaspot_nuxt_is_user_reference_field(FieldDefinitionInterface $field_
 }
 
 /**
- * Implements hook_file_access().
- */
-function markaspot_nuxt_file_access(File $file, $operation, AccountInterface $account) {
-  // Always allow access to files.
-  // This is more permissive - adjust based on your security needs.
-  return AccessResult::allowed()
-    ->addCacheableDependency($file)
-    ->cachePerUser();
-}
-
-/**
  * Safely check if a file can be deleted without breaking references.
  *
  * @param \Drupal\file\Entity\File $file
