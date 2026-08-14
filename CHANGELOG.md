@@ -1,5 +1,19 @@
 # Changelog
 
+## [11.9.182](https://github.com/markaspot/markaspot/compare/11.9.181...11.9.182) (2026-08-14)
+
+### Features
+
+* add sweep-only mode for scrubbing large tenant copies ([2849886](https://github.com/markaspot/markaspot/commit/2849886983946124619e0ab3c7cb9d9e7668f07c))
+* **facilities:** add tenant-scoped categories ([daab32a](https://github.com/markaspot/markaspot/commit/daab32a3f5760632f24842a4943c37b2805cc0f7))
+
+### Bug Fixes
+
+* end verify pass with return so drush exits zero ([546170c](https://github.com/markaspot/markaspot/commit/546170c353ba26e818016ae382f2a1405c641fdc))
+* **facilities:** validate ownership across request lifecycle ([0294226](https://github.com/markaspot/markaspot/commit/0294226ac6d791b8b9723390d9fa289ed4de1ed5))
+* **sec:** drop blanket file_access grant exposing private files ([0926d67](https://github.com/markaspot/markaspot/commit/0926d672234cb6de3bdef2fc94691b6a775d4eb8))
+* survive retriable storage conflicts during long scrub runs ([d357b64](https://github.com/markaspot/markaspot/commit/d357b6429bc955978ebd77e641775ebe1d66aba3))
+
 ## [11.9.181](https://github.com/markaspot/markaspot/compare/11.9.180...11.9.181) (2026-08-10)
 
 ### Bug Fixes
