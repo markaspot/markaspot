@@ -6,7 +6,12 @@ services:
 
   markaspot_open311.handler.georeport_request:
     class: Drupal\markaspot_open311\GeoreportRequestHandler
-    arguments: ['@serializer', '@path.current']
+    arguments: ['@serializer', '@path.current', '@current_user', '@config.factory']
+
+  markaspot_open311.routing.private_file_auth:
+    class: Drupal\markaspot_open311\Routing\PrivateFileRouteSubscriber
+    tags:
+      - { name: event_subscriber }
 
   markaspot_open311.serializer.encoder.form:
     class: Drupal\markaspot_open311\Encoder\Open311Encoder
