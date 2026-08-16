@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Database\Database;
+use Drupal\markaspot_icons\IconMigrationService;
 
 /**
  * Migrate FontAwesome icons to Lucide icons in taxonomy terms.
@@ -22,6 +23,7 @@ function markaspot_icons_update_10001(): string {
   // Covers common Mark-a-Spot category and status icons.
   $icon_mapping = [
     // People/Users.
+    'fa-child' => 'i-lucide-baby',
     'fa-male' => 'i-lucide-user',
     'fa-user' => 'i-lucide-user',
     'fa-users' => 'i-lucide-users',
@@ -59,7 +61,7 @@ function markaspot_icons_update_10001(): string {
     'fa-road' => 'i-lucide-construction',
     'fa-car' => 'i-lucide-car',
     'fa-bicycle' => 'i-lucide-bike',
-    'fa-parking' => 'i-lucide-parking-circle',
+    'fa-parking' => 'i-lucide-circle-parking',
     'fa-bus' => 'i-lucide-bus',
 
     // Time.
@@ -77,30 +79,30 @@ function markaspot_icons_update_10001(): string {
 
     // Status indicators.
     'fa-check' => 'i-lucide-check',
-    'fa-check-circle' => 'i-lucide-check-circle',
-    'fa-check-circle-o' => 'i-lucide-check-circle',
-    'fa-play-circle' => 'i-lucide-play-circle',
-    'fa-play-circle-o' => 'i-lucide-play-circle',
+    'fa-check-circle' => 'i-lucide-circle-check-big',
+    'fa-check-circle-o' => 'i-lucide-circle-check-big',
+    'fa-play-circle' => 'i-lucide-circle-play',
+    'fa-play-circle-o' => 'i-lucide-circle-play',
     'fa-hand-stop-o' => 'i-lucide-hand',
     'fa-hand-paper-o' => 'i-lucide-hand',
     'fa-stack-overflow' => 'i-lucide-archive',
     'fa-archive' => 'i-lucide-archive',
     'fa-times' => 'i-lucide-x',
-    'fa-times-circle' => 'i-lucide-x-circle',
-    'fa-exclamation' => 'i-lucide-alert-triangle',
-    'fa-exclamation-circle' => 'i-lucide-alert-circle',
-    'fa-exclamation-triangle' => 'i-lucide-alert-triangle',
-    'fa-warning' => 'i-lucide-alert-triangle',
+    'fa-times-circle' => 'i-lucide-circle-x',
+    'fa-exclamation' => 'i-lucide-triangle-alert',
+    'fa-exclamation-circle' => 'i-lucide-circle-alert',
+    'fa-exclamation-triangle' => 'i-lucide-triangle-alert',
+    'fa-warning' => 'i-lucide-triangle-alert',
     'fa-info' => 'i-lucide-info',
     'fa-info-circle' => 'i-lucide-info',
-    'fa-question' => 'i-lucide-help-circle',
-    'fa-question-circle' => 'i-lucide-help-circle',
+    'fa-question' => 'i-lucide-circle-question-mark',
+    'fa-question-circle' => 'i-lucide-circle-question-mark',
 
     // Buildings/Places.
     'fa-bank' => 'i-lucide-building-2',
     'fa-building' => 'i-lucide-building',
     'fa-building-o' => 'i-lucide-building',
-    'fa-home' => 'i-lucide-home',
+    'fa-home' => 'i-lucide-house',
     'fa-hospital-o' => 'i-lucide-building-2',
     'fa-university' => 'i-lucide-landmark',
 
@@ -121,7 +123,7 @@ function markaspot_icons_update_10001(): string {
     'fa-eye' => 'i-lucide-eye',
     'fa-eye-slash' => 'i-lucide-eye-off',
     'fa-lock' => 'i-lucide-lock',
-    'fa-unlock' => 'i-lucide-unlock',
+    'fa-unlock' => 'i-lucide-lock-open',
     'fa-key' => 'i-lucide-key',
     'fa-bell' => 'i-lucide-bell',
     'fa-bell-o' => 'i-lucide-bell',
@@ -216,11 +218,72 @@ function markaspot_icons_update_10001(): string {
 }
 
 /**
- * Update the IconMigrationService mappings to use Lucide as default.
- *
- * This is a no-op update hook that documents the switch to Lucide icons
- * as the default icon collection for Mark-a-Spot.
+ * Validate and repair legacy or unresolved taxonomy icon values.
  */
 function markaspot_icons_update_10002(): string {
   return t('Lucide icons are now the default icon collection for Mark-a-Spot.');
+}
+
+/**
+ * Runs icon repair for sites that recorded the former no-op update 10002.
+ */
+function markaspot_icons_update_10003(): string {
+  return _markaspot_icons_repair_taxonomy_icons();
+}
+
+/**
+ * Applies and reports the shared taxonomy icon repair.
+ */
+function _markaspot_icons_repair_taxonomy_icons(): string {
+  $container = \Drupal::getContainer();
+  /** @var \Drupal\iconify_field\Service\IconResolverInterface|null $resolver */
+  $resolver = $container->has('iconify_field.icon_resolver')
+    ? $container->get('iconify_field.icon_resolver')
+    : NULL;
+  /** @var \Drupal\Core\Render\RendererInterface|null $renderer */
+  $renderer = $container->has('renderer')
+    ? $container->get('renderer')
+    : NULL;
+  /** @var \Drupal\Core\Cache\CacheBackendInterface|null $renderCache */
+  $renderCache = $container->has('cache.render')
+    ? $container->get('cache.render')
+    : NULL;
+  $migration = new IconMigrationService(
+    Database::getConnection(),
+    $container->get('entity_type.manager'),
+    $container->get('logger.factory'),
+    $container->get('messenger'),
+    $resolver,
+    $renderer,
+    $renderCache,
+  );
+  $report = $migration->validateAndRepair(TRUE);
+  $logger = \Drupal::logger('markaspot_icons');
+  $fixed = 0;
+  $remaining = 0;
+
+  foreach ($report as $row) {
+    $isFixed = $row['action'] === 'fixed';
+    $fixed += $isFixed ? 1 : 0;
+    $remaining += $isFixed ? 0 : 1;
+    $context = [
+      '@term' => $row['term_id'],
+      '@field' => $row['field'],
+      '@langcode' => $row['langcode'],
+      '@old' => $row['value'],
+      '@new' => $row['replacement'] ?? '(unchanged)',
+      '@issue' => $row['issue'],
+      '@action' => $row['action'],
+    ];
+    $logger->log(
+      $isFixed ? 'notice' : 'warning',
+      'Icon validation @action: term @term, @field (@langcode), @old -> @new [@issue].',
+      $context,
+    );
+  }
+
+  return t('Icon validation repaired @fixed value(s); @remaining value(s) require review. See the markaspot_icons log for details.', [
+    '@fixed' => $fixed,
+    '@remaining' => $remaining,
+  ]);
 }

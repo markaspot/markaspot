@@ -1,0 +1,6 @@
+services:
+  markaspot_icons.commands:
+    class: Drupal\markaspot_icons\Commands\IconValidateCommands
+    arguments: ['@markaspot_icons.migration']
+    tags:
+      - { name: drush.command }

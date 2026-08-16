@@ -48,7 +48,7 @@ function markaspot_icons_field_widget_complete_form_alter(&$field_widget_complet
   if ($field_definition->getType() === 'fa_icon_class' &&
       $context['widget']->getPluginId() === 'iconify_field_icon_picker') {
 
-    // Add custom validation to convert Iconify format back to FontAwesome format.
+    // Add validation to convert Iconify format back to FontAwesome format.
     $field_widget_complete_form['#element_validate'][] = 'markaspot_icons_iconify_to_fa_validate';
   }
 }
@@ -115,22 +115,22 @@ function markaspot_icons_convert_fa_to_iconify($fa_icon) {
 
     // Status indicators.
     'fa-check' => 'i-lucide-check',
-    'fa-check-circle' => 'i-lucide-check-circle',
-    'fa-play-circle' => 'i-lucide-play-circle',
+    'fa-check-circle' => 'i-lucide-circle-check-big',
+    'fa-play-circle' => 'i-lucide-circle-play',
     'fa-hand-stop-o' => 'i-lucide-hand',
     'fa-stack-overflow' => 'i-lucide-archive',
 
     // Buildings/Places.
     'fa-bank' => 'i-lucide-building-2',
     'fa-building' => 'i-lucide-building',
-    'fa-home' => 'i-lucide-home',
+    'fa-home' => 'i-lucide-house',
 
     // Miscellaneous.
     'fa-heart-o' => 'i-lucide-heart',
     'fa-heart' => 'i-lucide-heart',
   ];
 
-  return $mapping[$fa_icon] ?? 'i-lucide-alert-circle';
+  return $mapping[$fa_icon] ?? 'i-lucide-circle-alert';
 }
 
 /**
@@ -175,21 +175,21 @@ function markaspot_icons_convert_iconify_to_fa($iconify_icon) {
 
     // Status indicators.
     'i-lucide-check' => 'fa-check',
-    'i-lucide-check-circle' => 'fa-check-circle',
-    'i-lucide-play-circle' => 'fa-play-circle',
+    'i-lucide-circle-check-big' => 'fa-check-circle',
+    'i-lucide-circle-play' => 'fa-play-circle',
     'i-lucide-hand' => 'fa-hand-stop-o',
     'i-lucide-archive' => 'fa-stack-overflow',
 
     // Buildings/Places.
     'i-lucide-building-2' => 'fa-bank',
     'i-lucide-building' => 'fa-building',
-    'i-lucide-home' => 'fa-home',
+    'i-lucide-house' => 'fa-home',
 
     // Miscellaneous.
     'i-lucide-heart' => 'fa-heart',
 
     // Default fallback.
-    'i-lucide-alert-circle' => 'fa-exclamation-circle',
+    'i-lucide-circle-alert' => 'fa-exclamation-circle',
   ];
 
   return $reverse_mapping[$iconify_icon] ?? 'fa-question-circle';
