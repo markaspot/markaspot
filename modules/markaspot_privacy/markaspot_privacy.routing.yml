@@ -4,7 +4,7 @@ markaspot_privacy.gdpr_form:
     _form: '\Drupal\markaspot_privacy\Form\GDPRForm'
     _title: 'GDPR Deletion'
   requirements:
-    _access: 'TRUE'
+    _permission: 'administer nodes'
 markaspot_privacy.settings:
   path: '/admin/structure/markaspot/privacy/settings'
   defaults:

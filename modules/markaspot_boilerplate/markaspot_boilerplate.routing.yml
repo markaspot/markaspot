@@ -6,3 +6,4 @@ markaspot_boilerplate.load_controller_load:
     _title: 'load'
   requirements:
     _permission: 'access content'
+    nid: '\d+'
