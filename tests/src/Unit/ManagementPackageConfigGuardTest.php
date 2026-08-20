@@ -38,6 +38,30 @@ final class ManagementPackageConfigGuardTest extends UnitTestCase {
   }
 
   /**
+   * Tests that the shipped View exposes the publication state contract.
+   */
+  public function testShippedManagementViewExposesPublicationState(): void {
+    $profilePath = dirname(__DIR__, 3);
+    $source = new FileStorage($profilePath . '/config/optional');
+    $view = $source->read('views.view.management');
+
+    $field = $view['display']['default']['display_options']['fields']['status'];
+    $this->assertSame('status', $field['field']);
+    $this->assertSame('boolean', $field['type']);
+
+    $filter = $view['display']['default']['display_options']['filters']['status'];
+    $this->assertSame('search_api_boolean', $filter['plugin_id']);
+    $this->assertSame('status', $filter['expose']['identifier']);
+    $this->assertSame('status', $filter['group_info']['identifier']);
+    $this->assertSame('1', $filter['group_info']['group_items'][1]['value']);
+    $this->assertSame('0', $filter['group_info']['group_items'][2]['value']);
+
+    $table = $view['display']['page_1']['display_options']['style']['options'];
+    $this->assertSame('status', $table['columns']['status']);
+    $this->assertArrayHasKey('status', $table['info']);
+  }
+
+  /**
    * Tests that shipped management config replaces stale import copies.
    *
    * @covers ::protectManagementPackageConfig
