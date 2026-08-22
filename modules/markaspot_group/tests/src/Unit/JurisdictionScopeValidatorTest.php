@@ -60,11 +60,17 @@ class JurisdictionScopeValidatorTest extends UnitTestCase {
    * @covers ::resolveSubmissionJurisdiction
    */
   public function testForeignClaimIsDenied(): void {
-    $validator = $this->validatorWithAllowed([11]);
+    $validator = $this->validatorWithAllowed([11, 13]);
 
-    $this->expectException(AccessDeniedHttpException::class);
-    $this->expectExceptionMessage('key not authorized for jur 12');
-    $validator->resolveSubmissionJurisdiction(12, $this->account(7));
+    try {
+      $validator->resolveSubmissionJurisdiction(12, $this->account(7));
+      $this->fail('A foreign jurisdiction claim must be denied.');
+    }
+    catch (AccessDeniedHttpException $exception) {
+      $this->assertSame('key not authorized for jur 12', $exception->getMessage());
+      $this->assertStringNotContainsString('11', $exception->getMessage());
+      $this->assertStringNotContainsString('13', $exception->getMessage());
+    }
   }
 
   /**

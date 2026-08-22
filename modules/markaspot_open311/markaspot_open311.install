@@ -5,6 +5,8 @@
  * Install, update and uninstall functions for the markaspot_open311 module.
  */
 
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\ConditionInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 
 /**
@@ -461,9 +463,10 @@ function markaspot_open311_update_11809(): TranslatableMarkup {
 /**
  * Add api_key_auth to GET supported_auth for all GeoReport REST resources.
  *
- * The install configs only listed 'cookie' for GET methods. services_api_key_auth
- * headers are now used by the Nuxt proxy, so api_key_auth must also be allowed
- * or Drupal returns 403 "authentication method not allowed on this route".
+ * The install configs only listed 'cookie' for GET methods.
+ * services_api_key_auth headers are now used by the Nuxt proxy, so api_key_auth
+ * must also be allowed or Drupal returns 403 "authentication method not allowed
+ * on this route".
  */
 function markaspot_open311_update_11810(): TranslatableMarkup {
   $messages = [];
@@ -519,4 +522,111 @@ function markaspot_open311_update_11811(): TranslatableMarkup {
     '@create' => $rate_limit['create_threshold'],
     '@window' => $rate_limit['window'],
   ]);
+}
+
+/**
+ * Scrub credential query parameters from existing database log locations.
+ */
+function markaspot_open311_update_11812(array &$sandbox): TranslatableMarkup {
+  $database = \Drupal::database();
+  if (!$database->schema()->tableExists('watchdog')) {
+    $sandbox['updated'] = 0;
+    $sandbox['#finished'] = 1;
+    return new TranslatableMarkup('Skipped watchdog credential scrubbing because the table does not exist.');
+  }
+
+  if (!isset($sandbox['total'])) {
+    $count_query = $database->select('watchdog', 'w');
+    $count_query->condition(_markaspot_open311_watchdog_credential_condition($database));
+    $sandbox['total'] = (int) $count_query->countQuery()->execute()->fetchField();
+    $sandbox['processed'] = 0;
+    $sandbox['updated'] = 0;
+    $sandbox['last_wid'] = 0;
+  }
+
+  if ($sandbox['total'] === 0) {
+    $sandbox['#finished'] = 1;
+    return new TranslatableMarkup('Scrubbed @count existing watchdog rows containing credential parameters.', [
+      '@count' => $sandbox['updated'],
+    ]);
+  }
+
+  $batch_size = 50;
+  $query = $database->select('watchdog', 'w')
+    ->fields('w', ['wid', 'location', 'referer'])
+    ->condition(_markaspot_open311_watchdog_credential_condition($database))
+    ->condition('wid', $sandbox['last_wid'], '>')
+    ->orderBy('wid', 'ASC')
+    ->range(0, $batch_size);
+  $records = $query->execute()->fetchAll();
+
+  /** @var \Drupal\markaspot_open311\Logger\LogRedactor $redactor */
+  $redactor = \Drupal::service('markaspot_open311.log_redactor');
+  foreach ($records as $record) {
+    $wid = (int) $record->wid;
+    $location = (string) $record->location;
+    $referer = is_string($record->referer) ? $record->referer : NULL;
+    $redacted_location = $redactor->redactUrl($location);
+    $redacted_referer = $referer === NULL
+      ? NULL
+      : $redactor->redactUrl($referer);
+
+    if ($redacted_location !== $location || $redacted_referer !== $referer) {
+      $database->update('watchdog')
+        ->fields([
+          'location' => $redacted_location,
+          'referer' => $redacted_referer,
+        ])
+        ->condition('wid', $wid)
+        ->execute();
+      $sandbox['updated']++;
+    }
+
+    $sandbox['last_wid'] = $wid;
+    $sandbox['processed']++;
+  }
+
+  $sandbox['#finished'] = $records === []
+    ? 1
+    : min(1, $sandbox['processed'] / $sandbox['total']);
+
+  return new TranslatableMarkup('Scrubbed @count existing watchdog rows containing credential parameters.', [
+    '@count' => $sandbox['updated'],
+  ]);
+}
+
+/**
+ * Builds the database-agnostic watchdog credential candidate condition.
+ */
+function _markaspot_open311_watchdog_credential_condition(Connection $database): ConditionInterface {
+  $condition = $database->condition('OR');
+  $needles = [
+    'api_key=',
+    'api-key=',
+    'apikey=',
+    'token=',
+    'access_token=',
+    'access-token=',
+    'key=',
+    'api_key%3d',
+    'api-key%3d',
+    'apikey%3d',
+    'token%3d',
+    'access_token%3d',
+    'access-token%3d',
+    'key%3d',
+  ];
+
+  $index = 0;
+  foreach (['location', 'referer'] as $field) {
+    foreach ($needles as $needle) {
+      $placeholder = ':markaspot_open311_credential_' . $index++;
+      $condition->where(
+        "LOWER(w.$field) LIKE $placeholder",
+        [$placeholder => '%' . $needle . '%'],
+      );
+    }
+  }
+
+  return $condition;
 }

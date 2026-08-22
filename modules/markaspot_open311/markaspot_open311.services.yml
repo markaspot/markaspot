@@ -1,4 +1,23 @@
 services:
+  markaspot_open311.log_redactor:
+    class: Drupal\markaspot_open311\Logger\LogRedactor
+
+  markaspot_open311.logger.dblog_redacting:
+    class: Drupal\markaspot_open311\Logger\RedactingLoggerDecorator
+    decorates: logger.dblog
+    decoration_on_invalid: ignore
+    arguments:
+      - '@markaspot_open311.logger.dblog_redacting.inner'
+      - '@markaspot_open311.log_redactor'
+
+  markaspot_open311.logger.syslog_redacting:
+    class: Drupal\markaspot_open311\Logger\RedactingLoggerDecorator
+    decorates: logger.syslog
+    decoration_on_invalid: ignore
+    arguments:
+      - '@markaspot_open311.logger.syslog_redacting.inner'
+      - '@markaspot_open311.log_redactor'
+
   markaspot_open311.status_classifier:
     class: Drupal\markaspot_open311\Service\StatusClassifier
     arguments: ['@config.factory', '@entity_type.manager', '@cache.default']
