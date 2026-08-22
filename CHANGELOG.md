@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.184](https://github.com/markaspot/markaspot/compare/11.9.183...11.9.184) (2026-08-22)
+
+### Features
+
+* expose publication state in management view ([c3078bd](https://github.com/markaspot/markaspot/commit/c3078bd0fe9df50df48654a71ac3a0577bde2981))
+
+### Bug Fixes
+
+* **icons:** validate and repair migrated icon names ([54cab86](https://github.com/markaspot/markaspot/commit/54cab8639989141820cb64cc41e177be44bbe469))
+* **security:** redact credentials from Drupal logs ([3259fb8](https://github.com/markaspot/markaspot/commit/3259fb8de6f3d4b05f70ec64eca6bed6bb4a6537))
+
 ## [11.9.183](https://github.com/markaspot/markaspot/compare/11.9.182...11.9.183) (2026-08-14)
 
 ### Bug Fixes
