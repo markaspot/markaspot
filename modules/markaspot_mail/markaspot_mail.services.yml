@@ -234,3 +234,4 @@ services:
       - '@datetime.time'
       - '@extension.list.module'
       - '@logger.channel.markaspot_mail'
+      - '@stream_wrapper_manager'

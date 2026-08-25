@@ -13,6 +13,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\markaspot_mail\Service\EcaMailMigrator;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
@@ -37,14 +38,14 @@ use Psr\Log\LoggerInterface;
 final class EcaMailMigratorTest extends UnitTestCase {
 
   /**
-   *
+   * Tests that empty text matches no notification key.
    */
   public function testMatchKeywordsReturnsNullForEmptyString(): void {
     $this->assertNull(EcaMailMigrator::matchKeywords(''));
   }
 
   /**
-   *
+   * Tests that unrelated text matches no notification key.
    */
   public function testMatchKeywordsReturnsNullWhenNoBucketMatches(): void {
     $this->assertNull(EcaMailMigrator::matchKeywords('Kein Befall'));
@@ -69,7 +70,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests the not-responsible keyword bucket.
    */
   public function testMatchKeywordsMatchesNotResponsibleBucket(): void {
     $this->assertSame('status_not_responsible', EcaMailMigrator::matchKeywords('Nicht zuständig'));
@@ -77,7 +78,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests the open keyword bucket.
    */
   public function testMatchKeywordsMatchesOpenBucket(): void {
     $this->assertSame('status_open', EcaMailMigrator::matchKeywords('Open'));
@@ -155,7 +156,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests English detection when no German nouns are present.
    */
   public function testTransformMessageDetectsEnglishWhenNoGermanNounsPresent(): void {
     $message = "Good day!\n\nYour request has been received.\n\n[site:url][node:url:path]";
@@ -182,7 +183,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests confirmation inference for an insert model.
    */
   public function testAnalyzeSuggestsReportConfirmationForInsertModel(): void {
     $raw = $this->loadFixture('shipped_process_confirm_report');
@@ -230,7 +231,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests status inference from taxonomy term names.
    */
   public function testAnalyzeResolvesStatusKeysFromTaxonomyTermNames(): void {
     $raw = $this->loadFixture('shipped_process_tunr6d6');
@@ -294,7 +295,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests detection of already migrated actions.
    */
   public function testAnalyzeMarksAlreadyMigratedActionsIdempotently(): void {
     $raw = [
@@ -385,7 +386,10 @@ final class EcaMailMigratorTest extends UnitTestCase {
     $this->assertTrue($result[0]['text_applied']);
     $this->assertFalse($result[0]['texts_preserved']);
     $this->assertNull($result[0]['texts_preserved_reason']);
-    $this->assertNotNull($result[0]['backup_path']);
+    $this->assertSame(
+      'private://markaspot_mail_migrate_backup/1700000000/eca.eca.process_confirm_report.yml',
+      $result[0]['backup_path'],
+    );
 
     $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
     $this->assertSame(
@@ -404,6 +408,66 @@ final class EcaMailMigratorTest extends UnitTestCase {
     $this->assertSame('View your report', $capturedTexts['report_confirmation']['cta_label']);
     $this->assertSame('', $capturedTexts['report_confirmation']['headline']);
     $this->assertSame('', $capturedTexts['report_confirmation']['preheader']);
+  }
+
+  /**
+   * Tests non-public temporary backup fallback without private storage.
+   */
+  public function testApplyUsesTemporaryBackupWithoutPrivateStorage(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $migrator = $this->buildMigrator(
+      ['eca.eca.process_confirm_report' => $raw],
+      privateAvailable: FALSE,
+    );
+
+    $result = $migrator->apply($migrator->analyze(), []);
+
+    $this->assertSame(
+      'temporary://markaspot_mail_migrate_backup/1700000000/eca.eca.process_confirm_report.yml',
+      $result[0]['backup_path'],
+    );
+  }
+
+  /**
+   * Tests that apply also rewrites the authoritative BPMN source and hash.
+   */
+  public function testApplySynchronizesAuthoritativeBpmnSource(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $raw['third_party_settings']['modeler_api'] = [
+      'modeler_id' => 'bpmn_io',
+      'data' => 'hash:' . md5('legacy'),
+    ];
+    $modelName = 'modeler_api.data_model.eca_bpmn_io_' . $raw['id'];
+    $model = [
+      'id' => 'eca_bpmn_io_' . $raw['id'],
+      'data' => $this->legacyBpmnXml('Activity_send_confirmation'),
+    ];
+    $capturedEca = NULL;
+    $capturedModel = NULL;
+    $migrator = $this->buildMigrator(
+      [
+        'eca.eca.process_confirm_report' => $raw,
+        $modelName => $model,
+      ],
+      editableCapture: [
+        'eca.eca.process_confirm_report' => static function (array $data) use (&$capturedEca): void {
+          $capturedEca = $data;
+        },
+        $modelName => static function (array $data) use (&$capturedModel): void {
+          $capturedModel = $data;
+        },
+      ],
+    );
+
+    $result = $migrator->apply($migrator->analyze(), []);
+
+    $this->assertTrue($result[0]['model_synced']);
+    $this->assertNotNull($capturedModel);
+    $this->assertStringContainsString('org.drupal.action.markaspot_mail_send_notification', $capturedModel['data']);
+    $this->assertStringContainsString('name="notification_key"', $capturedModel['data']);
+    $this->assertStringContainsString('report_confirmation', $capturedModel['data']);
+    $this->assertStringNotContainsString('name="subject"', $capturedModel['data']);
+    $this->assertSame('hash:' . md5($capturedModel['data']), $capturedEca['third_party_settings']['modeler_api']['data']);
   }
 
   /**
@@ -497,7 +561,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests unresolved actions are skipped without an explicit map.
    */
   public function testApplySkipsUnresolvedActionsWithoutMapOverride(): void {
     $raw = $this->loadFixture('dorsten_process_tunr6d6');
@@ -522,7 +586,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests an explicit map migrates an otherwise unresolved action.
    */
   public function testApplyHonorsExplicitMapOverrideForUnresolvedAction(): void {
     $raw = $this->loadFixture('dorsten_process_tunr6d6');
@@ -546,10 +610,11 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests the first text variant wins when actions share one key.
    */
   public function testApplyKeepsFirstVariantTextWhenTwoActionsShareOneKey(): void {
-    // See testAnalyzeFlagsSharedKeyConflictBetweenDifferentlyWordedInsertBranches()
+    // See testAnalyzeFlagsSharedKeyConflictBetweenDifferentlyWordedInsert
+    // Branches()
     // for why status is force-enabled on this shipped-but-disabled
     // fixture.
     $raw = $this->loadFixture('shipped_process_ugsohtl');
@@ -586,7 +651,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests already migrated actions remain idempotent.
    */
   public function testApplyIsIdempotentForAlreadyMigratedActions(): void {
     $raw = [
@@ -676,6 +741,8 @@ final class EcaMailMigratorTest extends UnitTestCase {
    *   markaspot_mail.texts config BEFORE this apply() run, for
    *   reconcileTextsForKey() tier assertions. A key absent from this map
    *   defaults to the real shipped install default for that key.
+   * @param bool $privateAvailable
+   *   Whether the private stream wrapper is available.
    */
   private function buildMigrator(
     array $rawByName = [],
@@ -683,6 +750,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
     array $editableCapture = [],
     ?callable $textsCapture = NULL,
     array $currentTextsByKey = [],
+    bool $privateAvailable = TRUE,
   ): EcaMailMigrator {
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('listAll')->willReturnCallback(
@@ -744,6 +812,11 @@ final class EcaMailMigratorTest extends UnitTestCase {
       static fn (string $data, string $uri): string => $uri,
     );
 
+    $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
+    $streamWrapperManager->method('isValidScheme')
+      ->with('private')
+      ->willReturn($privateAvailable);
+
     $time = $this->createMock(TimeInterface::class);
     $time->method('getCurrentTime')->willReturn(1700000000);
 
@@ -752,7 +825,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
 
     $logger = $this->createMock(LoggerInterface::class);
 
-    return new EcaMailMigrator($configFactory, $entityTypeManager, $fileSystem, $time, $moduleExtensionList, $logger);
+    return new EcaMailMigrator($configFactory, $entityTypeManager, $fileSystem, $time, $moduleExtensionList, $logger, $streamWrapperManager);
   }
 
   /**
@@ -777,6 +850,30 @@ final class EcaMailMigratorTest extends UnitTestCase {
    */
   private function markaspotMailModulePath(): string {
     return dirname(__DIR__, 4);
+  }
+
+  /**
+   * Builds a minimal legacy BPMN mail task fixture.
+   */
+  private function legacyBpmnXml(string $activityId): string {
+    return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn2:process id="Process_test">
+    <bpmn2:task id="$activityId" camunda:modelerTemplate="org.drupal.action.action_send_email_action">
+      <bpmn2:extensionElements>
+        <camunda:properties>
+          <camunda:property name="pluginid" value="action_send_email_action" />
+        </camunda:properties>
+        <camunda:field name="recipient"><camunda:string>[node:field_e_mail:value]</camunda:string></camunda:field>
+        <camunda:field name="subject"><camunda:string>Legacy subject</camunda:string></camunda:field>
+        <camunda:field name="message"><camunda:string>Legacy body</camunda:string></camunda:field>
+        <camunda:field name="replace_tokens"><camunda:string>yes</camunda:string></camunda:field>
+      </bpmn2:extensionElements>
+    </bpmn2:task>
+  </bpmn2:process>
+</bpmn2:definitions>
+XML;
   }
 
 }

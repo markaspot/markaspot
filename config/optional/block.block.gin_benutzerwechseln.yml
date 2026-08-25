@@ -1,0 +1,35 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - devel
+    - system
+    - user
+  theme:
+    - gin
+id: gin_benutzerwechseln
+theme: gin
+region: content
+weight: 0
+provider: null
+plugin: devel_switch_user
+settings:
+  id: devel_switch_user
+  label: 'Switch user'
+  label_display: visible
+  provider: devel
+  list_size: 12
+  include_anon: false
+  show_form: true
+visibility:
+  user_role:
+    id: user_role
+    negate: false
+    context_mapping:
+      user: '@user.current_user_context:current_user'
+    roles:
+      administrator: administrator
+  request_path:
+    id: request_path
+    negate: false
+    pages: /admin/content/management

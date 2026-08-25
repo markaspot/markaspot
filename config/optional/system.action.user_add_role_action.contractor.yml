@@ -1,0 +1,13 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - user.role.contractor
+  module:
+    - user
+id: user_add_role_action.contractor
+label: 'Add the Contractor role to the selected user(s)'
+type: user
+plugin: user_add_role_action
+configuration:
+  rid: contractor

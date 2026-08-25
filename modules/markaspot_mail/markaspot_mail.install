@@ -900,10 +900,13 @@ function markaspot_mail_update_10016(): string {
     return 'Skipped: configurable language overrides are unavailable.';
   }
   $installed = array_keys($language_manager->getLanguages());
+  $default_langcode = $language_manager->getDefaultLanguage()->getId();
 
   $imported = [];
   foreach (scandir($language_dir) ?: [] as $langcode) {
-    if ($langcode === '.' || $langcode === '..' || !in_array($langcode, $installed, TRUE)) {
+    if ($langcode === '.' || $langcode === '..'
+      || $langcode === $default_langcode
+      || !in_array($langcode, $installed, TRUE)) {
       continue;
     }
     $file = $language_dir . '/' . $langcode . '/markaspot_mail.texts.yml';
@@ -956,4 +959,35 @@ function markaspot_mail_update_10016(): string {
   return $imported
     ? 'Imported notification text translations: ' . implode(', ', $imported) . '.'
     : 'All shipped notification text translations are already present for installed languages.';
+}
+
+/**
+ * Repairs default-language mail overrides and authoritative BPMN model data.
+ */
+function markaspot_mail_update_10017(): string {
+  $changes = [];
+  $language_manager = \Drupal::languageManager();
+  if (method_exists($language_manager, 'getLanguageConfigOverride')) {
+    $default_langcode = $language_manager->getDefaultLanguage()->getId();
+    $override = $language_manager->getLanguageConfigOverride($default_langcode, 'markaspot_mail.texts');
+    if (!$override->isNew()) {
+      $override->delete();
+      $changes[] = "removed the redundant $default_langcode default-language mail override";
+    }
+  }
+
+  /** @var \Drupal\markaspot_mail\Service\EcaMailMigrator $migrator */
+  $migrator = \Drupal::service('markaspot_mail.eca_migrator');
+  $result = $migrator->apply($migrator->analyze(NULL, TRUE), []);
+  $synced = count(array_filter(
+    $result,
+    static fn(array $row): bool => !empty($row['model_synced']),
+  ));
+  if ($synced > 0) {
+    $changes[] = "synchronized $synced notification actions with their BPMN source models";
+  }
+
+  return $changes !== []
+    ? ucfirst(implode('; ', $changes)) . '.'
+    : 'Default-language mail text and BPMN notification models are already aligned.';
 }

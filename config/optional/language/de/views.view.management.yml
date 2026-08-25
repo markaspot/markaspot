@@ -1,0 +1,108 @@
+langcode: de
+label: Verwaltung
+display:
+  default:
+    display_title: Standard
+    display_options:
+      title: Meldungen
+      fields:
+        views_bulk_operations_bulk_form:
+          label: Massenoperationen
+          action_title: Aktion
+        request_id:
+          label: Meldungsnummer
+        title:
+          label: Titel
+        uid:
+          label: 'Erstellt von'
+        field_address:
+          label: Anschrift
+        thumbnail:
+          label: Vorschau
+        created:
+          label: Erstellt
+        field_organisation:
+          label: 'Organisation / Fachbereich'
+        field_jurisdiction:
+          label: Zuständigkeitsbereich
+        field_status:
+          label: Status
+        status:
+          label: Veröffentlicht
+        search_api_operations:
+          label: Operationen
+      pager:
+        options:
+          tags:
+            previous: ‹‹
+            next: ››
+            first: '« Anfang'
+            last: 'Ende »'
+          expose:
+            items_per_page_label: 'Elemente pro Seite'
+            items_per_page_options_all_label: '- Alle -'
+            offset_label: Offset
+      exposed_form:
+        options:
+          submit_button: Anwenden
+          reset_button_label: Zurücksetzen
+          exposed_sorts_label: 'Sortieren nach'
+          sort_asc_label: Aufsteigend
+          sort_desc_label: Absteigend
+          text_input_required: 'Wählen Sie einen Filter und klicken Sie auf Anwenden, um Ergebnisse anzuzeigen.'
+          bef:
+            general:
+              secondary_label: 'Erweiterte Optionen'
+      sorts:
+        created:
+          expose:
+            label: Erstellt
+        changed:
+          expose:
+            label: Geändert
+      filters:
+        search_api_fulltext:
+          expose:
+            label: Suche
+        field_category:
+          expose:
+            label: Kategorie
+        field_status:
+          expose:
+            label: Status
+        status:
+          expose:
+            label: Veröffentlichungsstatus
+          group_info:
+            label: Veröffentlichungsstatus
+            group_items:
+              1:
+                title: Veröffentlicht
+              2:
+                title: Unveröffentlicht
+        field_organisation:
+          expose:
+            label: 'Organisation / Fachbereich'
+        field_jurisdiction:
+          expose:
+            label: Zuständigkeitsbereich
+        created:
+          expose:
+            label: Erstellt
+            min_placeholder: Von
+            max_placeholder: Bis
+      header:
+        result:
+          content: '<span class="result-total"><span class="badge">@total</span> Ergebnisse</span>'
+      empty:
+        result:
+          content: '<span class="result-total"><span class="badge">@total</span> Ergebnisse</span>'
+  page_1:
+    display_title: Seite
+    display_options:
+      menu:
+        title: 'Meldungen verwalten'
+        description: 'Alle Meldungen als Liste anzeigen'
+      style:
+        options:
+          caption: 'Meldungen verwalten'

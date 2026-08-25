@@ -12,6 +12,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Drupal\taxonomy\TermInterface;
 use Psr\Log\LoggerInterface;
@@ -65,7 +66,9 @@ final class EcaMailMigrator {
 
   private const NOTIFICATION_PLUGIN = 'markaspot_mail_send_notification';
 
-  private const BACKUP_DIRECTORY = 'public://markaspot_mail_migrate_backup';
+  private const PRIVATE_BACKUP_DIRECTORY = 'private://markaspot_mail_migrate_backup';
+
+  private const TEMPORARY_BACKUP_DIRECTORY = 'temporary://markaspot_mail_migrate_backup';
 
   private const SHIPPED_TEXTS_FILE = 'config/install/markaspot_mail.texts.yml';
 
@@ -111,6 +114,7 @@ final class EcaMailMigrator {
     private readonly TimeInterface $time,
     private readonly ModuleExtensionList $moduleExtensionList,
     private readonly LoggerInterface $logger,
+    private readonly ?StreamWrapperManagerInterface $streamWrapperManager = NULL,
   ) {}
 
   /**
@@ -197,12 +201,20 @@ final class EcaMailMigrator {
       $raw = $ecaConfig->getRawData();
       $configChanged = FALSE;
       $backupPath = NULL;
+      $modelActions = [];
 
       foreach ($configFindings as $finding) {
         $activityId = (string) $finding['activity_id'];
 
         if ($finding['_plugin'] === self::NOTIFICATION_PLUGIN) {
           $report[] = $this->applyResultRow($configName, $activityId, (string) $finding['suggested_key'], 'already_migrated', FALSE, NULL, NULL, FALSE, NULL);
+          if ((string) $finding['suggested_key'] !== '') {
+            $modelActions[$activityId] = [
+              'object' => ($finding['_object_raw'] ?? '') !== '' ? $finding['_object_raw'] : 'entity',
+              'notification_key' => (string) $finding['suggested_key'],
+              'recipient' => (string) $finding['_recipient_raw'],
+            ];
+          }
           continue;
         }
 
@@ -243,6 +255,7 @@ final class EcaMailMigrator {
           ],
           'successors' => $finding['_successors_raw'],
         ];
+        $modelActions[$activityId] = $raw['actions'][$activityId]['configuration'];
         $configChanged = TRUE;
 
         $report[] = $this->applyResultRow(
@@ -256,6 +269,23 @@ final class EcaMailMigrator {
           $textsPreserved,
           $textsPreservedReason,
         );
+      }
+
+      [$modelSynced, $modelBackupPath] = $this->reconcileBpmnModel(
+        $raw,
+        $modelActions,
+        $timestamp,
+      );
+      if ($modelSynced) {
+        $configChanged = TRUE;
+        foreach ($report as &$row) {
+          if ($row['config_name'] === $configName
+            && isset($modelActions[$row['activity_id']])) {
+            $row['model_synced'] = TRUE;
+            $row['backup_path'] ??= $modelBackupPath;
+          }
+        }
+        unset($row);
       }
 
       if ($configChanged) {
@@ -332,9 +362,168 @@ final class EcaMailMigrator {
       'text_applied' => $textApplied,
       'discarded_variant_of' => $discardedVariantOf,
       'backup_path' => $backupPath,
+      'model_synced' => FALSE,
       'texts_preserved' => $textsPreserved,
       'texts_preserved_reason' => $textsPreservedReason,
     ];
+  }
+
+  /**
+   * Rewrites the authoritative BPMN source for migrated runtime actions.
+   *
+   * @param array<string, mixed> $ecaRaw
+   *   Runtime ECA configuration, updated by reference with the data hash.
+   * @param array<string, array<string, mixed>> $actions
+   *   Activity IDs and their notification action configuration.
+   * @param string $timestamp
+   *   Backup directory timestamp.
+   *
+   * @return array{0: bool, 1: string|null}
+   *   Whether the BPMN source changed and its backup path.
+   */
+  private function reconcileBpmnModel(array &$ecaRaw, array $actions, string $timestamp): array {
+    if ($actions === []) {
+      return [FALSE, NULL];
+    }
+
+    $modelerId = (string) ($ecaRaw['third_party_settings']['modeler_api']['modeler_id'] ?? '');
+    $modelId = (string) ($ecaRaw['id'] ?? '');
+    if ($modelerId !== 'bpmn_io' || $modelId === '') {
+      return [FALSE, NULL];
+    }
+
+    $configName = 'modeler_api.data_model.eca_' . $modelerId . '_' . $modelId;
+    $modelConfig = $this->configFactory->getEditable($configName);
+    $modelRaw = $modelConfig->getRawData();
+    $xml = $modelRaw['data'] ?? NULL;
+    if (!is_string($xml) || $xml === '') {
+      return [FALSE, NULL];
+    }
+
+    $updatedXml = self::migrateBpmnActions($xml, $actions);
+    if ($updatedXml === NULL || $updatedXml === $xml) {
+      return [FALSE, NULL];
+    }
+
+    $backupPath = $this->writeBackup($configName, $modelRaw, $timestamp);
+    $modelRaw['data'] = $updatedXml;
+    $modelConfig->setData($modelRaw)->save();
+    $ecaRaw['third_party_settings']['modeler_api']['data'] = 'hash:' . md5($updatedXml);
+
+    return [TRUE, $backupPath];
+  }
+
+  /**
+   * Converts selected legacy BPMN tasks to notification-mail actions.
+   *
+   * @param string $xml
+   *   BPMN XML source.
+   * @param array<string, array<string, mixed>> $actions
+   *   Activity IDs and action configuration.
+   *
+   * @return string|null
+   *   Updated XML, or NULL when the model cannot be parsed safely.
+   */
+  private static function migrateBpmnActions(string $xml, array $actions): ?string {
+    $previous = libxml_use_internal_errors(TRUE);
+    $document = new \DOMDocument();
+    $document->preserveWhiteSpace = FALSE;
+    $document->formatOutput = TRUE;
+    $loaded = $document->loadXML($xml, LIBXML_NONET | LIBXML_NOBLANKS);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+    if (!$loaded) {
+      return NULL;
+    }
+
+    $bpmnNamespace = 'http://www.omg.org/spec/BPMN/20100524/MODEL';
+    $camundaNamespace = 'http://camunda.org/schema/1.0/bpmn';
+    $changed = FALSE;
+    foreach ($document->getElementsByTagNameNS($bpmnNamespace, 'task') as $task) {
+      if (!$task instanceof \DOMElement) {
+        continue;
+      }
+      $activityId = $task->getAttribute('id');
+      if (!isset($actions[$activityId])) {
+        continue;
+      }
+
+      $configuration = $actions[$activityId];
+      $task->setAttributeNS(
+        $camundaNamespace,
+        'camunda:modelerTemplate',
+        'org.drupal.action.' . self::NOTIFICATION_PLUGIN,
+      );
+
+      $extension = NULL;
+      foreach ($task->childNodes as $child) {
+        if ($child instanceof \DOMElement
+          && $child->namespaceURI === $bpmnNamespace
+          && $child->localName === 'extensionElements') {
+          $extension = $child;
+          break;
+        }
+      }
+      if (!$extension instanceof \DOMElement) {
+        $extension = $document->createElementNS($bpmnNamespace, 'bpmn2:extensionElements');
+        $task->insertBefore($extension, $task->firstChild);
+      }
+
+      $properties = NULL;
+      foreach ($extension->childNodes as $child) {
+        if ($child instanceof \DOMElement
+          && $child->namespaceURI === $camundaNamespace
+          && $child->localName === 'properties') {
+          $properties = $child;
+          break;
+        }
+      }
+      if (!$properties instanceof \DOMElement) {
+        $properties = $document->createElementNS($camundaNamespace, 'camunda:properties');
+        $extension->insertBefore($properties, $extension->firstChild);
+      }
+
+      $pluginProperty = NULL;
+      foreach ($properties->childNodes as $child) {
+        if ($child instanceof \DOMElement
+          && $child->namespaceURI === $camundaNamespace
+          && $child->localName === 'property'
+          && $child->getAttribute('name') === 'pluginid') {
+          $pluginProperty = $child;
+          break;
+        }
+      }
+      if (!$pluginProperty instanceof \DOMElement) {
+        $pluginProperty = $document->createElementNS($camundaNamespace, 'camunda:property');
+        $pluginProperty->setAttribute('name', 'pluginid');
+        $properties->appendChild($pluginProperty);
+      }
+      $pluginProperty->setAttribute('value', self::NOTIFICATION_PLUGIN);
+
+      $remove = [];
+      foreach ($extension->childNodes as $child) {
+        if ($child instanceof \DOMElement
+          && $child->namespaceURI === $camundaNamespace
+          && $child->localName === 'field') {
+          $remove[] = $child;
+        }
+      }
+      foreach ($remove as $field) {
+        $extension->removeChild($field);
+      }
+
+      foreach (['object', 'notification_key', 'recipient'] as $name) {
+        $field = $document->createElementNS($camundaNamespace, 'camunda:field');
+        $field->setAttribute('name', $name);
+        $value = $document->createElementNS($camundaNamespace, 'camunda:string');
+        $value->appendChild($document->createTextNode((string) ($configuration[$name] ?? '')));
+        $field->appendChild($value);
+        $extension->appendChild($field);
+      }
+      $changed = TRUE;
+    }
+
+    return $changed ? $document->saveXML() ?: NULL : $xml;
   }
 
   /**
@@ -421,7 +610,7 @@ final class EcaMailMigrator {
    * $timestamp directory.
    *
    * @return string
-   *   The public:// URI of the written backup file.
+   *   The private:// URI, or a temporary:// URI when private storage is absent.
    *
    * @throws \RuntimeException
    *   When the backup directory cannot be created or the file cannot be
@@ -429,7 +618,13 @@ final class EcaMailMigrator {
    *   without a backup on disk.
    */
   private function writeBackup(string $configName, array $raw, string $timestamp): string {
-    $directory = self::BACKUP_DIRECTORY . '/' . $timestamp;
+    $baseDirectory = $this->streamWrapperManager?->isValidScheme('private') === TRUE
+      ? self::PRIVATE_BACKUP_DIRECTORY
+      : self::TEMPORARY_BACKUP_DIRECTORY;
+    if ($baseDirectory === self::TEMPORARY_BACKUP_DIRECTORY) {
+      $this->logger->warning('Private file storage is unavailable. ECA migration backups are temporary and should be copied before container cleanup.');
+    }
+    $directory = $baseDirectory . '/' . $timestamp;
     if (!$this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS)) {
       throw new \RuntimeException(sprintf('EcaMailMigrator: could not create backup directory "%s".', $directory));
     }

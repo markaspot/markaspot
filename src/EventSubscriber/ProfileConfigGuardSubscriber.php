@@ -181,6 +181,18 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   private const MAIL_TEXTS_CONFIG = 'markaspot_mail.texts';
 
   /**
+   * German language override collection managed by the shared profile.
+   */
+  private const GERMAN_OVERRIDE_COLLECTION = 'language.de';
+
+  /**
+   * Legacy and replacement ECA mail action plugins.
+   */
+  private const LEGACY_MAIL_ACTION = 'action_send_email_action';
+
+  private const NOTIFICATION_MAIL_ACTION = 'markaspot_mail_send_notification';
+
+  /**
    * Profile-managed config updated before a subsequent full config import.
    */
   private const MANAGEMENT_PACKAGE_CONFIG = [
@@ -273,7 +285,11 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
       $this->protectRequiredModules($importStorage);
       $this->protectShippedConfig($importStorage);
+      $this->protectUserSwitching($importStorage);
+      $this->protectMigratedMailModels($importStorage);
       $this->protectManagementPackageConfig($importStorage);
+      $this->protectManagementViewTranslation($importStorage);
+      $this->protectDefaultLanguageMailOverride($importStorage);
       $this->protectMailTexts($importStorage);
       $this->protectRuntimeApiKeys($importStorage);
       // Run AFTER protectShippedConfig so any view re-injected from active is
@@ -363,6 +379,334 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   }
 
   /**
+   * Keeps user impersonation restricted across a subsequent config import.
+   *
+   * An update hook hardens active roles and blocks before `drush deploy` runs
+   * its full config import. Apply the same policy to the transformed source so
+   * stale tenant exports cannot restore the permission or a globally visible
+   * Gin block in the same deploy. Existing Gin switch blocks are retained by
+   * semantic identity even when a tenant uses an alternate config ID.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage.
+   */
+  private function protectUserSwitching(StorageInterface $importStorage): void {
+    foreach ($importStorage->listAll('user.role.') as $name) {
+      $data = $importStorage->read($name);
+      if (!is_array($data) || ($data['is_admin'] ?? FALSE) === TRUE
+        || !isset($data['permissions']) || !is_array($data['permissions'])) {
+        continue;
+      }
+
+      $permissions = array_values(array_filter(
+        $data['permissions'],
+        static fn(mixed $permission): bool => $permission !== 'switch users',
+      ));
+      if ($permissions === $data['permissions']) {
+        continue;
+      }
+      $data['permissions'] = $permissions;
+      $importStorage->write($name, $data);
+    }
+
+    foreach ($this->activeStorage->listAll('block.block.') as $name) {
+      if ($importStorage->exists($name)) {
+        continue;
+      }
+      $activeData = $this->activeStorage->read($name);
+      if (is_array($activeData) && self::isGinUserSwitchBlock($activeData)) {
+        $importStorage->write($name, $activeData);
+      }
+    }
+
+    foreach ($importStorage->listAll('block.block.') as $name) {
+      $data = $importStorage->read($name);
+      if (!is_array($data) || !self::isGinUserSwitchBlock($data)) {
+        continue;
+      }
+
+      $hardened = self::hardenGinUserSwitchBlock($data);
+      if ($hardened !== $data) {
+        $importStorage->write($name, $hardened);
+      }
+    }
+  }
+
+  /**
+   * Checks whether config represents the shared Gin user-switch block.
+   */
+  private static function isGinUserSwitchBlock(array $data): bool {
+    return ($data['theme'] ?? NULL) === 'gin'
+      && ($data['plugin'] ?? NULL) === 'devel_switch_user';
+  }
+
+  /**
+   * Applies the shared placement and visibility policy to a Gin block.
+   *
+   * @param array<string, mixed> $data
+   *   Block config data.
+   *
+   * @return array<string, mixed>
+   *   Hardened block config data.
+   */
+  private static function hardenGinUserSwitchBlock(array $data): array {
+    $data['status'] = TRUE;
+    $data['region'] = 'content';
+    $data['weight'] = 0;
+    $data['visibility'] = [
+      'user_role' => [
+        'id' => 'user_role',
+        'negate' => FALSE,
+        'context_mapping' => [
+          'user' => '@user.current_user_context:current_user',
+        ],
+        'roles' => [
+          'administrator' => 'administrator',
+        ],
+      ],
+      'request_path' => [
+        'id' => 'request_path',
+        'negate' => FALSE,
+        'pages' => '/admin/content/management',
+      ],
+    ];
+    return $data;
+  }
+
+  /**
+   * Prevents stale sync from reverting migrated ECA mail actions and BPMN XML.
+   *
+   * The mail module update migrates active runtime actions and their
+   * authoritative model before the full config import in `drush deploy`.
+   * Replace only a legacy imported action/model when the corresponding active
+   * version already uses the notification plugin. Other ECA changes remain
+   * controlled by tenant sync.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage.
+   */
+  private function protectMigratedMailModels(StorageInterface $importStorage): void {
+    $ecaImports = [];
+    $modelActions = [];
+    foreach ($this->activeStorage->listAll('eca.eca.') as $name) {
+      $activeData = $this->activeStorage->read($name);
+      $importData = $importStorage->read($name);
+      if (!is_array($activeData) || !is_array($importData)) {
+        continue;
+      }
+
+      $modelId = $activeData['third_party_settings']['modeler_api']['modeler_id'] ?? NULL;
+      $ecaId = $activeData['id'] ?? substr($name, strlen('eca.eca.'));
+      $modelName = is_string($modelId) && is_string($ecaId)
+        ? "modeler_api.data_model.eca_{$modelId}_{$ecaId}"
+        : '';
+      $changed = FALSE;
+      foreach (($activeData['actions'] ?? []) as $activityId => $activeAction) {
+        $importAction = $importData['actions'][$activityId] ?? NULL;
+        if (!is_array($activeAction) || !is_array($importAction)
+          || ($activeAction['plugin'] ?? NULL) !== self::NOTIFICATION_MAIL_ACTION) {
+          continue;
+        }
+        if (($importAction['plugin'] ?? NULL) === self::LEGACY_MAIL_ACTION) {
+          $importAction = $activeAction;
+          $importData['actions'][$activityId] = $activeAction;
+          $changed = TRUE;
+        }
+        if (($importAction['plugin'] ?? NULL) === self::NOTIFICATION_MAIL_ACTION
+          && $modelName !== '') {
+          $activeConfiguration = is_array($activeAction['configuration'] ?? NULL)
+            ? $activeAction['configuration']
+            : [];
+          $importConfiguration = is_array($importAction['configuration'] ?? NULL)
+            ? $importAction['configuration']
+            : [];
+          $modelActions[$modelName][$activityId] = array_replace(
+            $activeConfiguration,
+            $importConfiguration,
+          );
+        }
+      }
+      $ecaImports[$name] = [
+        'active' => $activeData,
+        'import' => $importData,
+        'model_name' => $modelName,
+        'changed' => $changed,
+      ];
+    }
+
+    $modelHashes = [];
+    $modelFallbacks = [];
+    foreach ($modelActions as $name => $actions) {
+      $activeData = $this->activeStorage->read($name);
+      $importData = $importStorage->read($name);
+      $activeXml = is_array($activeData) ? ($activeData['data'] ?? NULL) : NULL;
+      $importXml = is_array($importData) ? ($importData['data'] ?? NULL) : NULL;
+      if (!is_string($activeXml) || !is_string($importXml)
+        || !str_contains($activeXml, self::NOTIFICATION_MAIL_ACTION)
+        || !str_contains($importXml, self::LEGACY_MAIL_ACTION)) {
+        continue;
+      }
+
+      $mergedXml = self::mergeMigratedBpmnActions($activeXml, $importXml, $actions);
+      // A malformed legacy model has no safe tenant changes to merge. Keep the
+      // valid migrated active source and its matching runtime configuration.
+      if ($mergedXml === NULL) {
+        $mergedXml = $activeXml;
+        $modelFallbacks[$name] = array_keys($actions);
+      }
+      $importData['data'] = $mergedXml;
+      $importStorage->write($name, $importData);
+      $modelHashes[$name] = 'hash:' . md5($mergedXml);
+    }
+
+    foreach ($ecaImports as $name => $entry) {
+      $activeData = $entry['active'];
+      $importData = $entry['import'];
+      $modelName = $entry['model_name'];
+      $changed = $entry['changed'];
+      foreach ($modelFallbacks[$modelName] ?? [] as $activityId) {
+        if (isset($activeData['actions'][$activityId])) {
+          $importData['actions'][$activityId] = $activeData['actions'][$activityId];
+          $changed = TRUE;
+        }
+      }
+      if (isset($modelHashes[$modelName])) {
+        $importData['third_party_settings']['modeler_api']['data'] = $modelHashes[$modelName];
+        $changed = TRUE;
+      }
+      elseif ($changed) {
+        $activeHash = $activeData['third_party_settings']['modeler_api']['data'] ?? NULL;
+        if (is_string($activeHash) && str_starts_with($activeHash, 'hash:')) {
+          $importData['third_party_settings']['modeler_api']['data'] = $activeHash;
+        }
+      }
+      if ($changed) {
+        $importStorage->write($name, $importData);
+      }
+    }
+  }
+
+  /**
+   * Replaces only legacy BPMN mail tasks with their migrated active version.
+   *
+   * @param string $activeXml
+   *   Migrated active BPMN XML.
+   * @param string $importXml
+   *   Potentially stale imported BPMN XML.
+   * @param array<string, array<string, mixed>> $actions
+   *   Activity IDs and their effective imported runtime configuration.
+   *
+   * @return string|null
+   *   Merged imported XML, or NULL when either model cannot be parsed safely.
+   */
+  public static function mergeMigratedBpmnActions(string $activeXml, string $importXml, array $actions): ?string {
+    $previous = libxml_use_internal_errors(TRUE);
+    $active = new \DOMDocument();
+    $import = new \DOMDocument();
+    $active->preserveWhiteSpace = FALSE;
+    $import->preserveWhiteSpace = FALSE;
+    $import->formatOutput = TRUE;
+    $loaded = $active->loadXML($activeXml, LIBXML_NONET | LIBXML_NOBLANKS)
+      && $import->loadXML($importXml, LIBXML_NONET | LIBXML_NOBLANKS);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+    if (!$loaded) {
+      return NULL;
+    }
+
+    $namespace = 'http://www.omg.org/spec/BPMN/20100524/MODEL';
+    $activeTasks = [];
+    foreach ($active->getElementsByTagNameNS($namespace, 'task') as $task) {
+      if ($task instanceof \DOMElement
+        && self::bpmnTaskUsesPlugin($task, self::NOTIFICATION_MAIL_ACTION)) {
+        $activeTasks[$task->getAttribute('id')] = $task;
+      }
+    }
+
+    $replacements = [];
+    foreach ($import->getElementsByTagNameNS($namespace, 'task') as $task) {
+      $id = $task instanceof \DOMElement ? $task->getAttribute('id') : '';
+      if ($task instanceof \DOMElement && isset($activeTasks[$id], $actions[$id])
+        && self::bpmnTaskUsesPlugin($task, self::LEGACY_MAIL_ACTION)) {
+        $replacements[] = [$task, $activeTasks[$id], $actions[$id]];
+      }
+    }
+    foreach ($replacements as [$legacyTask, $migratedTask, $configuration]) {
+      $replacement = $import->importNode($migratedTask, TRUE);
+      if ($replacement instanceof \DOMElement && is_array($configuration)) {
+        self::applyBpmnActionConfiguration($replacement, $configuration);
+      }
+      $legacyTask->parentNode?->replaceChild($replacement, $legacyTask);
+    }
+
+    return $replacements !== [] ? ($import->saveXML() ?: NULL) : $importXml;
+  }
+
+  /**
+   * Checks a BPMN task's template or plugin property for an action plugin.
+   *
+   * @param \DOMElement $task
+   *   BPMN task element.
+   * @param string $plugin
+   *   Action plugin ID.
+   */
+  private static function bpmnTaskUsesPlugin(\DOMElement $task, string $plugin): bool {
+    if (str_contains($task->getAttributeNS('http://camunda.org/schema/1.0/bpmn', 'modelerTemplate'), $plugin)) {
+      return TRUE;
+    }
+    foreach ($task->getElementsByTagNameNS('http://camunda.org/schema/1.0/bpmn', 'property') as $property) {
+      if ($property instanceof \DOMElement
+        && $property->getAttribute('name') === 'pluginid'
+        && $property->getAttribute('value') === $plugin) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
+   * Aligns a migrated BPMN task with its imported runtime configuration.
+   *
+   * @param \DOMElement $task
+   *   Migrated BPMN task element.
+   * @param array<string, mixed> $configuration
+   *   Notification action configuration.
+   */
+  private static function applyBpmnActionConfiguration(\DOMElement $task, array $configuration): void {
+    $document = $task->ownerDocument;
+    if (!$document instanceof \DOMDocument) {
+      return;
+    }
+    $bpmnNamespace = 'http://www.omg.org/spec/BPMN/20100524/MODEL';
+    $camundaNamespace = 'http://camunda.org/schema/1.0/bpmn';
+    $extension = $task->getElementsByTagNameNS($bpmnNamespace, 'extensionElements')->item(0);
+    if (!$extension instanceof \DOMElement) {
+      return;
+    }
+
+    $fields = [];
+    foreach ($extension->getElementsByTagNameNS($camundaNamespace, 'field') as $field) {
+      if ($field instanceof \DOMElement) {
+        $fields[$field->getAttribute('name')] = $field;
+      }
+    }
+    foreach (['object', 'notification_key', 'recipient'] as $name) {
+      $field = $fields[$name] ?? NULL;
+      if (!$field instanceof \DOMElement) {
+        $field = $document->createElementNS($camundaNamespace, 'camunda:field');
+        $field->setAttribute('name', $name);
+        $extension->appendChild($field);
+      }
+      while ($field->firstChild) {
+        $field->removeChild($field->firstChild);
+      }
+      $value = $document->createElementNS($camundaNamespace, 'camunda:string');
+      $value->appendChild($document->createTextNode((string) ($configuration[$name] ?? '')));
+      $field->appendChild($value);
+    }
+  }
+
+  /**
    * Keeps profile management config updatedb just installed during deploy.
    *
    * The management View and its Search API index are profile-owned contracts.
@@ -401,6 +745,20 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
         }
       }
 
+      $shippedData = self::mergeManagementPackageExtensions(
+        $name,
+        $shippedData,
+        $activeData,
+      );
+      $importData = $importStorage->read($name);
+      if (is_array($importData)) {
+        $shippedData = self::mergeManagementPackageExtensions(
+          $name,
+          $shippedData,
+          $importData,
+        );
+      }
+
       // Config comparison is order-sensitive at every nesting level. Reapply
       // the active entity's canonical key order recursively while retaining
       // the shipped values. Config entities can reorder nested plugin options
@@ -409,6 +767,141 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       $orderedData = self::orderConfigKeysLike($shippedData, $activeData);
       $importStorage->write($name, $orderedData);
     }
+  }
+
+  /**
+   * Keeps shared German management labels across a full config import.
+   *
+   * Language overrides live in a config collection, not the default storage.
+   * The update hook writes the active override before `cim`; merge the shipped
+   * labels into the transformed German collection as well so stale tenant sync
+   * cannot immediately remove them. Tenant-only translated handlers from both
+   * active and sync remain intact.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable root import storage.
+   */
+  private function protectManagementViewTranslation(StorageInterface $importStorage): void {
+    if (!Settings::get('markaspot_manage_management_view', TRUE)
+      || !$this->activeStorage->exists('language.entity.de')
+      || !$this->profileExtensionList
+      || !is_string($this->installProfile)
+      || $this->installProfile === '') {
+      return;
+    }
+
+    $profilePath = $this->profileExtensionList->getPath($this->installProfile);
+    $source = new FileStorage($profilePath . '/config/optional/language/de');
+    $shippedData = $source->read('views.view.management');
+    if (!is_array($shippedData)) {
+      return;
+    }
+    unset($shippedData['langcode']);
+
+    $activeCollection = $this->activeStorage->createCollection(self::GERMAN_OVERRIDE_COLLECTION);
+    $importCollection = $importStorage->createCollection(self::GERMAN_OVERRIDE_COLLECTION);
+    $activeData = $activeCollection->read('views.view.management');
+    $importData = $importCollection->read('views.view.management');
+    $activeData = is_array($activeData) ? $activeData : [];
+    $importData = is_array($importData) ? $importData : [];
+
+    $merged = array_replace_recursive($activeData, $importData, $shippedData);
+    $importCollection->write(
+      'views.view.management',
+      self::orderConfigKeysLike($merged, $activeData),
+    );
+  }
+
+  /**
+   * Keeps a removed default-language mail override out of stale sync.
+   *
+   * The migration first moves the tenant wording into base configuration and
+   * then deletes the redundant default-language override. Only suppress an
+   * imported override when active no longer has one, so running `cim` without
+   * the preceding database update cannot discard an unmigrated override.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable root import storage.
+   */
+  private function protectDefaultLanguageMailOverride(StorageInterface $importStorage): void {
+    $site = $this->activeStorage->read('system.site');
+    $langcode = is_array($site) ? ($site['default_langcode'] ?? NULL) : NULL;
+    if (!is_string($langcode) || $langcode === '') {
+      return;
+    }
+
+    $collectionName = 'language.' . $langcode;
+    $activeCollection = $this->activeStorage->createCollection($collectionName);
+    if ($activeCollection->exists(self::MAIL_TEXTS_CONFIG)) {
+      return;
+    }
+    $importStorage
+      ->createCollection($collectionName)
+      ->delete(self::MAIL_TEXTS_CONFIG);
+  }
+
+  /**
+   * Keeps tenant-added handlers while updating the shared management package.
+   *
+   * Shared handler IDs remain profile-owned and are replaced by the shipped
+   * definition. Additional Search API fields and View handlers are extensions
+   * of that baseline and survive profile updates and config imports.
+   *
+   * @param string $configName
+   *   The management package config name.
+   * @param array<string, mixed> $shippedData
+   *   The profile-owned definition.
+   * @param array<string, mixed> $activeData
+   *   The active tenant definition.
+   *
+   * @return array<string, mixed>
+   *   The shared definition with tenant extensions retained.
+   */
+  public static function mergeManagementPackageExtensions(string $configName, array $shippedData, array $activeData): array {
+    $paths = match ($configName) {
+      'search_api.index.service_requests' => [
+        ['field_settings'],
+      ],
+      'views.view.management' => [
+        ['display', 'default', 'display_options', 'fields'],
+        ['display', 'default', 'display_options', 'filters'],
+        ['display', 'default', 'display_options', 'sorts'],
+        ['display', 'default', 'display_options', 'relationships'],
+        ['display', 'page_1', 'display_options', 'style', 'options', 'columns'],
+        ['display', 'page_1', 'display_options', 'style', 'options', 'info'],
+      ],
+      default => [],
+    };
+
+    foreach ($paths as $path) {
+      $shipped = &$shippedData;
+      $active = $activeData;
+      foreach ($path as $segment) {
+        if (!isset($shipped[$segment]) || !is_array($shipped[$segment])
+          || !isset($active[$segment]) || !is_array($active[$segment])) {
+          unset($shipped, $active);
+          continue 2;
+        }
+        $shipped = &$shipped[$segment];
+        $active = $active[$segment];
+      }
+      $shipped += $active;
+      unset($shipped, $active);
+    }
+
+    foreach (['config', 'content', 'module', 'theme'] as $dependencyType) {
+      $shipped = $shippedData['dependencies'][$dependencyType] ?? NULL;
+      $active = $activeData['dependencies'][$dependencyType] ?? NULL;
+      if (!is_array($shipped) || !is_array($active)) {
+        continue;
+      }
+      $shippedData['dependencies'][$dependencyType] = array_values(array_unique([
+        ...$shipped,
+        ...$active,
+      ], SORT_REGULAR));
+    }
+
+    return $shippedData;
   }
 
   /**

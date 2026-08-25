@@ -9,8 +9,11 @@ use Drupal\Component\Uuid\Uuid;
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\FileStorage;
+use Drupal\Core\Config\MemoryStorage;
+use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\Core\Utility\UpdateException;
+use Drupal\block\BlockInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\locale\Gettext;
@@ -19,6 +22,7 @@ use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\user\Entity\Role;
+use Drupal\user\RoleInterface;
 
 /**
  * Enables the twig_tweak and markaspot_trend modules.
@@ -1299,6 +1303,8 @@ function _markaspot_ensure_api_user_link(): void {
 function markaspot_install() {
   _markaspot_repair_all_role_permissions();
   _markaspot_ensure_contractor_roles();
+  _markaspot_ensure_gin_user_switch_block();
+  _markaspot_harden_user_switching();
   _markaspot_grant_service_provider_api_perms();
   _markaspot_ensure_api_user_link();
   _markaspot_ensure_category_jurisdiction();
@@ -1306,6 +1312,7 @@ function markaspot_install() {
   _markaspot_ensure_organisation_in_management_form();
   _markaspot_ensure_management_operational_fields();
   _markaspot_ensure_management_request_media();
+  _markaspot_ensure_management_view_translations();
   _markaspot_import_shipped_module_translations();
 }
 
@@ -4314,6 +4321,11 @@ function markaspot_update_11930(): string {
         $shipped[$preserved_key] = $active[$preserved_key];
       }
     }
+    $shipped = ProfileConfigGuardSubscriber::mergeManagementPackageExtensions(
+      $config_name,
+      $shipped,
+      $active,
+    );
     if ($active !== $shipped) {
       $config->setData($shipped)->save(TRUE);
       $updated_config[] = $config_name;
@@ -4328,8 +4340,9 @@ function markaspot_update_11930(): string {
     $index_storage->resetCache(['service_requests']);
     $index = $index_storage->load('service_requests');
     if ($index) {
-      $index->reindex();
-      $changes[] = 'queued service_requests for reindexing';
+      $index->rebuildTracker();
+      \Drupal::service('search_api.index_task_manager')->addItemsAll($index);
+      $changes[] = 'rebuilt the service_requests tracker';
     }
   }
 
@@ -4548,6 +4561,11 @@ function _markaspot_ensure_contractor_roles(): string {
     $changes[] = 'aligned contractor Drupal role';
   }
 
+  $created_actions = _markaspot_ensure_contractor_role_actions();
+  if ($created_actions !== []) {
+    $changes[] = 'created ' . implode(', ', $created_actions);
+  }
+
   $entity_type_manager = \Drupal::entityTypeManager();
   $group_type = $entity_type_manager->getStorage('group_type')->load('org');
   if ($group_type === NULL) {
@@ -4738,6 +4756,307 @@ function _markaspot_ensure_search_api_body_utf8mb4($database): string {
  */
 function markaspot_update_11934(): string {
   return _markaspot_ensure_search_api_body_utf8mb4(\Drupal::database());
+}
+
+/**
+ * Ensures the shared contractor role actions without changing the role.
+ *
+ * @return string[]
+ *   Action config names created during this call.
+ */
+function _markaspot_ensure_contractor_role_actions(): array {
+  return _markaspot_install_profile_optional_config([
+    'system.action.user_add_role_action.contractor',
+    'system.action.user_remove_role_action.contractor',
+  ]);
+}
+
+/**
+ * Installs selected profile optional config when dependencies are available.
+ *
+ * Drupal creates derivative role actions when a role is first inserted, but a
+ * later config import can remove those actions when an older tenant sync does
+ * not contain them. Shipping the definitions and installing missing entries
+ * from a narrow in-memory source keeps every tenant on the same profile-owned
+ * contract without recreating unrelated optional config.
+ *
+ * @param string[] $config_names
+ *   Profile optional config names to install when missing.
+ *
+ * @return string[]
+ *   Config names created during this call.
+ */
+function _markaspot_install_profile_optional_config(array $config_names): array {
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $profile_source = new FileStorage($profile_path . '/config/optional');
+  $active_storage = \Drupal::service('config.storage');
+  $install_source = new MemoryStorage();
+  $missing = [];
+
+  foreach ($config_names as $config_name) {
+    $data = $profile_source->read($config_name);
+    if (!is_array($data)) {
+      throw new \RuntimeException("Could not read $config_name from profile config/optional.");
+    }
+    $install_source->write($config_name, $data);
+    if (!$active_storage->exists($config_name)) {
+      $missing[] = $config_name;
+    }
+  }
+
+  if ($missing === []) {
+    return [];
+  }
+
+  \Drupal::service('config.installer')->installOptionalConfig($install_source);
+
+  return array_values(array_filter(
+    $missing,
+    static fn(string $config_name): bool => $active_storage->exists($config_name),
+  ));
+}
+
+/**
+ * Finds an existing Gin user-switch block regardless of its config ID.
+ */
+function _markaspot_find_gin_user_switch_block(StorageInterface $storage): ?string {
+  foreach ($storage->listAll('block.block.') as $config_name) {
+    $data = $storage->read($config_name);
+    if (is_array($data)
+      && ($data['theme'] ?? NULL) === 'gin'
+      && ($data['plugin'] ?? NULL) === 'devel_switch_user') {
+      return $config_name;
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Ensures the shared Gin user-switch block when its dependencies are enabled.
+ */
+function _markaspot_ensure_gin_user_switch_block(): string {
+  $active_storage = \Drupal::service('config.storage');
+  $existing = _markaspot_find_gin_user_switch_block($active_storage);
+  if ($existing !== NULL) {
+    return "Gin user-switch block is already configured as $existing.";
+  }
+
+  $config_name = 'block.block.gin_benutzerwechseln';
+  $created = _markaspot_install_profile_optional_config([$config_name]);
+  return $created !== []
+    ? 'Created the shared Gin user-switch block.'
+    : 'Skipped the Gin user-switch block because Gin or Devel is not enabled.';
+}
+
+/**
+ * Persists shared role actions and the optional Gin user-switch block.
+ */
+function markaspot_update_11935(): string {
+  $created_actions = _markaspot_ensure_contractor_role_actions();
+  $action_message = $created_actions !== []
+    ? 'Created ' . implode(', ', $created_actions) . '.'
+    : 'Contractor role actions are already configured or their dependencies are unavailable.';
+
+  return implode(' ', [
+    $action_message,
+    _markaspot_ensure_gin_user_switch_block(),
+  ]);
+}
+
+/**
+ * Limits user impersonation to administrators and the management page.
+ */
+function _markaspot_harden_user_switching(): string {
+  $changes = [];
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  foreach ($role_storage->loadMultiple() as $role) {
+    if (!$role instanceof RoleInterface) {
+      continue;
+    }
+    if ($role->isAdmin() || !$role->hasPermission('switch users')) {
+      continue;
+    }
+    $role->revokePermission('switch users')->save();
+    $changes[] = 'revoked switch users from ' . $role->id();
+  }
+
+  $active_storage = \Drupal::service('config.storage');
+  $visibility = [
+    'user_role' => [
+      'id' => 'user_role',
+      'negate' => FALSE,
+      'context_mapping' => [
+        'user' => '@user.current_user_context:current_user',
+      ],
+      'roles' => [
+        'administrator' => 'administrator',
+      ],
+    ],
+    'request_path' => [
+      'id' => 'request_path',
+      'negate' => FALSE,
+      'pages' => '/admin/content/management',
+    ],
+  ];
+  foreach ($active_storage->listAll('block.block.') as $config_name) {
+    $data = $active_storage->read($config_name);
+    if (!is_array($data)
+      || ($data['theme'] ?? NULL) !== 'gin'
+      || ($data['plugin'] ?? NULL) !== 'devel_switch_user') {
+      continue;
+    }
+    if (($data['status'] ?? FALSE) === TRUE
+      && ($data['region'] ?? NULL) === 'content'
+      && (int) ($data['weight'] ?? 0) === 0
+      && ($data['visibility'] ?? []) === $visibility) {
+      continue;
+    }
+
+    $block_id = substr($config_name, strlen('block.block.'));
+    $block = \Drupal::entityTypeManager()->getStorage('block')->load($block_id);
+    if (!$block instanceof BlockInterface) {
+      continue;
+    }
+    $block
+      ->enable()
+      ->setRegion('content')
+      ->setWeight(0)
+      ->set('visibility', $visibility)
+      ->save();
+    $changes[] = 'hardened ' . $config_name;
+  }
+
+  return $changes !== []
+    ? ucfirst(implode('; ', $changes)) . '.'
+    : 'User switching is already restricted to administrators on the management page.';
+}
+
+/**
+ * Enforces the shared user-switch security policy on existing sites.
+ */
+function markaspot_update_11936(): string {
+  return _markaspot_harden_user_switching();
+}
+
+/**
+ * Rebuilds the shared management Search API tracker and seeds its index.
+ */
+function markaspot_update_11937(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('search_api_index');
+  $storage->resetCache(['service_requests']);
+  $index = $storage->load('service_requests');
+  if (!$index) {
+    return 'The service_requests Search API index is not installed.';
+  }
+
+  $translation_updated = _markaspot_ensure_management_view_translations();
+  $index->rebuildTracker();
+  \Drupal::service('search_api.index_task_manager')->addItemsAll($index);
+  $total = $index->getTrackerInstance()->getRemainingItemsCount();
+  $indexed = $index->indexItems(1000);
+  $remaining = $index->getTrackerInstance()->getRemainingItemsCount();
+  $translation = $translation_updated
+    ? ' Updated the shared German management labels.'
+    : '';
+  return "Rebuilt the service_requests tracker ($total items), indexed $indexed, and queued $remaining for cron.$translation";
+}
+
+/**
+ * Completes tracker tasks that cannot run as a nested Search API batch.
+ */
+function markaspot_update_11938(array &$sandbox): string {
+  return _markaspot_complete_management_index($sandbox);
+}
+
+/**
+ * Finishes Search API index convergence after earlier partial repair runs.
+ */
+function markaspot_update_11939(array &$sandbox): string {
+  return _markaspot_complete_management_index($sandbox);
+}
+
+/**
+ * Completes the shared management Search API index in bounded batches.
+ *
+ * @param array<string, mixed> $sandbox
+ *   Drupal update batch state.
+ */
+function _markaspot_complete_management_index(array &$sandbox): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('search_api_index');
+  $storage->resetCache(['service_requests']);
+  $index = $storage->load('service_requests');
+  if (!$index) {
+    $sandbox['#finished'] = 1;
+    return 'The service_requests Search API index is not installed.';
+  }
+
+  $tracker = $index->getTrackerInstance();
+  if ($tracker->getTotalItemsCount() === 0) {
+    $index->rebuildTracker();
+    \Drupal::service('search_api.index_task_manager')->addItemsAll($index);
+  }
+  $before = $tracker->getRemainingItemsCount();
+  $sandbox['initial_remaining'] ??= max(1, $before);
+  $total = $index->getTrackerInstance()->getTotalItemsCount();
+  $lock = \Drupal::lock();
+  if (!$lock->lockMayBeAvailable($index->getLockId())) {
+    $lock->wait($index->getLockId(), 1);
+  }
+  if (!$lock->lockMayBeAvailable($index->getLockId())) {
+    $initial = (int) $sandbox['initial_remaining'];
+    $sandbox['#finished'] = min(0.99, max(0.01, ($initial - $before) / $initial));
+    return "Waiting for the service_requests index lock; $before of $total remain.";
+  }
+  $indexed = $index->indexItems(1000);
+  $remaining = $index->getTrackerInstance()->getRemainingItemsCount();
+  if ($remaining === 0) {
+    $sandbox['#finished'] = 1;
+    return "Completed the service_requests index ($total items); no items remain queued.";
+  }
+
+  $sandbox['stalled'] = $remaining < $before
+    ? 0
+    : ((int) ($sandbox['stalled'] ?? 0) + 1);
+  if ($sandbox['stalled'] >= 3) {
+    throw new UpdateException("The service_requests index stalled with $remaining items remaining.");
+  }
+
+  $initial = (int) $sandbox['initial_remaining'];
+  $sandbox['#finished'] = min(0.99, max(0.01, ($initial - $remaining) / $initial));
+  return "Indexed $indexed service requests; $remaining of $total remain.";
+}
+
+/**
+ * Installs complete German labels for the shared management View handlers.
+ */
+function _markaspot_ensure_management_view_translations(): bool {
+  $language_manager = \Drupal::languageManager();
+  if (!method_exists($language_manager, 'getLanguageConfigOverride')
+    || !isset($language_manager->getLanguages()['de'])) {
+    return FALSE;
+  }
+
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $file = $profile_path . '/config/optional/language/de/views.view.management.yml';
+  if (!is_file($file)) {
+    return FALSE;
+  }
+  $shipped = Yaml::decode((string) file_get_contents($file));
+  if (!is_array($shipped)) {
+    return FALSE;
+  }
+  unset($shipped['langcode']);
+
+  $override = $language_manager->getLanguageConfigOverride('de', 'views.view.management');
+  $active = $override->isNew() ? [] : (array) $override->get();
+  $merged = array_replace_recursive($active, $shipped);
+  if ($active === $merged) {
+    return FALSE;
+  }
+
+  $override->setData($merged)->save();
+  return TRUE;
 }
 
 /**

@@ -47,7 +47,8 @@ class MailTextsMigrateCommands extends DrushCommands {
    * key. Events, conditions, gateways and every other action in the model
    * are left byte-identical. A pre-write YAML backup of each touched
    * eca.eca.* config is written to
-   * public://markaspot_mail_migrate_backup/<timestamp>/.
+   * private://markaspot_mail_migrate_backup/<timestamp>/, or temporary://
+   * when no private filesystem is configured.
    *
    * Actions that resolve to UNRESOLVED are never migrated by --apply alone
    * — supply --map to give them an explicit notification_key, or leave
