@@ -9,10 +9,233 @@
 
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\File\Event\FileUploadSanitizeNameEvent;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\file\FileInterface;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\ParagraphInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\HttpFoundation\Request;
+
+/**
+ * Implements hook_entity_bundle_field_info_alter().
+ *
+ * Required citizen contact fields may become empty later through retention or
+ * migration. Core's unconditional required constraint would then block every
+ * unrelated update to those historical requests. Replace it with a
+ * lifecycle-aware constraint while preserving the stored field configuration
+ * as the public form contract.
+ */
+function service_request_entity_bundle_field_info_alter(array &$fields, EntityTypeInterface $entity_type, string $bundle): void {
+  if ($entity_type->id() !== 'node'
+    || $bundle !== 'service_request'
+    || !isset($fields['field_e_mail'])
+    || !$fields['field_e_mail']->isRequired()) {
+    return;
+  }
+
+  // Clone before changing the runtime definition. FieldConfig remains
+  // required in active config for Nuxt. The Drupal node form alter below
+  // restores the required marker for new and previously populated requests.
+  $email = clone $fields['field_e_mail'];
+  $email->setRequired(FALSE);
+  $email->addConstraint('ServiceRequestRequiredEmail');
+  $fields['field_e_mail'] = $email;
+}
+
+/**
+ * Implements hook_file_presave().
+ *
+ * Drupal's legacy JSON:API upload parser needs an ASCII filename for the
+ * filesystem path. The frontend sends the original UTF-8 display name in a
+ * separate encoded header so the file entity can preserve it without changing
+ * the already safe URI.
+ */
+function service_request_file_presave(FileInterface $file): void {
+  if (!$file->isNew()) {
+    return;
+  }
+
+  $request = \Drupal::requestStack()->getCurrentRequest();
+  if (!$request instanceof Request) {
+    return;
+  }
+
+  $upload_context = _service_request_original_filename_upload_context($request);
+  if ($upload_context === NULL) {
+    return;
+  }
+
+  $field_definition = \Drupal::service('entity_field.manager')
+    ->getFieldDefinitions($upload_context['entity_type'], $upload_context['bundle'])[$upload_context['field']] ?? NULL;
+  if ($field_definition === NULL) {
+    return;
+  }
+
+  $filename = _service_request_decode_original_upload_filename(
+    $request->headers->get('X-Markaspot-Original-Filename'),
+    $file->getFilename(),
+  );
+  if ($filename === NULL) {
+    return;
+  }
+
+  $filename = _service_request_sanitize_original_upload_filename(
+    $filename,
+    $file->getFilename(),
+    (string) $field_definition->getSetting('file_extensions'),
+    \Drupal::service('event_dispatcher'),
+  );
+  if ($filename !== NULL) {
+    $file->setFilename($filename);
+  }
+}
+
+/**
+ * Resolves a supported service-request upload to its Drupal field context.
+ *
+ * @return array{entity_type: string, bundle: string, field: string}|null
+ *   The field context, or NULL for an unrelated upload.
+ */
+function _service_request_original_filename_upload_context(Request $request): ?array {
+  $supported_uploads = [
+    'jsonapi.media--request_image.file_upload.new_resource' => [
+      'entity_type' => 'media',
+      'bundle' => 'request_image',
+      'fields' => ['field_media_image'],
+    ],
+    'jsonapi.node--service_request.file_upload.existing_resource' => [
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'fields' => ['field_attachment', 'field_sp_attachment'],
+    ],
+  ];
+
+  $route = $request->attributes->get('_route');
+  $field = $request->attributes->get('file_field_name');
+
+  if (!is_string($route)
+    || !is_string($field)
+    || !isset($supported_uploads[$route])
+    || !in_array($field, $supported_uploads[$route]['fields'], TRUE)) {
+    return NULL;
+  }
+
+  return [
+    'entity_type' => $supported_uploads[$route]['entity_type'],
+    'bundle' => $supported_uploads[$route]['bundle'],
+    'field' => $field,
+  ];
+}
+
+/**
+ * Decodes and validates the original UTF-8 upload display name.
+ */
+function _service_request_decode_original_upload_filename(?string $encoded, string $transport_filename): ?string {
+  if ($encoded === NULL || $encoded === '' || strlen($encoded) > 4096) {
+    return NULL;
+  }
+
+  return _service_request_validate_original_upload_filename(
+    rawurldecode($encoded),
+    $transport_filename,
+  );
+}
+
+/**
+ * Applies Drupal's upload sanitizers to an original UTF-8 display name.
+ */
+function _service_request_sanitize_original_upload_filename(string $filename, string $transport_filename, string $allowed_extensions, EventDispatcherInterface $event_dispatcher): ?string {
+  $event = new FileUploadSanitizeNameEvent($filename, $allowed_extensions);
+  $event_dispatcher->dispatch($event);
+
+  $filename = _service_request_truncate_sanitized_upload_filename($event->getFilename());
+  if ($filename === NULL) {
+    return NULL;
+  }
+
+  return _service_request_validate_original_upload_filename(
+    $filename,
+    $transport_filename,
+  );
+}
+
+/**
+ * Restores Drupal's 240-character limit after sanitizers add safety markers.
+ */
+function _service_request_truncate_sanitized_upload_filename(string $filename): ?string {
+  if ($filename === '' || preg_match('//u', $filename) !== 1) {
+    return NULL;
+  }
+  if (mb_strlen($filename) <= 240) {
+    return $filename;
+  }
+
+  $extension = (string) pathinfo($filename, PATHINFO_EXTENSION);
+  $extension_with_dot = $extension === '' ? '' : '.' . $extension;
+  $basename = mb_substr($filename, 0, mb_strlen($filename) - mb_strlen($extension_with_dot));
+  $reserved_tail = '';
+  $stem = $basename;
+
+  $first_inner_dot = mb_strpos($basename, '.');
+  if ($first_inner_dot !== FALSE) {
+    $reserved_tail = mb_substr($basename, $first_inner_dot);
+    $stem = mb_substr($basename, 0, $first_inner_dot);
+  }
+  elseif (preg_match('/(_\d{10,17})$/u', $basename, $matches) === 1) {
+    $reserved_tail = $matches[1];
+    $stem = mb_substr($basename, 0, mb_strlen($basename) - mb_strlen($reserved_tail));
+  }
+
+  $stem_limit = 240 - mb_strlen($reserved_tail) - mb_strlen($extension_with_dot);
+  if ($stem_limit < 1 || $stem === '') {
+    return NULL;
+  }
+
+  return mb_substr($stem, 0, $stem_limit) . $reserved_tail . $extension_with_dot;
+}
+
+/**
+ * Validates an original upload name against Drupal's file entity limits.
+ */
+function _service_request_validate_original_upload_filename(string $filename, string $transport_filename): ?string {
+  if ($filename === '' || preg_match('//u', $filename) !== 1) {
+    return NULL;
+  }
+
+  // Strip only Unicode bidi controls that can make extensions deceptive.
+  // Joiners such as ZWJ and ZWNJ remain valid filename content.
+  $filename = preg_replace('/[\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', '', $filename);
+  if (!is_string($filename)) {
+    return NULL;
+  }
+
+  if ($filename === ''
+    || mb_strlen($filename) > 240
+    || preg_match('/[\x00-\x1F\x7F\\\\\/]/u', $filename) === 1
+    || in_array($filename, ['.', '..'], TRUE)) {
+    return NULL;
+  }
+
+  $display_extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
+  $transport_extension = strtolower((string) pathinfo($transport_filename, PATHINFO_EXTENSION));
+  if ($display_extension !== $transport_extension) {
+    return NULL;
+  }
+
+  return $filename;
+}
+
+/**
+ * Determines whether the Drupal email widget is required for this lifecycle.
+ */
+function _service_request_email_form_required(NodeInterface $node, bool $configured_required): bool {
+  return $configured_required
+    && ($node->isNew() || !$node->get('field_e_mail')->isEmpty());
+}
 
 /**
  * Implements hook_node_presave().
@@ -351,6 +574,19 @@ function service_request_form_node_form_alter(array &$form, FormStateInterface $
   $node = $form_object->getEntity();
   if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
     return;
+  }
+
+  // The runtime definition is intentionally not unconditionally required so
+  // historical records whose email was removed can still be edited. Restore
+  // the browser-side Drupal form contract wherever an email is required by
+  // the lifecycle-aware validator: on create and when an existing populated
+  // value could otherwise be cleared.
+  $email_config = FieldConfig::loadByName('node', 'service_request', 'field_e_mail');
+  if (isset($form['field_e_mail']['widget'][0]['value'])) {
+    $form['field_e_mail']['widget'][0]['value']['#required'] = _service_request_email_form_required(
+      $node,
+      $email_config?->isRequired() ?? FALSE,
+    );
   }
 
   $form['#entity_builders'][] = '_service_request_derive_status_paragraph_terms';
