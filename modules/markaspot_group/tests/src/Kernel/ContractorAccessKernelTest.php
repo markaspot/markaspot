@@ -12,6 +12,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_group\Controller\RequestResponsibilityController;
 use Drupal\media\Entity\Media;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
@@ -25,6 +26,7 @@ use Drupal\user\Entity\User;
 use Drupal\user\PermissionHandlerInterface;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Tests organisation scope and personal-data shielding for contractors.
@@ -240,6 +242,41 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     );
     $this->assertFalse(
       $this->organisationARequest->get('field_e_mail')->access('view', $this->contractor),
+    );
+  }
+
+  /**
+   * Contractors cannot bypass field access through the responsibility API.
+   */
+  public function testContractorCannotReassignResponsibilityThroughController(): void {
+    $this->container->get('current_user')->setAccount($this->contractor);
+    $target_organisation = $this->organisationBRequest->get('field_organisation')->entity;
+    $this->assertInstanceOf(Group::class, $target_organisation);
+    $this->assertTrue($this->organisationARequest->access('update', $this->contractor));
+    $this->assertFalse($this->organisationARequest->get('field_organisation')->access('edit', $this->contractor));
+
+    $controller = RequestResponsibilityController::create($this->container);
+    $http_request = Request::create(
+      '/api/request-responsibility/' . $this->organisationARequest->id(),
+      'PATCH',
+      content: json_encode([
+        'organisation_uuids' => [$target_organisation->uuid()],
+      ], JSON_THROW_ON_ERROR),
+    );
+
+    $response = $controller->update($this->organisationARequest, $http_request);
+
+    $this->assertSame(403, $response->getStatusCode());
+    $this->container->get('entity_type.manager')->getStorage('node')
+      ->resetCache([$this->organisationARequest->id()]);
+    $reloaded = Node::load($this->organisationARequest->id());
+    $this->assertInstanceOf(Node::class, $reloaded);
+    $this->assertSame(
+      [(int) $this->organisationA->id()],
+      array_map(
+        'intval',
+        array_column($reloaded->get('field_organisation')->getValue(), 'target_id'),
+      ),
     );
   }
 

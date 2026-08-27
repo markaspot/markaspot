@@ -12,6 +12,7 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_group\Controller\RequestAssigneesController;
+use Drupal\markaspot_group\Controller\RequestResponsibilityController;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -20,6 +21,7 @@ use Drupal\Tests\user\Traits\UserCreationTrait;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Tests per-user service request assignment access and validation.
@@ -895,6 +897,116 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       'Zuständigkeit folgt Zuweisung an parks-member: Parks.',
       $this->latestInternalRemarkText($request),
     );
+  }
+
+  /**
+   * Responsibility updates bypass unrelated legacy required-field violations.
+   */
+  public function testResponsibilityControllerReplacesOrganisationAtomically(): void {
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $this->createField('node', 'service_request', 'field_e_mail', 'email');
+    $email_field = FieldConfig::loadByName('node', 'service_request', 'field_e_mail');
+    $this->assertInstanceOf(FieldConfig::class, $email_field);
+    $email_field->setRequired(TRUE)->save();
+    $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+
+    $this->container->get('config.factory')
+      ->getEditable('markaspot_group.settings')
+      ->set('single_organisation_assignment', TRUE)
+      ->save();
+    $request = $this->createServiceRequest($this->organisation);
+    $this->assertTrue($request->get('field_e_mail')->isEmpty());
+
+    $controller = RequestResponsibilityController::create($this->container);
+    $http_request = Request::create(
+      '/api/request-responsibility/' . $request->id(),
+      'PATCH',
+      content: json_encode([
+        'organisation_uuids' => [$this->parksOrganisation->uuid()],
+      ], JSON_THROW_ON_ERROR),
+    );
+
+    $response = $controller->update($request, $http_request);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $request = $this->reloadNode($request);
+    $this->assertSame([(int) $this->parksOrganisation->id()], $this->organisationIds($request));
+    $this->assertSame([(int) $this->parksOrganisation->id()], $this->organisationRelationshipIds($request));
+  }
+
+  /**
+   * Responsibility updates enforce the effective single-org setting.
+   */
+  public function testResponsibilityControllerRejectsMultipleOrganisationsInSingleMode(): void {
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $this->container->get('config.factory')
+      ->getEditable('markaspot_group.settings')
+      ->set('single_organisation_assignment', TRUE)
+      ->save();
+    $request = $this->createServiceRequest($this->organisation);
+    $controller = RequestResponsibilityController::create($this->container);
+    $http_request = Request::create(
+      '/api/request-responsibility/' . $request->id(),
+      'PATCH',
+      content: json_encode([
+        'organisation_uuids' => [
+          $this->parksOrganisation->uuid(),
+          $this->trafficOrganisation->uuid(),
+        ],
+      ], JSON_THROW_ON_ERROR),
+    );
+
+    $response = $controller->update($request, $http_request);
+
+    $this->assertSame(422, $response->getStatusCode());
+    $request = $this->reloadNode($request);
+    $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+  }
+
+  /**
+   * Responsibility updates reject oversized bodies in Drupal itself.
+   */
+  public function testResponsibilityControllerRejectsOversizedBody(): void {
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $request = $this->createServiceRequest($this->organisation);
+    $controller = RequestResponsibilityController::create($this->container);
+    $http_request = Request::create(
+      '/api/request-responsibility/' . $request->id(),
+      'PATCH',
+      content: json_encode([
+        'organisation_uuids' => [$this->parksOrganisation->uuid()],
+        'padding' => str_repeat('x', 8192),
+      ], JSON_THROW_ON_ERROR),
+    );
+
+    $response = $controller->update($request, $http_request);
+
+    $this->assertSame(413, $response->getStatusCode());
+    $request = $this->reloadNode($request);
+    $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+  }
+
+  /**
+   * Responsibility updates reject inactive organisation targets.
+   */
+  public function testResponsibilityControllerRejectsInactiveOrganisation(): void {
+    $this->parksOrganisation->set('status', FALSE)->save();
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $request = $this->createServiceRequest($this->organisation);
+    $controller = RequestResponsibilityController::create($this->container);
+    $http_request = Request::create(
+      '/api/request-responsibility/' . $request->id(),
+      'PATCH',
+      content: json_encode([
+        'organisation_uuids' => [$this->parksOrganisation->uuid()],
+      ], JSON_THROW_ON_ERROR),
+    );
+
+    $response = $controller->update($request, $http_request);
+
+    $this->assertSame(422, $response->getStatusCode());
+    $request = $this->reloadNode($request);
+    $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
   }
 
   /**

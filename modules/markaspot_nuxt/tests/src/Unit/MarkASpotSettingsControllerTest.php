@@ -2163,6 +2163,9 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertStringContainsString("\$cache_metadata->addCacheContexts(['user.permissions', 'user.roles'])", $source);
     $this->assertStringContainsString('edit any service_request content', $source);
     $this->assertStringContainsString("['field_status', 'field_request_media', 'field_status_notes']", $source);
+    $this->assertStringContainsString("'effective_cardinality'", $source);
+    $this->assertStringContainsString("'config:markaspot_group.settings'", $source);
+    $this->assertStringContainsString("->get('single_organisation_assignment') === TRUE", $source);
   }
 
   /**

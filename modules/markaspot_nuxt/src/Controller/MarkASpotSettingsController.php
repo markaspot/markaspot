@@ -1031,6 +1031,11 @@ class MarkASpotSettingsController extends ControllerBase {
       && $entity_type === 'node'
       && $bundle === 'service_request'
       && $this->currentUserHasRestrictedContractorRole();
+    $single_organisation_assignment = $entity_type === 'node'
+      && $bundle === 'service_request'
+      && $this->configFactory
+        ->get('markaspot_group.settings')
+        ->get('single_organisation_assignment') === TRUE;
 
     // Build cache metadata.
     $cache_metadata = new CacheableMetadata();
@@ -1038,6 +1043,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata->setCacheMaxAge(3600);
     if ($is_management_form_mode) {
       $cache_metadata->addCacheContexts(['user.permissions', 'user.roles']);
+    }
+    if ($entity_type === 'node' && $bundle === 'service_request') {
+      $cache_metadata->addCacheTags(['config:markaspot_group.settings']);
     }
 
     // Load the form display for the given entity type, bundle, and form mode.
@@ -1085,6 +1093,9 @@ class MarkASpotSettingsController extends ControllerBase {
           'description' => $field_config->getDescription(),
           'required' => $field_config->isRequired(),
           'cardinality' => $field_storage ? $field_storage->getCardinality() : NULL,
+          'effective_cardinality' => $single_organisation_assignment && $field_name === 'field_organisation'
+            ? 1
+            : ($field_storage ? $field_storage->getCardinality() : NULL),
           'field_type' => $field_config->getType(),
           'default_value' => $field_config->getDefaultValueLiteral(),
           'settings' => $field_config->getSettings(),

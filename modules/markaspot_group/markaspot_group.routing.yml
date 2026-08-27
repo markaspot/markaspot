@@ -35,6 +35,22 @@ markaspot_group.request_assignees:
   options:
     _auth: ['cookie']
 
+markaspot_group.request_responsibility_update:
+  path: '/api/request-responsibility/{node}'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\RequestResponsibilityController::update'
+  methods: [PATCH]
+  requirements:
+    _entity_access: 'node.update'
+    _csrf_request_header_token: 'TRUE'
+    node: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+    parameters:
+      node:
+        type: entity:node
+
 markaspot_group.member_update:
   path: '/api/group-members/{uid}'
   defaults:
