@@ -20,6 +20,7 @@ use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
+use Drupal\markaspot_nuxt\Service\PublicUrlValidator;
 use Drupal\markaspot_passwordless\Service\BreakGlassOtpServiceInterface;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\user\UserInterface;
@@ -916,11 +917,11 @@ class PasswordlessAuthController extends ControllerBase {
     if (!is_string($raw)) {
       return '/dashboard';
     }
-    if (str_contains($raw, '\\')) {
+    if (str_contains($raw, '\\') || preg_match('/[\x00-\x1F\x7F]/', $raw) === 1) {
       return '/dashboard';
     }
 
-    $value = trim(str_replace(["\r", "\n", "\0"], '', $raw));
+    $value = trim($raw);
     if ($value === ''
       || strlen($value) > 1024
       || !str_starts_with($value, '/')
@@ -946,16 +947,15 @@ class PasswordlessAuthController extends ControllerBase {
    * Resolves the Nuxt frontend base URL for the browser redirect.
    */
   protected function resolveFrontendBaseUrl(Request $request): ?string {
-    $configured = $this->frontendUrlService?->getFrontendBaseUrl();
+    // Keep direct/manual controller construction backward compatible while
+    // applying the same strict runtime precedence and URL validation as DI.
+    $frontend_url_service = $this->frontendUrlService
+      ?? new FrontendUrlService($this->configFactory, new PublicUrlValidator());
+    $configured = $frontend_url_service->getFrontendBaseUrl();
     if (is_string($configured) && trim($configured) !== '') {
-      return $this->normalizeFrontendBaseUrl($configured);
-    }
-
-    foreach (['NUXT_PUBLIC_SITE_URL', 'NUXT_SITE_URL', 'FRONTEND_BASE_URL'] as $env_key) {
-      $env_value = getenv($env_key);
-      if (is_string($env_value) && trim($env_value) !== '') {
-        return $this->normalizeFrontendBaseUrl($env_value);
-      }
+      // FrontendUrlService is the single validation and precedence boundary
+      // for runtime and exported frontend URLs.
+      return $frontend_url_service->normalizeFrontendBaseUrl($configured);
     }
 
     $host = $request->getHost();
@@ -973,31 +973,6 @@ class PasswordlessAuthController extends ControllerBase {
     }
 
     return NULL;
-  }
-
-  /**
-   * Normalizes configured frontend base URLs to safe http(s) origins.
-   */
-  protected function normalizeFrontendBaseUrl(string $raw): ?string {
-    $value = rtrim(trim(str_replace(["\r", "\n", "\0"], '', $raw)), '/');
-    if ($value === '') {
-      return NULL;
-    }
-
-    $parts = parse_url($value);
-    if (!is_array($parts)
-      || empty($parts['scheme'])
-      || empty($parts['host'])
-      || !in_array(strtolower($parts['scheme']), ['http', 'https'], TRUE)
-      || isset($parts['user'])
-      || isset($parts['pass'])
-      || isset($parts['query'])
-      || isset($parts['fragment'])
-    ) {
-      return NULL;
-    }
-
-    return $value;
   }
 
   /**

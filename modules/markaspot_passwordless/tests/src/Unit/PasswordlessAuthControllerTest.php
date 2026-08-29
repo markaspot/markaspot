@@ -164,8 +164,11 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       ]);
     $nuxtConfig = $this->createMock(ImmutableConfig::class);
     $nuxtConfig->method('get')
-      ->with('platform_features.passwordless')
-      ->willReturn(TRUE);
+      ->willReturnMap([
+        ['platform_features.passwordless', TRUE],
+        ['frontend_enabled', FALSE],
+        ['frontend_base_url', ''],
+      ]);
 
     $this->configFactory->method('get')
       ->willReturnMap([
@@ -1495,6 +1498,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $frontendUrl = $this->createMock(FrontendUrlService::class);
     $frontendUrl->method('getFrontendBaseUrl')
       ->willReturn('https://frontend.example.test/');
+    $frontendUrl->method('normalizeFrontendBaseUrl')
+      ->willReturn('https://frontend.example.test');
 
     $this->controller = new PasswordlessAuthController(
       $this->otpService,
@@ -1530,7 +1535,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
    * Tests invalid configured frontend base URLs are rejected.
    *
    * @covers ::startSessionHandoff
-   * @covers ::normalizeFrontendBaseUrl
+   * @covers \Drupal\markaspot_nuxt\Service\FrontendUrlService::normalizeFrontendBaseUrl
    */
   public function testStartSessionHandoffRejectsUnsafeFrontendBaseUrl(): void {
     $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
@@ -1538,6 +1543,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $frontendUrl = $this->createMock(FrontendUrlService::class);
     $frontendUrl->method('getFrontendBaseUrl')
       ->willReturn('javascript:alert(1)');
+    $frontendUrl->method('normalizeFrontendBaseUrl')
+      ->willReturn(NULL);
 
     $this->controller = new PasswordlessAuthController(
       $this->otpService,
@@ -1563,7 +1570,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
    * Tests configured frontend base URLs with query strings are rejected.
    *
    * @covers ::startSessionHandoff
-   * @covers ::normalizeFrontendBaseUrl
+   * @covers \Drupal\markaspot_nuxt\Service\FrontendUrlService::normalizeFrontendBaseUrl
    */
   public function testStartSessionHandoffRejectsFrontendBaseUrlWithQuery(): void {
     $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
@@ -1571,6 +1578,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $frontendUrl = $this->createMock(FrontendUrlService::class);
     $frontendUrl->method('getFrontendBaseUrl')
       ->willReturn('https://frontend.example.test/?x=1');
+    $frontendUrl->method('normalizeFrontendBaseUrl')
+      ->willReturn(NULL);
 
     $this->controller = new PasswordlessAuthController(
       $this->otpService,
@@ -1616,6 +1625,9 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       'external-url' => ['https://evil.example/dashboard'],
       'protocol-relative' => ['//evil.example/dashboard'],
       'backslash-host' => ['/\\evil.example/dashboard'],
+      'tab-normalized-host' => ["/\t/evil.example/dashboard"],
+      'control-character' => ["/dashboard\x1Fsuffix"],
+      'delete-character' => ["/dashboard\x7Fsuffix"],
       'auth-segment' => ['/amsterdam/auth/login'],
       'oversize' => ['/' . str_repeat('a', 1025)],
     ];

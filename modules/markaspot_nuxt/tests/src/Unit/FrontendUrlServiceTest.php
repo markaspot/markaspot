@@ -24,6 +24,20 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   private string|false $previousFrontendBaseUrl;
 
   /**
+   * Previous NUXT_PUBLIC_SITE_URL environment value.
+   *
+   * @var string|false
+   */
+  private string|false $previousNuxtPublicSiteUrl;
+
+  /**
+   * Previous NUXT_SITE_URL environment value.
+   *
+   * @var string|false
+   */
+  private string|false $previousNuxtSiteUrl;
+
+  /**
    * Previous MARKASPOT_MAIL_FRONTEND_BASE_URL environment value.
    *
    * @var string|false
@@ -36,8 +50,12 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
     $this->previousFrontendBaseUrl = getenv('FRONTEND_BASE_URL');
+    $this->previousNuxtPublicSiteUrl = getenv('NUXT_PUBLIC_SITE_URL');
+    $this->previousNuxtSiteUrl = getenv('NUXT_SITE_URL');
     $this->previousMailFrontendBaseUrl = getenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
     putenv('FRONTEND_BASE_URL');
+    putenv('NUXT_PUBLIC_SITE_URL');
+    putenv('NUXT_SITE_URL');
     putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
   }
 
@@ -50,6 +68,18 @@ final class FrontendUrlServiceTest extends UnitTestCase {
     }
     else {
       putenv('FRONTEND_BASE_URL=' . $this->previousFrontendBaseUrl);
+    }
+    if ($this->previousNuxtPublicSiteUrl === FALSE) {
+      putenv('NUXT_PUBLIC_SITE_URL');
+    }
+    else {
+      putenv('NUXT_PUBLIC_SITE_URL=' . $this->previousNuxtPublicSiteUrl);
+    }
+    if ($this->previousNuxtSiteUrl === FALSE) {
+      putenv('NUXT_SITE_URL');
+    }
+    else {
+      putenv('NUXT_SITE_URL=' . $this->previousNuxtSiteUrl);
     }
     if ($this->previousMailFrontendBaseUrl === FALSE) {
       putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
@@ -180,6 +210,37 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   /**
    * @covers ::getFrontendBaseUrl
    */
+  public function testFrontendEnvPrecedesConfiguredFrontendBaseUrl(): void {
+    putenv('FRONTEND_BASE_URL=https://runtime.example.com/');
+    $service = $this->service(TRUE, 'https://configured.example.com/');
+
+    $this->assertSame('https://runtime.example.com', $service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getFrontendBaseUrl
+   */
+  public function testInvalidConfiguredFrontendEnvFailsClosedBeforeActiveConfig(): void {
+    putenv('FRONTEND_BASE_URL=http://cloud-drupal/');
+    putenv('NUXT_SITE_URL=https://runtime.example.com/');
+    $service = $this->service(TRUE, 'https://configured.example.com/');
+
+    $this->assertNull($service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getFrontendBaseUrl
+   */
+  public function testNuxtSiteUrlSupportsLegacyRuntimeDeployments(): void {
+    putenv('NUXT_SITE_URL=https://legacy-runtime.example.com/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertSame('https://legacy-runtime.example.com', $service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getFrontendBaseUrl
+   */
   public function testGenericFrontendBaseUrlIgnoresMailFrontendEnvFallback(): void {
     putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example.com/');
     $service = $this->service(FALSE, '');
@@ -211,11 +272,32 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   /**
    * @covers ::getNotificationFrontendBaseUrl
    */
-  public function testConfiguredFrontendRemainsNotificationFallbackWithoutMailOverride(): void {
+  public function testInvalidMailFrontendEnvFailsClosedBeforeGenericAndConfiguredFallbacks(): void {
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=http://mail.internal/');
     putenv('FRONTEND_BASE_URL=https://generic.example.com/');
     $service = $this->service(TRUE, 'https://configured.example.com/');
 
-    $this->assertSame('https://configured.example.com', $service->getNotificationFrontendBaseUrl());
+    $this->assertNull($service->getNotificationFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getNotificationFrontendBaseUrl
+   */
+  public function testNuxtSiteUrlSupportsNotificationFallback(): void {
+    putenv('NUXT_SITE_URL=https://runtime.example.com/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertSame('https://runtime.example.com', $service->getNotificationFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getNotificationFrontendBaseUrl
+   */
+  public function testGenericFrontendEnvPrecedesConfiguredNotificationFallback(): void {
+    putenv('FRONTEND_BASE_URL=https://generic.example.com/');
+    $service = $this->service(TRUE, 'https://configured.example.com/');
+
+    $this->assertSame('https://generic.example.com', $service->getNotificationFrontendBaseUrl());
   }
 
   /**

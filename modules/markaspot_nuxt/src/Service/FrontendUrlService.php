@@ -38,7 +38,11 @@ class FrontendUrlService {
    *   The frontend base URL or NULL if not configured.
    */
   public function getFrontendBaseUrl() {
-    return $this->resolveFrontendBaseUrl(['FRONTEND_BASE_URL']);
+    return $this->resolveFrontendBaseUrl([
+      'FRONTEND_BASE_URL',
+      'NUXT_PUBLIC_SITE_URL',
+      'NUXT_SITE_URL',
+    ]);
   }
 
   /**
@@ -51,24 +55,42 @@ class FrontendUrlService {
     // A tenant's public runtime host is authoritative for mail. In particular,
     // do not let an imported or shared frontend config send bearer links to a
     // FastMap container host when this host-specific mail override is set.
-    $mail_frontend_base_url = $this->normalizeFrontendBaseUrl((string) getenv('MARKASPOT_MAIL_FRONTEND_BASE_URL'));
-    if ($mail_frontend_base_url !== NULL) {
-      return $mail_frontend_base_url;
+    $raw_mail_frontend_base_url = getenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
+    if ($raw_mail_frontend_base_url !== FALSE && trim($raw_mail_frontend_base_url) !== '') {
+      // A configured host-specific mail URL is authoritative. Fail closed when
+      // it is unsafe instead of falling back to a possibly foreign config URL.
+      return $this->normalizeFrontendBaseUrl($raw_mail_frontend_base_url);
     }
 
-    return $this->resolveFrontendBaseUrl(['FRONTEND_BASE_URL']);
+    return $this->resolveFrontendBaseUrl([
+      'FRONTEND_BASE_URL',
+      'NUXT_PUBLIC_SITE_URL',
+      'NUXT_SITE_URL',
+    ]);
   }
 
   /**
    * Resolve the configured frontend URL plus selected environment fallbacks.
    *
    * @param string[] $env_names
-   *   Environment variable names to try after active config.
+   *   Environment variable names to try before active config.
    *
    * @return string|null
    *   The normalized frontend base URL or NULL if not configured.
    */
   protected function resolveFrontendBaseUrl(array $env_names): ?string {
+    // Host-specific runtime configuration is authoritative. Shared exported
+    // config must never redirect browser sessions or bearer links to another
+    // environment's frontend.
+    foreach ($env_names as $env_name) {
+      $raw_env_value = getenv($env_name);
+      if ($raw_env_value !== FALSE && trim($raw_env_value) !== '') {
+        // A configured but unsafe runtime value is an operational error. Fail
+        // closed instead of falling through to a possibly foreign config URL.
+        return $this->normalizeFrontendBaseUrl($raw_env_value);
+      }
+    }
+
     $config = $this->configFactory->get('markaspot_nuxt.settings');
     $frontend_enabled = $config->get('frontend_enabled');
 
@@ -76,14 +98,6 @@ class FrontendUrlService {
       $frontend_url = $this->normalizeFrontendBaseUrl((string) $config->get('frontend_base_url'));
       if ($frontend_url) {
         return $frontend_url;
-      }
-    }
-
-    // Fallback to runtime environment variables for host-specific deploys.
-    foreach ($env_names as $env_name) {
-      $frontend_base_url_env = $this->normalizeFrontendBaseUrl((string) getenv($env_name));
-      if ($frontend_base_url_env !== NULL) {
-        return $frontend_base_url_env;
       }
     }
 
@@ -152,7 +166,7 @@ class FrontendUrlService {
    * @return string|null
    *   Normalized URL without trailing slash, or NULL for unsafe/internal URLs.
    */
-  protected function normalizeFrontendBaseUrl(string $url): ?string {
+  public function normalizeFrontendBaseUrl(string $url): ?string {
     $url = $this->publicUrlValidator->normalizeBaseUrl($url);
     if ($url === NULL) {
       return NULL;
