@@ -4720,7 +4720,12 @@ function _markaspot_ensure_search_api_body_utf8mb4($database): string {
   if ($collation === 'utf8mb4_bin') {
     return "Search API column $table.$column already uses utf8mb4_bin.";
   }
-  if (!in_array($collation, ['utf8_general_ci', 'utf8mb3_general_ci'], TRUE)) {
+  $uses_utf8mb4 = str_starts_with($collation, 'utf8mb4_');
+  $uses_legacy_utf8 = str_starts_with($collation, 'utf8_') ||
+    str_starts_with($collation, 'utf8mb3_');
+  if (!$uses_utf8mb4 && !$uses_legacy_utf8) {
+    // An unknown collation in a recognized UTF-8 charset is safe here. A
+    // foreign charset could cause silent data loss during conversion.
     throw new UpdateException("Unexpected collation for $table.$column: $collation.");
   }
 
@@ -4748,7 +4753,11 @@ function _markaspot_ensure_search_api_body_utf8mb4($database): string {
     throw new UpdateException("Failed to convert $table.$column to utf8mb4_bin.");
   }
 
-  return "Converted Search API column $table.$column to utf8mb4_bin.";
+  if ($uses_utf8mb4) {
+    return "Changed Search API column $table.$column collation from $collation to utf8mb4_bin.";
+  }
+
+  return "Converted Search API column $table.$column from $collation to utf8mb4_bin.";
 }
 
 /**

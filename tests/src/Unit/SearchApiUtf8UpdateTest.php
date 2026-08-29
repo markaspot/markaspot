@@ -191,17 +191,19 @@ class SearchApiUtf8UpdateTest extends UnitTestCase {
   }
 
   /**
-   * Confirms a foreign four-byte collation fails closed.
+   * Confirms another four-byte collation is changed to the binary collation.
    */
-  public function testDifferentUtf8mb4CollationFailsClosed(): void {
+  public function testDifferentUtf8mb4CollationIsChanged(): void {
     $database = new SearchApiUtf8ConnectionDouble(
       new SearchApiUtf8SchemaDouble(),
-      collation: 'utf8mb4_unicode_ci',
+      collation: 'utf8mb4_general_ci',
     );
 
-    $this->expectException(UpdateException::class);
-    $this->expectExceptionMessage('Unexpected collation for search_api_db_service_requests.body: utf8mb4_unicode_ci.');
-    _markaspot_ensure_search_api_body_utf8mb4($database);
+    $this->assertSame(
+      'Changed Search API column search_api_db_service_requests.body collation from utf8mb4_general_ci to utf8mb4_bin.',
+      _markaspot_ensure_search_api_body_utf8mb4($database),
+    );
+    $this->assertCount(3, $database->queries);
   }
 
   /**
@@ -224,10 +226,13 @@ class SearchApiUtf8UpdateTest extends UnitTestCase {
    * Confirms only the body prefix column is converted.
    */
   public function testLegacyBodyColumnIsConverted(): void {
-    $database = new SearchApiUtf8ConnectionDouble(new SearchApiUtf8SchemaDouble());
+    $database = new SearchApiUtf8ConnectionDouble(
+      new SearchApiUtf8SchemaDouble(),
+      collation: 'utf8_general_ci',
+    );
 
     $this->assertSame(
-      'Converted Search API column search_api_db_service_requests.body to utf8mb4_bin.',
+      'Converted Search API column search_api_db_service_requests.body from utf8_general_ci to utf8mb4_bin.',
       _markaspot_ensure_search_api_body_utf8mb4($database),
     );
     $this->assertCount(3, $database->queries);
@@ -243,6 +248,41 @@ class SearchApiUtf8UpdateTest extends UnitTestCase {
     $this->assertStringContainsString("COMMENT 'The field''s value for this item'", $alter);
     $this->assertStringNotContainsString('CONVERT TO CHARACTER SET', $alter);
     $this->assertStringNotContainsString('item_id', $alter);
+  }
+
+  /**
+   * Confirms MariaDB 11's default three-byte collation is converted.
+   */
+  public function testMariaDbUtf8mb3CollationIsConverted(): void {
+    $database = new SearchApiUtf8ConnectionDouble(
+      new SearchApiUtf8SchemaDouble(),
+      collation: 'utf8mb3_uca1400_ai_ci',
+    );
+
+    $this->assertSame(
+      'Converted Search API column search_api_db_service_requests.body from utf8mb3_uca1400_ai_ci to utf8mb4_bin.',
+      _markaspot_ensure_search_api_body_utf8mb4($database),
+    );
+    $this->assertCount(3, $database->queries);
+  }
+
+  /**
+   * Confirms a foreign charset still fails closed.
+   */
+  public function testForeignCharsetFailsClosed(): void {
+    $database = new SearchApiUtf8ConnectionDouble(
+      new SearchApiUtf8SchemaDouble(),
+      collation: 'latin1_swedish_ci',
+    );
+
+    $this->expectException(UpdateException::class);
+    $this->expectExceptionMessage('Unexpected collation for search_api_db_service_requests.body: latin1_swedish_ci.');
+    try {
+      _markaspot_ensure_search_api_body_utf8mb4($database);
+    }
+    finally {
+      $this->assertCount(1, $database->queries);
+    }
   }
 
   /**
