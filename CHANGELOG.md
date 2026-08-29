@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.187](https://github.com/markaspot/markaspot/compare/11.9.186...11.9.187) (2026-08-29)
+
+### Bug Fixes
+
+* **icons:** restore required resolver safely ([76cd0cf](https://github.com/markaspot/markaspot/commit/76cd0cfd75b38246e1c27f11fded3b878a2d4bf6))
+
 ## [11.9.186](https://github.com/markaspot/markaspot/compare/11.9.185...11.9.186) (2026-08-29)
 
 ### Bug Fixes
