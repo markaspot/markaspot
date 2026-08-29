@@ -674,8 +674,15 @@ test_group('14. Utility APIs');
 
 // FA Icon API.
 if ($module_handler->moduleExists('fa_icon_class')) {
-  [$code] = http_get("$base/api/iconify_field/render/fa-home");
-  assert_true(in_array($code, [200, 400, 404]), "GET /api/iconify_field/render/{icon} responds ($code)");
+  [$code] = http_get("$base/api/iconify_field/render/lucide:home");
+  assert_equal(403, $code, 'GET /api/iconify_field/render/{icon} denies anonymous access');
+}
+if ($module_handler->moduleExists('iconify_field')) {
+  [$code] = http_get("$base/api/iconify_field/collections");
+  assert_equal(403, $code, 'GET /api/iconify_field/collections denies anonymous access');
+
+  [$code] = http_get("$base/api/iconify_field/icons/lucide");
+  assert_equal(403, $code, 'GET /api/iconify_field/icons/{collection} denies anonymous access');
 }
 
 // SHS Tweak.

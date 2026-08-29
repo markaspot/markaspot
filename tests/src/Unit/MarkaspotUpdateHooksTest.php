@@ -1072,4 +1072,60 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $this->assertSame('Internal remark role permissions already aligned.', $result);
   }
 
+  /**
+   * Tests that 11940 enables the required Iconify resolver when missing.
+   */
+  public function testUpdate11940EnablesMissingIconifyResolver(): void {
+    $this->moduleHandler->expects($this->exactly(2))
+      ->method('moduleExists')
+      ->willReturnMap([
+        ['iconify_field', FALSE],
+        ['markaspot_icons', TRUE],
+      ]);
+
+    $this->moduleInstaller->expects($this->once())
+      ->method('install')
+      ->with(['iconify_field']);
+
+    $this->assertSame(
+      'Enabled required Iconify modules: iconify_field.',
+      markaspot_update_11940()
+    );
+  }
+
+  /**
+   * Tests that 11940 restores the complete Iconify module chain.
+   */
+  public function testUpdate11940EnablesMissingIconifyModules(): void {
+    $this->moduleHandler->expects($this->exactly(2))
+      ->method('moduleExists')
+      ->willReturn(FALSE);
+
+    $this->moduleInstaller->expects($this->once())
+      ->method('install')
+      ->with(['iconify_field', 'markaspot_icons']);
+
+    $this->assertSame(
+      'Enabled required Iconify modules: iconify_field, markaspot_icons.',
+      markaspot_update_11940()
+    );
+  }
+
+  /**
+   * Tests that 11940 is idempotent when Iconify is already enabled.
+   */
+  public function testUpdate11940SkipsEnabledIconifyResolver(): void {
+    $this->moduleHandler->expects($this->exactly(2))
+      ->method('moduleExists')
+      ->willReturn(TRUE);
+
+    $this->moduleInstaller->expects($this->never())
+      ->method('install');
+
+    $this->assertSame(
+      'The required Iconify modules are already enabled.',
+      markaspot_update_11940()
+    );
+  }
+
 }

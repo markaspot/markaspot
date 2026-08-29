@@ -1,4 +1,9 @@
 services:
+  markaspot_icons.icon_api_route_subscriber:
+    class: Drupal\markaspot_icons\Routing\IconApiRouteSubscriber
+    tags:
+      - { name: event_subscriber }
+
   markaspot_icons.migration:
     class: Drupal\markaspot_icons\IconMigrationService
     arguments:

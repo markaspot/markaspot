@@ -4986,6 +4986,24 @@ function markaspot_update_11939(array &$sandbox): string {
 }
 
 /**
+ * Enables the required Iconify resolver on migrated installations.
+ */
+function markaspot_update_11940(): string {
+  $required_modules = ['iconify_field', 'markaspot_icons'];
+  $missing_modules = array_values(array_filter(
+    $required_modules,
+    static fn(string $module): bool => !\Drupal::moduleHandler()->moduleExists($module),
+  ));
+
+  if ($missing_modules === []) {
+    return 'The required Iconify modules are already enabled.';
+  }
+
+  \Drupal::service('module_installer')->install($missing_modules);
+  return sprintf('Enabled required Iconify modules: %s.', implode(', ', $missing_modules));
+}
+
+/**
  * Completes the shared management Search API index in bounded batches.
  *
  * @param array<string, mixed> $sandbox
