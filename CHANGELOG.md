@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.186](https://github.com/markaspot/markaspot/compare/11.9.185...11.9.186) (2026-08-29)
+
+### Bug Fixes
+
+* **auth:** secure frontend session handoff ([687119f](https://github.com/markaspot/markaspot/commit/687119f3de044af47324eae51dc22efbf9d5c760))
+
 ## [11.9.185](https://github.com/markaspot/markaspot/compare/11.9.184...11.9.185) (2026-08-29)
 
 ### Bug Fixes
