@@ -1,5 +1,14 @@
 # Changelog
 
+## [11.9.185](https://github.com/markaspot/markaspot/compare/11.9.184...11.9.185) (2026-08-29)
+
+### Bug Fixes
+
+* **config:** standardize shared tenant configuration ([b155854](https://github.com/markaspot/markaspot/commit/b155854f43dc695f7bea83e0feef2195439c2732))
+* **group:** honor effective responsibility cardinality ([85c08ea](https://github.com/markaspot/markaspot/commit/85c08ea08ffcb0c5fcb12568f7cc1af29631b00d))
+* **requests:** preserve legacy contact and upload data ([9a7e229](https://github.com/markaspot/markaspot/commit/9a7e22914bbae9f159c84ca786e75508b90ba2f2))
+* **search-api:** accept MariaDB collations when raising the index column to utf8mb4 ([11eec9a](https://github.com/markaspot/markaspot/commit/11eec9afb38d2ee9c2d9e5514043fa355293d14b))
+
 ## [11.9.184](https://github.com/markaspot/markaspot/compare/11.9.183...11.9.184) (2026-08-22)
 
 ### Features
