@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_dashboard\Unit;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\markaspot_dashboard\Controller\StatusNoteController;
 use Drupal\markaspot_group\Service\StatusTermScope;
@@ -161,6 +162,69 @@ final class ContractorStatusNoteAccessTest extends UnitTestCase {
     ]));
 
     $this->assertSame(403, $response->getStatusCode());
+  }
+
+  /**
+   * Managers persist a validated status in the status-note request.
+   *
+   * @covers ::add
+   */
+  public function testManagerStatusNotePersistsValidatedStatus(): void {
+    $manager = $this->createMock(AccountProxyInterface::class);
+    $manager->method('hasPermission')
+      ->with('manage dashboard notes')
+      ->willReturn(TRUE);
+    $manager->method('id')->willReturn(42);
+
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn('de');
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('access')->with('update')->willReturn(TRUE);
+    $node->method('language')->willReturn($language);
+    $node->expects($this->once())
+      ->method('set')
+      ->with('field_status', 17)
+      ->willReturnSelf();
+
+    $node_storage = $this->createMock(EntityStorageInterface::class);
+    $node_storage->method('loadByProperties')->willReturn([$node]);
+    $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
+    $entity_type_manager->method('getStorage')
+      ->with('node')
+      ->willReturn($node_storage);
+
+    $term = $this->createMock(TermInterface::class);
+    $term->method('id')->willReturn(17);
+    $status_term_scope = $this->createMock(StatusTermScope::class);
+    $status_term_scope->method('loadByProperties')->willReturn([$term]);
+
+    $georeport_processor = $this->createMock(GeoreportProcessorServiceInterface::class);
+    $georeport_processor->expects($this->once())
+      ->method('createStatusNoteParagraph')
+      ->with([
+        'status_term_id' => 17,
+        'note' => 'Status update',
+        'boilerplate_id' => NULL,
+        'author_id' => 42,
+      ], 'de')
+      ->willThrowException(new \RuntimeException('Stop after status synchronization.'));
+
+    $controller = new StatusNoteController(
+      $entity_type_manager,
+      $georeport_processor,
+      $manager,
+      $this->createMock(FeatureFlagChecker::class),
+      $status_term_scope,
+    );
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Stop after status synchronization.');
+    $controller->add($this->request([
+      'request_uuid' => 'request-uuid',
+      'status_term_uuid' => 'status-term-uuid',
+      'note' => 'Status update',
+    ]));
   }
 
   /**

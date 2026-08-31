@@ -149,10 +149,9 @@ class StatusNoteController extends ControllerBase {
       $statusTermId = (int) $node->get('field_status')->target_id;
     }
 
-    if ($limited_author && $statusTermId !== NULL) {
-      // The frontend creates the note before its later form PATCH. Persist the
-      // validated status in this same node save so the audit note and request
-      // cannot disagree even if that later request fails.
+    if ($statusTermId !== NULL) {
+      // Persist the validated status in the same node save as its audit note.
+      // A later form PATCH must not be required for these records to agree.
       $node->set('field_status', $statusTermId);
     }
 
