@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.188](https://github.com/markaspot/markaspot/compare/11.9.187...11.9.188) (2026-08-31)
+
+### Bug Fixes
+
+* **dashboard:** persist status with status notes ([d0880b7](https://github.com/markaspot/markaspot/commit/d0880b75acaafa08449baade36b32b337fa7613c))
+
 ## [11.9.187](https://github.com/markaspot/markaspot/compare/11.9.186...11.9.187) (2026-08-29)
 
 ### Bug Fixes
