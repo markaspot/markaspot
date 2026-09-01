@@ -2535,7 +2535,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   }
 
   _markaspot_group_apply_service_request_assignment_exclusivity($node);
-  _markaspot_group_add_assignment_audit_remark($node);
+  _markaspot_group_add_assignment_revision_log($node);
   _markaspot_group_prepare_assigned_team_notification($node);
 
   // 2. Detect field_jurisdiction changes and schedule jur relationship sync.
@@ -2595,7 +2595,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     $new_group_ids = _markaspot_group_field_target_ids($node, 'field_organisation');
   }
 
-  _markaspot_group_add_assignment_sync_audit_remark($node, $assignment_syncs_organisation);
+  _markaspot_group_add_assignment_sync_revision_log($node, $assignment_syncs_organisation);
 
   // For new nodes, we can't sync yet - need to wait until after save.
   // The relationships will be created in hook_node_insert.
@@ -3050,57 +3050,68 @@ function _markaspot_group_apply_service_request_assignment_exclusivity(NodeInter
 }
 
 /**
- * Adds an internal audit remark for team assignment changes.
+ * Adds a revision log entry for assignment changes.
  */
-function _markaspot_group_add_assignment_audit_remark(NodeInterface $node): void {
+function _markaspot_group_add_assignment_revision_log(NodeInterface $node): void {
   if (!$node->hasField('field_assignee') || !$node->hasField('field_assigned_team')) {
+    return;
+  }
+
+  $original = $node->getOriginal();
+  if ($node->isNew() || !$original instanceof NodeInterface) {
     return;
   }
 
   if (_markaspot_group_field_target_changed($node, 'field_assigned_team')
     && !$node->get('field_assigned_team')->isEmpty()) {
-    _markaspot_group_add_team_assignment_audit_remark($node);
+    _markaspot_group_add_team_assignment_revision_log($node);
+    return;
+  }
+
+  if (_markaspot_group_field_target_changed($node, 'field_assignee')
+    && !$node->get('field_assignee')->isEmpty()) {
+    $assignee = _markaspot_group_service_request_assignee_user($node);
+    if ($assignee instanceof UserInterface) {
+      _markaspot_group_set_assignment_revision_log_message($node, (string) t('Arbeit der Person @person zugewiesen.', [
+        '@person' => $assignee->getDisplayName(),
+      ]));
+    }
     return;
   }
 
   if (_markaspot_group_field_target_changed($node, 'field_assignee')
     && $node->get('field_assignee')->isEmpty()
-    && !$node->get('field_assigned_team')->isEmpty()
-    && isset($node->original)
-    && $node->original instanceof NodeInterface
-    && $node->original->hasField('field_assignee')
-    && !$node->original->get('field_assignee')->isEmpty()
-    && $node->original->hasField('field_assigned_team')
-    && !$node->original->get('field_assigned_team')->isEmpty()) {
-    _markaspot_group_add_team_assignment_audit_remark($node);
+    && $original->hasField('field_assignee')
+    && !$original->get('field_assignee')->isEmpty()) {
+    $previous_assignee = $original->get('field_assignee')->entity;
+    if ($previous_assignee instanceof UserInterface) {
+      _markaspot_group_set_assignment_revision_log_message($node, (string) t('Zuweisung der Person @person aufgehoben.', [
+        '@person' => $previous_assignee->getDisplayName(),
+      ]));
+    }
     return;
   }
 
-  if (!_markaspot_group_field_target_changed($node, 'field_assignee')
-    || !$node->get('field_assigned_team')->isEmpty()
-    || $node->get('field_assignee')->isEmpty()
-    || !isset($node->original)
-    || !$node->original instanceof NodeInterface
-    || !$node->original->hasField('field_assigned_team')
-    || $node->original->get('field_assigned_team')->isEmpty()) {
-    return;
-  }
-
-  $assignee = _markaspot_group_service_request_assignee_user($node);
-  if ($assignee instanceof UserInterface) {
-    _markaspot_group_append_internal_remark_text($node, (string) t('Arbeit der Person @person zugewiesen.', [
-      '@person' => $assignee->getDisplayName(),
-    ]));
+  if (_markaspot_group_field_target_changed($node, 'field_assigned_team')
+    && $node->get('field_assigned_team')->isEmpty()
+    && $original->hasField('field_assigned_team')
+    && !$original->get('field_assigned_team')->isEmpty()) {
+    $previous_team = $original->get('field_assigned_team')->entity;
+    if ($previous_team instanceof GroupInterface) {
+      _markaspot_group_set_assignment_revision_log_message($node, (string) t('Zuweisung der Einheit @team aufgehoben.', [
+        '@team' => (string) $previous_team->label(),
+      ]));
+    }
   }
 }
 
 /**
- * Adds the internal audit remark for the current assigned team.
+ * Adds the revision log entry for the current assigned team.
  */
-function _markaspot_group_add_team_assignment_audit_remark(NodeInterface $node): void {
+function _markaspot_group_add_team_assignment_revision_log(NodeInterface $node): void {
   $team = _markaspot_group_service_request_assigned_team_group($node);
   if ($team instanceof GroupInterface) {
-    _markaspot_group_append_internal_remark_text($node, (string) t('Arbeit der Einheit @team zugewiesen.', [
+    _markaspot_group_set_assignment_revision_log_message($node, (string) t('Arbeit der Einheit @team zugewiesen.', [
       '@team' => (string) $team->label(),
     ]));
   }
@@ -3204,9 +3215,9 @@ function _markaspot_group_sync_organisation_to_assignee(NodeInterface $node): vo
 }
 
 /**
- * Adds an internal audit remark for assignment-coupled responsibility changes.
+ * Adds a revision log entry for assignment-coupled responsibility changes.
  */
-function _markaspot_group_add_assignment_sync_audit_remark(NodeInterface $node, bool $assignment_syncs_organisation): void {
+function _markaspot_group_add_assignment_sync_revision_log(NodeInterface $node, bool $assignment_syncs_organisation): void {
   if (!$assignment_syncs_organisation
     || !_markaspot_group_field_target_changed($node, 'field_assignee')
     || !_markaspot_group_field_target_changed($node, 'field_organisation')) {
@@ -3231,87 +3242,52 @@ function _markaspot_group_add_assignment_sync_audit_remark(NodeInterface $node, 
     return;
   }
 
-  $remark = (string) t('Zuständigkeit folgt Zuweisung an @person: @organisation.', [
+  $message = (string) t('Zuständigkeit folgt Zuweisung an @person: @organisation.', [
     '@person' => $assignee->getDisplayName(),
     '@organisation' => implode(', ', $organisation_labels),
   ]);
 
-  _markaspot_group_append_internal_remark_text($node, $remark);
+  _markaspot_group_append_revision_log_message($node, $message);
 }
 
 /**
- * Appends an internal_remark paragraph without saving the node.
+ * Starts an assignment-owned node revision log.
  */
-function _markaspot_group_append_internal_remark_text(NodeInterface $node, string $text): bool {
-  if (!$node->hasField('field_internal_remark')) {
-    \Drupal::logger('markaspot_group')->notice(
-      'Node @nid has no field_internal_remark; assignment sync audit remark not stored.',
-      ['@nid' => $node->id() ? (int) $node->id() : 'new']
-    );
-    return FALSE;
+function _markaspot_group_set_assignment_revision_log_message(NodeInterface $node, string $message): void {
+  $message = trim($message);
+  if ($message === '') {
+    return;
   }
 
-  if (\Drupal::hasService('markaspot_escalation.service')) {
-    $service = \Drupal::service('markaspot_escalation.service');
-    if (method_exists($service, 'appendInternalRemarkText')) {
-      try {
-        $service->appendInternalRemarkText($node, $text);
-        return TRUE;
-      }
-      catch (\Throwable $e) {
-        \Drupal::logger('markaspot_group')->error(
-          'Failed to append assignment sync audit remark through escalation service for node @nid: @message',
-          [
-            '@nid' => $node->id() ? (int) $node->id() : 'new',
-            '@message' => $e->getMessage(),
-          ]
-        );
-        return FALSE;
-      }
-    }
+  // Assignment mutations are audit events even when a caller does not use
+  // JSON:API or the bundle's default-new-revision setting. The assignment
+  // subsystem owns this log so a client-supplied message cannot impersonate a
+  // system-generated assignment event.
+  $node->setNewRevision(TRUE);
+  $node->setRevisionUserId((int) \Drupal::currentUser()->id());
+  $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
+  $node->setRevisionLogMessage($message);
+}
+
+/**
+ * Appends a second assignment-owned message to the pending revision log.
+ */
+function _markaspot_group_append_revision_log_message(NodeInterface $node, string $message): void {
+  $message = trim($message);
+  if ($message === '') {
+    return;
   }
 
-  $entity_type_manager = \Drupal::entityTypeManager();
-  if (!$entity_type_manager->hasDefinition('paragraph')
-    || !$entity_type_manager->hasDefinition('paragraphs_type')
-    || $entity_type_manager->getStorage('paragraphs_type')->load('internal_remark') === NULL) {
-    \Drupal::logger('markaspot_group')->notice(
-      'Paragraph bundle internal_remark missing; assignment sync audit remark for node @nid not stored.',
-      ['@nid' => $node->id() ? (int) $node->id() : 'new']
-    );
-    return FALSE;
+  $current_message = trim((string) $node->getRevisionLogMessage());
+  $messages = $current_message === ''
+    ? []
+    : preg_split('/\R/u', $current_message, -1, PREG_SPLIT_NO_EMPTY);
+  $messages = is_array($messages) ? array_map('trim', $messages) : [];
+  if (!in_array($message, $messages, TRUE)) {
+    $messages[] = $message;
   }
 
-  try {
-    $paragraph = $entity_type_manager->getStorage('paragraph')->create([
-      'type' => 'internal_remark',
-      'langcode' => $node->language()->getId(),
-      'field_internal_remark_text' => [
-        'value' => $text,
-        'format' => 'plain_text',
-      ],
-    ]);
-    $paragraph->save();
-
-    $current = $node->get('field_internal_remark')->getValue();
-    $current[] = [
-      'target_id' => $paragraph->id(),
-      'target_revision_id' => $paragraph->getRevisionId(),
-    ];
-    $node->set('field_internal_remark', $current);
-  }
-  catch (\Throwable $e) {
-    \Drupal::logger('markaspot_group')->error(
-      'Failed to append assignment sync audit remark to node @nid: @message',
-      [
-        '@nid' => $node->id() ? (int) $node->id() : 'new',
-        '@message' => $e->getMessage(),
-      ]
-    );
-    return FALSE;
-  }
-
-  return TRUE;
+  $node->setRevisionLogMessage(implode("\n", $messages));
 }
 
 /**

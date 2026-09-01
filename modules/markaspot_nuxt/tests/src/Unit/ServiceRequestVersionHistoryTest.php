@@ -6,12 +6,14 @@ namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\jsonapi\JsonApiResource\ResourceObject;
 use Drupal\markaspot_nuxt\Resource\ServiceRequestVersionHistory;
@@ -97,10 +99,10 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   /**
    * Builds the resource under test with the mocked collaborators.
    */
-  protected function resource(): TestableServiceRequestVersionHistory {
+  protected function resource(?AccountInterface $account = NULL): TestableServiceRequestVersionHistory {
     return new TestableServiceRequestVersionHistory(
       $this->entityTypeManager,
-      $this->createMock(AccountInterface::class),
+      $account ?? $this->createMock(AccountInterface::class),
       $this->dateFormatter,
       $this->logger,
       $this->database
@@ -285,6 +287,30 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
 
     $this->expectException(AccessDeniedHttpException::class);
     $this->resource()->process($request, $entity);
+  }
+
+  /**
+   * Tests staff without assignment field access cannot read revision history.
+   *
+   * @covers ::process
+   */
+  public function testForeignTenantAssignmentHistoryIsDenied(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $assignment = $this->createMock(FieldItemListInterface::class);
+    $assignment->expects($this->once())
+      ->method('access')
+      ->with('view', $account, TRUE)
+      ->willReturn(AccessResult::forbidden());
+
+    $entity = $this->createMock(NodeInterface::class);
+    $entity->method('bundle')->willReturn('service_request');
+    $entity->method('hasField')->with('field_assignee')->willReturn(TRUE);
+    $entity->method('get')->with('field_assignee')->willReturn($assignment);
+
+    $request = $this->createMock(Request::class);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->resource($account)->process($request, $entity);
   }
 
   /**

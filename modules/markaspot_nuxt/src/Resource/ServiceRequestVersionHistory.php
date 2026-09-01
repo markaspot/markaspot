@@ -42,13 +42,11 @@ use Symfony\Component\Routing\Route;
  * than a contract change for the Nuxt frontend (markaspot-ui#329). When core
  * ships #3009588 this resource can be deleted and the frontend repointed.
  *
- * Security: this endpoint exposes the revision author identity, so it is
- * staff-only. Access is gated on the route via the node revision permissions
- * (`view all revisions` OR `edit any service_request content`), aligned with
- * the staff gate used elsewhere for request author data. Author identity is
- * NEVER leaked to anonymous or reporter accounts, consistent with the
- * revision_uid / revision_log / revision_timestamp hardening applied to the
- * core node--service_request JSON:API resource (markaspot_nuxt_update_11904).
+ * Security: this endpoint exposes the revision author identity and assignment
+ * labels, so it is both staff-only and tenant-scoped. Route permissions provide
+ * the staff gate; process() additionally requires the same field-level view
+ * access as field_assignee. Author identity and assignment history are never
+ * exposed to anonymous, reporter, or foreign-tenant accounts.
  *
  * @internal
  */
@@ -82,6 +80,8 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
    *   The date formatter.
    * @param \Psr\Log\LoggerInterface $logger
    *   The markaspot_nuxt logger channel.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database connection.
    */
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
@@ -131,12 +131,24 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       throw new AccessDeniedHttpException();
     }
 
+    // Revision logs can contain assignee display names and organisation labels.
+    // Reuse the exact field-access boundary that protects the live assignment
+    // fields so global editorial permissions cannot cross tenant boundaries.
+    if (!$entity->hasField('field_assignee')) {
+      throw new AccessDeniedHttpException();
+    }
+    $assignment_access = $entity->get('field_assignee')->access('view', $this->currentUser, TRUE);
+    if (!$assignment_access->isAllowed()) {
+      throw new AccessDeniedHttpException();
+    }
+
     $cacheability = new CacheableMetadata();
     // Recompute when the user, their permissions, or the node (any revision)
     // change. The node's own cache tag covers new revisions because saving a
     // revision invalidates node:{nid}.
     $cacheability->addCacheContexts(['user', 'user.permissions']);
     $cacheability->addCacheableDependency($entity);
+    $cacheability->addCacheableDependency($assignment_access);
 
     $built = $this->buildRevisionItems($entity);
 

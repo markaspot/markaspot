@@ -50,8 +50,8 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     'gnode',
     'field_permissions',
     'entity_reference_revisions',
-    // Paragraphs (audit remark coverage) requires the file module's
-    // file.usage service at container build time.
+    // Paragraphs (internal remark separation coverage) requires the file
+    // module's file.usage service at container build time.
     'file',
     'paragraphs',
     'markaspot_validation',
@@ -647,6 +647,8 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
    */
   public function testAssignedTeamClearsAssigneeAndKeepsOrganisation(): void {
     $request = $this->createServiceRequest($this->organisation, $this->orgMember);
+    $previous_revision_id = (int) $request->getRevisionId();
+    $this->container->get('current_user')->setAccount($this->assigner);
 
     $request->set('field_assigned_team', $this->parksOrganisation->id());
     $request->save();
@@ -656,7 +658,52 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->assertSame((int) $this->parksOrganisation->id(), (int) $request->get('field_assigned_team')->target_id);
     $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
     $this->assertSame([(int) $this->organisation->id()], $this->organisationRelationshipIds($request));
-    $this->assertSame('Arbeit der Einheit Parks zugewiesen.', $this->latestInternalRemarkText($request));
+    $this->assertNotSame($previous_revision_id, (int) $request->getRevisionId());
+    $this->assertSame((int) $this->assigner->id(), (int) $request->getRevisionUserId());
+    $this->assertSame('Arbeit der Einheit Parks zugewiesen.', $request->getRevisionLogMessage());
+    $this->assertNull($this->latestInternalRemarkText($request));
+  }
+
+  /**
+   * Switching teams records only the newly assigned team.
+   */
+  public function testAssignedTeamSwitchCreatesAttributedRevision(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $request->set('field_assigned_team', $this->parksOrganisation->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+    $previous_revision_id = (int) $request->getRevisionId();
+    $this->container->get('current_user')->setAccount($this->assigner);
+
+    $request->set('field_assigned_team', $this->trafficOrganisation->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertNotSame($previous_revision_id, (int) $request->getRevisionId());
+    $this->assertSame((int) $this->assigner->id(), (int) $request->getRevisionUserId());
+    $this->assertSame('Arbeit der Einheit Traffic zugewiesen.', $request->getRevisionLogMessage());
+    $this->assertNull($this->latestInternalRemarkText($request));
+  }
+
+  /**
+   * Removing a team assignment creates an attributed revision.
+   */
+  public function testAssignedTeamUnassignCreatesAttributedRevision(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $request->set('field_assigned_team', $this->parksOrganisation->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+    $previous_revision_id = (int) $request->getRevisionId();
+    $this->container->get('current_user')->setAccount($this->assigner);
+
+    $request->set('field_assigned_team', NULL);
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertNotSame($previous_revision_id, (int) $request->getRevisionId());
+    $this->assertSame((int) $this->assigner->id(), (int) $request->getRevisionUserId());
+    $this->assertSame('Zuweisung der Einheit Parks aufgehoben.', $request->getRevisionLogMessage());
+    $this->assertNull($this->latestInternalRemarkText($request));
   }
 
   /**
@@ -742,6 +789,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $request->save();
     $request = $this->reloadNode($request);
 
+    $this->container->get('current_user')->setAccount($this->assigner);
     $request->set('field_assignee', $this->orgMember->id());
     $request->save();
     $request = $this->reloadNode($request);
@@ -749,7 +797,44 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->assertSame((int) $this->orgMember->id(), (int) $request->get('field_assignee')->target_id);
     $this->assertTrue($request->get('field_assigned_team')->isEmpty());
     $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
-    $this->assertSame('Arbeit der Person org-member zugewiesen.', $this->latestInternalRemarkText($request));
+    $this->assertSame((int) $this->assigner->id(), (int) $request->getRevisionUserId());
+    $this->assertSame('Arbeit der Person org-member zugewiesen.', $request->getRevisionLogMessage());
+    $this->assertNull($this->latestInternalRemarkText($request));
+  }
+
+  /**
+   * Switching assignees records only the newly assigned person.
+   */
+  public function testAssigneeSwitchCreatesAttributedRevision(): void {
+    $request = $this->createServiceRequest($this->organisation, $this->orgMember);
+    $previous_revision_id = (int) $request->getRevisionId();
+    $this->container->get('current_user')->setAccount($this->assigner);
+
+    $request->set('field_assignee', $this->multiOrgMember->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertNotSame($previous_revision_id, (int) $request->getRevisionId());
+    $this->assertSame((int) $this->assigner->id(), (int) $request->getRevisionUserId());
+    $this->assertSame('Arbeit der Person multi-org-member zugewiesen.', $request->getRevisionLogMessage());
+    $this->assertNull($this->latestInternalRemarkText($request));
+  }
+
+  /**
+   * Assignment audit text cannot be supplied by the caller.
+   */
+  public function testAssignmentRevisionLogOverridesCallerMessage(): void {
+    $request = $this->createServiceRequest($this->organisation, $this->orgMember);
+    $this->container->get('current_user')->setAccount($this->assigner);
+
+    $request->setRevisionLogMessage('Arbeit der Person forged-user zugewiesen.');
+    $request->set('field_assignee', $this->multiOrgMember->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertSame('Arbeit der Person multi-org-member zugewiesen.', $request->getRevisionLogMessage());
+    $this->assertStringNotContainsString('forged-user', (string) $request->getRevisionLogMessage());
+    $this->assertNull($this->latestInternalRemarkText($request));
   }
 
   /**
@@ -766,9 +851,10 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->assertSame([(int) $this->parksOrganisation->id()], $this->organisationIds($request));
     $this->assertSame([(int) $this->parksOrganisation->id()], $this->organisationRelationshipIds($request));
     $this->assertSame(
-      'Zuständigkeit folgt Zuweisung an parks-member: Parks.',
-      $this->latestInternalRemarkText($request),
+      "Arbeit der Person parks-member zugewiesen.\nZuständigkeit folgt Zuweisung an parks-member: Parks.",
+      $request->getRevisionLogMessage(),
     );
+    $this->assertNull($this->latestInternalRemarkText($request));
   }
 
   /**
@@ -783,6 +869,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $request = $this->reloadNode($request);
 
     $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+    $this->assertSame('Arbeit der Person org-member zugewiesen.', $request->getRevisionLogMessage());
     $this->assertNull($this->latestInternalRemarkText($request));
   }
 
@@ -798,6 +885,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $request = $this->reloadNode($request);
 
     $this->assertSame([(int) $this->trafficOrganisation->id()], $this->organisationIds($request));
+    $this->assertSame('Arbeit der Person multi-org-member zugewiesen.', $request->getRevisionLogMessage());
     $this->assertNull($this->latestInternalRemarkText($request));
   }
 
@@ -847,6 +935,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $request = $this->reloadNode($request);
 
     $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+    $this->assertSame('Arbeit der Person sibling-member zugewiesen.', $request->getRevisionLogMessage());
     $this->assertNull($this->latestInternalRemarkText($request));
   }
 
@@ -862,6 +951,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $request = $this->reloadNode($request);
 
     $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+    $this->assertSame('Arbeit der Person parks-member zugewiesen.', $request->getRevisionLogMessage());
     $this->assertNull($this->latestInternalRemarkText($request));
   }
 
@@ -871,12 +961,17 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   public function testAssignmentSyncsOrganisationUnassignLeavesOrganisationUnchanged(): void {
     $this->setAssignmentSyncsOrganisation(TRUE);
     $request = $this->createServiceRequest($this->organisation, $this->orgMember);
+    $previous_revision_id = (int) $request->getRevisionId();
+    $this->container->get('current_user')->setAccount($this->assigner);
 
     $request->set('field_assignee', NULL);
     $request->save();
     $request = $this->reloadNode($request);
 
     $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+    $this->assertNotSame($previous_revision_id, (int) $request->getRevisionId());
+    $this->assertSame((int) $this->assigner->id(), (int) $request->getRevisionUserId());
+    $this->assertSame('Zuweisung der Person org-member aufgehoben.', $request->getRevisionLogMessage());
     $this->assertNull($this->latestInternalRemarkText($request));
   }
 
@@ -894,9 +989,10 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
 
     $this->assertSame([(int) $this->parksOrganisation->id()], $this->organisationIds($request));
     $this->assertSame(
-      'Zuständigkeit folgt Zuweisung an parks-member: Parks.',
-      $this->latestInternalRemarkText($request),
+      "Arbeit der Person parks-member zugewiesen.\nZuständigkeit folgt Zuweisung an parks-member: Parks.",
+      $request->getRevisionLogMessage(),
     );
+    $this->assertNull($this->latestInternalRemarkText($request));
   }
 
   /**
