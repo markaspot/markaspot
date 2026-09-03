@@ -192,8 +192,9 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
 
     $this->assertIsString($install);
     $this->assertStringContainsString('$existing = $storage->load($resourceId);', $install);
-    $this->assertStringContainsString("'paragraph--internal_remark' => ['paragraph', 'internal_remark', ['id', 'uuid', 'created', 'field_internal_remark_text', 'field_author']]", $install);
-    $this->assertStringContainsString("'taxonomy_term--service_provider_status' => ['taxonomy_term', 'service_provider_status', ['tid', 'status', 'name', 'weight']]", $install);
+    $normalized = $this->normalizeArraySource($install);
+    $this->assertStringContainsString("'paragraph--internal_remark' => ['paragraph', 'internal_remark', ['id', 'uuid', 'created', 'field_internal_remark_text', 'field_author']]", $normalized);
+    $this->assertStringContainsString("'taxonomy_term--service_provider_status' => ['taxonomy_term', 'service_provider_status', ['tid', 'status', 'name', 'weight']]", $normalized);
     $this->assertStringContainsString('$hardenResourceFields($existing, $entityTypeId, $bundle, $allowedFields)', $install);
     $this->assertStringContainsString('$existing->save();', $install);
   }
@@ -229,6 +230,20 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
       }
       $this->assertTrue($resourceFields[$fieldName]['disabled']);
     }
+  }
+
+  /**
+   * Collapses multi-line array literals so assertions ignore formatting.
+   *
+   * Coding standards wrap long array declarations across lines; the
+   * assertions describe the policy content, not its line layout.
+   */
+  private function normalizeArraySource(string $source): string {
+    return (string) preg_replace(
+      ['/,\s*\]/', '/\[\s+/', '/\s+/'],
+      [']', '[', ' '],
+      $source,
+    );
   }
 
 }
