@@ -2110,12 +2110,12 @@ function markaspot_group_group_update(GroupInterface $group): void {
   \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
   $original_group = $group->getOriginal();
 
-  if (_markaspot_group_is_jurisdiction_group($group)
-    && $original_group instanceof GroupInterface
+  if ($original_group instanceof GroupInterface
     && $group->hasField('field_visibility')
     && $original_group->hasField('field_visibility')
     && $group->get('field_visibility')->getValue()
-      !== $original_group->get('field_visibility')->getValue()) {
+      !== $original_group->get('field_visibility')->getValue()
+    && _markaspot_group_is_jurisdiction_group($group)) {
     _markaspot_group_rewrite_page_access_grants((int) $group->id());
   }
 
