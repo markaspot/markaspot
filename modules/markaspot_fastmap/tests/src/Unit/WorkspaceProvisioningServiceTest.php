@@ -2605,6 +2605,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
               'lang' => $lang,
               'title' => $data['title'],
               'body' => $data['body']['value'] ?? $data['body'],
+              'promote' => $data['promote'] ?? NULL,
+              'sticky' => $data['sticky'] ?? NULL,
+              'status' => $data['status'] ?? NULL,
             ];
             $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
@@ -2638,6 +2641,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $dePage = reset($dePages);
     $this->assertEquals('Willkommen bei Test', $dePage['title']);
     $this->assertStringContainsString('deutsche Startseite', $dePage['body']);
+    $this->assertTrue($dePage['promote']);
+    $this->assertTrue($dePage['sticky']);
+    $this->assertTrue($dePage['status']);
   }
 
   /**
@@ -2695,6 +2701,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
               'lang' => $lang,
               'title' => $data['title'],
               'body' => $data['body']['value'] ?? $data['body'],
+              'promote' => $data['promote'] ?? NULL,
+              'sticky' => $data['sticky'] ?? NULL,
+              'status' => $data['status'] ?? NULL,
             ];
             $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
@@ -2734,11 +2743,17 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $dePage = reset($dePages);
     $this->assertStringContainsString('AI-generiert', $dePage['title']);
+    $this->assertTrue($dePage['promote']);
+    $this->assertTrue($dePage['sticky']);
+    $this->assertTrue($dePage['status']);
 
     // French should use the template with %name replaced.
     $frPage = reset($frPages);
     $this->assertStringContainsString('Bienvenue', $frPage['title']);
     $this->assertStringContainsString('Test Workspace', $frPage['title']);
+    $this->assertTrue($frPage['promote']);
+    $this->assertTrue($frPage['sticky']);
+    $this->assertTrue($frPage['status']);
   }
 
   /**

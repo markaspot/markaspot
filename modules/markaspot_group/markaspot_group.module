@@ -751,6 +751,89 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
 }
 
 /**
+ * Implements hook_node_access_records_alter().
+ *
+ * Node access realms are additive. Restricted workspace pages therefore keep
+ * no view grant from another realm: their only view records are the workspace
+ * member and site administrator grants added here.
+ */
+function markaspot_group_node_access_records_alter(array &$grants, NodeInterface $node): void {
+  if ($node->bundle() !== 'page') {
+    return;
+  }
+
+  $jurisdiction_ids = _markaspot_group_workspace_visibility_jurisdiction_ids($node);
+  if ($jurisdiction_ids === []) {
+    return;
+  }
+
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
+  $restricted_ids = array_values(array_filter(
+    $jurisdiction_ids,
+    static fn(int $id): bool => $service->getVisibility($id) !== 'public',
+  ));
+  if ($restricted_ids === []) {
+    return;
+  }
+
+  foreach ($grants as $key => &$grant) {
+    if (empty($grant['grant_view'])) {
+      continue;
+    }
+
+    $grant['grant_view'] = 0;
+    if (empty($grant['grant_update']) && empty($grant['grant_delete'])) {
+      unset($grants[$key]);
+    }
+  }
+  unset($grant);
+
+  $view_gids = [0];
+  $has_blocked_workspace = array_any(
+    $restricted_ids,
+    static fn(int $id): bool => $service->isBlocked($id),
+  );
+  if (!$has_blocked_workspace) {
+    foreach ($restricted_ids as $jurisdiction_id) {
+      $view_gids[] = $jurisdiction_id;
+    }
+  }
+
+  $page = $node->getUntranslated();
+  foreach (array_keys($page->getTranslationLanguages()) as $langcode) {
+    $translation = $page->getTranslation($langcode);
+    foreach (array_values(array_unique($view_gids)) as $gid) {
+      $grants[] = [
+        'realm' => 'markaspot_page_visibility',
+        'gid' => $gid,
+        'grant_view' => (int) $translation->isPublished(),
+        'grant_update' => 0,
+        'grant_delete' => 0,
+        'langcode' => $langcode,
+      ];
+    }
+  }
+}
+
+/**
+ * Implements hook_node_grants().
+ */
+function markaspot_group_node_grants(AccountInterface $account, string $operation): array {
+  if ($operation !== 'view') {
+    return [];
+  }
+
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+  $service = \Drupal::service('markaspot_group.workspace_visibility');
+  $grant_ids = $service->getPageViewGrantIds($account);
+
+  return $grant_ids === []
+    ? []
+    : ['markaspot_page_visibility' => $grant_ids];
+}
+
+/**
  * Implements hook_node_access().
  *
  * Contractor access is a restrictive overlay on Group's additive permission
@@ -868,9 +951,11 @@ function _markaspot_group_workspace_visibility_node_access(NodeInterface $node, 
   /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
   $service = \Drupal::service('markaspot_group.workspace_visibility');
   foreach ($jurisdiction_ids as $jurisdiction_id) {
-    $allowed = $node->bundle() === 'service_request'
-      ? $service->allowsReadFor($account, $jurisdiction_id)
-      : !$account->isAnonymous() || $service->canAnonymousView($jurisdiction_id);
+    $allowed = match ($node->bundle()) {
+      'service_request' => $service->allowsReadFor($account, $jurisdiction_id),
+      'page' => $service->allowsPageReadFor($account, $jurisdiction_id),
+      default => TRUE,
+    };
     if (!$allowed) {
       return AccessResult::forbidden('Workspace visibility prevents viewing this content.')
         ->cachePerUser()
@@ -1258,9 +1343,9 @@ function markaspot_group_entity_create_access(AccountInterface $account, array $
 /**
  * Implements hook_query_TAG_alter() for node_access.
  *
- * Excludes service requests assigned to any jurisdiction the current account
- * may not read. The anti-subquery makes a restrictive target win for
- * multi-value field_jurisdiction assignments.
+ * Excludes nodes assigned to any jurisdiction the current account may not
+ * read. The anti-subquery makes a restrictive target win for multi-value
+ * field_jurisdiction assignments.
  */
 function markaspot_group_query_node_access_alter(AlterableInterface $query): void {
   if (!$query instanceof SelectInterface
@@ -1271,19 +1356,27 @@ function markaspot_group_query_node_access_alter(AlterableInterface $query): voi
 
   /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
   $service = \Drupal::service('markaspot_group.workspace_visibility');
-  $account = \Drupal::currentUser();
-  $unreadable_ids = $service->getUnreadableJurisdictionIds(
-    $account,
-  );
-  _markaspot_group_bubble_workspace_query_cacheability($account);
-  if ($unreadable_ids === []) {
-    return;
+  $account = $query->getMetaData('account');
+  if (!$account instanceof AccountInterface) {
+    $account = \Drupal::currentUser();
   }
-
-  _markaspot_group_exclude_unreadable_workspace_requests(
-    $query,
-    $unreadable_ids,
-  );
+  $unreadable_request_ids = $service->getUnreadableJurisdictionIds($account);
+  $unreadable_page_ids = $service->getUnreadablePageJurisdictionIds($account);
+  _markaspot_group_bubble_workspace_query_cacheability($account);
+  if ($unreadable_request_ids !== []) {
+    _markaspot_group_exclude_unreadable_workspace_nodes(
+      $query,
+      $unreadable_request_ids,
+      'service_request',
+    );
+  }
+  if ($unreadable_page_ids !== []) {
+    _markaspot_group_exclude_unreadable_workspace_nodes(
+      $query,
+      $unreadable_page_ids,
+      'page',
+    );
+  }
 }
 
 /**
@@ -1327,14 +1420,14 @@ function _markaspot_group_bubble_workspace_query_cacheability(AccountInterface $
  * @param int[] $unreadable_jurisdiction_ids
  *   Jurisdiction IDs whose requests must be excluded.
  */
-function _markaspot_group_exclude_unreadable_workspace_requests(SelectInterface $query, array $unreadable_jurisdiction_ids): void {
+function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $query, array $unreadable_jurisdiction_ids, string $bundle): void {
   $node_storage = \Drupal::entityTypeManager()->getStorage('node');
   $field_storage_definitions = \Drupal::service('entity_field.manager')
     ->getFieldStorageDefinitions('node');
   $field_storage = $field_storage_definitions['field_jurisdiction'] ?? NULL;
   if (!$node_storage instanceof SqlEntityStorageInterface
     || $field_storage === NULL) {
-    _markaspot_group_exclude_all_service_requests($query);
+    _markaspot_group_exclude_node_bundle($query, $bundle);
     return;
   }
 
@@ -1354,7 +1447,7 @@ function _markaspot_group_exclude_unreadable_workspace_requests(SelectInterface 
       && $schema->fieldExists($field_table, $target_column);
   }
   catch (\Throwable) {
-    _markaspot_group_exclude_all_service_requests($query);
+    _markaspot_group_exclude_node_bundle($query, $bundle);
     return;
   }
 
@@ -1363,13 +1456,13 @@ function _markaspot_group_exclude_unreadable_workspace_requests(SelectInterface 
     || !in_array('deleted', $field_table_columns, TRUE)
     || !in_array($target_column, $field_table_columns, TRUE)
     || !$physical_columns_exist) {
-    _markaspot_group_exclude_all_service_requests($query);
+    _markaspot_group_exclude_node_bundle($query, $bundle);
     return;
   }
 
   $base_alias = _markaspot_group_node_query_base_alias($query);
   if ($base_alias === NULL) {
-    _markaspot_group_exclude_all_service_requests($query);
+    _markaspot_group_exclude_node_bundle($query, $bundle);
     return;
   }
 
@@ -1377,7 +1470,7 @@ function _markaspot_group_exclude_unreadable_workspace_requests(SelectInterface 
     ->select($field_table, 'unreadable_workspace');
   $restricted_nodes->addField('unreadable_workspace', 'entity_id');
   $restricted_nodes
-    ->condition('unreadable_workspace.bundle', 'service_request')
+    ->condition('unreadable_workspace.bundle', $bundle)
     ->condition('unreadable_workspace.deleted', 0)
     ->condition(
       'unreadable_workspace.' . $target_column,
@@ -1391,9 +1484,9 @@ function _markaspot_group_exclude_unreadable_workspace_requests(SelectInterface 
 }
 
 /**
- * Fails closed for service requests while preserving all other node bundles.
+ * Fails closed for one node bundle while preserving all other bundles.
  */
-function _markaspot_group_exclude_all_service_requests(SelectInterface $query): void {
+function _markaspot_group_exclude_node_bundle(SelectInterface $query, string $bundle): void {
   $data_alias = NULL;
   $base_alias = NULL;
   foreach ($query->getTables() as $alias => $table) {
@@ -1417,7 +1510,7 @@ function _markaspot_group_exclude_all_service_requests(SelectInterface $query): 
     return;
   }
 
-  $query->condition($data_alias . '.type', 'service_request', '<>');
+  $query->condition($data_alias . '.type', $bundle, '<>');
 }
 
 /**
@@ -2015,17 +2108,27 @@ function markaspot_group_group_insert(GroupInterface $group): void {
  */
 function markaspot_group_group_update(GroupInterface $group): void {
   \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
+  $original_group = $group->getOriginal();
+
+  if (_markaspot_group_is_jurisdiction_group($group)
+    && $original_group instanceof GroupInterface
+    && $group->hasField('field_visibility')
+    && $original_group->hasField('field_visibility')
+    && $group->get('field_visibility')->getValue()
+      !== $original_group->get('field_visibility')->getValue()) {
+    _markaspot_group_rewrite_page_access_grants((int) $group->id());
+  }
 
   if ($group->bundle() !== _markaspot_group_get_org_group_type()) {
     return;
   }
 
-  if (!isset($group->original) || !$group->original instanceof GroupInterface) {
+  if (!$original_group instanceof GroupInterface) {
     return;
   }
 
   $new_jurisdiction_id = _markaspot_group_group_jurisdiction_id($group);
-  $original_jurisdiction_id = _markaspot_group_group_jurisdiction_id($group->original);
+  $original_jurisdiction_id = _markaspot_group_group_jurisdiction_id($original_group);
   if ($new_jurisdiction_id === $original_jurisdiction_id) {
     return;
   }
@@ -2047,6 +2150,52 @@ function markaspot_group_group_update(GroupInterface $group): void {
     $group,
     $new_jurisdiction_id,
     $original_jurisdiction_id,
+  );
+}
+
+/**
+ * Rewrites access grants for pages assigned to one jurisdiction.
+ */
+function _markaspot_group_rewrite_page_access_grants(int $jurisdiction_id): void {
+  $field_definitions = \Drupal::service('entity_field.manager')
+    ->getFieldStorageDefinitions('node');
+  if (!isset($field_definitions['field_jurisdiction'])) {
+    return;
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $node_storage = $entity_type_manager->getStorage('node');
+  $node_ids = array_values($node_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'page')
+    ->condition('field_jurisdiction', $jurisdiction_id)
+    ->sort('nid')
+    ->execute());
+  if ($node_ids === []) {
+    return;
+  }
+
+  /** @var \Drupal\node\NodeAccessControlHandlerInterface $access_handler */
+  $access_handler = $entity_type_manager->getAccessControlHandler('node');
+  /** @var \Drupal\node\NodeGrantDatabaseStorageInterface $grant_storage */
+  $grant_storage = \Drupal::service('node.grant_storage');
+  $rewritten = 0;
+  foreach (array_chunk($node_ids, 50) as $chunk) {
+    foreach ($node_storage->loadMultiple($chunk) as $node) {
+      $grant_storage->write(
+        $node,
+        $access_handler->acquireGrants($node),
+      );
+      $rewritten++;
+    }
+  }
+
+  \Drupal::logger('markaspot_group')->notice(
+    'Rewrote access grants for @count pages after workspace @group visibility changed.',
+    [
+      '@count' => $rewritten,
+      '@group' => $jurisdiction_id,
+    ],
   );
 }
 
@@ -3546,6 +3695,7 @@ function _markaspot_group_reconcile_service_request_relationships(NodeInterface|
  * the tenant_admin Drupal role.
  */
 function markaspot_group_group_relationship_insert(GroupRelationshipInterface $relationship): void {
+  _markaspot_group_reset_page_visibility_membership_cache($relationship);
   _markaspot_group_sync_relationship_to_field($relationship, 'insert');
   _markaspot_group_notify_service_request_org_relationship($relationship, _markaspot_group_is_syncing());
   _markaspot_group_sync_org_membership_to_jurisdiction($relationship);
@@ -3558,6 +3708,7 @@ function markaspot_group_group_relationship_insert(GroupRelationshipInterface $r
  * When a membership's group roles change, sync tenant_admin accordingly.
  */
 function markaspot_group_group_relationship_update(GroupRelationshipInterface $relationship): void {
+  _markaspot_group_reset_page_visibility_membership_cache($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'update');
 }
 
@@ -3568,9 +3719,25 @@ function markaspot_group_group_relationship_update(GroupRelationshipInterface $r
  * Also removes tenant_admin if no jur-tenant_admin memberships remain.
  */
 function markaspot_group_group_relationship_delete(GroupRelationshipInterface $relationship): void {
+  _markaspot_group_reset_page_visibility_membership_cache($relationship);
   _markaspot_group_sync_relationship_to_field($relationship, 'delete');
   _markaspot_group_cleanup_org_membership_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'delete');
+}
+
+/**
+ * Resets page grants after a jurisdiction membership changes.
+ */
+function _markaspot_group_reset_page_visibility_membership_cache(GroupRelationshipInterface $relationship): void {
+  if ($relationship->getPluginId() !== 'group_membership') {
+    return;
+  }
+
+  $group = $relationship->getGroup();
+  if (_markaspot_group_is_jurisdiction_group($group)) {
+    \Drupal::service('markaspot_group.workspace_visibility')
+      ->resetCache((int) $group->id());
+  }
 }
 
 /**

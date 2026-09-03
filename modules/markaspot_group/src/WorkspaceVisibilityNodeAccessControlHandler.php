@@ -66,8 +66,7 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
     $account = $this->prepareUser($account);
     $workspace_access = AccessResult::neutral();
 
-    if ($entity instanceof NodeInterface
-      && $account->hasPermission('bypass node access')) {
+    if ($entity instanceof NodeInterface) {
       $jurisdiction_ids = $this->jurisdictionIds($entity);
       $workspace_access = AccessResult::neutral()
         ->cachePerUser()
@@ -76,14 +75,32 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
           $account,
         ));
 
-      if ($operation === 'view'
+      if (in_array($operation, [
+        'view',
+        'view all revisions',
+        'view revision',
+      ], TRUE) && $entity->bundle() === 'page') {
+        $workspace_access = $this->pageViewAccess(
+          $jurisdiction_ids,
+          $account,
+        );
+      }
+      elseif ($account->hasPermission('bypass node access')
+        && $operation === 'view'
         && $entity->bundle() === 'service_request') {
         $workspace_access = $this->serviceRequestViewAccess(
           $jurisdiction_ids,
           $account,
         );
       }
-      elseif (in_array($operation, ['view', 'update', 'delete'], TRUE)
+      elseif ($account->hasPermission('bypass node access')
+        && in_array($operation, [
+          'view',
+          'update',
+          'delete',
+          'revert revision',
+          'delete revision',
+        ], TRUE)
         && in_array($entity->bundle(), ['service_request', 'page'], TRUE)) {
         $workspace_access = $this->blockedWorkspaceAccess(
           $jurisdiction_ids,
@@ -116,6 +133,42 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
   private function serviceRequestViewAccess(array $jurisdictionIds, AccountInterface $account): AccessResult {
     foreach ($jurisdictionIds as $jurisdiction_id) {
       if (!$this->workspaceVisibility->allowsReadFor(
+        $account,
+        $jurisdiction_id,
+      )) {
+        return AccessResult::forbidden(
+          'Workspace visibility prevents viewing this content.',
+        )
+          ->cachePerUser()
+          ->addCacheTags($this->visibilityCacheTags(
+            $jurisdictionIds,
+            $account,
+          ));
+      }
+    }
+
+    return AccessResult::neutral()
+      ->cachePerUser()
+      ->addCacheTags($this->visibilityCacheTags(
+        $jurisdictionIds,
+        $account,
+      ));
+  }
+
+  /**
+   * Applies the page read visibility matrix before node-access bypass.
+   *
+   * @param int[] $jurisdictionIds
+   *   Jurisdiction group IDs.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   *
+   * @return \Drupal\Core\Access\AccessResult
+   *   Forbidden when any workspace is unreadable, otherwise neutral.
+   */
+  private function pageViewAccess(array $jurisdictionIds, AccountInterface $account): AccessResult {
+    foreach ($jurisdictionIds as $jurisdiction_id) {
+      if (!$this->workspaceVisibility->allowsPageReadFor(
         $account,
         $jurisdiction_id,
       )) {

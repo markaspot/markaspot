@@ -70,6 +70,13 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    */
   protected array $elevatedJurisdictionIds = [];
 
+  /**
+   * Cached page visibility grant IDs keyed by account ID.
+   *
+   * @var array<int, int[]>
+   */
+  protected array $pageViewGrantIds = [];
+
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly ConfigFactoryInterface $configFactory,
@@ -195,6 +202,20 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getUnreadablePageJurisdictionIds(AccountInterface $account): array {
+    if ($this->hasSiteBypass($account)) {
+      return [];
+    }
+
+    return array_values(array_filter(
+      $this->getRestrictedJurisdictionIds(),
+      fn(int $groupId): bool => !$this->allowsPageReadFor($account, $groupId),
+    ));
+  }
+
+  /**
    * Whether an account can read requests in a workspace.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
@@ -223,6 +244,57 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
       $this->getElevatedJurisdictionIds($account),
       TRUE,
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function allowsPageReadFor(AccountInterface $account, int $groupId): bool {
+    if ($this->hasSiteBypass($account)
+      || $this->getVisibility($groupId) === 'public') {
+      return TRUE;
+    }
+
+    if ($account->isAnonymous() || $this->isBlocked($groupId)) {
+      return FALSE;
+    }
+
+    return in_array($groupId, $this->getPageViewGrantIds($account), TRUE);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getPageViewGrantIds(AccountInterface $account): array {
+    if ($this->hasSiteBypass($account)) {
+      return [0];
+    }
+
+    $accountId = (int) $account->id();
+    if ($accountId <= 0) {
+      return [];
+    }
+    if (isset($this->pageViewGrantIds[$accountId])) {
+      return $this->pageViewGrantIds[$accountId];
+    }
+
+    $groupType = $this->jurisdictionGroupType();
+    $jurisdictionIds = [];
+    foreach (GroupMembership::loadByUser($account) as $membership) {
+      $group = $membership->getGroup();
+      if ($group instanceof GroupInterface
+        && $group->bundle() === $groupType
+        && in_array($this->getVisibility((int) $group->id()), [
+          'submission_only',
+          'authenticated',
+        ], TRUE)) {
+        $jurisdictionIds[] = (int) $group->id();
+      }
+    }
+
+    return $this->pageViewGrantIds[$accountId] = array_values(array_unique(
+      $jurisdictionIds,
+    ));
   }
 
   /**
@@ -277,6 +349,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    */
   public function resetCache(?int $groupId = NULL): void {
     $this->restrictedJurisdictionIds = NULL;
+    $this->pageViewGrantIds = [];
 
     if ($groupId === NULL) {
       $this->cache = [];

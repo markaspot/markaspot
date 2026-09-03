@@ -460,7 +460,7 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $this->assertLessThan($savePos, $resetPos);
     $this->assertStringContainsString('$group->bundle() !== _markaspot_group_get_org_group_type()', $source);
     $this->assertStringContainsString('$new_jurisdiction_id = _markaspot_group_group_jurisdiction_id($group);', $source);
-    $this->assertStringContainsString('$original_jurisdiction_id = _markaspot_group_group_jurisdiction_id($group->original);', $source);
+    $this->assertStringContainsString('$original_jurisdiction_id = _markaspot_group_group_jurisdiction_id($original_group);', $source);
     $this->assertStringContainsString('$new_jurisdiction_id === $original_jurisdiction_id', $source);
     $this->assertStringContainsString('function _markaspot_group_is_root_jurisdiction_id', $source);
     $this->assertStringContainsString('function _markaspot_group_group_has_parent_jurisdiction', $source);

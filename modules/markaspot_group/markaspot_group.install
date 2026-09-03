@@ -5,6 +5,14 @@
  * Install, update and uninstall functions for markaspot_group module.
  */
 
+use Drupal\node\NodeInterface;
+use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupMembership;
+use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
+use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -42,8 +50,8 @@ function markaspot_group_requirements(string $phase): array {
       '@count' => count($issues),
     ]),
     'severity' => empty($issues)
-      ? \Drupal\Core\Extension\Requirement\RequirementSeverity::OK
-      : \Drupal\Core\Extension\Requirement\RequirementSeverity::Warning,
+      ? RequirementSeverity::OK
+      : RequirementSeverity::Warning,
   ];
 
   if (!empty($issues)) {
@@ -1808,9 +1816,11 @@ function markaspot_group_update_11907(): void {
 
   // nuxt_config_json_form extends json_form_widget's base class; fall back to a
   // plain textarea on tenants where json_form_widget is not enabled so saving
-  // the jur form display does not abort the update with "plugin does not exist".
+  // the jur form display does not abort when the widget plugin does not exist.
   $nuxt_config_widget = \Drupal::service('plugin.manager.field.widget')
-    ->hasDefinition('nuxt_config_json_form') ? 'nuxt_config_json_form' : 'text_textarea';
+    ->hasDefinition('nuxt_config_json_form')
+      ? 'nuxt_config_json_form'
+      : 'text_textarea';
 
   $display_components = [
     'field_slug' => [
@@ -2212,7 +2222,7 @@ function markaspot_group_update_11910(): void {
  * Add field_legal_notice and field_privacy_policy to jur group type.
  *
  * These text_long fields store jurisdiction-specific legal content:
- * - field_legal_notice: Additional legal info (supervisory authority, VAT ID, etc.)
+ * - field_legal_notice: Legal info such as supervisory authority or VAT ID.
  * - field_privacy_policy: Jurisdiction-specific privacy policy text.
  *
  * Both are translatable and optional, exposed to the frontend via the
@@ -3385,7 +3395,7 @@ function markaspot_group_update_11925(): string {
       continue;
     }
     $role_ids = array_column($relationship->get('group_roles')->getValue(), 'target_id');
-    $relationship->set('group_roles', \Drupal\markaspot_group\MembershipRoleNormalizer::normalize($role_ids, 'jur'));
+    $relationship->set('group_roles', MembershipRoleNormalizer::normalize($role_ids, 'jur'));
     $relationship->save();
     $updated++;
   }
@@ -3475,7 +3485,7 @@ function markaspot_group_update_11928(): string {
   $marked = 0;
   $skipped = 0;
   foreach ($relationship_storage->loadMultiple($relationship_ids) as $relationship) {
-    if (!$relationship instanceof \Drupal\group\Entity\GroupRelationshipInterface) {
+    if (!$relationship instanceof GroupRelationshipInterface) {
       $skipped++;
       continue;
     }
@@ -3484,12 +3494,12 @@ function markaspot_group_update_11928(): string {
     $user = $relationship->getEntity();
     $jur_group = _markaspot_group_resolve_org_backfill_jurisdiction($org_group);
 
-    if (!$user instanceof \Drupal\user\UserInterface || !$jur_group) {
+    if (!$user instanceof UserInterface || !$jur_group) {
       $skipped++;
       continue;
     }
 
-    $jur_relationship = \Drupal\group\Entity\GroupMembership::loadSingle($jur_group, $user);
+    $jur_relationship = GroupMembership::loadSingle($jur_group, $user);
     if ($jur_relationship) {
       if ($jur_relationship->bundle() !== _markaspot_group_update_jurisdiction_membership_bundle($jur_group)) {
         \Drupal::logger('markaspot_group')->error(
@@ -3515,8 +3525,8 @@ function markaspot_group_update_11928(): string {
       }
       $role_ids = array_values(array_filter(
         $role_ids,
-        static fn(string $role_id): bool => $role_id !== \Drupal\markaspot_group\MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
-          || $derived_role_id === \Drupal\markaspot_group\MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
+        static fn(string $role_id): bool => $role_id !== MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
+          || $derived_role_id === MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
       ));
       $role_ids[] = $derived_role_id;
       $jur_relationship->set('group_roles', array_values(array_unique($role_ids)));
@@ -3707,7 +3717,7 @@ function markaspot_group_update_11931(): string {
  */
 function _markaspot_group_ensure_derived_jurisdiction_role(): void {
   $group_type = _markaspot_group_update_jurisdiction_group_type();
-  $role_id = \Drupal\markaspot_group\MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
+  $role_id = MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
   $role_storage = \Drupal::entityTypeManager()->getStorage('group_role');
   $permissions = [
     'view group',
@@ -3780,12 +3790,12 @@ function _markaspot_group_update_ensure_org_head_email_storage(): bool {
   if ($table_state === 'partial') {
     throw new \RuntimeException('Partial legacy field_head_organisation_e_mail schema found. Restore both group field data and revision tables before running this update.');
   }
-  if (\Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_head_organisation_e_mail')) {
+  if (FieldStorageConfig::loadByName('group', 'field_head_organisation_e_mail')) {
     return FALSE;
   }
 
   if ($table_state === 'none') {
-    \Drupal\field\Entity\FieldStorageConfig::create(_markaspot_group_update_org_head_email_storage_data())->save();
+    FieldStorageConfig::create(_markaspot_group_update_org_head_email_storage_data())->save();
     return TRUE;
   }
 
@@ -3803,16 +3813,16 @@ function _markaspot_group_update_ensure_org_head_email_storage(): bool {
  * Ensures the org group mailbox field config exists.
  */
 function _markaspot_group_update_ensure_org_head_email_field(): bool {
-  if (\Drupal\field\Entity\FieldConfig::load('group.org.field_head_organisation_e_mail')) {
+  if (FieldConfig::load('group.org.field_head_organisation_e_mail')) {
     return FALSE;
   }
 
-  $legacy = \Drupal\field\Entity\FieldConfig::load('group.organisation.field_head_organisation_e_mail');
+  $legacy = FieldConfig::load('group.organisation.field_head_organisation_e_mail');
   $data = $legacy
     ? _markaspot_group_update_retarget_org_head_email_field_data($legacy->toArray())
     : _markaspot_group_update_org_head_email_field_data();
 
-  \Drupal\field\Entity\FieldConfig::create($data)->save();
+  FieldConfig::create($data)->save();
 
   return TRUE;
 }
@@ -3905,7 +3915,7 @@ function _markaspot_group_update_legacy_org_head_email_tables_exist(): bool {
  * Removes stale legacy field config after the org bundle replacement exists.
  */
 function _markaspot_group_update_prune_legacy_org_head_email_config(): bool {
-  $legacy = \Drupal\field\Entity\FieldConfig::load('group.organisation.field_head_organisation_e_mail');
+  $legacy = FieldConfig::load('group.organisation.field_head_organisation_e_mail');
   if (!$legacy) {
     return FALSE;
   }
@@ -4033,7 +4043,7 @@ function _markaspot_group_update_jurisdiction_group_type(): string {
  * Gets the membership relationship bundle for a jurisdiction group.
  */
 function _markaspot_group_update_jurisdiction_membership_bundle($group = NULL): string {
-  $group_type = $group instanceof \Drupal\group\Entity\GroupInterface
+  $group_type = $group instanceof GroupInterface
     ? $group->bundle()
     : _markaspot_group_update_jurisdiction_group_type();
 
@@ -4044,18 +4054,18 @@ function _markaspot_group_update_jurisdiction_membership_bundle($group = NULL): 
  * Gets the internal derived org-member role ID for a jurisdiction group.
  */
 function _markaspot_group_update_derived_jurisdiction_role_id($group = NULL): string {
-  $group_type = $group instanceof \Drupal\group\Entity\GroupInterface
+  $group_type = $group instanceof GroupInterface
     ? $group->bundle()
     : _markaspot_group_update_jurisdiction_group_type();
 
-  return \Drupal\markaspot_group\MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
+  return MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
 }
 
 /**
  * Resolves an org group's root jurisdiction for update 11928.
  */
-function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupal\group\Entity\GroupInterface {
-  if (!$org_group instanceof \Drupal\group\Entity\GroupInterface
+function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?GroupInterface {
+  if (!$org_group instanceof GroupInterface
     || $org_group->bundle() !== 'org'
     || !$org_group->hasField('field_jurisdiction')
     || $org_group->get('field_jurisdiction')->isEmpty()) {
@@ -4073,8 +4083,8 @@ function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupa
     return NULL;
   }
 
-  $jur_group = \Drupal\group\Entity\Group::load($root_jurisdiction_id);
-  return $jur_group instanceof \Drupal\group\Entity\GroupInterface
+  $jur_group = Group::load($root_jurisdiction_id);
+  return $jur_group instanceof GroupInterface
     && $jur_group->bundle() === _markaspot_group_update_jurisdiction_group_type()
     ? $jur_group
     : NULL;
@@ -4090,10 +4100,10 @@ function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupa
  *
  * These two bundle fields ship in markaspot_group/config/optional. Optional
  * config is evaluated once, at module-install time, and silently skipped when
- * ANY dependency is not yet present. On a fresh profile install that ordering is
- * not guaranteed, so the fields can be missing -> every hook_node_insert branch
- * no-ops -> service_request nodes are never added to the jurisdiction group ->
- * the GeoReport jurisdiction filter returns 0 and the frontend shows nothing.
+ * ANY dependency is not yet present. On a fresh profile install that ordering
+ * is not guaranteed, so the fields can be missing. Every hook_node_insert
+ * branch then no-ops, service_request nodes are never added to the jurisdiction
+ * group, and the GeoReport jurisdiction filter returns no results.
  *
  * Mirrors the page-node repair in markaspot_group_update_11904(). Idempotent.
  */
@@ -4106,11 +4116,12 @@ function markaspot_group_install(): void {
   // (_markaspot_ensure_organisation_in_management_form() in markaspot.install),
   // NOT here. The management form_display ships only in
   // markaspot_open311/config/optional, and markaspot_group installs BEFORE
-  // markaspot_open311 (profile install order: service_request -> markaspot_group
-  // -> markaspot_open311). At this point the display does not exist yet, so
-  // touching it here would create a crippled stub that blocks open311's
-  // optional-config import. The helpers below are load-guarded and called from
-  // the profile after every module (including open311) is installed.
+  // markaspot_open311. In profile install order, service_request is followed by
+  // markaspot_group and then markaspot_open311. At this point the display does
+  // not exist yet, so touching it here would create a crippled stub that blocks
+  // open311's optional-config import. The helpers below are load-guarded and
+  // called from the profile after every module, including open311, has been
+  // installed.
 }
 
 /**
@@ -4389,8 +4400,8 @@ function _markaspot_group_find_shipped_config(string $name): ?array {
  * Repairs existing sites where the optional bundle fields never installed,
  * which left service_request nodes unable to be assigned to their jurisdiction
  * group (GeoReport jurisdiction filter returned 0). After attaching the fields,
- * backfills field_jurisdiction on any service_request that lacks it and lets the
- * standard node-save reconciler create the missing jur group relationships.
+ * backfills field_jurisdiction on any service_request that lacks it. The
+ * standard node-save reconciler creates the missing jur group relationships.
  *
  * Idempotent and existing-site safe: fields are only created when missing, and
  * only nodes with an empty field_jurisdiction are touched. Multi-tenant safe:
@@ -4432,7 +4443,7 @@ function markaspot_group_update_11932(): string {
   $backfilled = 0;
   foreach ($nids as $nid) {
     $node = $node_storage->load($nid);
-    if (!$node instanceof \Drupal\node\NodeInterface || !$node->hasField('field_jurisdiction')) {
+    if (!$node instanceof NodeInterface || !$node->hasField('field_jurisdiction')) {
       continue;
     }
 
@@ -4884,7 +4895,7 @@ function _markaspot_group_update_onboard_root_admin(): array {
   ];
 
   $user = \Drupal::entityTypeManager()->getStorage('user')->load(1);
-  if (!$user instanceof \Drupal\user\UserInterface) {
+  if (!$user instanceof UserInterface) {
     $result['failures'][] = 'uid 1 is missing';
     return $result;
   }
@@ -4914,7 +4925,7 @@ function _markaspot_group_update_onboard_root_admin(): array {
   }
 
   foreach ($group_storage->loadMultiple($ids) as $group) {
-    if (!$group instanceof \Drupal\group\Entity\GroupInterface) {
+    if (!$group instanceof GroupInterface) {
       continue;
     }
 
@@ -5051,7 +5062,7 @@ function markaspot_group_update_11939(): string {
     $group = $group_storage->load((int) $row->group_id);
     $users = $user_storage->loadByProperties(['mail' => (string) $row->email]);
     $user = reset($users);
-    if (!$group instanceof \Drupal\group\Entity\GroupInterface || !$user instanceof \Drupal\user\UserInterface) {
+    if (!$group instanceof GroupInterface || !$user instanceof UserInterface) {
       $skipped++;
       continue;
     }
@@ -5650,4 +5661,112 @@ function markaspot_group_update_11947(): string {
     $repaired,
     $skipped,
   );
+}
+
+/**
+ * Makes node jurisdiction references shared across translations.
+ */
+function markaspot_group_update_11948(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_config_storage = $entity_type_manager->getStorage('field_config');
+  $field_instances = $field_config_storage->loadByProperties([
+    'entity_type' => 'node',
+    'field_name' => 'field_jurisdiction',
+  ]);
+  $bundles = array_values(array_unique(array_map(
+    static fn(FieldConfig $field): string => $field->getTargetBundle(),
+    $field_instances,
+  )));
+  $nodes_touched = 0;
+  $translations_touched = 0;
+
+  if ($bundles !== []) {
+    $node_storage = $entity_type_manager->getStorage('node');
+    $node_ids = array_values($node_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $bundles, 'IN')
+      ->condition('default_langcode', 0)
+      ->sort('nid')
+      ->execute());
+
+    $root_account = $entity_type_manager->getStorage('user')->load(1);
+    if (!$root_account instanceof UserInterface) {
+      throw new RuntimeException('Cannot repair node translations without user 1.');
+    }
+    $account_switcher = \Drupal::service('account_switcher');
+    if (!$account_switcher instanceof AccountSwitcherInterface) {
+      throw new RuntimeException('The account switcher service is unavailable.');
+    }
+
+    // Drush boots as anonymous. Switch narrowly so the existing blocked
+    // workspace presave guard cannot abort this data repair.
+    $account_switcher->switchTo($root_account);
+    try {
+      foreach (array_chunk($node_ids, 50) as $chunk) {
+        foreach ($node_storage->loadMultiple($chunk) as $node) {
+          $default_translation = $node->getUntranslated();
+          if ($default_translation->get('field_jurisdiction')->isEmpty()) {
+            continue;
+          }
+
+          $node_changed = FALSE;
+          $default_value = $default_translation
+            ->get('field_jurisdiction')
+            ->getValue();
+          foreach (array_keys($node->getTranslationLanguages(FALSE)) as $langcode) {
+            $translation = $node->getTranslation($langcode);
+            if (!$translation->get('field_jurisdiction')->isEmpty()) {
+              continue;
+            }
+
+            $translation->set('field_jurisdiction', $default_value);
+            $translations_touched++;
+            $node_changed = TRUE;
+          }
+
+          if ($node_changed) {
+            $node->save();
+            $nodes_touched++;
+          }
+        }
+      }
+    }
+    finally {
+      $account_switcher->switchBack();
+    }
+  }
+
+  $instances_changed = 0;
+  foreach ($field_instances as $field_instance) {
+    if ($field_instance->get('translatable') === FALSE) {
+      continue;
+    }
+
+    $field_instance->setTranslatable(FALSE)->save();
+    $instances_changed++;
+  }
+
+  $storage_changed = 0;
+  $field_storage = FieldStorageConfig::loadByName(
+    'node',
+    'field_jurisdiction',
+  );
+  if ($field_storage && $field_storage->isTranslatable()) {
+    // The SQL schema stays unchanged. The pre-flip copy above ensures Drupal
+    // reads the default translation's relationship after this flag changes.
+    $field_storage->setTranslatable(FALSE)->save();
+    $storage_changed = 1;
+  }
+
+  node_access_needs_rebuild(TRUE);
+  $message = sprintf(
+    'Node jurisdiction translation repair: %d nodes and %d translations updated; %d field instances and %d field storage updated; node access rebuild required.',
+    $nodes_touched,
+    $translations_touched,
+    $instances_changed,
+    $storage_changed,
+  );
+  \Drupal::logger('markaspot_group')->notice($message);
+
+  return $message;
 }

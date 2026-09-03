@@ -1507,6 +1507,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private function createStartPage(GroupInterface $group, string $name, string $defaultLang, ?array $startPageContent = NULL, array $startPageTranslations = [], array $availableLanguages = []): void {
     $nodeStorage = $this->entityTypeManager->getStorage('node');
     $groupId = (int) $group->id();
+    $publicationState = [
+      'promote' => TRUE,
+      'sticky' => TRUE,
+      'status' => TRUE,
+    ];
 
     // Prefer AI-generated content from the onboarding chat.
     if (!empty($startPageContent['title']) && !empty($startPageContent['body'])) {
@@ -1528,9 +1533,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'format' => 'basic_html',
       ],
       'uid' => 1,
-      'promote' => TRUE,
-      'sticky' => TRUE,
-      'status' => TRUE,
+      ...$publicationState,
       'field_jurisdiction' => ['target_id' => $groupId],
     ]);
     $node->save();
@@ -1550,6 +1553,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
           $nodeTranslation = $node->addTranslation($lang, [
             'title' => $transTitle,
             'body' => ['value' => $transBody, 'format' => 'basic_html'],
+            ...$publicationState,
           ]);
           $nodeTranslation->save();
         }
@@ -1568,6 +1572,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         $nodeTranslation = $node->addTranslation($lang, [
           'title' => $fallbackTitle,
           'body' => ['value' => $fallbackBody, 'format' => 'basic_html'],
+          ...$publicationState,
         ]);
         $nodeTranslation->save();
       }

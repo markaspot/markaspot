@@ -47,6 +47,14 @@ interface WorkspaceVisibilityInterface {
   public function getUnreadableJurisdictionIds(AccountInterface $account): array;
 
   /**
+   * Gets jurisdictions whose pages the supplied account may not read.
+   *
+   * @return int[]
+   *   Restricted jurisdiction group IDs not readable by the account.
+   */
+  public function getUnreadablePageJurisdictionIds(AccountInterface $account): array;
+
+  /**
    * Whether an account can read requests in a workspace.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
@@ -58,6 +66,19 @@ interface WorkspaceVisibilityInterface {
    *   TRUE when the account may read requests in the workspace.
    */
   public function allowsReadFor(AccountInterface $account, int $groupId): bool;
+
+  /**
+   * Whether an account can read pages in a workspace.
+   */
+  public function allowsPageReadFor(AccountInterface $account, int $groupId): bool;
+
+  /**
+   * Gets page visibility grant IDs for an account.
+   *
+   * @return int[]
+   *   Jurisdiction IDs for members, or grant ID zero for site admins.
+   */
+  public function getPageViewGrantIds(AccountInterface $account): array;
 
   /**
    * Whether anonymous users can view requests in this workspace.
