@@ -3691,6 +3691,43 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests SaaS GET returns the effective locked moderation platform rule.
+   *
+   * @covers ::getFeatureSettings
+   * @covers ::updateFeatureSettings
+   */
+  public function testGetFeatureSettingsLocksEffectiveSaasModeration(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+    $storedNuxtConfig = json_encode(['features' => ['moderation' => FALSE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE, 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertTrue($data['features']['moderation']);
+    $this->assertNotContains('moderation', $data['scopes']['editable']);
+
+    $patchRequest = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['moderation' => TRUE]),
+    );
+    $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
+    $patchData = json_decode($patchResponse->getContent(), TRUE);
+
+    $this->assertSame(200, $patchResponse->getStatusCode());
+    $this->assertTrue($patchData['features']['moderation']);
+    $this->assertFalse(json_decode($storedNuxtConfig, TRUE)['features']['moderation']);
+  }
+
+  /**
    * Tests updateFeatureSettings() validates form behaviour flag types.
    *
    * @covers ::updateFeatureSettings

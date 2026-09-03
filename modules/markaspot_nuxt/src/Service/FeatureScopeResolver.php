@@ -199,6 +199,11 @@ class FeatureScopeResolver {
       $this->writeFeatureValue($features, $key, $this->isPlatformFeatureEnabled($key));
     }
 
+    $moderation_platform_rule = $this->moderationPlatformRule();
+    if ($moderation_platform_rule !== NULL) {
+      $this->writeFeatureValue($features, 'moderation', $moderation_platform_rule);
+    }
+
     foreach (self::TIER_GATED as $key) {
       if (!$this->isTierFeatureAllowed($key, $jur)) {
         $this->writeFeatureValue($features, $key, FALSE);
@@ -222,6 +227,9 @@ class FeatureScopeResolver {
   public function isEditable(string $key, GroupInterface $jur): bool {
     $scope = self::SCOPE_MAP[$key] ?? NULL;
     if ($scope === 'platform') {
+      return FALSE;
+    }
+    if ($key === 'moderation' && $this->moderationPlatformRule() !== NULL) {
       return FALSE;
     }
     // Enterprise-only features must never be advertised as editable on the
@@ -253,6 +261,12 @@ class FeatureScopeResolver {
 
     if ($scope === 'platform') {
       return $this->isPlatformFeatureEnabled($scope_key, $default);
+    }
+    if ($scope_key === 'moderation') {
+      $moderation_platform_rule = $this->moderationPlatformRule();
+      if ($moderation_platform_rule !== NULL) {
+        return $moderation_platform_rule;
+      }
     }
 
     $source = $scope === 'tenant' ? $this->getRootJurisdiction($jur) : $jur;
@@ -371,6 +385,17 @@ class FeatureScopeResolver {
     $platform_features = is_array($platform_features) ? $platform_features : [];
     $value = $platform_features[$key] ?? NULL;
     return is_bool($value) ? $value : NULL;
+  }
+
+  /**
+   * Resolves the optional platform-wide citizen flagging rule.
+   */
+  private function moderationPlatformRule(): ?bool {
+    $value = $this->readPlatformFeatureRaw('moderation');
+    if ($value !== NULL) {
+      return $value;
+    }
+    return $this->isSelfServicePlatform() ? TRUE : NULL;
   }
 
   /**

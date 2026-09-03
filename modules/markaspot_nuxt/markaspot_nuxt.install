@@ -5,6 +5,7 @@
  * Install, update and uninstall functions for the markaspot_nuxt module.
  */
 
+use Drupal\Core\Site\Settings;
 use Drupal\Core\Config\FileStorage;
 
 /**
@@ -52,7 +53,7 @@ function markaspot_nuxt_install() {
 }
 
 /**
- * Migrate map configuration from markaspot_map.settings to markaspot_nuxt.settings.
+ * Migrates legacy map configuration.
  */
 function markaspot_nuxt_update_9001() {
   $config_factory = \Drupal::configFactory();
@@ -97,7 +98,7 @@ function markaspot_nuxt_update_9001() {
 }
 
 /**
- * Ensure markaspot_nuxt.settings exists and migrate from markaspot_map if needed.
+ * Ensures Nuxt settings exist and migrates legacy map configuration.
  */
 function markaspot_nuxt_update_9002() {
   $config_factory = \Drupal::configFactory();
@@ -421,14 +422,15 @@ function markaspot_nuxt_update_11903(): string {
 }
 
 /**
- * Hide revision author / log / timestamp on the service_request JSON:API resource.
+ * Hides revision metadata on the service request JSON:API resource.
  *
- * revision_uid, revision_log and revision_timestamp were exposed (disabled:
+ * Revision_uid, revision_log and revision_timestamp were exposed (disabled:
  * false) on the public node--service_request JSON:API resource. Once revisions
- * carry a real editor (GeoreportRequestResource, markaspot-ui#472), revision_uid
- * becomes a staff-identity oracle readable by anonymous JSON:API callers. These
- * fields have no public/citizen audience, so disable them. Author identity for
- * the dashboard "last edited by" indicator (markaspot-ui#472) must be served
+ * carry a real editor (GeoreportRequestResource, markaspot-ui#472),
+ * revision_uid becomes a staff-identity oracle readable by anonymous JSON:API
+ * callers. These fields have no public/citizen audience, so disable them.
+ * Author identity for the dashboard "last edited by" indicator
+ * (markaspot-ui#472) must be served
  * through a staff-gated channel, not this public relationship. Note: the
  * existing GeoReport extended_attributes.author exposes the node author (uid),
  * not the revision editor, so #472 needs its own gated revision-author field.
@@ -549,7 +551,7 @@ function markaspot_nuxt_update_11906(): string {
 /**
  * Backfill dashboard JSON:API resource configs for existing tenants.
  *
- * jsonapi_extras intentionally disables unconfigured resources on FastMap
+ * Jsonapi_extras intentionally disables unconfigured resources on FastMap
  * tenants. Optional config is installed for fresh sites, but Drupal does not
  * retroactively install it for tenants that already had markaspot_nuxt. Seed
  * only the resources needed by the request dashboard and its included data.
@@ -595,9 +597,28 @@ function markaspot_nuxt_update_11907(): string {
   };
   $hardeningPolicies = [
     'group--jur' => ['group', 'jur', ['id', 'label', 'field_slug']],
-    'paragraph--internal_remark' => ['paragraph', 'internal_remark', ['id', 'uuid', 'created', 'field_internal_remark_text', 'field_author']],
-    'taxonomy_term--service_provider_status' => ['taxonomy_term', 'service_provider_status', ['tid', 'status', 'name', 'weight']],
-    'node--boilerplate' => ['node', 'boilerplate', ['nid', 'title', 'body', 'field_jurisdiction', 'field_boilerplate_type', 'field_organisation']],
+    'paragraph--internal_remark' => [
+      'paragraph',
+      'internal_remark',
+      ['id', 'uuid', 'created', 'field_internal_remark_text', 'field_author'],
+    ],
+    'taxonomy_term--service_provider_status' => [
+      'taxonomy_term',
+      'service_provider_status',
+      ['tid', 'status', 'name', 'weight'],
+    ],
+    'node--boilerplate' => [
+      'node',
+      'boilerplate',
+      [
+        'nid',
+        'title',
+        'body',
+        'field_jurisdiction',
+        'field_boilerplate_type',
+        'field_organisation',
+      ],
+    ],
   ];
   $resourceIds = [
     'node--service_request',
@@ -745,7 +766,7 @@ function markaspot_nuxt_update_11908(): string {
   // Installations without any root jurisdiction keep the flag defaults.
   $seeded += $flag_defaults;
 
-  if (\Drupal\Core\Site\Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
+  if (Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
     $seeded['passwordless'] = TRUE;
   }
   $seeded['privacyNotice'] = $privacy_notice;
@@ -976,4 +997,21 @@ function markaspot_nuxt_update_11914(): string {
   $resource_fields['field_head_organisation_e_mail'] = $field;
   $config->set('resourceFields', $resource_fields)->save(TRUE);
   return 'Enabled field_head_organisation_e_mail on the organisation JSON:API resource.';
+}
+
+/**
+ * Adds the citizen report flagging platform rule setting.
+ */
+function markaspot_nuxt_update_11915(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('markaspot_nuxt.settings');
+  $platform_features = $config->get('platform_features');
+  $platform_features = is_array($platform_features) ? $platform_features : [];
+  if (array_key_exists('moderation', $platform_features)) {
+    return 'The citizen report flagging platform rule setting already exists.';
+  }
+
+  $platform_features['moderation'] = NULL;
+  $config->set('platform_features', $platform_features)->save();
+  return 'Added the citizen report flagging platform rule setting.';
 }

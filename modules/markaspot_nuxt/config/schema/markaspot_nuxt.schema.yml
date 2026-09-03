@@ -53,6 +53,10 @@ markaspot_nuxt.settings:
       type: mapping
       label: 'Platform feature flags'
       mapping:
+        moderation:
+          type: boolean
+          nullable: true
+          label: 'Citizen report flagging platform rule'
         passwordless:
           type: boolean
           nullable: true

@@ -439,6 +439,61 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
+   * Tests the citizen flagging platform rule and self-hosted fallback.
+   *
+   * @dataProvider moderationPlatformRuleProvider
+   * @covers ::resolveEffectiveFeatures
+   * @covers ::isEnabledEffective
+   * @covers ::isEditable
+   */
+  public function testModerationPlatformRule(
+    ?string $mode,
+    ?bool $platformRule,
+    ?bool $storedValue,
+    ?bool $fastmapInstalled,
+    bool $expectedValue,
+    bool $expectedEditable,
+  ): void {
+    new Settings($mode === NULL ? [] : ['markaspot_operating_mode' => $mode]);
+    $features = $storedValue === NULL ? [] : ['moderation' => $storedValue];
+    $jurisdiction = $this->createGroup(1, [
+      'field_nuxt_config' => json_encode(['features' => $features]),
+    ]);
+    $resolver = $this->createResolver(
+      $jurisdiction,
+      ['moderation' => $platformRule],
+      $fastmapInstalled,
+    );
+
+    $resolved = $resolver->resolveEffectiveFeatures($jurisdiction);
+
+    $this->assertSame($expectedValue, $resolved['moderation']);
+    $this->assertSame(
+      $expectedValue,
+      $resolver->isEnabledEffective('features.moderation', $jurisdiction),
+    );
+    $this->assertSame(
+      $expectedEditable,
+      $resolver->isEditable('moderation', $jurisdiction),
+    );
+  }
+
+  /**
+   * Provides citizen flagging platform rule cases.
+   */
+  public static function moderationPlatformRuleProvider(): array {
+    return [
+      'SaaS default platform rule' => ['saas', NULL, FALSE, NULL, TRUE, FALSE],
+      'SaaS explicit platform disable' => ['saas', FALSE, TRUE, NULL, FALSE, FALSE],
+      'SaaS explicit platform enable' => ['saas', TRUE, FALSE, NULL, TRUE, FALSE],
+      'self-hosted stored opt-in' => ['self_hosted', NULL, TRUE, NULL, TRUE, TRUE],
+      'self-hosted default off' => ['self_hosted', NULL, NULL, NULL, FALSE, TRUE],
+      'self-hosted explicit platform enable' => ['self_hosted', TRUE, FALSE, NULL, TRUE, FALSE],
+      'FastMap default platform rule' => [NULL, NULL, FALSE, TRUE, TRUE, FALSE],
+    ];
+  }
+
+  /**
    * Creates a resolver whose root lookup returns the supplied group.
    */
   private function createResolver(
