@@ -19,9 +19,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Kernel tests for LegalNoticeGenerator.
  *
- * Exercises the Twig render path, the manual-override sentinel, fallback
- * handling for missing billing data, the GoBD revision write on syncGroup(),
- * and defense-in-depth HTML escaping of billing_name.
+ * Exercises structured operator data, the manual-override sentinel, the GoBD
+ * revision write on syncGroup(), and defense-in-depth HTML escaping.
  *
  * The full markaspot_fastmap module is intentionally NOT installed: its
  * dependency tree (markaspot_group, markaspot_passwordless, field_permissions)
@@ -42,6 +41,7 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
   protected static $modules = [
     'system',
     'user',
+    'address',
     'field',
     'text',
     'filter',
@@ -99,38 +99,23 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
 
-    $stringFields = [
-      'field_billing_name' => 255,
-      'field_billing_email' => 255,
-      'field_billing_address_line1' => 255,
-      'field_billing_address_line2' => 255,
-      'field_billing_city' => 255,
-      'field_billing_postal_code' => 20,
-      'field_billing_country' => 2,
-      'field_billing_tax_id' => 50,
-      'field_jurisdiction_e_mail' => 255,
-    ];
-    foreach ($stringFields as $name => $maxLength) {
-      FieldStorageConfig::create([
-        'field_name' => $name,
-        'entity_type' => 'group',
-        'type' => 'string',
-        'settings' => ['max_length' => $maxLength],
-      ])->save();
-      FieldConfig::create([
-        'field_name' => $name,
-        'entity_type' => 'group',
-        'bundle' => 'jur',
-        'label' => $name,
-      ])->save();
-    }
+    FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction_e_mail',
+      'entity_type' => 'group',
+      'type' => 'email',
+      'cardinality' => -1,
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_jurisdiction_e_mail',
+      'entity_type' => 'group',
+      'bundle' => 'jur',
+      'label' => 'Jurisdiction email',
+    ])->save();
 
-    // field_jurisdiction_address is a text_long fallback for unstructured
-    // addresses.
     FieldStorageConfig::create([
       'field_name' => 'field_jurisdiction_address',
       'entity_type' => 'group',
-      'type' => 'text_long',
+      'type' => 'address',
     ])->save();
     FieldConfig::create([
       'field_name' => 'field_jurisdiction_address',
@@ -159,14 +144,18 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
     $this->group = Group::create([
       'type' => 'jur',
       'label' => 'Test Workspace',
-      'field_billing_name' => 'Civic Patches GmbH',
-      'field_billing_email' => 'kontakt@example.org',
-      'field_billing_address_line1' => 'Musterstraße 1',
-      'field_billing_address_line2' => 'c/o Beispiel AG',
-      'field_billing_postal_code' => '10115',
-      'field_billing_city' => 'Berlin',
-      'field_billing_country' => 'DE',
-      'field_billing_tax_id' => 'DE123456789',
+      'field_jurisdiction_address' => [
+        'country_code' => 'DE',
+        'organization' => 'Civic Patches GmbH',
+        'address_line1' => 'Musterstraße 1',
+        'address_line2' => 'c/o Beispiel AG',
+        'postal_code' => '10115',
+        'locality' => 'Berlin',
+      ],
+      'field_jurisdiction_e_mail' => [
+        ['value' => 'kontakt@example.org'],
+        ['value' => 'ignored@example.org'],
+      ],
     ]);
     $this->group->save();
   }
@@ -220,6 +209,7 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
       $this->container->get('language_manager'),
       $moduleHandler,
       $logger,
+      $this->container->get('address.country_repository'),
     );
   }
 
@@ -236,10 +226,9 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
     $this->assertStringContainsString('c/o Beispiel AG', $html);
     $this->assertStringContainsString('10115', $html);
     $this->assertStringContainsString('Berlin', $html);
-    $this->assertStringContainsString('DE', $html);
+    $this->assertStringContainsString('Deutschland', $html);
     $this->assertStringContainsString('kontakt@example.org', $html);
-    $this->assertStringContainsString('DE123456789', $html);
-    $this->assertStringContainsString('§ 27 a Umsatzsteuergesetz', $html);
+    $this->assertStringNotContainsString('ignored@example.org', $html);
     $this->assertStringNotContainsString('[Firmenname noch nicht hinterlegt]', $html);
     $this->assertStringNotContainsString('unvollständig', $html);
   }
@@ -247,16 +236,22 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
   /**
    * @covers ::generateForGroup
    */
-  public function testGenerateForGroupOmitsTaxIdWhenEmpty(): void {
-    $this->group->set('field_billing_tax_id', NULL);
+  public function testGenerateForGroupUsesNaturalPersonName(): void {
+    $this->group->set('field_jurisdiction_address', [
+      'country_code' => 'DE',
+      'organization' => '',
+      'given_name' => 'Erika',
+      'family_name' => 'Mustermann',
+      'address_line1' => 'Musterstraße 1',
+      'postal_code' => '10115',
+      'locality' => 'Berlin',
+    ]);
     $this->group->save();
 
     $html = $this->generator->generateForGroup($this->group, 'de');
 
-    $this->assertStringNotContainsString('Umsatzsteuer-ID', $html);
-    $this->assertStringNotContainsString('§ 27 a', $html);
-    // Other content still present.
-    $this->assertStringContainsString('Civic Patches GmbH', $html);
+    $this->assertStringContainsString('Erika Mustermann', $html);
+    $this->assertStringNotContainsString('Civic Patches GmbH', $html);
   }
 
   /**
@@ -280,24 +275,66 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
   /**
    * @covers ::generateForGroup
    */
-  public function testGenerateForGroupFallsBackToJurisdictionEmail(): void {
-    $this->group->set('field_billing_email', NULL);
-    $this->group->set('field_jurisdiction_e_mail', 'amt@example.org');
-    $this->group->save();
+  public function testGenerateForGroupWorksWithoutBillingFields(): void {
+    $billingFields = [
+      'field_billing_name',
+      'field_billing_email',
+      'field_billing_address_line1',
+      'field_billing_address_line2',
+      'field_billing_city',
+      'field_billing_postal_code',
+      'field_billing_country',
+      'field_billing_tax_id',
+    ];
+    foreach ($billingFields as $fieldName) {
+      $this->assertFalse($this->group->hasField($fieldName));
+    }
 
     $html = $this->generator->generateForGroup($this->group, 'de');
 
-    $this->assertStringContainsString('amt@example.org', $html);
-    $this->assertStringNotContainsString('[E-Mail noch nicht hinterlegt]', $html);
+    $this->assertStringContainsString('Civic Patches GmbH', $html);
+    $this->assertStringContainsString('kontakt@example.org', $html);
+    $this->assertStringNotContainsString('unvollständig', $html);
   }
 
   /**
    * @covers ::generateForGroup
    */
-  public function testGenerateForGroupEscapesScriptTagInBillingName(): void {
-    // Simulate a malicious value that bypassed BillingController's
-    // Html::escape on write. The service must still emit a safe payload.
-    $this->group->set('field_billing_name', '<script>alert(1)</script>');
+  public function testGenerateForGroupPrintsTaxIdOnlyWhenPresent(): void {
+    FieldStorageConfig::create([
+      'field_name' => 'field_billing_tax_id',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'settings' => ['max_length' => 50],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_billing_tax_id',
+      'entity_type' => 'group',
+      'bundle' => 'jur',
+      'label' => 'Billing Tax ID',
+    ])->save();
+
+    $group = Group::load($this->group->id());
+    $this->assertInstanceOf(Group::class, $group);
+    $html = $this->generator->generateForGroup($group, 'de');
+    $this->assertStringNotContainsString('Umsatzsteuer-ID', $html);
+
+    $group->set('field_billing_tax_id', 'DE123456789');
+    $group->save();
+
+    $html = $this->generator->generateForGroup($group, 'de');
+
+    $this->assertStringContainsString('DE123456789', $html);
+    $this->assertStringContainsString('§ 27 a Umsatzsteuergesetz', $html);
+  }
+
+  /**
+   * @covers ::generateForGroup
+   */
+  public function testGenerateForGroupEscapesScriptTagInOperatorName(): void {
+    $address = $this->group->get('field_jurisdiction_address')->first()?->getValue() ?? [];
+    $address['organization'] = '<script>alert(1)</script>';
+    $this->group->set('field_jurisdiction_address', $address);
     $this->group->save();
 
     $html = $this->generator->generateForGroup($this->group, 'de');
@@ -327,7 +364,7 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
     $this->assertStringContainsString('Impressum', $value);
 
     $this->assertSame(
-      'Auto-generated legal notice from billing fields',
+      'Auto-generated legal notice from operator address',
       (string) $reloaded->getRevisionLogMessage()
     );
 

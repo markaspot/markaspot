@@ -42,3 +42,4 @@ services:
       - '@language_manager'
       - '@module_handler'
       - '@logger.channel.markaspot_fastmap'
+      - '@?address.country_repository'

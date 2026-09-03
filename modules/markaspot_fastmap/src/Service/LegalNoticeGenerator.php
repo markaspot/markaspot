@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Service;
 
+use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
+use CommerceGuys\Addressing\Exception\UnknownCountryException;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Field\FieldItemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Template\TwigEnvironment;
 use Drupal\group\Entity\GroupInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Generates TMG §5 conforming Impressum content from billing fields.
+ * Generates TMG §5 conforming Impressum content from operator data.
  *
  * Renders per-locale Twig templates under templates/legal-notice/.
  * Writes the result to field_legal_notice (text_long, translatable). This
@@ -21,26 +24,14 @@ use Psr\Log\LoggerInterface;
  * hasManualOverride).
  *
  * Data source map (group.jur entity):
- *   - field_billing_name (TMG §5 Abs.1 Nr.1, legal company name)
- *   - field_billing_address_line1
- *   - field_billing_address_line2 (optional, c/o, suite)
- *   - field_billing_postal_code
- *   - field_billing_city
- *   - field_billing_country (ISO-2)
- *   - field_billing_email (TMG §5 Abs.1 Nr.2, contact email)
- *   - field_billing_tax_id (TMG §5 Abs.1 Nr.6, Umsatzsteuer-ID)
- *
- * Fallbacks:
- *   - billing_email -> field_jurisdiction_e_mail
- *   - billing_address_line1/city/postal_code -> field_jurisdiction_address
+ *   - field_jurisdiction_address (operator name and postal address)
+ *   - field_jurisdiction_e_mail (operator contact email)
+ *   - field_billing_tax_id (optional Umsatzsteuer-ID)
  *
  * Security:
- *   - Twig auto-escape MUST stay enabled. BillingController already escapes
- *     billing_* values on write; this service re-escapes defensively before
- *     handing values to Twig. Double-escape via Html::escape() is harmless
- *     because Twig escapes the already-encoded entities a second time and the
- *     output is decoded once by the browser. NEVER pass any raw user input
- *     through |raw in the templates.
+ *   - Twig auto-escape MUST stay enabled. This service escapes every scalar
+ *     value defensively before handing it to Twig. NEVER pass any raw user
+ *     input through |raw in the templates.
  */
 final class LegalNoticeGenerator {
 
@@ -68,25 +59,26 @@ final class LegalNoticeGenerator {
     private readonly LanguageManagerInterface $languageManager,
     private readonly ModuleHandlerInterface $moduleHandler,
     private readonly LoggerInterface $logger,
+    private readonly ?CountryRepositoryInterface $countryRepository = NULL,
   ) {}
 
   /**
    * Renders the legal notice HTML for one langcode.
    *
    * @param \Drupal\group\Entity\GroupInterface $group
-   *   The jurisdiction group whose billing fields seed the template.
+   *   The jurisdiction group whose operator fields seed the template.
    * @param string $langcode
    *   Target langcode (e.g. 'de', 'en'). Falls back to 'en' when no template
    *   exists for the requested langcode.
    *
    * @return string
-   *   Rendered HTML. Always non-empty: when billing data is missing, the
+   *   Rendered HTML. Always non-empty: when operator data is missing, the
    *   template renders explicit placeholder markers so operators can spot an
    *   incomplete Impressum visually.
    */
   public function generateForGroup(GroupInterface $group, string $langcode): string {
     $resolvedLangcode = $this->resolveTemplateLangcode($langcode);
-    $context = $this->buildContext($group);
+    $context = $this->buildContext($group, $resolvedLangcode);
     $templateName = sprintf('@markaspot_fastmap/legal-notice/%s.html.twig', $resolvedLangcode);
 
     return (string) $this->twig->load($templateName)->render($context);
@@ -150,7 +142,7 @@ final class LegalNoticeGenerator {
     if ($written !== []) {
       try {
         $group->setNewRevision(TRUE);
-        $group->setRevisionLogMessage('Auto-generated legal notice from billing fields');
+        $group->setRevisionLogMessage('Auto-generated legal notice from operator address');
         $group->setRevisionCreationTime(\time());
         $group->save();
         $this->logger->info(
@@ -297,47 +289,49 @@ final class LegalNoticeGenerator {
   }
 
   /**
-   * Builds the Twig context array from billing + fallback fields.
+   * Builds the Twig context array from operator fields and the optional VAT ID.
    *
-   * All scalar values are re-escaped defensively via Html::escape() even
-   * though BillingController already escapes on write. Double-encoding is
-   * idempotent here because Twig auto-escape kicks in once more on render
-   * and the browser decodes once - the net effect is a single safe entity
-   * encoding in the DOM, with no XSS surface for callers that bypass
-   * BillingController.
+   * All scalar values are escaped defensively via Html::escape() before Twig
+   * auto-escape handles the rendered template.
    */
-  private function buildContext(GroupInterface $group): array {
-    $billingName = $this->readField($group, 'field_billing_name');
-    $addressLine1 = $this->readField($group, 'field_billing_address_line1');
-    $addressLine2 = $this->readField($group, 'field_billing_address_line2');
-    $postalCode = $this->readField($group, 'field_billing_postal_code');
-    $city = $this->readField($group, 'field_billing_city');
-    $country = $this->readField($group, 'field_billing_country');
-    $email = $this->readField($group, 'field_billing_email');
-    $taxId = $this->readField($group, 'field_billing_tax_id');
-
-    // Fallback: jurisdiction contact email when billing email is empty.
-    if ($email === '') {
-      $email = $this->readField($group, 'field_jurisdiction_e_mail');
+  private function buildContext(GroupInterface $group, string $langcode): array {
+    $address = NULL;
+    if ($group->hasField('field_jurisdiction_address') && !$group->get('field_jurisdiction_address')->isEmpty()) {
+      $address = $group->get('field_jurisdiction_address')->first();
     }
 
-    // Fallback: jurisdiction address is a free-form text_long. If no
-    // structured billing address is set, drop the raw value into
-    // address_line1 so the Impressum still surfaces SOMETHING the operator
-    // recognises as their address (rather than three placeholder lines).
-    if ($addressLine1 === '' && $postalCode === '' && $city === '') {
-      $jurAddress = $this->readField($group, 'field_jurisdiction_address');
-      if ($jurAddress !== '') {
-        $addressLine1 = $jurAddress;
+    $organization = $this->readAddressProperty($address, 'organization');
+    $givenName = $this->readAddressProperty($address, 'given_name');
+    $familyName = $this->readAddressProperty($address, 'family_name');
+    $operatorName = $organization !== ''
+      ? $organization
+      : \trim($givenName . ' ' . $familyName);
+    $addressLine1 = $this->readAddressProperty($address, 'address_line1');
+    $addressLine2 = $this->readAddressProperty($address, 'address_line2');
+    $postalCode = $this->readAddressProperty($address, 'postal_code');
+    $city = $this->readAddressProperty($address, 'locality');
+    $countryCode = $this->readAddressProperty($address, 'country_code');
+    $country = $countryCode;
+    if ($countryCode !== '' && $this->countryRepository !== NULL) {
+      try {
+        $country = $this->countryRepository->get($countryCode, $langcode)->getName();
+      }
+      catch (UnknownCountryException) {
+        // Preserve an unknown ISO code instead of dropping the country.
       }
     }
 
-    $hasCompleteData = $billingName !== ''
+    $email = $this->readField($group, 'field_jurisdiction_e_mail');
+    $taxId = $this->readField($group, 'field_billing_tax_id');
+
+    $hasCompleteData = $operatorName !== ''
       && $addressLine1 !== ''
+      && $postalCode !== ''
+      && $city !== ''
       && $email !== '';
 
     return [
-      'billing_name' => Html::escape($billingName),
+      'operator_name' => Html::escape($operatorName),
       'address_line1' => Html::escape($addressLine1),
       'address_line2' => Html::escape($addressLine2),
       'postal_code' => Html::escape($postalCode),
@@ -357,6 +351,16 @@ final class LegalNoticeGenerator {
       return '';
     }
     return \trim((string) $group->get($fieldName)->value);
+  }
+
+  /**
+   * Reads a scalar address property, returning '' when no address exists.
+   */
+  private function readAddressProperty(?FieldItemInterface $address, string $propertyName): string {
+    if ($address === NULL) {
+      return '';
+    }
+    return \trim((string) $address->get($propertyName)->getValue());
   }
 
 }

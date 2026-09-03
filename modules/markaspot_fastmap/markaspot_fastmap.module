@@ -365,7 +365,7 @@ function _markaspot_fastmap_shipped_mail_template(string $key): array {
 /**
  * Implements hook_ENTITY_TYPE_update() for group entities.
  *
- * Triggers a legal-notice regeneration when billing fields changed.
+ * Triggers legal-notice regeneration when a monitored group field changes.
  * The generator itself calls $group->save() with setNewRevision(TRUE), so a
  * static guard prevents the inner save from recursing into this hook a
  * second time. Manual overrides (sentinel <!-- manual-override -->) are
@@ -424,9 +424,9 @@ function markaspot_fastmap_group_update(GroupInterface $group): void {
     $generator->syncGroup($group);
   }
   catch (\Throwable $e) {
-    // Sync failures must NOT block the outer billing save: that's a
-    // payment-side write that already completed. Log and move on; the
-    // operator can re-trigger via the admin form or a follow-up edit.
+    // Sync failures must not block the outer group save. The monitored field
+    // change already completed, so log the failure and allow a later edit or
+    // update hook to retry regeneration.
     \Drupal::logger('markaspot_fastmap')->error(
       'legal_notice auto-sync failed for group @id: @msg',
       ['@id' => $gid, '@msg' => $e->getMessage()]

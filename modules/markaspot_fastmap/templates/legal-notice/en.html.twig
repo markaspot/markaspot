@@ -4,7 +4,7 @@
  * English legal notice template (Imprint) - structurally TMG §5 conforming.
  *
  * Available variables:
- * - billing_name: string (HTML-escaped legal company name)
+ * - operator_name: string (HTML-escaped legal operator name)
  * - address_line1, address_line2: string (escaped)
  * - postal_code, city, country: string (escaped)
  * - email: string (escaped contact email)
@@ -20,7 +20,7 @@
 <p>Information pursuant to § 5 TMG (German Telemedia Act):</p>
 
 <p class="legal-notice-address">
-  {{ billing_name ?: '[Company name not yet provided]' }}<br>
+  {{ operator_name ?: '[Company name not yet provided]' }}<br>
   {{ address_line1 ?: '[Address not yet provided]' }}<br>
   {% if address_line2 %}{{ address_line2 }}<br>{% endif %}
   {{ postal_code }} {{ city }}<br>

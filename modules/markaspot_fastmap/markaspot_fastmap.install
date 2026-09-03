@@ -647,17 +647,21 @@ function markaspot_fastmap_update_11911(): void {
 }
 
 /**
- * Add billing address fields to jur group type.
+ * Ensures the Stripe-managed billing fields exist on the jur group type.
  *
  * These fields store the billing address synced from Stripe after checkout.
  * They are managed automatically via the BillingController and webhook,
  * not edited manually in Drupal admin.
+ *
+ * @return string[]
+ *   Field names whose storage or bundle instance was created.
  */
-function markaspot_fastmap_update_11912(): void {
+function _markaspot_fastmap_ensure_billing_fields(): array {
   $etm = \Drupal::entityTypeManager();
   $logger = \Drupal::logger('markaspot_fastmap');
   $fsc = $etm->getStorage('field_storage_config');
   $fc = $etm->getStorage('field_config');
+  $created = [];
 
   $billing_fields = [
     'field_billing_name' => [
@@ -722,6 +726,7 @@ function markaspot_fastmap_update_11912(): void {
           ],
         ],
       ])->save();
+      $created[$field_name] = TRUE;
       $logger->info('Created field storage: group.@field', ['@field' => $field_name]);
     }
 
@@ -740,6 +745,7 @@ function markaspot_fastmap_update_11912(): void {
           'translatable' => FALSE,
           'default_value' => [],
         ])->save();
+        $created[$field_name] = TRUE;
         $logger->info('Created field instance: group.jur.@field', ['@field' => $field_name]);
       }
     }
@@ -749,11 +755,26 @@ function markaspot_fastmap_update_11912(): void {
   $form_display = $etm->getStorage('entity_form_display')
     ->load('group.jur.default');
   if ($form_display) {
+    $display_changed = FALSE;
     foreach (array_keys($billing_fields) as $field_name) {
-      $form_display->removeComponent($field_name);
+      if ($form_display->getComponent($field_name) !== NULL) {
+        $form_display->removeComponent($field_name);
+        $display_changed = TRUE;
+      }
     }
-    $form_display->save();
+    if ($display_changed) {
+      $form_display->save();
+    }
   }
+
+  return array_keys($created);
+}
+
+/**
+ * Add billing address fields to jur group type.
+ */
+function markaspot_fastmap_update_11912(): void {
+  _markaspot_fastmap_ensure_billing_fields();
 }
 
 /**
@@ -1492,5 +1513,67 @@ function markaspot_fastmap_update_11925(): string {
     $cleaned,
     $kept,
     $skipped,
+  );
+}
+
+/**
+ * Repairs billing fields on sites where update 11912 did not take effect.
+ */
+function markaspot_fastmap_update_11926(): string {
+  $created = _markaspot_fastmap_ensure_billing_fields();
+
+  return $created === []
+    ? 'Billing field repair: nothing to do.'
+    : 'Billing field repair created: ' . implode(', ', $created) . '.';
+}
+
+/**
+ * Regenerates legal notices from the operator address and contact email.
+ */
+function markaspot_fastmap_update_11927(): string {
+  $group_storage = \Drupal::entityTypeManager()->getStorage('group');
+  $jurisdiction_bundle = (string) (\Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?: 'jur');
+  $group_ids = array_values($group_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', $jurisdiction_bundle)
+    ->sort('id')
+    ->execute());
+
+  /** @var \Drupal\markaspot_fastmap\Service\LegalNoticeGenerator $generator */
+  $generator = \Drupal::service('markaspot_fastmap.legal_notice_generator');
+  $written = 0;
+  $skipped = 0;
+  $failed = 0;
+
+  foreach (array_chunk($group_ids, 50) as $chunk) {
+    foreach ($group_storage->loadMultiple($chunk) as $group) {
+      try {
+        $langcodes = $generator->syncGroup($group);
+        if ($langcodes === []) {
+          $skipped++;
+        }
+        else {
+          $written++;
+        }
+      }
+      catch (\Throwable $e) {
+        $failed++;
+        \Drupal::logger('markaspot_fastmap')->error(
+          'update_11927 could not regenerate the legal notice for group @id: @message',
+          [
+            '@id' => $group->id(),
+            '@message' => $e->getMessage(),
+          ],
+        );
+      }
+    }
+  }
+
+  return sprintf(
+    'Legal notice regeneration: %d written, %d skipped, %d failed.',
+    $written,
+    $skipped,
+    $failed,
   );
 }

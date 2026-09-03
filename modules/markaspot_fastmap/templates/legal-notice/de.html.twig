@@ -4,7 +4,7 @@
  * German legal notice template (Impressum) per TMG §5.
  *
  * Available variables:
- * - billing_name: string (HTML-escaped legal company name)
+ * - operator_name: string (HTML-escaped legal operator name)
  * - address_line1, address_line2: string (escaped)
  * - postal_code, city, country: string (escaped)
  * - email: string (escaped contact email)
@@ -20,7 +20,7 @@
 <p>Angaben gemäß § 5 TMG:</p>
 
 <p class="legal-notice-address">
-  {{ billing_name ?: '[Firmenname noch nicht hinterlegt]' }}<br>
+  {{ operator_name ?: '[Firmenname noch nicht hinterlegt]' }}<br>
   {{ address_line1 ?: '[Anschrift noch nicht hinterlegt]' }}<br>
   {% if address_line2 %}{{ address_line2 }}<br>{% endif %}
   {{ postal_code }} {{ city }}<br>
