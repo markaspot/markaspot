@@ -8,6 +8,9 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\Merge;
+use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -142,6 +145,33 @@ class BillingControllerTest extends UnitTestCase {
 
     };
     $this->database->method('startTransaction')->willReturn($transaction);
+
+    // Billing writes lock the base group row, then read the workspace token
+    // row. These tests exercise the controller's field handling rather than
+    // database concurrency, so provide the successful unlocked fixture state.
+    $groupStatement = $this->createMock(StatementInterface::class);
+    $groupStatement->method('fetchField')->willReturn(14);
+    $groupSelect = $this->createMock(SelectInterface::class);
+    $groupSelect->method('fields')->willReturnSelf();
+    $groupSelect->method('condition')->willReturnSelf();
+    $groupSelect->method('forUpdate')->willReturnSelf();
+    $groupSelect->method('execute')->willReturn($groupStatement);
+
+    $tokenStatement = $this->createMock(StatementInterface::class);
+    $tokenStatement->method('fetchField')->willReturn(FALSE);
+    $tokenSelect = $this->createMock(SelectInterface::class);
+    $tokenSelect->method('fields')->willReturnSelf();
+    $tokenSelect->method('condition')->willReturnSelf();
+    $tokenSelect->method('forUpdate')->willReturnSelf();
+    $tokenSelect->method('execute')->willReturn($tokenStatement);
+
+    $merge = $this->createMock(Merge::class);
+    $merge->method('insertFields')->willReturnSelf();
+    $merge->method('condition')->willReturnSelf();
+    $merge->method('execute')->willReturn(0);
+    $this->database->method('merge')->with('key_value')->willReturn($merge);
+    $this->database->method('select')
+      ->willReturnCallback(static fn(string $table) => $table === 'groups' ? $groupSelect : $tokenSelect);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->currentUser->method('id')
       ->willReturnCallback(fn() => $this->currentUserId);

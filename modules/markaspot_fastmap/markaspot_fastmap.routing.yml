@@ -61,6 +61,19 @@ markaspot_fastmap.billing_update:
   options:
     no_cache: 'TRUE'
 
+markaspot_fastmap.billing_sync_token:
+  path: '/api/fastmap/billing/{group}/sync-token'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\BillingController::reserveSyncToken'
+    _title: 'Reserve Billing Sync Token'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\markaspot_fastmap\Controller\BillingController::access'
+    group: '[a-z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
 markaspot_fastmap.workspace_usage:
   path: '/api/fastmap/usage/{group}'
   defaults:

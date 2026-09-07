@@ -37,13 +37,21 @@ class BillingControllerTOFUTest extends KernelTestBase {
   ];
 
   /**
-   * Tests the first PATCH atomically sets the Stripe customer.
+   * Tests a legacy PATCH can bind its first Stripe customer before token use.
    */
   public function testFirstPatchSetsCustomer(): void {
     $this->createFixtureTables();
     $this->insertGroupRow();
 
     $group = $this->mockGroup(NULL);
+    $initialCustomer = NULL;
+    $group->expects($this->once())
+      ->method('set')
+      ->willReturnCallback(static function (string $field, mixed $value) use (&$initialCustomer): void {
+        if ($field === 'field_stripe_customer_id') {
+          $initialCustomer = $value;
+        }
+      });
     $logger = $this->createMock(LoggerInterface::class);
     $messages = [];
     $logger->method('info')
@@ -59,7 +67,7 @@ class BillingControllerTOFUTest extends KernelTestBase {
     $this->assertSame(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertContains('stripe_customer_id', $data['updated']);
-    $this->assertSame('cus_first', $this->loadStoredCustomer());
+    $this->assertSame('cus_first', $initialCustomer);
     $this->assertTrue((bool) array_filter($messages, static fn(string $message): bool => str_contains($message, 'billing.initial_customer_set')));
   }
 
@@ -71,7 +79,7 @@ class BillingControllerTOFUTest extends KernelTestBase {
     $this->insertGroupRow();
     $this->insertStoredCustomer('cus_winner');
 
-    $group = $this->mockGroup(NULL);
+    $group = $this->mockGroup('cus_winner');
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())
       ->method('warning')
@@ -110,6 +118,83 @@ class BillingControllerTOFUTest extends KernelTestBase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertSame('Invalid tier value', $data['error']);
     $this->assertNull($this->loadStoredCustomer());
+  }
+
+  /**
+   * Tests that a later token invalidates an earlier Stripe read result.
+   */
+  public function testSyncTokenSupersedesOlderWriters(): void {
+    $this->createFixtureTables();
+    $this->insertGroupRow();
+    $this->insertStoredCustomer('cus_bound');
+
+    $group = $this->mockGroup('cus_bound');
+    $group->expects($this->once())->method('save');
+    $logger = $this->createMock(LoggerInterface::class);
+    $controller = $this->createController($group, $logger);
+
+    $first = $controller->reserveSyncToken('14', $this->createTokenRequest('cus_bound'));
+    $second = $controller->reserveSyncToken('14', $this->createTokenRequest('cus_bound'));
+    $tokenOne = json_decode($first->getContent(), TRUE)['sync_token'];
+    $tokenTwo = json_decode($second->getContent(), TRUE)['sync_token'];
+
+    $this->assertSame(200, $first->getStatusCode());
+    $this->assertSame(200, $second->getStatusCode());
+    $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $tokenOne);
+    $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $tokenTwo);
+    $this->assertNotSame($tokenOne, $tokenTwo);
+
+    $stale = $controller->update('14', $this->createPatchRequest([
+      'stripe_customer_id' => 'cus_bound',
+      'tier' => 'pro',
+    ], $tokenOne));
+    $this->assertSame(409, $stale->getStatusCode());
+    $this->assertSame('Billing sync token is stale. Request a new token and retry.', json_decode($stale->getContent(), TRUE)['error']);
+
+    $current = $controller->update('14', $this->createPatchRequest([
+      'stripe_customer_id' => 'cus_bound',
+      'tier' => 'pro',
+    ], $tokenTwo));
+    $this->assertSame(200, $current->getStatusCode());
+    $this->assertSame($tokenTwo, $this->loadSyncToken());
+  }
+
+  /**
+   * Tests that opting in to token sync rejects an unversioned PATCH.
+   */
+  public function testSyncTokenRejectsMissingTokenAfterReservation(): void {
+    $this->createFixtureTables();
+    $this->insertGroupRow();
+    $this->insertStoredCustomer('cus_bound');
+
+    $group = $this->mockGroup('cus_bound');
+    $group->expects($this->never())->method('save');
+    $controller = $this->createController($group, $this->createMock(LoggerInterface::class));
+    $this->assertSame(200, $controller->reserveSyncToken('14', $this->createTokenRequest('cus_bound'))->getStatusCode());
+
+    $response = $controller->update('14', $this->createPatchRequest([
+      'stripe_customer_id' => 'cus_bound',
+      'tier' => 'starter',
+    ]));
+    $this->assertSame(409, $response->getStatusCode());
+  }
+
+  /**
+   * Tests a token request cannot bind or replace a different customer.
+   */
+  public function testSyncTokenRejectsForeignCustomerWithoutWritingToken(): void {
+    $this->createFixtureTables();
+    $this->insertGroupRow();
+    $this->insertStoredCustomer('cus_bound');
+
+    $controller = $this->createController($this->mockGroup('cus_bound'), $this->createMock(LoggerInterface::class));
+    $valid = $controller->reserveSyncToken('14', $this->createTokenRequest('cus_bound'));
+    $validToken = json_decode($valid->getContent(), TRUE)['sync_token'];
+    $response = $controller->reserveSyncToken('14', $this->createTokenRequest('cus_foreign'));
+
+    $this->assertSame(403, $response->getStatusCode());
+    $this->assertSame($validToken, $this->loadSyncToken());
+    $this->assertSame('cus_bound', $this->loadStoredCustomer());
   }
 
   /**
@@ -156,18 +241,39 @@ class BillingControllerTOFUTest extends KernelTestBase {
   /**
    * Creates a PATCH request with a valid service key.
    */
-  private function createPatchRequest(array $data): Request {
+  private function createPatchRequest(array $data, ?string $syncToken = NULL): Request {
+    $headers = [
+      'CONTENT_TYPE' => 'application/json',
+      'HTTP_X_SERVICE_KEY' => 'test-service-key-456',
+    ];
+    if ($syncToken !== NULL) {
+      $headers['HTTP_X_BILLING_SYNC_TOKEN'] = $syncToken;
+    }
     return Request::create(
       '/api/fastmap/billing/14',
       'PATCH',
       [],
       [],
       [],
-      [
-        'CONTENT_TYPE' => 'application/json',
-        'HTTP_X_SERVICE_KEY' => 'test-service-key-456',
-      ],
+      $headers,
       json_encode($data)
+    );
+  }
+
+  /**
+   * Creates a POST token reservation request with a valid service key.
+   */
+  private function createTokenRequest(string $customer): Request {
+    return Request::create(
+      '/api/fastmap/billing/14/sync-token',
+      'POST',
+      [],
+      [],
+      [],
+      [
+        'HTTP_X_SERVICE_KEY' => 'test-service-key-456',
+        'HTTP_X_STRIPE_CUSTOMER' => $customer,
+      ]
     );
   }
 
@@ -249,6 +355,14 @@ class BillingControllerTOFUTest extends KernelTestBase {
       ],
       'primary key' => ['entity_id', 'deleted', 'delta', 'langcode'],
     ]);
+    $schema->createTable('key_value', [
+      'fields' => [
+        'collection' => ['type' => 'varchar', 'length' => 128, 'not null' => TRUE],
+        'name' => ['type' => 'varchar', 'length' => 128, 'not null' => TRUE],
+        'value' => ['type' => 'blob', 'size' => 'big', 'not null' => TRUE],
+      ],
+      'primary key' => ['collection', 'name'],
+    ]);
   }
 
   /**
@@ -284,6 +398,21 @@ class BillingControllerTOFUTest extends KernelTestBase {
       ->fetchField();
 
     return is_string($value) ? $value : NULL;
+  }
+
+  /**
+   * Loads the raw stored sync token for the fixture group.
+   */
+  private function loadSyncToken(): ?string {
+    $value = $this->container->get('database')
+      ->select('key_value', 'kv')
+      ->fields('kv', ['value'])
+      ->condition('collection', 'markaspot_fastmap.billing_sync')
+      ->condition('name', 'group:14')
+      ->execute()
+      ->fetchField();
+
+    return is_string($value) && $value !== '' ? $value : NULL;
   }
 
 }

@@ -9,7 +9,6 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
-use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Service\BillingStateResolver;
@@ -34,8 +33,7 @@ class BillingController extends ControllerBase {
   use JurisdictionIdResolverTrait;
 
   private const STRIPE_CUSTOMER_FIELD = 'field_stripe_customer_id';
-  private const STRIPE_CUSTOMER_TABLE = 'group__field_stripe_customer_id';
-  private const STRIPE_CUSTOMER_COLUMN = 'field_stripe_customer_id_value';
+  private const BILLING_SYNC_COLLECTION = 'markaspot_fastmap.billing_sync';
 
   /**
    * The fastmap logger channel.
@@ -316,6 +314,27 @@ class BillingController extends ControllerBase {
     }
 
     $transaction = $this->database->startTransaction();
+    $groupId = (int) $entity->id();
+    if (!$this->lockGroupRow($groupId)) {
+      $transaction->rollBack();
+      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    // The entity loaded before the row lock may have stale field values. Reload
+    // only after holding the base group row lock so the customer anchor and the
+    // entity save below share one serialised critical section.
+    $entity = $this->reloadLockedGroup($groupId);
+    if (!$entity) {
+      $transaction->rollBack();
+      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    $syncToken = $this->readLockedSyncToken($groupId);
+    $providedSyncToken = $request->headers->get('X-Billing-Sync-Token');
+    if ($syncToken !== NULL && (!is_string($providedSyncToken) || !hash_equals($syncToken, $providedSyncToken))) {
+      $transaction->rollBack();
+      return new JsonResponse(['error' => 'Billing sync token is stale. Request a new token and retry.'], 409);
+    }
 
     $customerReconcile = $this->reconcileStripeCustomer($entity, $data, $request);
     if ($customerReconcile instanceof JsonResponse) {
@@ -357,8 +376,8 @@ class BillingController extends ControllerBase {
 
       $value = $data[$key];
 
-      // Validate tier values. NULL is accepted: customer.subscription.deleted
-      // resets tier to NULL (demo-equivalent), never to 'free'.
+      // Validate tier values. NULL remains supported for demo-state resets.
+      // Stripe cancellation handlers explicitly use 'free'.
       if ($key === 'tier' && $value !== NULL) {
         if (!in_array($value, $validTiers, TRUE)) {
           $transaction->rollBack();
@@ -447,6 +466,61 @@ class BillingController extends ControllerBase {
   }
 
   /**
+   * Reserves a billing sync token for an already-bound Stripe customer.
+   */
+  public function reserveSyncToken(string $group, Request $request): JsonResponse {
+    if (!$this->validateServiceKey($request)) {
+      $this->logBillingAudit('billing.access_invalid_key', 'warning', $group, $request);
+      return new JsonResponse(['error' => 'Invalid service key'], 403);
+    }
+
+    $entity = $this->loadJurisdictionGroup($group);
+    if (!$entity) {
+      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    $claimedCustomer = $request->headers->get('X-Stripe-Customer');
+    $claimedCustomer = is_string($claimedCustomer) ? mb_substr(trim($claimedCustomer), 0, 255) : '';
+    if ($claimedCustomer === '') {
+      return new JsonResponse(['error' => 'X-Stripe-Customer required for billing sync token'], 400);
+    }
+
+    $transaction = $this->database->startTransaction();
+    $groupId = (int) $entity->id();
+    if (!$this->lockGroupRow($groupId)) {
+      $transaction->rollBack();
+      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    $entity = $this->reloadLockedGroup($groupId);
+    if (!$entity) {
+      $transaction->rollBack();
+      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    $storedCustomer = $this->getStoredStripeCustomer($entity);
+    if ($storedCustomer === NULL || !hash_equals($storedCustomer, $claimedCustomer)) {
+      $transaction->rollBack();
+      $this->logBillingAudit('billing.scope_violation', 'warning', $entity, $request, $claimedCustomer, $storedCustomer);
+      return new JsonResponse(['error' => 'Stripe customer mismatch'], 403);
+    }
+
+    try {
+      $syncToken = bin2hex(random_bytes(32));
+      $this->writeLockedSyncToken($groupId, $syncToken);
+      unset($transaction);
+      return new JsonResponse(['sync_token' => $syncToken]);
+    }
+    catch (\Throwable) {
+      if (isset($transaction)) {
+        $transaction->rollBack();
+      }
+      $this->fastmapLogger->error('Failed to reserve billing sync token for group @id.', ['@id' => $groupId]);
+      return new JsonResponse(['error' => 'Failed to reserve billing sync token'], 500);
+    }
+  }
+
+  /**
    * Reconciles the claimed Stripe customer against the stored scope anchor.
    *
    * @return string|\Symfony\Component\HttpFoundation\JsonResponse
@@ -470,21 +544,11 @@ class BillingController extends ControllerBase {
       return new JsonResponse(['error' => 'Stripe customer mismatch'], 403);
     }
 
-    $result = $this->setInitialStripeCustomerAtomically($entity, $claimed);
-    if ($result === 'initial_set') {
-      $entity->set(self::STRIPE_CUSTOMER_FIELD, $claimed);
-      $this->logBillingAudit('billing.initial_customer_set', 'info', $entity, $request, $claimed, NULL);
-      return 'initial_set';
-    }
-
-    if ($result === 'match') {
-      $entity->set(self::STRIPE_CUSTOMER_FIELD, $claimed);
-      $this->logBillingAudit('billing.match', 'info', $entity, $request, $claimed, $claimed);
-      return 'match';
-    }
-
-    $this->logBillingAudit('billing.scope_violation', 'warning', $entity, $request, $claimed, is_string($result) ? $result : NULL);
-    return new JsonResponse(['error' => 'Stripe customer mismatch'], 403);
+    // update() holds the group base-row lock while reconciling and saving, so
+    // this initial binding cannot race another billing PATCH.
+    $entity->set(self::STRIPE_CUSTOMER_FIELD, $claimed);
+    $this->logBillingAudit('billing.initial_customer_set', 'info', $entity, $request, $claimed, NULL);
+    return 'initial_set';
   }
 
   /**
@@ -513,98 +577,75 @@ class BillingController extends ControllerBase {
   }
 
   /**
-   * Sets the initial Stripe customer ID with a DB-level race guard.
-   *
-   * @return string
-   *   "initial_set", "match", or the conflicting stored customer ID.
+   * Locks the group base row shared by token reservations and billing writes.
    */
-  private function setInitialStripeCustomerAtomically(GroupInterface $entity, string $claimed): string {
-    $groupId = (int) $entity->id();
-    $langcode = $this->getEntityLangcode($entity);
+  private function lockGroupRow(int $groupId): bool {
+    $lockedId = $this->database->select('groups', 'g')
+      ->fields('g', ['id'])
+      ->condition('id', $groupId)
+      ->forUpdate()
+      ->execute()
+      ->fetchField();
+    return $lockedId !== FALSE && (int) $lockedId === $groupId;
+  }
 
-    $updated = $this->database->update(self::STRIPE_CUSTOMER_TABLE)
-      ->fields([self::STRIPE_CUSTOMER_COLUMN => $claimed])
-      ->condition('entity_id', $groupId)
-      ->condition('deleted', 0)
-      ->condition('delta', 0)
-      ->condition('langcode', $langcode)
-      ->condition(self::STRIPE_CUSTOMER_COLUMN, '')
+  /**
+   * Reloads the group after its base row has been locked.
+   */
+  private function reloadLockedGroup(int $groupId): ?GroupInterface {
+    $storage = $this->entityTypeManager()->getStorage('group');
+    $storage->resetCache([$groupId]);
+    $group = $storage->load($groupId);
+    return $this->isJurisdictionGroup($group) ? $group : NULL;
+  }
+
+  /**
+   * Reads a sync token from its transaction-locked database row.
+   */
+  private function readLockedSyncToken(int $groupId): ?string {
+    $this->materializeSyncTokenRow($groupId);
+    $value = $this->database->select('key_value', 'kv')
+      ->fields('kv', ['value'])
+      ->condition('collection', self::BILLING_SYNC_COLLECTION)
+      ->condition('name', $this->syncTokenKey($groupId))
+      ->forUpdate()
+      ->execute()
+      ->fetchField();
+    return is_string($value) && $value !== '' ? $value : NULL;
+  }
+
+  /**
+   * Replaces the latest transaction-locked token for a group.
+   */
+  private function writeLockedSyncToken(int $groupId, string $token): void {
+    $this->materializeSyncTokenRow($groupId);
+    $this->database->update('key_value')
+      ->fields(['value' => $token])
+      ->condition('collection', self::BILLING_SYNC_COLLECTION)
+      ->condition('name', $this->syncTokenKey($groupId))
       ->execute();
-    if ($updated > 0) {
-      return 'initial_set';
-    }
-
-    try {
-      $this->database->insert(self::STRIPE_CUSTOMER_TABLE)
-        ->fields([
-          'bundle' => $entity->bundle(),
-          'deleted' => 0,
-          'entity_id' => $groupId,
-          'revision_id' => $this->getGroupRevisionId($entity),
-          'langcode' => $langcode,
-          'delta' => 0,
-          self::STRIPE_CUSTOMER_COLUMN => $claimed,
-        ])
-        ->execute();
-      return 'initial_set';
-    }
-    catch (IntegrityConstraintViolationException) {
-      $stored = $this->loadStripeCustomerFromStorage($groupId, $langcode);
-      if ($stored !== NULL && hash_equals($stored, $claimed)) {
-        return 'match';
-      }
-      return $stored ?? '';
-    }
   }
 
   /**
-   * Loads the persisted Stripe customer ID after an atomic insert conflict.
+   * Ensures the key_value row exists before its FOR UPDATE read.
    */
-  private function loadStripeCustomerFromStorage(int $groupId, string $langcode): ?string {
-    $value = $this->database->select(self::STRIPE_CUSTOMER_TABLE, 'f')
-      ->fields('f', [self::STRIPE_CUSTOMER_COLUMN])
-      ->condition('entity_id', $groupId)
-      ->condition('deleted', 0)
-      ->condition('delta', 0)
-      ->condition('langcode', $langcode)
-      ->execute()
-      ->fetchField();
-
-    $value = is_string($value) ? trim($value) : '';
-    return $value !== '' ? $value : NULL;
+  private function materializeSyncTokenRow(int $groupId): void {
+    $this->database->merge('key_value')
+      ->insertFields([
+        'collection' => self::BILLING_SYNC_COLLECTION,
+        'name' => $this->syncTokenKey($groupId),
+        'value' => '',
+      ])
+      ->condition('collection', self::BILLING_SYNC_COLLECTION)
+      ->condition('name', $this->syncTokenKey($groupId))
+      ->execute();
   }
 
   /**
-   * Gets the entity langcode needed for field table writes.
+   * Gets the bounded key_value name for a jurisdiction token.
    */
-  private function getEntityLangcode(GroupInterface $entity): string {
-    try {
-      $language = $entity->language();
-      if ($language && method_exists($language, 'getId')) {
-        return $language->getId();
-      }
-    }
-    catch (\Throwable) {
-    }
-
-    return 'en';
-  }
-
-  /**
-   * Gets the current group revision ID needed for field table writes.
-   */
-  private function getGroupRevisionId(GroupInterface $entity): int {
-    if (method_exists($entity, 'getRevisionId') && $entity->getRevisionId()) {
-      return (int) $entity->getRevisionId();
-    }
-
-    $revisionId = $this->database->select('groups', 'g')
-      ->fields('g', ['revision_id'])
-      ->condition('id', (int) $entity->id())
-      ->execute()
-      ->fetchField();
-
-    return $revisionId ? (int) $revisionId : 0;
+  private function syncTokenKey(int $groupId): string {
+    return 'group:' . $groupId;
   }
 
   /**
