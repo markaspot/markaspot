@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.189](https://github.com/markaspot/markaspot/compare/11.9.188...11.9.189) (2026-09-08)
+
+### Features
+
+* **nuxt:** enforce citizen flagging as a platform rule on the self-service platform ([5af329e](https://github.com/markaspot/markaspot/commit/5af329e1b83ed98bb336bfaca2f6c573676463a5))
+
+### Bug Fixes
+
+* expose locked billing state during sync reservation ([4ab1064](https://github.com/markaspot/markaspot/commit/4ab106441c0f7b222a045bea3146f80ce682b64d))
+* **fastmap:** generate legal notice from operator address and repair billing fields ([c260370](https://github.com/markaspot/markaspot/commit/c260370a9cf4d2f7f9337f1b750b1994513a840b))
+* **group:** audit assignments in revision history ([19857d0](https://github.com/markaspot/markaspot/commit/19857d05278343590e765f0a8616a4570dadf9c1))
+* **group:** compare workspace visibility before resolving the group type on update ([babde37](https://github.com/markaspot/markaspot/commit/babde37393771799ccad451fa315a7a8d63d956a))
+* **group:** scope pages to their workspace with untranslatable jurisdiction and visibility-aware access ([d923e1b](https://github.com/markaspot/markaspot/commit/d923e1b8e3a80237ad53235a563061ddb4407ac7))
+* preserve page drafts and correct workspace access and revision logs ([b181737](https://github.com/markaspot/markaspot/commit/b1817377fcd5cc5d4613918f99bd2c67e5048c77))
+* serialize billing writes with workspace sync tokens ([713d544](https://github.com/markaspot/markaspot/commit/713d5447fbae57e917399ae12866edca8fdda254))
+
 ## [11.9.188](https://github.com/markaspot/markaspot/compare/11.9.187...11.9.188) (2026-08-31)
 
 ### Bug Fixes
