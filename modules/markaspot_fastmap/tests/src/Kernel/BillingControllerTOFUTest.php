@@ -160,6 +160,32 @@ class BillingControllerTOFUTest extends KernelTestBase {
   }
 
   /**
+   * Returns the billing state reloaded under the reservation's group lock.
+   */
+  public function testSyncTokenSnapshotUsesLockedBillingState(): void {
+    $this->createFixtureTables();
+    $this->insertGroupRow();
+    $this->insertStoredCustomer('cus_bound');
+
+    $stale_group = $this->mockGroup('cus_bound', 'pro', 'sub_old');
+    $locked_group = $this->mockGroup('cus_bound', 'starter', 'sub_current');
+    $controller = $this->createController(
+      $stale_group,
+      $this->createMock(LoggerInterface::class),
+      $locked_group,
+    );
+    $response = $controller->reserveSyncToken('14', $this->createTokenRequest('cus_bound'));
+
+    $this->assertSame(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame($this->loadSyncToken(), $data['sync_token']);
+    $this->assertSame([
+      'tier' => 'starter',
+      'stripe_subscription_id' => 'sub_current',
+    ], $data['billing']);
+  }
+
+  /**
    * Tests that opting in to token sync rejects an unversioned PATCH.
    */
   public function testSyncTokenRejectsMissingTokenAfterReservation(): void {
@@ -200,7 +226,7 @@ class BillingControllerTOFUTest extends KernelTestBase {
   /**
    * Creates a BillingController wired to the kernel database.
    */
-  private function createController(GroupInterface $group, LoggerInterface $logger): BillingController {
+  private function createController(GroupInterface $group, LoggerInterface $logger, ?GroupInterface $lockedGroup = NULL): BillingController {
     $fastmapConfig = $this->createMock(ImmutableConfig::class);
     $fastmapConfig->method('get')
       ->willReturnCallback(fn(string $key) => $key === 'service_key' ? 'test-service-key-456' : NULL);
@@ -210,7 +236,15 @@ class BillingControllerTOFUTest extends KernelTestBase {
       ->willReturn($fastmapConfig);
 
     $groupStorage = $this->createMock(EntityStorageInterface::class);
-    $groupStorage->method('load')->with(14)->willReturn($group);
+    if ($lockedGroup !== NULL) {
+      // The ID resolver and initial load both run before the locked reload.
+      $groupStorage->expects($this->exactly(3))->method('load')->with(14)
+        ->willReturnOnConsecutiveCalls($group, $group, $lockedGroup);
+      $groupStorage->expects($this->once())->method('resetCache')->with([14]);
+    }
+    else {
+      $groupStorage->method('load')->with(14)->willReturn($group);
+    }
 
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')
@@ -280,7 +314,7 @@ class BillingControllerTOFUTest extends KernelTestBase {
   /**
    * Creates a group test double.
    */
-  private function mockGroup(?string $storedCustomer): GroupInterface {
+  private function mockGroup(?string $storedCustomer, ?string $tier = NULL, ?string $subscriptionId = NULL): GroupInterface {
     $language = $this->createMock(LanguageInterface::class);
     $language->method('getId')->willReturn('en');
 
@@ -292,9 +326,12 @@ class BillingControllerTOFUTest extends KernelTestBase {
     $group->method('language')->willReturn($language);
     $group->method('hasField')->willReturn(TRUE);
     $group->method('get')
-      ->willReturnCallback(fn(string $name) => $name === 'field_stripe_customer_id'
-        ? $this->fieldItem($storedCustomer)
-        : $this->fieldItem(NULL));
+      ->willReturnCallback(fn(string $name) => $this->fieldItem(match ($name) {
+        'field_stripe_customer_id' => $storedCustomer,
+        'field_tier' => $tier,
+        'field_stripe_subscription_id' => $subscriptionId,
+        default => NULL,
+      }));
     $group->method('set');
     $group->method('save');
 

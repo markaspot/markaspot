@@ -508,8 +508,16 @@ class BillingController extends ControllerBase {
     try {
       $syncToken = bin2hex(random_bytes(32));
       $this->writeLockedSyncToken($groupId, $syncToken);
+      // Bind reconciliation to the state reserved by this token. Reading this
+      // before releasing the group lock avoids trusting a stale pre-lock tier.
+      $billing = [
+        'tier' => $entity->hasField('field_tier') && !$entity->get('field_tier')->isEmpty()
+          ? (string) $entity->get('field_tier')->value : NULL,
+        'stripe_subscription_id' => $entity->hasField('field_stripe_subscription_id') && !$entity->get('field_stripe_subscription_id')->isEmpty()
+          ? (string) $entity->get('field_stripe_subscription_id')->value : NULL,
+      ];
       unset($transaction);
-      return new JsonResponse(['sync_token' => $syncToken]);
+      return new JsonResponse(['sync_token' => $syncToken, 'billing' => $billing]);
     }
     catch (\Throwable) {
       if (isset($transaction)) {
