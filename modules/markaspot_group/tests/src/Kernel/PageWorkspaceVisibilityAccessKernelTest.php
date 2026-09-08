@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_group\Kernel;
 
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\field\Entity\FieldConfig;
@@ -19,6 +20,7 @@ use Drupal\markaspot_group\Service\WorkspaceVisibilityService;
 use Drupal\markaspot_group\WorkspaceVisibilityNodeAccessControlHandler;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
+use Drupal\node\NodeGrantDatabaseStorage;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -460,6 +462,88 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
         array_column($language_grants, 'grant_view'),
       );
     }
+  }
+
+  /**
+   * SQL lists and entity queries require access to every assigned workspace.
+   */
+  public function testMultiWorkspaceQueryAccessRequiresEveryMembership(): void {
+    $account = $this->createAccount('a-only-reader');
+    $workspace_a = Group::load($this->jurisdictionIds['authenticated']);
+    $workspace_b = Group::load($this->jurisdictionIds['submission_only']);
+    $workspace_a->addMember($account, ['group_roles' => ['jur-member']]);
+    $this->container->get('markaspot_group.workspace_visibility')->resetCache();
+    $page = Node::create([
+      'type' => 'page',
+      'title' => 'Page belonging to two restricted workspaces',
+      'status' => 1,
+      'uid' => 1,
+      'field_jurisdiction' => [
+        ['target_id' => $workspace_a->id()],
+        ['target_id' => $workspace_b->id()],
+      ],
+    ]);
+    $page->save();
+    $this->container->get('current_user')->setAccount($account);
+    $this->assertFalse($page->access('view', $account));
+    $this->assertNotContains((int) $page->id(), $this->visiblePageIds());
+
+    // Exercise core's real OR-combined grants as well as our AND restriction.
+    // This lightweight fixture wires the hooks without the module dependencies.
+    $records = [];
+    markaspot_group_node_access_records_alter($records, $page);
+    $module_handler = $this->createMock(ModuleHandlerInterface::class);
+    $module_handler->method('hasImplementations')
+      ->willReturnCallback(static fn($hook) => $hook === 'node_grants');
+    $module_handler->method('invokeAll')
+      ->willReturnCallback(static fn($hook, $args = []) => $hook === 'node_grants' ? markaspot_group_node_grants(...$args) : []);
+    $database = $this->container->get('database');
+    $grant_storage = new NodeGrantDatabaseStorage(
+      $database,
+      $module_handler,
+      $this->container->get('language_manager'),
+      $this->container->get('node.view_all_nodes_memory_cache'),
+    );
+    $grant_storage->write($page, $records);
+    $this->container->set('module_handler', $module_handler);
+    $this->container->set('node.grant_storage', $grant_storage);
+
+    foreach ([FALSE, TRUE] as $entity_metadata) {
+      foreach (['node', 'node_field_data', 'joined'] as $shape) {
+        if ($shape === 'joined') {
+          $query = $database->select('users_field_data', 'author');
+          $alias = $query->join('node_field_data', 'workspace_page', 'author.uid = %alias.uid');
+          $base_table = 'node_field_data';
+        }
+        else {
+          $query = $database->select($shape, 'custom_node_alias');
+          $alias = 'custom_node_alias';
+          $base_table = $shape;
+        }
+        $query->addField($alias, 'nid');
+        $query->condition($alias . '.nid', $page->id());
+        $query->addTag('node_access')->addMetaData('account', $account);
+        if ($entity_metadata) {
+          $query->addMetaData('entity_type', 'node');
+        }
+        markaspot_group_query_node_access_alter($query);
+        $grant_storage->alterQuery($query, $query->getTables(), 'view', $account, $base_table);
+        $this->assertSame([], $query->execute()->fetchCol(), $shape . ' must require both workspace memberships.');
+      }
+    }
+  }
+
+  /**
+   * A tag on a non-node query does not cause conditions on a nonexistent nid.
+   */
+  public function testNonNodeQueryRemainsUnchanged(): void {
+    $query = $this->container->get('database')
+      ->select('users_field_data', 'account');
+    $query->addField('account', 'uid');
+    $query->addTag('node_access');
+    $conditions = $query->conditions();
+    markaspot_group_query_node_access_alter($query);
+    $this->assertSame($conditions, $query->conditions());
   }
 
   /**

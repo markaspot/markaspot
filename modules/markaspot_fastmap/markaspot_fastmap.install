@@ -11,9 +11,7 @@ use Drupal\Component\Serialization\Yaml;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\Core\Extension\Requirement\RequirementSeverity;
-use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\user\Entity\Role;
-use Drupal\user\UserInterface;
 
 /**
  * Implements hook_update_dependencies().
@@ -1584,80 +1582,12 @@ function markaspot_fastmap_update_11927(): string {
 }
 
 /**
- * Repairs publication state on page translations.
+ * Preserves independently managed publication state on page translations.
  */
 function markaspot_fastmap_update_11928(): string {
-  $entity_type_manager = \Drupal::entityTypeManager();
-  $node_storage = $entity_type_manager->getStorage('node');
-  $node_ids = array_values($node_storage->getQuery()
-    ->accessCheck(FALSE)
-    ->condition('type', 'page')
-    ->condition('default_langcode', 0)
-    ->sort('nid')
-    ->execute());
-  $pages_scanned = 0;
-  $pages_updated = 0;
-  $translations_repaired = 0;
-
-  $root_account = $entity_type_manager->getStorage('user')->load(1);
-  if (!$root_account instanceof UserInterface) {
-    throw new RuntimeException('Cannot repair page translations without user 1.');
-  }
-  $account_switcher = \Drupal::service('account_switcher');
-  if (!$account_switcher instanceof AccountSwitcherInterface) {
-    throw new RuntimeException('The account switcher service is unavailable.');
-  }
-
-  // Drush boots as anonymous. Switch narrowly so a blocked workspace's
-  // presave protection cannot abort this data repair.
-  $account_switcher->switchTo($root_account);
-  try {
-    foreach (array_chunk($node_ids, 50) as $chunk) {
-      foreach ($node_storage->loadMultiple($chunk) as $node) {
-        $translation_languages = $node->getTranslationLanguages(FALSE);
-        if ($translation_languages === []) {
-          continue;
-        }
-
-        $pages_scanned++;
-        $default_translation = $node->getUntranslated();
-        $node_changed = FALSE;
-        foreach (array_keys($translation_languages) as $langcode) {
-          $translation = $node->getTranslation($langcode);
-          $translation_changed = FALSE;
-          foreach (['promote', 'sticky', 'status'] as $field_name) {
-            $default_value = $default_translation->get($field_name)->getValue();
-            if ($translation->get($field_name)->getValue() === $default_value) {
-              continue;
-            }
-
-            $translation->set($field_name, $default_value);
-            $translation_changed = TRUE;
-          }
-          if ($translation_changed) {
-            $translations_repaired++;
-            $node_changed = TRUE;
-          }
-        }
-
-        if ($node_changed) {
-          $node->save();
-          $pages_updated++;
-        }
-      }
-    }
-  }
-  finally {
-    $account_switcher->switchBack();
-  }
-
-  $message = sprintf(
-    'Page translation publication repair: %d pages scanned, %d pages updated, %d translations repaired.',
-    $pages_scanned,
-    $pages_updated,
-    $translations_repaired,
-  );
-  \Drupal::logger('markaspot_fastmap')->notice($message);
-
-  return $message;
+  // Retain the update number for installations that already recorded it. There
+  // is no reliable provenance distinguishing incomplete translations from
+  // intentional editorial drafts, so existing publication and front-page
+  // settings must not be normalized. New provisioning sets these explicitly.
+  return 'Page translation publication settings preserved; no data changes required.';
 }

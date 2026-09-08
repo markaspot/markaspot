@@ -145,7 +145,7 @@ final class PageScopingUpdateKernelTest extends KernelTestBase {
   }
 
   /**
-   * Tests both repairs, ordering assumptions, idempotency, and account restore.
+   * Tests jurisdiction repair, publication preservation, and account restore.
    */
   public function testPageScopingUpdatesRepairBlockedWorkspacePage(): void {
     $page = Node::load($this->pageId);
@@ -188,8 +188,8 @@ final class PageScopingUpdateKernelTest extends KernelTestBase {
     $this->assertSame(0, (int) $this->container->get('current_user')->id());
 
     $this->assertSame(
-      'Page translation publication repair: 1 pages scanned, 1 pages updated, 1 translations repaired.',
-      // Loaded via require_once above; PHPStan cannot follow the cross-module include.
+      'Page translation publication settings preserved; no data changes required.',
+      // The cross-module update is loaded explicitly above.
       // @phpstan-ignore function.notFound
       markaspot_fastmap_update_11928(),
     );
@@ -201,18 +201,67 @@ final class PageScopingUpdateKernelTest extends KernelTestBase {
     $this->assertInstanceOf(Node::class, $page);
     foreach (['promote', 'sticky', 'status'] as $field_name) {
       $this->assertSame(
-        $page->getUntranslated()->get($field_name)->getValue(),
-        $page->getTranslation('de')->get($field_name)->getValue(),
+        0,
+        (int) $page->getTranslation('de')->get($field_name)->value,
       );
     }
 
     $this->assertSame(
-      'Page translation publication repair: 1 pages scanned, 0 pages updated, 0 translations repaired.',
-      // Loaded via require_once above; PHPStan cannot follow the cross-module include.
+      'Page translation publication settings preserved; no data changes required.',
+      // The cross-module update is loaded explicitly above.
       // @phpstan-ignore function.notFound
       markaspot_fastmap_update_11928(),
     );
     $this->assertSame(0, (int) $this->container->get('current_user')->id());
+  }
+
+  /**
+   * Preserves both draft translations and translations of draft originals.
+   */
+  public function testPublicationUpdatePreservesEditorialDecisions(): void {
+    $jurisdiction = Group::create([
+      'type' => 'jur',
+      'label' => 'Public editorial workspace',
+      'field_visibility' => 'public',
+    ]);
+    $jurisdiction->save();
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    $page_ids = [];
+    foreach ([0, 1] as $original_status) {
+      $page = Node::create([
+        'type' => 'page',
+        'langcode' => 'en',
+        'title' => 'Editorial original',
+        'status' => $original_status,
+        'promote' => $original_status,
+        'sticky' => $original_status,
+        'field_jurisdiction' => ['target_id' => $jurisdiction->id()],
+      ]);
+      $page->addTranslation('de', [
+        'title' => 'Editorial translation',
+        'status' => 1 - $original_status,
+        'promote' => 1 - $original_status,
+        'sticky' => 1 - $original_status,
+        'field_jurisdiction' => ['target_id' => $jurisdiction->id()],
+      ]);
+      $page->save();
+      $page_ids[$original_status] = (int) $page->id();
+    }
+
+    for ($pass = 0; $pass < 2; $pass++) {
+      // The cross-module update is loaded explicitly above.
+      // @phpstan-ignore function.notFound
+      markaspot_fastmap_update_11928();
+      $storage->resetCache($page_ids);
+      foreach ($page_ids as $original_status => $page_id) {
+        $page = $storage->load($page_id);
+        $this->assertInstanceOf(Node::class, $page);
+        foreach (['status', 'promote', 'sticky'] as $field_name) {
+          $this->assertSame($original_status, (int) $page->get($field_name)->value);
+          $this->assertSame(1 - $original_status, (int) $page->getTranslation('de')->get($field_name)->value);
+        }
+      }
+    }
   }
 
   /**

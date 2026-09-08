@@ -821,6 +821,57 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   }
 
   /**
+   * A title-only JSON:API style revision must not repeat an assignment event.
+   */
+  public function testTitleRevisionDoesNotRepeatAssignmentLog(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $request->set('field_assignee', $this->orgMember->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+    $assignment_revision = (int) $request->getRevisionId();
+    $assignment_log = (string) $request->getRevisionLogMessage();
+    $this->assertSame('Arbeit der Person org-member zugewiesen.', $assignment_log);
+
+    $this->container->get('current_user')->setAccount($this->jurMember);
+    $request->setTitle('Title-only edit by a different user');
+    // Match EntityResource::patchIndividual revision metadata handling.
+    $request->setNewRevision(TRUE);
+    $request->setRevisionUserId($this->jurMember->id());
+    $request->setRevisionCreationTime($this->container->get('datetime.time')->getRequestTime());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertNotSame($assignment_revision, (int) $request->getRevisionId());
+    $this->assertSame((int) $this->jurMember->id(), (int) $request->getRevisionUserId());
+    $this->assertSame((int) $this->orgMember->id(), (int) $request->get('field_assignee')->target_id);
+    $this->assertSame('', (string) $request->getRevisionLogMessage());
+    $old_revision = $this->container->get('entity_type.manager')
+      ->getStorage('node')->loadRevision($assignment_revision);
+    $this->assertSame($assignment_log, $old_revision->getRevisionLogMessage());
+    $this->assertSame((int) $this->assigner->id(), (int) $old_revision->getRevisionUserId());
+  }
+
+  /**
+   * A new caller log survives an unrelated revision after an assignment event.
+   */
+  public function testTitleRevisionPreservesNewCallerLog(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $request->set('field_assignee', $this->orgMember->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $request->setTitle('Corrected title');
+    $request->setNewRevision(TRUE);
+    $request->setRevisionLogMessage('Corrected a typo in the title.');
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertSame('Corrected a typo in the title.', $request->getRevisionLogMessage());
+  }
+
+  /**
    * Assignment audit text cannot be supplied by the caller.
    */
   public function testAssignmentRevisionLogOverridesCallerMessage(): void {

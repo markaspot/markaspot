@@ -1349,7 +1349,7 @@ function markaspot_group_entity_create_access(AccountInterface $account, array $
  */
 function markaspot_group_query_node_access_alter(AlterableInterface $query): void {
   if (!$query instanceof SelectInterface
-    || $query->getMetaData('entity_type') !== 'node'
+    || _markaspot_group_node_query_base_alias($query) === NULL
     || $query->hasTag('markaspot_open311_workspace_visibility')) {
     return;
   }
@@ -1488,11 +1488,8 @@ function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $qu
  */
 function _markaspot_group_exclude_node_bundle(SelectInterface $query, string $bundle): void {
   $data_alias = NULL;
-  $base_alias = NULL;
+  $base_alias = _markaspot_group_node_query_base_alias($query);
   foreach ($query->getTables() as $alias => $table) {
-    if ($table['join type'] === NULL) {
-      $base_alias = $alias;
-    }
     if ($table['table'] === 'node_field_data') {
       $data_alias = $alias;
     }
@@ -1514,11 +1511,19 @@ function _markaspot_group_exclude_node_bundle(SelectInterface $query, string $bu
 }
 
 /**
- * Gets the base table alias from a node entity query.
+ * Gets a node table alias from an entity query or tagged SQL query.
  */
 function _markaspot_group_node_query_base_alias(SelectInterface $query): ?string {
+  // Views and custom node_access SQL queries need not set entity_type metadata
+  // and may join nodes from a non-node base table. Never assume an arbitrary
+  // base table has a nid column just because the query carries an access tag.
   foreach ($query->getTables() as $alias => $table) {
-    if ($table['join type'] === NULL) {
+    if (in_array($table['table'], [
+      'node',
+      'node_field_data',
+      'node_revision',
+      'node_field_revision',
+    ], TRUE)) {
       return $alias;
     }
   }
@@ -2681,6 +2686,15 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     }
     $node->_markaspot_group_sync_lock_held = TRUE;
     drupal_register_shutdown_function('_markaspot_group_release_service_request_sync_lock', (int) $node->id());
+  }
+
+  // JSON:API and programmatic revisions inherit the previous revision log.
+  // Like the node edit form, start a new log unless the caller changed it. Do
+  // this before assignment handling so the current assignment event survives.
+  $original = $node->getOriginal();
+  if ($node->isNewRevision() && $original instanceof NodeInterface
+    && $node->getRevisionLogMessage() === $original->getRevisionLogMessage()) {
+    $node->setRevisionLogMessage('');
   }
 
   _markaspot_group_apply_service_request_assignment_exclusivity($node);
