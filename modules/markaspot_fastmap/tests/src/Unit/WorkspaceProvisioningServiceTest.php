@@ -823,6 +823,75 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests every template provisions the unified flow with configurable wording.
+   *
+   * @covers ::provisionWorkspace
+   * @dataProvider unifiedReportingTemplateWordingProvider
+   */
+  public function testNewWorkspaceUnifiedReporting(string $template, string $wording): void {
+    $createdGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
+
+    $this->service->provisionWorkspace($this->validData([
+      'template' => $template,
+      'wording' => $wording,
+    ]));
+
+    $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE, 512, JSON_THROW_ON_ERROR);
+    $features = $nuxtConfig['features'];
+    $this->assertTrue($features['unifiedReporting']['enabled']);
+    $this->assertSame('optional', $features['unifiedReporting']['photoPolicy']);
+    $this->assertSame('opt_out', $features['unifiedReporting']['aiMode']);
+    // Persisting CTA copy would override the selected wording in the frontend.
+    $this->assertArrayNotHasKey('cta', $features['unifiedReporting']);
+    $this->assertSame('unified', $features['formFirst']['defaultTab']);
+    // The Drupal config widget must accept the provisioned tab selection.
+    $schemaPath = dirname(__DIR__, 4) . '/markaspot_nuxt/schema/nuxt_config.schema.json';
+    $schema = json_decode((string) file_get_contents($schemaPath), TRUE, 512, JSON_THROW_ON_ERROR);
+    $defaultTabSchema = $schema['properties']['features']['properties']['formFirst']['oneOf'][1]['properties']['defaultTab'];
+    $this->assertContains($features['formFirst']['defaultTab'], $defaultTabSchema['enum']);
+    $this->assertSame('photo', $defaultTabSchema['default']);
+    $this->assertSame('bottomSheet', $features['formFirst']['mobileLayout']);
+    $this->assertArrayNotHasKey('enabled', $features['formFirst']);
+    $this->assertTrue($features['photoReporting']);
+    $this->assertFalse($features['classicReporting']);
+
+    if ($wording === 'report') {
+      $this->assertArrayNotHasKey('i18n', $nuxtConfig);
+    }
+    else {
+      $this->assertSame(['wording' => $wording], $nuxtConfig['i18n']);
+    }
+  }
+
+  /**
+   * Provides every supported template and wording combination.
+   *
+   * @return array
+   *   Template and wording pairs for newly provisioned workspaces.
+   */
+  public static function unifiedReportingTemplateWordingProvider(): array {
+    $templates = [
+      'crisis-map',
+      'civic-report',
+      'safe-routes',
+      'access-map',
+      'climate-watch',
+      'trail-watch',
+      'eco-map',
+      'neighbourhood',
+      'construction-watch',
+    ];
+    $cases = [];
+    foreach ($templates as $template) {
+      foreach (['report', 'suggestion', 'entry', 'contribution'] as $wording) {
+        $cases[$template . ' / ' . $wording] = [$template, $wording];
+      }
+    }
+    return $cases;
+  }
+
+  /**
    * Tests that the 'report' default and invalid presets are not persisted.
    *
    * 'report' is the built-in default, so writing it would only bloat

@@ -756,10 +756,16 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'features' => [
         'photoReporting' => TRUE,
         'classicReporting' => FALSE,
+        // Leave CTA copy unset so the workspace wording and translations apply.
+        'unifiedReporting' => [
+          'enabled' => TRUE,
+          'photoPolicy' => 'optional',
+          'aiMode' => 'opt_out',
+        ],
         'search' => ['enabled' => TRUE, 'mode' => 'fuzzy', 'minLength' => 2],
         'boundaries' => ['enabled' => TRUE, 'showBoundaryOnMap' => TRUE],
         'privacyNotice' => ['enabled' => TRUE, 'modal' => TRUE],
-        'formFirst' => ['mobileLayout' => 'bottomSheet', 'defaultTab' => 'photo'],
+        'formFirst' => ['mobileLayout' => 'bottomSheet', 'defaultTab' => 'unified'],
         // Required for /auth/login: TenantSettingsController reads strict
         // `$features['passwordless'] ?? FALSE`, missing key → 302 to /.
         'passwordless' => TRUE,

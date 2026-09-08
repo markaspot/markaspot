@@ -262,7 +262,7 @@
                   "type": "string",
                   "title": "Default Tab",
                   "description": "Which tab to show first",
-                  "enum": ["photo", "classic"],
+                  "enum": ["photo", "classic", "unified"],
                   "default": "photo"
                 }
               }
