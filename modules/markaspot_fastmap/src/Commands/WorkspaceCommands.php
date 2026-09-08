@@ -50,12 +50,12 @@ class WorkspaceCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'markaspot:workspace-unblock', aliases: ['mas:workspace-unblock'])]
   #[CLI\Argument(name: 'workspace', description: 'Workspace group ID or field_slug.')]
-  #[CLI\Option(name: 'visibility', description: 'Visibility to restore: public, submission_only, or authenticated.')]
+  #[CLI\Option(name: 'visibility', description: 'Visibility to restore: public, submission_only, form_only, or authenticated.')]
   #[CLI\Usage(name: 'markaspot:workspace-unblock amsterdam --visibility=public', description: 'Unblock a workspace by slug.')]
   public function unblock(string $workspace, array $options = ['visibility' => 'public']): void {
     $visibility = (string) ($options['visibility'] ?? 'public');
-    if (!in_array($visibility, ['public', 'submission_only', 'authenticated'], TRUE)) {
-      throw new \InvalidArgumentException('--visibility must be one of: public, submission_only, authenticated.');
+    if (!in_array($visibility, ['public', 'submission_only', 'form_only', 'authenticated'], TRUE)) {
+      throw new \InvalidArgumentException('--visibility must be one of: public, submission_only, form_only, authenticated.');
     }
 
     $group = $this->loadWorkspace($workspace);

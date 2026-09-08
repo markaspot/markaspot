@@ -2,6 +2,8 @@
 
 namespace Drupal\markaspot_passwordless\Controller;
 
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
+
 use Symfony\Component\HttpFoundation\Cookie;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
@@ -134,6 +136,8 @@ class PasswordlessAuthController extends ControllerBase {
    *   The entity repository service.
    * @param \Drupal\markaspot_nuxt\Service\FrontendUrlService|null $frontendUrlService
    *   The frontend URL service.
+   * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface|null $workspaceVisibility
+   *   The workspace report visibility policy.
    */
   public function __construct(
     OtpService $otp_service,
@@ -147,6 +151,7 @@ class PasswordlessAuthController extends ControllerBase {
     private readonly BreakGlassOtpServiceInterface $breakGlassOtp,
     protected ?EntityRepositoryInterface $entityRepository = NULL,
     protected ?FrontendUrlService $frontendUrlService = NULL,
+    protected ?WorkspaceVisibilityInterface $workspaceVisibility = NULL,
   ) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
@@ -173,6 +178,8 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('markaspot_passwordless.break_glass_otp'),
       $container->get('entity.repository'),
       $container->get('markaspot_nuxt.frontend_url'),
+      $container->has('markaspot_group.workspace_visibility')
+        ? $container->get('markaspot_group.workspace_visibility') : NULL,
     );
   }
 
@@ -892,6 +899,7 @@ class PasswordlessAuthController extends ControllerBase {
       'email' => $account->getEmail(),
       'roles' => $account->getRoles(),
       'permissions' => $this->getFrontendPermissions($account),
+      'report_view_jurisdictions' => $this->workspaceVisibility?->getReportViewJurisdictionIds($account) ?? [],
       'groups' => $user ? $this->getUserGroups($user) : [],
       'preferred_langcode' => $preferred_langcode,
     ] + $this->getTosAcceptancePayload($user);

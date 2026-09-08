@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_open311\Controller;
 
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\markaspot_group\Service\FormOnlyReportQueryScope;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -70,6 +72,8 @@ class GeoreportStatsController extends ControllerBase {
    *   The jurisdiction hierarchy resolver (optional).
    * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null $jurisdiction_scope_validator
    *   The jurisdiction scope validator.
+   * @param \Drupal\markaspot_group\Service\FormOnlyReportQueryScope|null $formOnlyQueryScope
+   *   The shared aggregate report visibility policy.
    */
   public function __construct(
     Connection $database,
@@ -77,6 +81,7 @@ class GeoreportStatsController extends ControllerBase {
     LanguageManagerInterface $language_manager,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
     ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
+    protected ?FormOnlyReportQueryScope $formOnlyQueryScope = NULL,
   ) {
     $this->database = $database;
     $this->requestStack = $request_stack;
@@ -98,7 +103,9 @@ class GeoreportStatsController extends ControllerBase {
         : NULL,
       $container->has('markaspot_group.jurisdiction_scope_validator')
         ? $container->get('markaspot_group.jurisdiction_scope_validator')
-        : NULL
+        : NULL,
+      $container->has('markaspot_group.form_only_report_query_scope')
+        ? $container->get('markaspot_group.form_only_report_query_scope') : NULL,
     );
   }
 
@@ -140,6 +147,8 @@ class GeoreportStatsController extends ControllerBase {
       }
     }
 
+    $form_only_sql = $this->getFormOnlySqlRestriction($uses_api_key);
+
     // Build the query based on filter type.
     if ($use_group_filter && !empty($node_ids)) {
       // Query with group filter - only count nodes in user's groups.
@@ -155,7 +164,7 @@ class GeoreportStatsController extends ControllerBase {
         FROM {taxonomy_term_field_data} t
         LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
         LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
-        LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+        LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders) $form_only_sql
         WHERE t.vid = 'service_status' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
         ORDER BY t.weight ASC
@@ -193,7 +202,7 @@ class GeoreportStatsController extends ControllerBase {
           FROM {taxonomy_term_field_data} t
           LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
           LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
-          LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+          LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders) $form_only_sql
           WHERE t.vid = 'service_status' AND t.default_langcode = 1
           GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
           ORDER BY t.weight ASC
@@ -228,7 +237,7 @@ class GeoreportStatsController extends ControllerBase {
         FROM {taxonomy_term_field_data} t
         LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
         LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
-        LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request'
+        LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' $form_only_sql
         WHERE t.vid = 'service_status' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
         ORDER BY t.weight ASC
@@ -501,6 +510,8 @@ class GeoreportStatsController extends ControllerBase {
       }
     }
 
+    $form_only_sql = $this->getFormOnlySqlRestriction($uses_api_key);
+
     // Build the query based on filter type.
     if ($use_group_filter && !empty($node_ids)) {
       $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
@@ -515,7 +526,7 @@ class GeoreportStatsController extends ControllerBase {
         LEFT JOIN {taxonomy_term__field_category_hex} h ON t.tid = h.entity_id AND h.deleted = 0
         LEFT JOIN {taxonomy_term__field_category_icon} i ON t.tid = i.entity_id AND i.deleted = 0
         INNER JOIN {node__field_category} fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
-        INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+        INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders) $form_only_sql
         WHERE t.vid = 'service_category' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
         ORDER BY count DESC
@@ -547,7 +558,7 @@ class GeoreportStatsController extends ControllerBase {
           LEFT JOIN {taxonomy_term__field_category_hex} h ON t.tid = h.entity_id AND h.deleted = 0
           LEFT JOIN {taxonomy_term__field_category_icon} i ON t.tid = i.entity_id AND i.deleted = 0
           INNER JOIN {node__field_category} fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
-          INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+          INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders) $form_only_sql
           WHERE t.vid = 'service_category' AND t.default_langcode = 1
           GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
           ORDER BY count DESC
@@ -576,7 +587,7 @@ class GeoreportStatsController extends ControllerBase {
         LEFT JOIN {taxonomy_term__field_category_hex} h ON t.tid = h.entity_id AND h.deleted = 0
         LEFT JOIN {taxonomy_term__field_category_icon} i ON t.tid = i.entity_id AND i.deleted = 0
         INNER JOIN {node__field_category} fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
-        INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request'
+        INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' $form_only_sql
         WHERE t.vid = 'service_category' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
         ORDER BY count DESC
@@ -634,10 +645,23 @@ class GeoreportStatsController extends ControllerBase {
   }
 
   /**
+   * Builds SQL restrictions without materializing all report IDs in PHP.
+   *
+   * Only server-derived integer IDs and trusted Field API mapping identifiers
+   * are interpolated. The predicate attaches to the report join so status
+   * terms with zero visible reports keep their existing response shape.
+   */
+  protected function getFormOnlySqlRestriction(bool $uses_api_key): string {
+    $account = $uses_api_key ? new AnonymousUserSession() : $this->currentUser();
+    // An unavailable policy service must never expose unrestricted aggregates.
+    return $this->formOnlyQueryScope?->getSqlRestrictionFor($account) ?? ' AND 1 = 0';
+  }
+
+  /**
    * Applies cache policy for public and API-key scoped stats responses.
    */
   protected function applyStatsCachePolicy(JsonResponse $response, bool $uses_api_key): void {
-    if ($uses_api_key) {
+    if ($uses_api_key || !$this->currentUser()->isAnonymous()) {
       $response->setPrivate();
       $response->headers->set('Cache-Control', 'private, no-store');
       $response->headers->set('X-Cache-Policy', 'private, no-store');

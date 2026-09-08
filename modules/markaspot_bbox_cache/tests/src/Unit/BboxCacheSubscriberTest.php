@@ -69,7 +69,6 @@ class BboxCacheSubscriberTest extends UnitTestCase {
     $this->kernel = $this->createMock(HttpKernelInterface::class);
 
     $this->configFactory->method('get')
-      ->with('markaspot_bbox_cache.settings')
       ->willReturn($this->config);
 
     $this->config->method('get')
@@ -83,6 +82,43 @@ class BboxCacheSubscriberTest extends UnitTestCase {
       $this->cache,
       $this->configFactory
     );
+  }
+
+  /**
+   * Credentials must neither retrieve nor populate the anonymous cache.
+   */
+  public function testCredentialedRequestsBypassCache(): void {
+    $requests = [];
+    foreach (['Cookie', 'Authorization', 'api_key', 'api-key', 'apikey', 'x-api-key'] as $header) {
+      $request = Request::create('/georeport/v2/requests.json?bbox=1,2,3,4');
+      $request->headers->set($header, 'synthetic-credential');
+      $requests[] = $request;
+    }
+    $requests[] = Request::create('/georeport/v2/requests.json?bbox=1,2,3,4&api_key=synthetic');
+    $this->cache->expects($this->never())->method('get');
+    $this->cache->expects($this->never())->method('set');
+    foreach ($requests as $request) {
+      $event = new RequestEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST);
+      $this->subscriber->onRequest($event);
+      $this->assertNull($event->getResponse());
+      $response = new Response('private report', 200, ['Cache-Control' => 'public, max-age=60']);
+      $this->subscriber->onResponse(new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response));
+      $this->assertFalse($response->headers->has('X-Bbox-Cache'));
+    }
+  }
+
+  /**
+   * The subscriber must preserve restrictive response cache policies.
+   */
+  public function testPrivateResponsesAreNeverStored(): void {
+    $request = Request::create('/georeport/v2/requests.json?bbox=1,2,3,4');
+    $this->cache->expects($this->never())->method('set');
+    foreach (['private, max-age=60', 'public, no-store', 'no-cache'] as $policy) {
+      $response = new Response('private report', 200, ['Cache-Control' => $policy]);
+      $before = $response->headers->get('Cache-Control');
+      $this->subscriber->onResponse(new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response));
+      $this->assertSame($before, $response->headers->get('Cache-Control'));
+    }
   }
 
   /**
@@ -260,17 +296,18 @@ class BboxCacheSubscriberTest extends UnitTestCase {
     $this->cache->method('get')->willReturn(FALSE);
     $this->subscriber->onRequest($requestEvent);
 
-    $response = new Response('{"results": []}', 200);
+    $response = new Response('{"results": []}', 200, ['Cache-Control' => 'public, max-age=60']);
     $responseEvent = new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
 
     $this->cache->expects($this->once())
       ->method('set')
       ->with(
-        $this->stringStartsWith('bbox_request:'),
+        $this->stringStartsWith('bbox_request:v2:'),
         $this->isType('array'),
         $this->isType('int'),
         $this->callback(function ($tags) {
           return in_array('markaspot_bbox_cache', $tags)
+            && in_array('group_list', $tags)
             && in_array('node_list:service_request', $tags);
         })
       );
@@ -293,7 +330,7 @@ class BboxCacheSubscriberTest extends UnitTestCase {
     $this->cache->method('get')->willReturn(FALSE);
     $this->subscriber->onRequest($requestEvent);
 
-    $response = new Response('{"results": []}', 200);
+    $response = new Response('{"results": []}', 200, ['Cache-Control' => 'public, max-age=60']);
     $responseEvent = new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
 
     $this->cache->expects($this->once())

@@ -1,0 +1,5 @@
+services:
+  markaspot_stats.route_subscriber:
+    class: Drupal\markaspot_stats\Routing\StatsRouteSubscriber
+    tags:
+      - { name: event_subscriber }

@@ -3207,7 +3207,7 @@ final class TenantSettingsController extends ControllerBase {
         if (!is_string($value)) {
           return 'field_visibility must be a string.';
         }
-        $allowed = ['public', 'submission_only', 'authenticated', 'blocked'];
+        $allowed = ['public', 'submission_only', 'form_only', 'authenticated', 'blocked'];
         if (!in_array($value, $allowed, TRUE)) {
           return 'field_visibility must be one of: ' . implode(', ', $allowed) . '.';
         }

@@ -1,4 +1,18 @@
 services:
+  markaspot_group.form_only_global_report_access:
+    class: Drupal\markaspot_group\Access\FormOnlyGlobalReportAccessCheck
+    arguments: ['@markaspot_group.workspace_visibility', '@entity_type.manager', '@config.factory']
+    tags:
+      - { name: access_check, applies_to: _form_only_global_report_access, needs_incoming_request: true }
+  markaspot_group.form_only_report_route_access:
+    class: Drupal\markaspot_group\Access\FormOnlyReportRouteAccessCheck
+    arguments: ['@entity_type.manager', '@markaspot_group.workspace_visibility']
+    tags:
+      - { name: access_check, applies_to: _form_only_report_access }
+  markaspot_group.form_only_report_route_subscriber:
+    class: Drupal\markaspot_group\Routing\FormOnlyReportRouteSubscriber
+    tags:
+      - { name: event_subscriber }
   logger.channel.markaspot_group:
     parent: logger.channel_base
     arguments: ['markaspot_group']
@@ -40,9 +54,17 @@ services:
     arguments: ['@database', '@logger.channel.markaspot_group', '@config.factory']
   markaspot_group.workspace_visibility:
     class: Drupal\markaspot_group\Service\WorkspaceVisibilityService
-    arguments: ['@entity_type.manager', '@config.factory', '@entity_field.manager']
+    arguments: ['@entity_type.manager', '@config.factory', '@entity_field.manager', '@request_stack']
   markaspot_group.status_term_scope:
     class: Drupal\markaspot_group\Service\StatusTermScope
     arguments: ['@entity_type.manager', '@entity_field.manager', '@markaspot_group.hierarchy_resolver']
   markaspot_group.status_term_seed_planner:
     class: Drupal\markaspot_group\Service\StatusTermSeedPlanner
+  markaspot_group.form_only_submission_receipt_subscriber:
+    class: Drupal\markaspot_group\EventSubscriber\FormOnlySubmissionReceiptSubscriber
+    arguments: ['@entity_type.manager', '@current_user', '@markaspot_group.workspace_visibility']
+    tags:
+      - { name: event_subscriber }
+  markaspot_group.form_only_report_query_scope:
+    class: Drupal\markaspot_group\Service\FormOnlyReportQueryScope
+    arguments: ['@markaspot_group.workspace_visibility', '@entity_type.manager', '@entity_field.manager', '@database', '@config.factory']

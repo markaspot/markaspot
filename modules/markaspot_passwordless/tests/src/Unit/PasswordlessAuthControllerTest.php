@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\markaspot_passwordless\Unit;
 
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
 use Psr\Log\LoggerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -1265,6 +1266,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
           'email' => 'user@example.com',
           'roles' => ['authenticated'],
           'groups' => [],
+          'report_view_jurisdictions' => [9],
           'tos_accepted' => TRUE,
           'tos_accepted_at' => 1714567890,
         ],
@@ -1279,6 +1281,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['success']);
+    $this->assertSame([9], $data['user']['report_view_jurisdictions']);
     $this->assertEquals(5, $data['user']['uid']);
     $this->assertSame('user-uuid-5', $data['user']['uuid']);
     $this->assertTrue($data['user']['tos_accepted']);
@@ -1410,9 +1413,28 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertTrue($data['authenticated']);
     $this->assertTrue($data['maintenance_access']);
     $this->assertSame('alice-user-uuid', $data['user']['uuid']);
+    $this->assertSame([], $data['user']['report_view_jurisdictions']);
     $this->assertSame(['triage inbound mail', 'switch users'], $data['user']['permissions']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
+  }
+
+  /**
+   * Shared OTP/status/switch payload resolves capability for each target user.
+   */
+  public function testAuthPayloadReportReadScopeFollowsAccountSwitches(): void {
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('getReportViewJurisdictionIds')
+      ->willReturnCallback(static fn(AccountInterface $account): array => (int) $account->id() === 10 ? [5] : []);
+    (new \ReflectionProperty($this->controller, 'workspaceVisibility'))->setValue($this->controller, $visibility);
+    $staff = $this->createMock(AccountInterface::class);
+    $staff->method('id')->willReturn(10);
+    $citizen = $this->createMock(AccountInterface::class);
+    $citizen->method('id')->willReturn(11);
+    $method = new \ReflectionMethod($this->controller, 'buildAuthUserPayload');
+    $this->assertSame([5], $method->invoke($this->controller, $staff, NULL)['report_view_jurisdictions']);
+    $this->assertSame([], $method->invoke($this->controller, $citizen, NULL)['report_view_jurisdictions']);
+    $this->assertSame([5], $method->invoke($this->controller, $staff, NULL)['report_view_jurisdictions']);
   }
 
   /**

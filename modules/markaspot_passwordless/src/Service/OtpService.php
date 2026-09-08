@@ -2,6 +2,8 @@
 
 namespace Drupal\markaspot_passwordless\Service;
 
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
+
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Database\Connection;
@@ -126,6 +128,8 @@ class OtpService {
    *   The module handler.
    * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
    *   The entity repository service.
+   * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface|null $workspaceVisibility
+   *   The workspace report visibility policy.
    */
   public function __construct(
     Connection $database,
@@ -137,6 +141,7 @@ class OtpService {
     LanguageManagerInterface $language_manager,
     ModuleHandlerInterface $module_handler,
     protected ?EntityRepositoryInterface $entityRepository = NULL,
+    protected ?WorkspaceVisibilityInterface $workspaceVisibility = NULL,
   ) {
     $this->database = $database;
     $this->mailManager = $mail_manager;
@@ -407,6 +412,7 @@ class OtpService {
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),
             'permissions' => $this->getFrontendPermissions($user),
+            'report_view_jurisdictions' => $this->workspaceVisibility?->getReportViewJurisdictionIds($user) ?? [],
             'groups' => $this->getUserGroups($user),
             'preferred_langcode' => $user->getPreferredLangcode(FALSE),
           ] + $this->getTosAcceptancePayload($user),

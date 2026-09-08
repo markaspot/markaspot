@@ -41,6 +41,7 @@ final class VisibilityFieldConfigTest extends UnitTestCase {
       [
         'public' => 'Public',
         'submission_only' => 'Submission Only',
+        'form_only' => 'Form Only',
         'authenticated' => 'Authenticated',
         'blocked' => 'Blocked',
       ],
@@ -110,6 +111,7 @@ final class VisibilityFieldConfigTest extends UnitTestCase {
 
     $this->assertSame('Public site', $updated['public']);
     $this->assertSame('Blocked', $updated['blocked']);
+    $this->assertSame('Form Only', $updated['form_only']);
     $this->assertSame(
       $updated,
       _markaspot_group_visibility_allowed_values($updated),
@@ -132,6 +134,7 @@ final class VisibilityFieldConfigTest extends UnitTestCase {
       [
         ...$existing,
         ['value' => 'blocked', 'label' => 'Blocked'],
+        ['value' => 'form_only', 'label' => 'Form Only'],
       ],
       $updated,
     );

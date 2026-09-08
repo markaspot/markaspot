@@ -200,6 +200,7 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
       'public' => 'public',
       'unset' => NULL,
       'submission_only' => 'submission_only',
+      'form_only' => 'form_only',
       'authenticated' => 'authenticated',
       'blocked' => 'blocked',
     ] as $key => $visibility) {
@@ -246,6 +247,7 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
     $this->assertSame([
       $this->pageIds['public'],
       $this->pageIds['unset'],
+      $this->pageIds['form_only'],
       $this->unassignedPageId,
     ], $this->visiblePageIds());
   }
@@ -259,6 +261,7 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
     $this->assertSame([
       $this->pageIds['public'],
       $this->pageIds['unset'],
+      $this->pageIds['form_only'],
       $this->unassignedPageId,
     ], $this->visiblePageIds());
   }
@@ -274,7 +277,7 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
     foreach ($this->pageIds as $visibility => $page_id) {
       $page = Node::load($page_id);
       $this->assertInstanceOf(Node::class, $page);
-      $public = in_array($visibility, ['public', 'unset'], TRUE);
+      $public = in_array($visibility, ['public', 'unset', 'form_only'], TRUE);
 
       $this->assertSame(
         $public,
@@ -639,6 +642,7 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
         'allowed_values' => [
           'public' => 'Public',
           'submission_only' => 'Submission only',
+          'form_only' => 'Form only',
           'authenticated' => 'Authenticated',
           'blocked' => 'Blocked',
         ],

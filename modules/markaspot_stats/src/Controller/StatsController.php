@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_stats\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\markaspot_group\Service\FormOnlyReportQueryScope;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -51,11 +52,14 @@ class StatsController extends ControllerBase {
    *   The language manager.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
+   * @param \Drupal\markaspot_group\Service\FormOnlyReportQueryScope $formOnlyQueryScope
+   *   The shared aggregate report visibility policy.
    */
   public function __construct(
     Connection $database,
     LanguageManagerInterface $language_manager,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    protected FormOnlyReportQueryScope $formOnlyQueryScope,
   ) {
     $this->database = $database;
     $this->languageManager = $language_manager;
@@ -69,7 +73,8 @@ class StatsController extends ControllerBase {
     return new static(
       $container->get('database'),
       $container->get('language_manager'),
-      $container->get('markaspot_group.hierarchy_resolver')
+      $container->get('markaspot_group.hierarchy_resolver'),
+      $container->get('markaspot_group.form_only_report_query_scope'),
     );
   }
 
@@ -98,12 +103,14 @@ class StatsController extends ControllerBase {
     $langcode = $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
     $jurisdictionId = $this->getJurisdictionId($request);
 
+    $formOnlySql = $this->formOnlyQueryScope->getSqlRestrictionForRequest($request, $this->currentUser());
+
     // Build jurisdiction node filter.
     $nodeFilter = '';
     $params = [':langcode' => $langcode];
 
     if ($jurisdictionId) {
-      // Resolve child -> root for term filtering (child inherits parent's terms).
+      // Children inherit taxonomy terms from their root jurisdiction.
       $termJurIds = $this->hierarchyResolver->getTermJurisdictionIds($jurisdictionId);
       $jurPlaceholders = implode(',', array_map(fn($i) => ":jur_$i", array_keys($termJurIds)));
       foreach ($termJurIds as $i => $jid) {
@@ -137,7 +144,7 @@ class StatsController extends ControllerBase {
       FROM taxonomy_term_field_data t
       LEFT JOIN taxonomy_term__field_status_hex h ON t.tid = h.entity_id AND h.deleted = 0
       LEFT JOIN node__field_status fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
-      LEFT JOIN node_field_data n ON fs.entity_id = n.nid AND n.type = 'service_request' $nodeFilter
+      LEFT JOIN node_field_data n ON fs.entity_id = n.nid AND n.type = 'service_request' $nodeFilter $formOnlySql
       $jurJoin
       WHERE t.vid = 'service_status'
         AND t.langcode = :langcode
@@ -157,7 +164,7 @@ class StatsController extends ControllerBase {
       ];
     }
 
-    return new JsonResponse($output);
+    return new JsonResponse($output, 200, ['Cache-Control' => 'private, no-store']);
   }
 
   /**
@@ -209,7 +216,7 @@ class StatsController extends ControllerBase {
         'color' => $row->color,
       ];
     }
-    return new JsonResponse($output);
+    return new JsonResponse($output, 200, ['Cache-Control' => 'private, no-store']);
   }
 
   /**
@@ -222,13 +229,15 @@ class StatsController extends ControllerBase {
     $langcode = $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
     $jurisdictionId = $this->getJurisdictionId($request);
 
+    $formOnlySql = $this->formOnlyQueryScope->getSqlRestrictionForRequest($request, $this->currentUser());
+
     // Build jurisdiction filters.
     $nodeFilter = '';
     $termJurFilter = '';
     $params = [':langcode' => $langcode];
 
     if ($jurisdictionId) {
-      // Resolve child -> root for term filtering (child inherits parent's terms).
+      // Children inherit taxonomy terms from their root jurisdiction.
       $termJurIds = $this->hierarchyResolver->getTermJurisdictionIds($jurisdictionId);
       $jurPlaceholders = implode(',', array_map(fn($i) => ":jur_$i", array_keys($termJurIds)));
       foreach ($termJurIds as $i => $jid) {
@@ -262,7 +271,7 @@ class StatsController extends ControllerBase {
       FROM taxonomy_term_field_data t
       LEFT JOIN taxonomy_term__field_category_hex h ON t.tid = h.entity_id AND h.deleted = 0
       LEFT JOIN node__field_category fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
-      LEFT JOIN node_field_data n ON fc.entity_id = n.nid AND n.type = 'service_request' $nodeFilter
+      LEFT JOIN node_field_data n ON fc.entity_id = n.nid AND n.type = 'service_request' $nodeFilter $formOnlySql
       $jurJoin
       WHERE t.vid = 'service_category'
         AND t.langcode = :langcode
@@ -282,7 +291,7 @@ class StatsController extends ControllerBase {
       ];
     }
 
-    return new JsonResponse($output);
+    return new JsonResponse($output, 200, ['Cache-Control' => 'private, no-store']);
   }
 
   /**
@@ -345,7 +354,8 @@ class StatsController extends ControllerBase {
       $counts_query->fields('t', ['tid']);
       $counts_query->addExpression('COUNT(DISTINCT n.nid)', 'count');
       $counts_query->leftJoin('node__field_category', 'fc', 't.tid = fc.field_category_target_id AND fc.deleted = 0');
-      $counts_query->leftJoin('node_field_data', 'n', 'fc.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+      $formOnlySql = $this->formOnlyQueryScope->getSqlRestrictionForRequest($request, $this->currentUser());
+      $counts_query->leftJoin('node_field_data', 'n', 'fc.entity_id = n.nid AND n.type = :type' . $formOnlySql, [':type' => 'service_request']);
       $counts_query->condition('t.vid', 'service_category');
       $counts_query->condition('t.langcode', $langcode);
 
@@ -391,7 +401,7 @@ class StatsController extends ControllerBase {
         }
       }
 
-      return new JsonResponse($output);
+      return new JsonResponse($output, 200, ['Cache-Control' => 'private, no-store']);
     }
     catch (\Exception $e) {
       // Log the error.

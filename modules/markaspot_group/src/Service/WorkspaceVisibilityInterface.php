@@ -23,7 +23,7 @@ interface WorkspaceVisibilityInterface {
    *   The jurisdiction group ID.
    *
    * @return string
-   *   One of: 'public', 'submission_only', 'authenticated', 'blocked'.
+   *   Public, submission_only, form_only, authenticated, or blocked.
    */
   public function getVisibility(int $groupId): string;
 
@@ -66,6 +66,34 @@ interface WorkspaceVisibilityInterface {
    *   TRUE when the account may read requests in the workspace.
    */
   public function allowsReadFor(AccountInterface $account, int $groupId): bool;
+
+  /**
+   * Gets form-only jurisdictions where the account may read some reports.
+   *
+   * @return int[]
+   *   Explicit jurisdiction IDs; org-scoped access remains restricted.
+   */
+  public function getReportViewJurisdictionIds(AccountInterface $account): array;
+
+  /**
+   * Gets the report organisation restriction in a form-only jurisdiction.
+   *
+   * @return int[]|null
+   *   NULL for full jurisdiction access, [] for denied, or allowed org IDs.
+   */
+  public function getFormOnlyOrganisationScope(AccountInterface $account, int $groupId): ?array;
+
+  /**
+   * Checks report visibility including its responsible organisation.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The viewing account.
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param int[] $organisationIds
+   *   The report's authoritative organisation field target IDs.
+   */
+  public function allowsReportReadFor(AccountInterface $account, int $groupId, array $organisationIds): bool;
 
   /**
    * Whether an account can read pages in a workspace.

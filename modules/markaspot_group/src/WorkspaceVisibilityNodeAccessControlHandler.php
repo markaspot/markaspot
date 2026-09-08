@@ -85,12 +85,12 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
           $account,
         );
       }
-      elseif ($account->hasPermission('bypass node access')
-        && $operation === 'view'
+      elseif (in_array($operation, ['view', 'view all revisions', 'view revision'], TRUE)
         && $entity->bundle() === 'service_request') {
         $workspace_access = $this->serviceRequestViewAccess(
           $jurisdiction_ids,
           $account,
+          $entity,
         );
       }
       elseif ($account->hasPermission('bypass node access')
@@ -107,6 +107,23 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
           $account,
         );
       }
+    }
+
+    $form_only_ids = [];
+    if ($entity instanceof NodeInterface && $entity->bundle() === 'service_request') {
+      foreach ($jurisdiction_ids as $jurisdiction_id) {
+        if ($this->workspaceVisibility->getVisibility($jurisdiction_id) === 'form_only') {
+          $form_only_ids[] = $jurisdiction_id;
+        }
+      }
+    }
+    if ($form_only_ids !== []) {
+      if (in_array($operation, ['update', 'delete', 'revert revision', 'delete revision'], TRUE)) {
+        $workspace_access = $workspace_access->andIf($this->serviceRequestViewAccess($form_only_ids, $account, $entity));
+      }
+      // The same account can be a staff cookie viewer or anonymous-equivalent
+      // public-key viewer. Never reuse one credential variant's access result.
+      $workspace_access->setCacheMaxAge(0);
     }
 
     if ($workspace_access->isForbidden()) {
@@ -126,12 +143,22 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
    *   Jurisdiction group IDs.
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The viewing account.
+   * @param \Drupal\node\NodeInterface $node
+   *   The report whose responsible organisation controls scoped access.
    *
    * @return \Drupal\Core\Access\AccessResult
    *   Forbidden when any workspace is unreadable, otherwise neutral.
    */
-  private function serviceRequestViewAccess(array $jurisdictionIds, AccountInterface $account): AccessResult {
+  private function serviceRequestViewAccess(array $jurisdictionIds, AccountInterface $account, NodeInterface $node): AccessResult {
     foreach ($jurisdictionIds as $jurisdiction_id) {
+      $organisation_ids = $node->hasField('field_organisation')
+        ? array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id')) : [];
+      if ($this->workspaceVisibility->getVisibility($jurisdiction_id) === 'form_only'
+        && !$this->workspaceVisibility->allowsReportReadFor($account, $jurisdiction_id, $organisation_ids)) {
+        return AccessResult::forbidden('Form-only reports require internal responsibility.')
+          ->cachePerUser()
+          ->addCacheTags($this->visibilityCacheTags($jurisdictionIds, $account));
+      }
       if (!$this->workspaceVisibility->allowsReadFor(
         $account,
         $jurisdiction_id,
@@ -278,8 +305,10 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
       static fn(int $id): string => 'group:' . $id,
       $jurisdictionIds,
     );
+    $tags[] = 'group_list';
     $account_id = (int) $account->id();
     if ($account_id > 0) {
+      $tags[] = 'user:' . $account_id;
       $tags[] = 'group_relationship_list:plugin:group_membership:entity:'
         . $account_id;
     }

@@ -11,6 +11,7 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Url;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
@@ -771,7 +772,7 @@ function markaspot_group_node_access_records_alter(array &$grants, NodeInterface
   $service = \Drupal::service('markaspot_group.workspace_visibility');
   $restricted_ids = array_values(array_filter(
     $jurisdiction_ids,
-    static fn(int $id): bool => $service->getVisibility($id) !== 'public',
+    static fn(int $id): bool => !in_array($service->getVisibility($id), ['public', 'form_only'], TRUE),
   ));
   if ($restricted_ids === []) {
     return;
@@ -939,7 +940,7 @@ function markaspot_group_entity_access(EntityInterface $entity, string $operatio
  * Applies workspace visibility to direct node access.
  */
 function _markaspot_group_workspace_visibility_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResult {
-  if ($operation !== 'view') {
+  if (!in_array($operation, ['view', 'update', 'delete', 'revert revision', 'delete revision'], TRUE)) {
     return AccessResult::neutral();
   }
 
@@ -950,15 +951,35 @@ function _markaspot_group_workspace_visibility_node_access(NodeInterface $node, 
 
   /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
   $service = \Drupal::service('markaspot_group.workspace_visibility');
+  if ($operation !== 'view') {
+    $jurisdiction_ids = $node->bundle() === 'service_request'
+      ? array_filter($jurisdiction_ids, static fn(int $id): bool => $service->getVisibility($id) === 'form_only') : [];
+    if ($jurisdiction_ids === []) {
+      return AccessResult::neutral();
+    }
+  }
+  $cache_max_age = Cache::PERMANENT;
+  if ($node->bundle() === 'service_request') {
+    foreach ($jurisdiction_ids as $jurisdiction_id) {
+      if ($service->getVisibility($jurisdiction_id) === 'form_only') {
+        $cache_max_age = 0;
+        break;
+      }
+    }
+  }
   foreach ($jurisdiction_ids as $jurisdiction_id) {
     $allowed = match ($node->bundle()) {
-      'service_request' => $service->allowsReadFor($account, $jurisdiction_id),
+      'service_request' => $service->getVisibility($jurisdiction_id) === 'form_only'
+        ? $service->allowsReportReadFor($account, $jurisdiction_id, $node->hasField('field_organisation')
+          ? array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id')) : [])
+        : $service->allowsReadFor($account, $jurisdiction_id),
       'page' => $service->allowsPageReadFor($account, $jurisdiction_id),
       default => TRUE,
     };
     if (!$allowed) {
       return AccessResult::forbidden('Workspace visibility prevents viewing this content.')
         ->cachePerUser()
+        ->setCacheMaxAge($cache_max_age)
         ->addCacheTags(_markaspot_group_workspace_visibility_cache_tags(
           $jurisdiction_ids,
           $account,
@@ -968,6 +989,7 @@ function _markaspot_group_workspace_visibility_node_access(NodeInterface $node, 
 
   return AccessResult::neutral()
     ->cachePerUser()
+    ->setCacheMaxAge($cache_max_age)
     ->addCacheTags(_markaspot_group_workspace_visibility_cache_tags(
       $jurisdiction_ids,
       $account,
@@ -1174,8 +1196,10 @@ function _markaspot_group_workspace_visibility_cache_tags(array $jurisdiction_id
     static fn(int $id): string => 'group:' . $id,
     $jurisdiction_ids,
   );
+  $tags[] = 'group_list';
   $account_id = (int) $account->id();
   if ($account_id > 0) {
+    $tags[] = 'user:' . $account_id;
     $tags[] = 'group_relationship_list:plugin:group_membership:entity:'
       . $account_id;
   }
@@ -1362,6 +1386,12 @@ function markaspot_group_query_node_access_alter(AlterableInterface $query): voi
   }
   $unreadable_request_ids = $service->getUnreadableJurisdictionIds($account);
   $unreadable_page_ids = $service->getUnreadablePageJurisdictionIds($account);
+  foreach ($service->getReportViewJurisdictionIds($account) as $jurisdiction_id) {
+    $organisation_ids = $service->getFormOnlyOrganisationScope($account, $jurisdiction_id);
+    if ($organisation_ids !== NULL && $organisation_ids !== []) {
+      _markaspot_group_exclude_unreadable_workspace_nodes($query, [$jurisdiction_id], 'service_request', $organisation_ids);
+    }
+  }
   _markaspot_group_bubble_workspace_query_cacheability($account);
   if ($unreadable_request_ids !== []) {
     _markaspot_group_exclude_unreadable_workspace_nodes(
@@ -1403,9 +1433,18 @@ function _markaspot_group_bubble_workspace_query_cacheability(AccountInterface $
       . $account_id;
   }
 
+  $visibility = \Drupal::service('markaspot_group.workspace_visibility');
+  $has_form_only = FALSE;
+  foreach ($visibility->getRestrictedJurisdictionIds() as $id) {
+    if ($visibility->getVisibility($id) === 'form_only') {
+      $has_form_only = TRUE;
+      break;
+    }
+  }
   $build = [
     '#cache' => [
       'contexts' => ['user'],
+      'max-age' => $has_form_only ? 0 : Cache::PERMANENT,
       'tags' => $tags,
     ],
   ];
@@ -1420,7 +1459,7 @@ function _markaspot_group_bubble_workspace_query_cacheability(AccountInterface $
  * @param int[] $unreadable_jurisdiction_ids
  *   Jurisdiction IDs whose requests must be excluded.
  */
-function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $query, array $unreadable_jurisdiction_ids, string $bundle): void {
+function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $query, array $unreadable_jurisdiction_ids, string $bundle, array $allowed_organisation_ids = []): void {
   $node_storage = \Drupal::entityTypeManager()->getStorage('node');
   $field_storage_definitions = \Drupal::service('entity_field.manager')
     ->getFieldStorageDefinitions('node');
@@ -1480,6 +1519,28 @@ function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $qu
       ))),
       'IN',
     );
+  if ($allowed_organisation_ids !== []) {
+    try {
+      $organisation_storage = $field_storage_definitions['field_organisation'] ?? NULL;
+      if ($organisation_storage === NULL) {
+        throw new \RuntimeException('Missing organisation field.');
+      }
+      $organisation_table = $table_mapping->getFieldTableName('field_organisation');
+      $organisation_column = $table_mapping->getFieldColumnName($organisation_storage, 'target_id');
+      if (!$schema->tableExists($organisation_table)
+        || !$schema->fieldExists($organisation_table, $organisation_column)) {
+        throw new \RuntimeException('Missing organisation schema.');
+      }
+      $allowed_nodes = \Drupal::database()->select($organisation_table, 'responsible_org');
+      $allowed_nodes->addField('responsible_org', 'entity_id');
+      $allowed_nodes->condition('responsible_org.deleted', 0)
+        ->condition('responsible_org.' . $organisation_column, $allowed_organisation_ids, 'IN');
+      $restricted_nodes->condition('unreadable_workspace.entity_id', $allowed_nodes, 'NOT IN');
+    }
+    catch (\Throwable) {
+      // Keep the complete jurisdiction excluded if org scope cannot be proven.
+    }
+  }
   $query->condition($base_alias . '.nid', $restricted_nodes, 'NOT IN');
 }
 

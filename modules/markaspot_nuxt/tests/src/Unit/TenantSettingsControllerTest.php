@@ -2041,8 +2041,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * Tests tenant admins can make a workspace submission-only.
    *
    * @covers ::updateGeneralSettings
+   * @dataProvider submissionVisibilityProvider
    */
-  public function testUpdateGeneralSettingsTenantAdminCanLimitToSubmissions(): void {
+  public function testUpdateGeneralSettingsTenantAdminCanLimitToSubmissions(string $visibility): void {
     $this->currentUser->method('id')->willReturn('7');
     $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
 
@@ -2055,14 +2056,21 @@ class TenantSettingsControllerTest extends UnitTestCase {
       [],
       [],
       ['CONTENT_TYPE' => 'application/json'],
-      json_encode(['field_visibility' => 'submission_only']),
+      json_encode(['field_visibility' => $visibility]),
     );
 
     $response = $this->controller->updateGeneralSettings($request, '14');
 
     $this->assertSame(200, $response->getStatusCode());
-    $this->assertSame('submission_only', $persistedFields['field_visibility']);
+    $this->assertSame($visibility, $persistedFields['field_visibility']);
     $this->assertSame(['refresh', 'refresh', 'save'], $saveEvents);
+  }
+
+  /**
+   * Provides submission modes whose distinct semantics must remain selectable.
+   */
+  public static function submissionVisibilityProvider(): array {
+    return [['submission_only'], ['form_only']];
   }
 
   /**
