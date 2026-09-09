@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.190](https://github.com/markaspot/markaspot/compare/11.9.189...11.9.190) (2026-09-09)
+
+### Features
+
+* add form only intake with scoped staff access ([59cf029](https://github.com/markaspot/markaspot/commit/59cf0290978969a428ec7885b00e2bff18e580d0))
+* enable unified reporting for new workspaces ([89afd78](https://github.com/markaspot/markaspot/commit/89afd78ee0375acf467f382be84bde901a970c1b))
+
 ## [11.9.189](https://github.com/markaspot/markaspot/compare/11.9.188...11.9.189) (2026-09-08)
 
 ### Features
