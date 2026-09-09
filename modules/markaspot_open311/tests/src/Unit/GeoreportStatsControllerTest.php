@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\markaspot_open311\Unit;
 
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -40,6 +42,35 @@ class TestGeoreportStatsController extends GeoreportStatsController {
  * @coversDefaultClass \Drupal\markaspot_open311\Controller\GeoreportStatsController
  */
 class GeoreportStatsControllerTest extends UnitTestCase {
+
+  /**
+   * Missing aggregate-policy wiring must exclude every report row.
+   */
+  public function testMissingFormOnlyPolicyFailsClosed(): void {
+    $controller = new GeoreportStatsController(
+      $this->createMock(Connection::class),
+      new RequestStack(),
+      $this->createMock(LanguageManagerInterface::class),
+    );
+    $method = new \ReflectionMethod($controller, 'getFormOnlySqlRestriction');
+    $this->assertSame(' AND 1 = 0', $method->invoke($controller, TRUE));
+  }
+
+  /**
+   * Session aggregates must never be stored in a shared cache.
+   */
+  public function testSessionStatsUsePrivateCachePolicy(): void {
+    $controller = $this->createPartialMock(GeoreportStatsController::class, ['currentUser']);
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAnonymous')->willReturn(FALSE);
+    $controller->method('currentUser')->willReturn($account);
+    $response = new JsonResponse(['total' => 2]);
+    $method = new \ReflectionMethod($controller, 'applyStatsCachePolicy');
+    $method->invoke($controller, $response, FALSE);
+    $this->assertTrue($response->headers->hasCacheControlDirective('private'));
+    $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+    $this->assertFalse($response->headers->hasCacheControlDirective('public'));
+  }
 
   /**
    * Tests translated taxonomy term labels are used when available.

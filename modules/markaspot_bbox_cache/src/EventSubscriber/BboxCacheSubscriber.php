@@ -3,8 +3,10 @@
 namespace Drupal\markaspot_bbox_cache\EventSubscriber;
 
 use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\CacheableResponseInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Event\ResponseEvent;
@@ -72,12 +74,12 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $path = $request->getPathInfo();
 
     // Only handle georeport requests endpoints.
-    if (!str_contains($path, '/georeport/v2/requests')) {
+    if (!preg_match('@^/georeport/v2/requests(?:\.json|\.xml)?$@', $path)) {
       return;
     }
 
     // Only cache GET requests.
-    if ($request->getMethod() !== 'GET') {
+    if ($request->getMethod() !== 'GET' || $this->isCredentialedRequest($request)) {
       return;
     }
 
@@ -94,9 +96,9 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     }
 
     $config = $this->configFactory->get('markaspot_bbox_cache.settings');
-    $cache_time = $config->get('cache_time') ?? 180;
     $cache_by_zoom = $config->get('cache_by_zoom') ?? FALSE;
-    $exclude_params = $config->get('exclude_params') ?? [];
+    // Only non-semantic parameters may be omitted from a shared cache key.
+    $exclude_params = array_intersect($config->get('exclude_params') ?? [], ['timestamp', '_']);
 
     // Build cache key from query parameters.
     $cache_key_params = $query_params;
@@ -115,7 +117,11 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     }
 
     ksort($cache_key_params);
-    $cache_key = 'bbox_request:' . md5(serialize($cache_key_params));
+    $cache_key = 'bbox_request:v2:' . md5(serialize([
+      $request->getSchemeAndHttpHost(), $path,
+      $request->headers->get('Accept'), $request->headers->get('Accept-Language'),
+      $cache_key_params,
+    ]));
 
     // Try to get from cache.
     $cached = $this->cache->get($cache_key);
@@ -129,11 +135,6 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
 
       $execution_time = round((microtime(TRUE) - $this->startTime) * 1000, 2);
       $response->headers->set('X-API-Execution-Time', $execution_time . 'ms');
-
-      // Set cache control headers.
-      $response->setMaxAge($cache_time);
-      $response->setSharedMaxAge($cache_time);
-      $response->headers->set('Cache-Control', 'public, max-age=' . $cache_time);
 
       $event->setResponse($response);
     }
@@ -151,12 +152,12 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $path = $request->getPathInfo();
 
     // Only handle georeport requests endpoints.
-    if (!str_contains($path, '/georeport/v2/requests')) {
+    if (!preg_match('@^/georeport/v2/requests(?:\.json|\.xml)?$@', $path)) {
       return;
     }
 
     // Only cache GET requests.
-    if ($request->getMethod() !== 'GET') {
+    if ($request->getMethod() !== 'GET' || $this->isCredentialedRequest($request)) {
       return;
     }
 
@@ -173,14 +174,24 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     }
 
     // Only cache successful responses.
-    if ($response->getStatusCode() !== 200) {
+    if ($response->getStatusCode() !== 200
+      || !$response->isCacheable()
+      || ($response instanceof CacheableResponseInterface && $response->getCacheableMetadata()->getCacheMaxAge() === 0)
+      || $response->headers->has('Set-Cookie')) {
       return;
     }
 
     $config = $this->configFactory->get('markaspot_bbox_cache.settings');
     $cache_time = $config->get('cache_time') ?? 180;
+    if ($response->getMaxAge() !== NULL) {
+      $cache_time = min($cache_time, $response->getMaxAge());
+    }
+    if ($response instanceof CacheableResponseInterface && $response->getCacheableMetadata()->getCacheMaxAge() >= 0) {
+      $cache_time = min($cache_time, $response->getCacheableMetadata()->getCacheMaxAge());
+    }
     $cache_by_zoom = $config->get('cache_by_zoom') ?? FALSE;
-    $exclude_params = $config->get('exclude_params') ?? [];
+    // Only non-semantic parameters may be omitted from a shared cache key.
+    $exclude_params = array_intersect($config->get('exclude_params') ?? [], ['timestamp', '_']);
 
     // Build cache key from query parameters.
     $cache_key_params = $query_params;
@@ -199,7 +210,11 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     }
 
     ksort($cache_key_params);
-    $cache_key = 'bbox_request:' . md5(serialize($cache_key_params));
+    $cache_key = 'bbox_request:v2:' . md5(serialize([
+      $request->getSchemeAndHttpHost(), $path,
+      $request->headers->get('Accept'), $request->headers->get('Accept-Language'),
+      $cache_key_params,
+    ]));
 
     $cache_data = [
       'content' => $response->getContent(),
@@ -209,7 +224,11 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $cache_tags = [
       'markaspot_bbox_cache',
       'node_list:service_request',
+      'group_list',
     ];
+    if ($response instanceof CacheableResponseInterface) {
+      $cache_tags = array_unique(array_merge($cache_tags, $response->getCacheableMetadata()->getCacheTags()));
+    }
 
     // Add category-specific cache tags if category parameter exists.
     if (isset($query_params['service_code'])) {
@@ -234,6 +253,28 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
 
     $execution_time = round((microtime(TRUE) - $this->startTime) * 1000, 2);
     $response->headers->set('X-API-Execution-Time', $execution_time . 'ms');
+  }
+
+  /**
+   * Rejects credentials before the authentication listeners have run.
+   */
+  protected function isCredentialedRequest(Request $request): bool {
+    $settings = $this->configFactory->get('services_api_key_auth.settings');
+    $header = $settings->get('api_key_request_header_name');
+    $query = $settings->get('api_key_get_parameter_name');
+    $body = $settings->get('api_key_post_parameter_name');
+    foreach (['authorization', 'cookie', 'api_key', 'api-key', 'apikey', 'x-api-key'] as $name) {
+      if ($request->headers->has($name)) {
+        return TRUE;
+      }
+    }
+    return $request->cookies->count() > 0
+      || $request->query->has('api_key')
+      || $request->request->has('api_key')
+      || $request->server->has('HTTP_API_KEY')
+      || ($header && $request->headers->has($header))
+      || ($query && $request->query->has($query))
+      || ($body && $request->request->has($body));
   }
 
   /**

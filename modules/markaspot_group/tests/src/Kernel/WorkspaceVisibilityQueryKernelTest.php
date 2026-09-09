@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\Core\Render\RenderContext;
+use Drupal\Core\Routing\RouteMatch;
+use Drupal\markaspot_group\Access\FormOnlyReportRouteAccessCheck;
+use Drupal\markaspot_group\Access\FormOnlyGlobalReportAccessCheck;
+use Symfony\Component\Routing\Route;
+use Drupal\markaspot_group\Service\FormOnlyReportQueryScope;
+use Drupal\markaspot_open311\Controller\GeoreportStatsController;
+use Drupal\markaspot_group\EventSubscriber\FormOnlySubmissionReceiptSubscriber;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Session\AnonymousUserSession;
@@ -29,8 +41,15 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 require_once dirname(__DIR__, 3) . '/src/Service/JurisdictionHierarchyResolverInterface.php';
 require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceVisibilityInterface.php';
 require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceVisibilityService.php';
+require_once dirname(__DIR__, 3) . '/src/Service/FormOnlyReportQueryScope.php';
 require_once dirname(__DIR__, 3) . '/src/WorkspaceVisibilityNodeAccessControlHandler.php';
+require_once dirname(__DIR__, 3) . '/src/EventSubscriber/FormOnlySubmissionReceiptSubscriber.php';
+require_once dirname(__DIR__, 3) . '/src/Access/FormOnlyReportRouteAccessCheck.php';
+require_once dirname(__DIR__, 3) . '/src/Access/FormOnlyGlobalReportAccessCheck.php';
 require_once dirname(__DIR__, 3) . '/markaspot_group.module';
+require_once dirname(__DIR__, 3) . '/src/Trait/JurisdictionIdResolverTrait.php';
+require_once dirname(__DIR__, 4) . '/markaspot_open311/src/Traits/LanguageNegotiationTrait.php';
+require_once dirname(__DIR__, 4) . '/markaspot_open311/src/Controller/GeoreportStatsController.php';
 
 /**
  * Tests workspace visibility on access-checked node entity queries.
@@ -201,6 +220,7 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
     foreach ([
       'public',
       'submission_only',
+      'form_only',
       'authenticated',
       'blocked',
     ] as $visibility) {
@@ -254,6 +274,7 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
         $this->container->get('entity_type.manager'),
         $this->container->get('config.factory'),
         $this->container->get('entity_field.manager'),
+        $this->container->get('request_stack'),
       ),
     );
     $hierarchy_resolver = $this->createMock(
@@ -371,7 +392,7 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
       ->getQuery()
       ->accessCheck(FALSE)
       ->execute();
-    $this->assertCount(5, $group_ids);
+    $this->assertCount(6, $group_ids);
   }
 
   /**
@@ -447,6 +468,247 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
         ),
       );
     }
+  }
+
+  /**
+   * Form-only denies citizens, generic members and foreign staff on all reads.
+   */
+  public function testFormOnlyRequiresScopedStaffAndInvalidatesMembershipCache(): void {
+    $node = Node::load($this->requestIds['form_only']);
+    $jurisdiction_id = (int) $node->get('field_jurisdiction')->target_id;
+    $jurisdiction = Group::load($jurisdiction_id);
+    $service = $this->container->get('markaspot_group.workspace_visibility');
+    $handler = WorkspaceVisibilityNodeAccessControlHandler::createInstance(
+      $this->container,
+      $this->container->get('entity_type.manager')->getDefinition('node'),
+    );
+    $jurisdiction->addMember($this->authenticatedAccount);
+    foreach ([new AnonymousUserSession(), $this->authenticatedAccount, $this->nodeAccessBypassAccount] as $account) {
+      $this->assertTrue($service->canAnonymousSubmit($jurisdiction_id));
+      $this->assertFalse($service->allowsReadFor($account, $jurisdiction_id));
+      $this->assertSame([], $service->getReportViewJurisdictionIds($account));
+      foreach (['view', 'view revision', 'view all revisions', 'update', 'delete', 'revert revision', 'delete revision'] as $operation) {
+        $this->assertTrue($handler->access($node, $operation, $account, TRUE)->isForbidden());
+      }
+      $this->container->get('current_user')->setAccount($account);
+      $query = $this->container->get('entity_type.manager')->getStorage('node')->getQuery()
+        ->accessCheck(TRUE)->condition('nid', $node->id());
+      $this->assertSame([], $this->executeWithWorkspaceVisibility($query));
+    }
+    $foreign_staff = $this->createAccount('foreign-staff');
+    $foreign = $this->createJurisdiction('Foreign form', 'form_only');
+    $foreign->addMember($foreign_staff, ['group_roles' => ['jur-moderator']]);
+    $this->assertFalse($service->allowsReadFor($foreign_staff, $jurisdiction_id));
+    $staff = $this->staffAccounts['jur-moderator'];
+    $this->assertTrue($service->allowsReadFor($staff, $jurisdiction_id));
+    $this->assertSame([$jurisdiction_id], $service->getReportViewJurisdictionIds($staff));
+    $jurisdiction->removeMember($staff);
+    $service->resetCache($jurisdiction_id);
+    $this->assertFalse($service->allowsReadFor($staff, $jurisdiction_id));
+  }
+
+  /**
+   * Responsible org staff may read only reports assigned to their organisation.
+   */
+  public function testFormOnlyOrganisationScopeDoesNotWidenJurisdictionAccess(): void {
+    $node = Node::load($this->requestIds['form_only']);
+    $jurisdiction_id = (int) $node->get('field_jurisdiction')->target_id;
+    $root_id = (int) Node::load($this->requestIds['public'])->get('field_jurisdiction')->target_id;
+    $hierarchy = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchy->method('getRootJurisdictionId')->willReturnCallback(
+      static fn(int $id): int => $id === $jurisdiction_id ? $root_id : $id,
+    );
+    $this->container->set('markaspot_group.hierarchy_resolver', $hierarchy);
+    $org_type = GroupType::create(['id' => 'org', 'label' => 'Organisation']);
+    $org_type->save();
+    $relationship_type_storage = $this->container->get('entity_type.manager')->getStorage('group_relationship_type');
+    if (!$relationship_type_storage->load('org-group_membership')) {
+      $relationship_type_storage->createFromPlugin($org_type, 'group_membership')->save();
+    }
+    GroupRole::create([
+      'id' => 'org-moderator', 'label' => 'Org moderator',
+      'group_type' => 'org', 'scope' => 'individual',
+    ])->save();
+    FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction', 'entity_type' => 'group',
+      'type' => 'entity_reference', 'settings' => ['target_type' => 'group'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_jurisdiction', 'entity_type' => 'group',
+      'bundle' => 'org', 'label' => 'Jurisdiction',
+    ])->save();
+    FieldStorageConfig::create([
+      'field_name' => 'field_organisation', 'entity_type' => 'node',
+      'type' => 'entity_reference', 'settings' => ['target_type' => 'group'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_organisation', 'entity_type' => 'node',
+      'bundle' => 'service_request', 'label' => 'Organisation',
+    ])->save();
+    $org = Group::create([
+      'type' => 'org', 'label' => 'Responsible organisation',
+      'field_jurisdiction' => ['target_id' => $root_id],
+    ]);
+    $org->save();
+    $staff = $this->createAccount('org-staff');
+    $org->addMember($staff, ['group_roles' => ['org-moderator']]);
+    $org->addMember($this->authenticatedAccount);
+    $service = $this->container->get('markaspot_group.workspace_visibility');
+    $this->assertFalse($service->allowsReadFor($this->authenticatedAccount, $jurisdiction_id));
+    $this->assertTrue($service->allowsReadFor($staff, $jurisdiction_id));
+    $this->assertSame([$jurisdiction_id], $service->getReportViewJurisdictionIds($staff));
+    $this->assertFalse($service->allowsReportReadFor($staff, $jurisdiction_id, []));
+    $this->assertTrue($service->allowsReportReadFor($staff, $jurisdiction_id, [(int) $org->id()]));
+    $this->container->get('entity_type.manager')->getStorage('node')->resetCache([$node->id()]);
+    $node = Node::load($node->id());
+    $node->set('field_organisation', ['target_id' => $org->id()])->save();
+    $other_id = $this->createRequest('Unassigned private report', [$jurisdiction_id]);
+    $this->container->get('current_user')->setAccount($staff);
+    $visible = $this->visibleRequestIds();
+    $this->assertContains((int) $node->id(), $visible);
+    $this->assertNotContains($other_id, $visible);
+    $this->assertContains((int) $node->id(), $this->aggregateVisibleIds(FALSE));
+    $this->assertNotContains($other_id, $this->aggregateVisibleIds(FALSE));
+    $handler = WorkspaceVisibilityNodeAccessControlHandler::createInstance(
+      $this->container,
+      $this->container->get('entity_type.manager')->getDefinition('node'),
+    );
+    $this->assertTrue($handler->access(Node::load($other_id), 'view', $staff, TRUE)->isForbidden());
+    $request = Request::create('/jsonapi/node/service_request', 'POST');
+    $request->attributes->set('_route', 'jsonapi.node--service_request.collection.post');
+    $response = new JsonResponse([
+      'data' => [
+        'id' => $node->uuid(),
+        'type' => 'node--service_request',
+        'attributes' => ['title' => 'Authorized org report'],
+      ],
+    ], 201);
+    $original_response = $response->getContent();
+    $event = new ResponseEvent(
+      $this->createMock(HttpKernelInterface::class),
+      $request, HttpKernelInterface::MAIN_REQUEST, $response,
+    );
+    $receipt = new FormOnlySubmissionReceiptSubscriber(
+      $this->container->get('entity_type.manager'), $staff, $service,
+    );
+    $receipt->onResponse($event);
+    $this->assertSame($original_response, $event->getResponse()->getContent());
+  }
+
+  /**
+   * Raw aggregate SQL cannot count form-only reports for citizens or API keys.
+   */
+  public function testFormOnlyAggregateScopeUsesSqlAndApiKeyAnonymousPolicy(): void {
+    $form_node = Node::load($this->requestIds['form_only']);
+    $public_node = Node::load($this->requestIds['public']);
+    $mixed_id = $this->createRequest('Mixed public and form-only', [
+      (int) $public_node->get('field_jurisdiction')->target_id,
+      (int) $form_node->get('field_jurisdiction')->target_id,
+    ]);
+    foreach ([new AnonymousUserSession(), $this->authenticatedAccount] as $account) {
+      $this->container->get('current_user')->setAccount($account);
+      $visible = $this->aggregateVisibleIds(FALSE);
+      $this->assertNotContains($this->requestIds['form_only'], $visible);
+      $this->assertNotContains($mixed_id, $visible);
+      $this->assertContains($this->requestIds['public'], $visible);
+    }
+    $this->container->get('current_user')->setAccount($this->staffAccounts['jur-moderator']);
+    $this->assertContains($this->requestIds['form_only'], $this->aggregateVisibleIds(FALSE));
+    $this->assertNotContains($this->requestIds['form_only'], $this->aggregateVisibleIds(TRUE));
+  }
+
+  /**
+   * Executes the production aggregate visibility predicate on the kernel DB.
+   *
+   * @return int[]
+   *   Report IDs available to aggregate SQL.
+   */
+  private function aggregateVisibleIds(bool $uses_api_key): array {
+    $controller = new GeoreportStatsController(
+      $this->container->get('database'),
+      $this->container->get('request_stack'),
+      $this->container->get('language_manager'),
+      NULL,
+      NULL,
+      new FormOnlyReportQueryScope(
+        $this->container->get('markaspot_group.workspace_visibility'),
+        $this->container->get('entity_type.manager'),
+        $this->container->get('entity_field.manager'),
+        $this->container->get('database'),
+        $this->container->get('config.factory'),
+      ),
+    );
+    $method = new \ReflectionMethod($controller, 'getFormOnlySqlRestriction');
+    $predicate = $method->invoke($controller, $uses_api_key);
+    return array_map('intval', $this->container->get('database')->query(
+      "SELECT n.nid FROM {node_field_data} n WHERE n.type = 'service_request' $predicate ORDER BY n.nid",
+    )->fetchCol());
+  }
+
+  /**
+   * Public keys never inherit privileged owner or accompanying cookie access.
+   */
+  public function testPrivilegedApiKeyAndStaffCookieCannotReadFormOnly(): void {
+    $node = Node::load($this->requestIds['form_only']);
+    $jurisdiction_id = (int) $node->get('field_jurisdiction')->target_id;
+    $visibility = $this->container->get('markaspot_group.workspace_visibility');
+    $route_access = new FormOnlyReportRouteAccessCheck($this->container->get('entity_type.manager'), $visibility);
+    $global_access = new FormOnlyGlobalReportAccessCheck($visibility, $this->container->get('entity_type.manager'), $this->container->get('config.factory'));
+    $route_match = new RouteMatch('markaspot_feedback.rest', new Route('/api/feedback/{uuid}'), ['uuid' => $node->uuid()]);
+    $handler = WorkspaceVisibilityNodeAccessControlHandler::createInstance(
+      $this->container,
+      $this->container->get('entity_type.manager')->getDefinition('node'),
+    );
+    $request = Request::create('/jsonapi/node/service_request', 'GET', [], ['staff_session' => 'present']);
+    $request->headers->set('apikey', 'public-proxy-key');
+    $stack = $this->container->get('request_stack');
+    $stack->push($request);
+    try {
+      foreach ([User::load(1), $this->administratorAccount, $this->staffAccounts['jur-moderator']] as $account) {
+        $this->container->get('current_user')->setAccount($account);
+        $this->assertFalse($visibility->allowsReadFor($account, $jurisdiction_id));
+        $this->assertSame([], $visibility->getReportViewJurisdictionIds($account));
+        $this->assertContains($jurisdiction_id, $visibility->getUnreadableJurisdictionIds($account));
+        $access = $handler->access($node, 'view', $account, TRUE);
+        $this->assertTrue($access->isForbidden());
+        $this->assertSame(0, $access->getCacheMaxAge());
+        foreach (['update', 'delete', 'revert revision', 'delete revision'] as $operation) {
+          $this->assertTrue($handler->access($node, $operation, $account, TRUE)->isForbidden());
+          $this->assertTrue(_markaspot_group_workspace_visibility_node_access($node, $operation, $account)->isForbidden());
+        }
+        $this->assertTrue($global_access->access($account, $request)->isForbidden());
+        $follow_up_access = $route_access->access($route_match, $account);
+        $this->assertTrue($follow_up_access->isForbidden());
+        $this->assertSame(0, $follow_up_access->getCacheMaxAge());
+        $this->assertSame(0, _markaspot_group_workspace_visibility_node_access($node, 'view', $account)->getCacheMaxAge());
+        $this->assertNotContains($this->requestIds['form_only'], $this->visibleRequestIds());
+        $this->assertContains($this->requestIds['submission_only'], $this->visibleRequestIds());
+        $this->assertNotContains($this->requestIds['form_only'], $this->aggregateVisibleIds(TRUE));
+        $request->setMethod('POST');
+        $request->attributes->set('_route', 'jsonapi.node--service_request.collection.post');
+        $response = new JsonResponse([
+          'data' => [
+            'id' => $node->uuid(),
+            'type' => 'node--service_request',
+            'attributes' => ['description' => 'Private report body'],
+          ],
+        ], 201);
+        $event = new ResponseEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST, $response);
+        $subscriber = new FormOnlySubmissionReceiptSubscriber($this->container->get('entity_type.manager'), $account, $visibility);
+        $subscriber->onResponse($event);
+        $this->assertSame([], json_decode((string) $response->getContent(), TRUE)['data']['attributes']);
+        $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+        $request->setMethod('GET');
+      }
+    }
+    finally {
+      $stack->pop();
+    }
+    $this->assertTrue($visibility->allowsReadFor($this->administratorAccount, $jurisdiction_id));
+    $this->assertTrue($global_access->access($this->administratorAccount, Request::create('/api/ai/processing/status'))->isAllowed());
+    $context = new RenderContext();
+    $this->container->get('renderer')->executeInRenderContext($context, fn(): array => $this->visibleRequestIds());
+    $this->assertSame(0, $context->pop()->getCacheMaxAge());
   }
 
   /**
@@ -549,6 +811,7 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
         'allowed_values' => [
           'public' => 'Public',
           'submission_only' => 'Submission only',
+          'form_only' => 'Form only',
           'authenticated' => 'Authenticated',
           'blocked' => 'Blocked',
         ],

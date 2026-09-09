@@ -675,6 +675,16 @@ class GeoreportRequestResource extends ResourceBase {
       }
     }
 
+    foreach ($jurisdictionIds as $jurisdictionId) {
+      if ($this->workspaceVisibility->getVisibility($jurisdictionId) === 'form_only') {
+        $organisationIds = $node->hasField('field_organisation')
+          ? array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id')) : [];
+        if (!$this->workspaceVisibility->allowsReportReadFor($this->currentUser, $jurisdictionId, $organisationIds)) {
+          return FALSE;
+        }
+      }
+    }
+
     if ($scopeJurisdictionIds !== NULL) {
       foreach ($scopeJurisdictionIds as $scopeJurisdictionId) {
         if ($this->nodeBelongsToJurisdiction($node, $scopeJurisdictionId)) {

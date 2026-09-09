@@ -5543,6 +5543,7 @@ function _markaspot_group_visibility_allowed_values(array $allowed_values): arra
     'submission_only' => 'Submission Only',
     'authenticated' => 'Authenticated',
     'blocked' => 'Blocked',
+    'form_only' => 'Form Only',
   ];
 
   $is_list_of_mappings = FALSE;
@@ -5769,4 +5770,21 @@ function markaspot_group_update_11948(): string {
   \Drupal::logger('markaspot_group')->notice($message);
 
   return $message;
+}
+
+/**
+ * Adds the optional form-only visibility mode without changing tenant values.
+ */
+function markaspot_group_update_11949(): string {
+  $storage = FieldStorageConfig::loadByName('group', 'field_visibility');
+  if (!$storage) {
+    markaspot_group_update_11946();
+    $storage = FieldStorageConfig::loadByName('group', 'field_visibility');
+  }
+  $allowed = $storage->getSetting('allowed_values') ?? [];
+  $updated = _markaspot_group_visibility_allowed_values($allowed);
+  if ($updated !== $allowed) {
+    $storage->setSetting('allowed_values', $updated)->save();
+  }
+  return 'Form-only visibility is available; existing workspace modes are unchanged.';
 }

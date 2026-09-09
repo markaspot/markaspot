@@ -21,6 +21,9 @@ settings:
       value: submission_only
       label: 'Submission Only'
     -
+      value: form_only
+      label: Form Only
+    -
       value: authenticated
       label: Authenticated
     -

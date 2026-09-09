@@ -11,6 +11,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Determines workspace visibility and anonymous access rules.
@@ -26,6 +27,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
   private const VALID_VISIBILITIES = [
     'public',
     'submission_only',
+    'form_only',
     'authenticated',
     'blocked',
   ];
@@ -35,6 +37,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    */
   private const RESTRICTED_VISIBILITIES = [
     'submission_only',
+    'form_only',
     'authenticated',
     'blocked',
   ];
@@ -81,6 +84,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly EntityFieldManagerInterface $entityFieldManager,
+    protected readonly ?RequestStack $requestStack = NULL,
   ) {}
 
   /**
@@ -105,7 +109,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    *   The jurisdiction group ID.
    *
    * @return string
-   *   One of: 'public', 'submission_only', 'authenticated', 'blocked'.
+   *   One of: public, submission_only, form_only, authenticated, blocked.
    */
   public function getVisibility(int $groupId): string {
     if (isset($this->cache[$groupId])) {
@@ -191,10 +195,6 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    *   Jurisdiction group IDs whose requests must be excluded.
    */
   public function getUnreadableJurisdictionIds(AccountInterface $account): array {
-    if ($this->hasSiteBypass($account)) {
-      return [];
-    }
-
     return array_values(array_filter(
       $this->getRestrictedJurisdictionIds(),
       fn(int $groupId): bool => !$this->allowsReadFor($account, $groupId),
@@ -227,12 +227,19 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    *   TRUE when the account may read requests in the workspace.
    */
   public function allowsReadFor(AccountInterface $account, int $groupId): bool {
+    if ($this->getVisibility($groupId) === 'form_only' && $this->requestUsesPublicApiKey()) {
+      return FALSE;
+    }
     if ($this->hasSiteBypass($account)) {
       return TRUE;
     }
 
     if ($account->isAnonymous()) {
       return $this->canAnonymousView($groupId);
+    }
+
+    if ($this->getVisibility($groupId) === 'form_only') {
+      return $this->getFormOnlyOrganisationScope($account, $groupId) !== [];
     }
 
     if (!$this->isBlocked($groupId)) {
@@ -251,7 +258,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    */
   public function allowsPageReadFor(AccountInterface $account, int $groupId): bool {
     if ($this->hasSiteBypass($account)
-      || $this->getVisibility($groupId) === 'public') {
+      || in_array($this->getVisibility($groupId), ['public', 'form_only'], TRUE)) {
       return TRUE;
     }
 
@@ -321,7 +328,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    */
   public function canAnonymousSubmit(int $groupId): bool {
     $visibility = $this->getVisibility($groupId);
-    return in_array($visibility, ['public', 'submission_only'], TRUE);
+    return in_array($visibility, ['public', 'submission_only', 'form_only'], TRUE);
   }
 
   /**
@@ -350,6 +357,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
   public function resetCache(?int $groupId = NULL): void {
     $this->restrictedJurisdictionIds = NULL;
     $this->pageViewGrantIds = [];
+    $this->elevatedJurisdictionIds = [];
 
     if ($groupId === NULL) {
       $this->cache = [];
@@ -398,6 +406,100 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
     return $this->elevatedJurisdictionIds[$accountId] = array_values(
       array_unique($jurisdictionIds),
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getReportViewJurisdictionIds(AccountInterface $account): array {
+    return array_values(array_filter(
+      $this->getRestrictedJurisdictionIds(),
+      fn(int $id): bool => $this->getVisibility($id) === 'form_only'
+        && $this->allowsReadFor($account, $id),
+    ));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getFormOnlyOrganisationScope(AccountInterface $account, int $groupId): ?array {
+    if ($this->getVisibility($groupId) === 'form_only' && $this->requestUsesPublicApiKey()) {
+      return [];
+    }
+    if ($this->getVisibility($groupId) !== 'form_only'
+      || $this->hasSiteBypass($account)
+      || in_array($groupId, $this->getElevatedJurisdictionIds($account), TRUE)) {
+      return NULL;
+    }
+    if ($account->isAnonymous()) {
+      return [];
+    }
+
+    $orgType = $this->configFactory->get('markaspot_open311.settings')
+      ->get('organisation_group_type') ?: 'org';
+    $ids = [];
+    // Generic membership is never sufficient: require the explicit moderation
+    // role, or an existing contractor role together with actual org membership.
+    foreach (GroupMembership::loadByUser($account) as $membership) {
+      $group = $membership->getGroup();
+      if (!$group instanceof GroupInterface || $group->bundle() !== $orgType
+        || !$group->hasField('field_jurisdiction')
+        || $group->get('field_jurisdiction')->isEmpty()) {
+        continue;
+      }
+      // Organisation assignments are normalized to the root jurisdiction.
+      // Reuse the assignment policy so a root-linked org retains responsibility
+      // for its reports in a form-only child, without widening report scope.
+      if (!\_markaspot_group_org_group_matches_jurisdiction($group, $groupId)) {
+        continue;
+      }
+      $roleIds = array_keys($membership->getRoles());
+      if (in_array($orgType . '-moderator', $roleIds, TRUE)
+        || in_array('contractor', $account->getRoles(), TRUE)) {
+        $ids[] = (int) $group->id();
+      }
+    }
+    return array_values(array_unique($ids));
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function allowsReportReadFor(AccountInterface $account, int $groupId, array $organisationIds): bool {
+    if (!$this->allowsReadFor($account, $groupId)) {
+      return FALSE;
+    }
+    $scope = $this->getFormOnlyOrganisationScope($account, $groupId);
+    return $scope === NULL || array_intersect($scope, $organisationIds) !== [];
+  }
+
+  /**
+   * Detects anonymous-equivalent API requests before any form-only bypass.
+   *
+   * A staff session cookie does not upgrade a public-proxy request carrying a
+   * key. Other visibility modes keep their existing account semantics.
+   */
+  protected function requestUsesPublicApiKey(): bool {
+    $request = $this->requestStack?->getCurrentRequest();
+    if ($request === NULL) {
+      return FALSE;
+    }
+    $settings = $this->configFactory->get('services_api_key_auth.settings');
+    $header = $settings->get('api_key_request_header_name');
+    $query = $settings->get('api_key_get_parameter_name');
+    $body = $settings->get('api_key_post_parameter_name');
+    if ($request->query->has('api_key') || $request->request->has('api_key')
+      || ($header && $request->headers->has($header))
+      || ($query && $request->query->has($query))
+      || ($body && $request->request->has($body))) {
+      return TRUE;
+    }
+    foreach (['api_key', 'api-key', 'apikey', 'x-api-key'] as $name) {
+      if ($request->headers->has($name)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**

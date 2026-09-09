@@ -192,7 +192,7 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
       ['type', 'jur', NULL],
       [
         'field_visibility',
-        ['submission_only', 'authenticated', 'blocked'],
+        ['submission_only', 'form_only', 'authenticated', 'blocked'],
         'IN',
       ],
     ], $conditions);
@@ -239,6 +239,7 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
   public static function visibilityViewProvider(): array {
     return [
       'public allows anonymous view' => ['public', TRUE],
+      'form_only blocks anonymous view' => ['form_only', FALSE],
       'submission_only blocks anonymous view' => ['submission_only', FALSE],
       'authenticated blocks anonymous view' => ['authenticated', FALSE],
       'blocked blocks anonymous view' => ['blocked', FALSE],
@@ -262,6 +263,7 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
   public static function visibilitySubmitProvider(): array {
     return [
       'public allows anonymous submit' => ['public', TRUE],
+      'form_only allows anonymous submit' => ['form_only', TRUE],
       'submission_only allows anonymous submit' => ['submission_only', TRUE],
       'authenticated blocks anonymous submit' => ['authenticated', FALSE],
       'blocked blocks anonymous submit' => ['blocked', FALSE],

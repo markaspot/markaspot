@@ -7,3 +7,4 @@ dependencies:
   - drupal:rest
   - drupal:serialization
   - service_request
+  - markaspot:markaspot_group
