@@ -150,3 +150,49 @@ function markaspot_group_post_update_activate_protected_group_entity_class(array
 
   return 'Cleared entity type definitions so group entities use the protected Mark-a-Spot group class.';
 }
+
+/**
+ * Rebuilds grants for organisation-scoped contractor request access.
+ */
+function markaspot_group_post_update_rebuild_contractor_request_grants(array &$sandbox): string {
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+  if (!isset($sandbox['total'])) {
+    $sandbox['total'] = (int) $node_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->count()
+      ->execute();
+    $sandbox['progress'] = 0;
+    $sandbox['last_nid'] = 0;
+  }
+  if ($sandbox['total'] === 0) {
+    $sandbox['#finished'] = 1;
+    return 'No service requests require contractor grant rebuilding.';
+  }
+
+  $node_ids = $node_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'service_request')
+    ->condition('nid', $sandbox['last_nid'], '>')
+    ->sort('nid')
+    ->range(0, 50)
+    ->execute();
+  if ($node_ids === []) {
+    $sandbox['#finished'] = 1;
+    return 'Rebuilt node access grants for organisation-scoped contractor request access.';
+  }
+  $access_handler = \Drupal::entityTypeManager()->getAccessControlHandler('node');
+  $grant_storage = \Drupal::service('node.grant_storage');
+  foreach ($node_ids as $node_id) {
+    $node_storage->resetCache([$node_id]);
+    $node = $node_storage->load($node_id);
+    if ($node) {
+      $grant_storage->write($node, $access_handler->acquireGrants($node));
+    }
+    $sandbox['last_nid'] = (int) $node_id;
+    $sandbox['progress']++;
+  }
+  $sandbox['#finished'] = min(1, $sandbox['progress'] / $sandbox['total']);
+
+  return 'Rebuilding node access grants for organisation-scoped contractor request access.';
+}

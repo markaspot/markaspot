@@ -359,6 +359,87 @@ final class ContractorAccessKernelTest extends KernelTestBase {
   }
 
   /**
+   * Keeps third-party node access records authoritative.
+   */
+  public function testContractorGrantsDoNotWidenExistingProviderRecords(): void {
+    $records = [
+      [
+        'realm' => 'external_provider',
+        'gid' => 42,
+        'grant_view' => 1,
+        'grant_update' => 0,
+        'grant_delete' => 0,
+      ],
+    ];
+
+    markaspot_group_node_access_records_alter($records, $this->organisationBRequest);
+
+    $this->assertSame([
+      [
+        'realm' => 'external_provider',
+        'gid' => 42,
+        'grant_view' => 1,
+        'grant_update' => 0,
+        'grant_delete' => 0,
+      ],
+    ], $records);
+  }
+
+  /**
+   * Keeps published requests readable through Core's default node grant.
+   */
+  public function testPublishedRequestGetsDefaultNodeGrant(): void {
+    $records = [];
+
+    markaspot_group_node_access_records_alter($records, $this->organisationBRequest);
+
+    $this->assertContains([
+      'realm' => 'all',
+      'gid' => 0,
+      'grant_view' => 1,
+      'grant_update' => 0,
+      'grant_delete' => 0,
+    ], $records);
+  }
+
+  /**
+   * Rebuilds grants for existing requests during the profile update.
+   */
+  public function testPostUpdateRebuildsExistingContractorRequestGrants(): void {
+    $database = $this->container->get('database');
+    $database->delete('node_access')
+      ->condition('nid', $this->organisationARequest->id())
+      ->execute();
+    require_once dirname(__DIR__, 3) . '/markaspot_group.post_update.php';
+
+    $sandbox = [];
+    markaspot_group_post_update_rebuild_contractor_request_grants($sandbox);
+
+    $this->assertSame(1, (int) $database->select('node_access', 'access')
+      ->condition('nid', $this->organisationARequest->id())
+      ->condition('realm', 'markaspot_contractor_organisation')
+      ->countQuery()
+      ->execute()
+      ->fetchField());
+  }
+
+  /**
+   * Completes the update when a request disappears between batches.
+   */
+  public function testPostUpdateCompletesWhenNoRequestRowsRemain(): void {
+    require_once dirname(__DIR__, 3) . '/markaspot_group.post_update.php';
+    $sandbox = [
+      'total' => 1,
+      'progress' => 0,
+      'last_nid' => PHP_INT_MAX,
+    ];
+
+    markaspot_group_post_update_rebuild_contractor_request_grants($sandbox);
+
+    $this->assertSame(1, $sandbox['#finished']);
+  }
+
+  /**
    * Contractors cannot bypass the restricted note endpoint via JSON:API.
    */
   public function testContractorCannotWriteStatusParagraphsDirectly(): void {

@@ -759,6 +759,40 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
  * member and site administrator grants added here.
  */
 function markaspot_group_node_access_records_alter(array &$grants, NodeInterface $node): void {
+  if ($node->bundle() === 'service_request') {
+    $has_existing_grants = $grants !== [];
+    $organisation_ids = $node->hasField('field_organisation')
+      ? array_values(array_filter(array_map(
+        'intval',
+        array_column($node->get('field_organisation')->getValue(), 'target_id'),
+      )))
+      : [];
+    // Node-access realms are additive. A provider that already supplied
+    // records owns the node's access policy and must not be widened here.
+    if (!$has_existing_grants) {
+      foreach ($organisation_ids as $organisation_id) {
+        $grants[] = [
+          'realm' => 'markaspot_contractor_organisation',
+          'gid' => $organisation_id,
+          'grant_view' => 1,
+          'grant_update' => 0,
+          'grant_delete' => 0,
+        ];
+      }
+    }
+    // A non-empty grant list suppresses core's implicit public record.
+    if (!$has_existing_grants && $organisation_ids !== [] && $node->isPublished()) {
+      $grants[] = [
+        'realm' => 'all',
+        'gid' => 0,
+        'grant_view' => 1,
+        'grant_update' => 0,
+        'grant_delete' => 0,
+      ];
+    }
+    return;
+  }
+
   if ($node->bundle() !== 'page') {
     return;
   }
@@ -829,9 +863,17 @@ function markaspot_group_node_grants(AccountInterface $account, string $operatio
   $service = \Drupal::service('markaspot_group.workspace_visibility');
   $grant_ids = $service->getPageViewGrantIds($account);
 
-  return $grant_ids === []
+  $grants = $grant_ids === []
     ? []
     : ['markaspot_page_visibility' => $grant_ids];
+  if (_markaspot_group_account_has_restricted_contractor_access($account)) {
+    $organisation_ids = _markaspot_group_account_organisation_ids($account);
+    if ($organisation_ids !== []) {
+      $grants['markaspot_contractor_organisation'] = $organisation_ids;
+    }
+  }
+
+  return $grants;
 }
 
 /**
