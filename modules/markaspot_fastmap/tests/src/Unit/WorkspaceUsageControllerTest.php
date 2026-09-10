@@ -317,6 +317,8 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
   public function testUsageReturns403WithoutScopedAccess(): void {
     $this->currentUserId = 3;
     $this->currentUserRoles = ['authenticated'];
+    $this->currentUser->method('hasPermission')
+      ->willReturnCallback(fn(string $permission) => $permission === 'access workspace usage');
 
     $group = $this->createMockGroup([]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
