@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\field\Entity\FieldConfig;
@@ -15,6 +16,8 @@ use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\markaspot_group\Service\WorkspaceVisibilityService;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
+use Drupal\node\NodeGrantDatabaseStorage;
+use Drupal\node\NodeInterface;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -216,6 +219,136 @@ final class PageScopingUpdateKernelTest extends KernelTestBase {
       markaspot_fastmap_update_11928(),
     );
     $this->assertSame(0, (int) $this->container->get('current_user')->id());
+  }
+
+  /**
+   * Rewrites grants only for service requests assigned to an organisation.
+   */
+  public function testContractorOrganisationGrantUpdateTargetsScopedRequests(): void {
+    NodeType::create([
+      'type' => 'service_request',
+      'name' => 'Service request',
+    ])->save();
+    GroupType::create([
+      'id' => 'org',
+      'label' => 'Organisation',
+    ])->save();
+    FieldStorageConfig::create([
+      'field_name' => 'field_organisation',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'cardinality' => FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED,
+      'settings' => ['target_type' => 'group'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_organisation',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Organisation',
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [],
+      ],
+    ])->save();
+    $this->container->get('entity_field.manager')
+      ->clearCachedFieldDefinitions();
+
+    $organisation = Group::create([
+      'type' => 'org',
+      'label' => 'Responsible organisation',
+    ]);
+    $organisation->save();
+    $scoped_request = Node::create([
+      'type' => 'service_request',
+      'title' => 'Scoped request',
+      'status' => 0,
+      'field_organisation' => ['target_id' => $organisation->id()],
+    ]);
+    $scoped_request->save();
+    $plain_request = Node::create([
+      'type' => 'service_request',
+      'title' => 'Plain request',
+      'status' => 0,
+    ]);
+    $plain_request->save();
+
+    $database = $this->container->get('database');
+    $request_ids = [
+      (int) $scoped_request->id(),
+      (int) $plain_request->id(),
+    ];
+    $database->delete('node_access')
+      ->condition('nid', $request_ids, 'IN')
+      ->execute();
+    $module_handler = $this->createMock(ModuleHandlerInterface::class);
+    $module_handler->method('hasImplementations')
+      ->willReturnCallback(static fn($hook) => $hook === 'node_grants');
+    $module_handler->method('invokeAll')->willReturnCallback(
+      static function ($hook, $args = []): array {
+        $grants = [];
+        if ($hook === 'node_access_records'
+          && ($args[0] ?? NULL) instanceof NodeInterface) {
+          markaspot_group_node_access_records_alter($grants, $args[0]);
+        }
+        return $grants;
+      },
+    );
+    $grant_storage = new NodeGrantDatabaseStorage(
+      $database,
+      $module_handler,
+      $this->container->get('language_manager'),
+      $this->container->get('node.view_all_nodes_memory_cache'),
+    );
+    $this->container->set('module_handler', $module_handler);
+    $this->container->set('node.grant_storage', $grant_storage);
+    $this->container->get('entity_type.manager')
+      ->getAccessControlHandler('node')
+      ->setModuleHandler($module_handler);
+
+    node_access_needs_rebuild(FALSE);
+    $this->assertFalse((bool) node_access_needs_rebuild());
+    $sandbox = [];
+    do {
+      $message = markaspot_group_update_11950($sandbox);
+    } while (($sandbox['#finished'] ?? 0) < 1);
+
+    $this->assertSame(
+      'Rewrote contractor organisation grants for 1 service requests.',
+      $message,
+    );
+    $this->assertSame(1, $sandbox['total']);
+    $this->assertSame(1, $sandbox['rewritten']);
+    $grant = $database->select('node_access', 'grant')
+      ->fields('grant', [
+        'gid',
+        'grant_view',
+        'grant_update',
+        'grant_delete',
+      ])
+      ->condition('grant.nid', $scoped_request->id())
+      ->condition('grant.realm', 'markaspot_contractor_organisation')
+      ->execute()
+      ->fetchAssoc();
+    $this->assertIsArray($grant);
+    $this->assertSame((int) $organisation->id(), (int) $grant['gid']);
+    $this->assertSame(1, (int) $grant['grant_view']);
+    $this->assertSame(1, (int) $grant['grant_update']);
+    $this->assertSame(0, (int) $grant['grant_delete']);
+    $plain_grants = $database->select('node_access', 'grant')
+      ->condition('grant.nid', $plain_request->id())
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+    $this->assertSame(0, (int) $plain_grants);
+    $this->assertFalse((bool) node_access_needs_rebuild());
+
+    node_access_needs_rebuild(TRUE);
+    $flag_preservation_sandbox = [];
+    do {
+      markaspot_group_update_11950($flag_preservation_sandbox);
+    } while (($flag_preservation_sandbox['#finished'] ?? 0) < 1);
+    $this->assertTrue((bool) node_access_needs_rebuild());
+    node_access_needs_rebuild(FALSE);
   }
 
   /**

@@ -5792,3 +5792,76 @@ function markaspot_group_update_11949(): string {
   }
   return 'Form-only visibility is available; existing workspace modes are unchanged.';
 }
+
+/**
+ * Rebuilds grants for contractor access to existing unpublished requests.
+ */
+function markaspot_group_update_11950(array &$sandbox): string {
+  $database = \Drupal::database();
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+
+  if (!isset($sandbox['total'])) {
+    $count_query = $database->select('node_field_data', 'request');
+    $count_query->innerJoin(
+      'node__field_organisation',
+      'organisation',
+      'request.nid = organisation.entity_id AND organisation.deleted = 0',
+    );
+    $count_query->addField('request', 'nid');
+    $count_query->condition('request.type', 'service_request');
+    $sandbox['total'] = (int) $count_query
+      ->distinct()
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+    $sandbox['processed'] = 0;
+    $sandbox['rewritten'] = 0;
+    $sandbox['last_nid'] = 0;
+  }
+
+  $query = $database->select('node_field_data', 'request');
+  $query->innerJoin(
+    'node__field_organisation',
+    'organisation',
+    'request.nid = organisation.entity_id AND organisation.deleted = 0',
+  );
+  $query->addField('request', 'nid');
+  $query
+    ->condition('request.type', 'service_request')
+    ->condition('request.nid', $sandbox['last_nid'], '>')
+    ->distinct()
+    ->orderBy('request.nid', 'ASC')
+    ->range(0, 50);
+  $nids = array_map('intval', $query->execute()->fetchCol());
+
+  if ($nids === []) {
+    $sandbox['#finished'] = 1;
+    return sprintf(
+      'Rewrote contractor organisation grants for %d service requests.',
+      $sandbox['rewritten'],
+    );
+  }
+
+  $sandbox['last_nid'] = max($nids);
+  $node_storage->resetCache($nids);
+  $nodes = $node_storage->loadMultiple($nids);
+  /** @var \Drupal\node\NodeAccessControlHandlerInterface $access_control_handler */
+  $access_control_handler = \Drupal::entityTypeManager()
+    ->getAccessControlHandler('node');
+  $grant_storage = \Drupal::service('node.grant_storage');
+  foreach ($nodes as $node) {
+    $grants = $access_control_handler->acquireGrants($node);
+    $grant_storage->write($node, $grants);
+    $sandbox['rewritten']++;
+  }
+  $sandbox['processed'] += count($nids);
+  $node_storage->resetCache($nids);
+  $sandbox['#finished'] = $sandbox['total'] > 0
+    ? min(1, $sandbox['processed'] / $sandbox['total'])
+    : 1;
+
+  return sprintf(
+    'Rewrote contractor organisation grants for %d service requests.',
+    $sandbox['rewritten'],
+  );
+}

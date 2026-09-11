@@ -472,9 +472,12 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
    */
   public function testMultiWorkspaceQueryAccessRequiresEveryMembership(): void {
     $account = $this->createAccount('a-only-reader');
+    $both_account = $this->createAccount('a-and-b-reader');
     $workspace_a = Group::load($this->jurisdictionIds['authenticated']);
     $workspace_b = Group::load($this->jurisdictionIds['submission_only']);
     $workspace_a->addMember($account, ['group_roles' => ['jur-member']]);
+    $workspace_a->addMember($both_account, ['group_roles' => ['jur-member']]);
+    $workspace_b->addMember($both_account, ['group_roles' => ['jur-member']]);
     $this->container->get('markaspot_group.workspace_visibility')->resetCache();
     $page = Node::create([
       'type' => 'page',
@@ -511,28 +514,88 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
     $this->container->set('module_handler', $module_handler);
     $this->container->set('node.grant_storage', $grant_storage);
 
-    foreach ([FALSE, TRUE] as $entity_metadata) {
-      foreach (['node', 'node_field_data', 'joined'] as $shape) {
-        if ($shape === 'joined') {
-          $query = $database->select('users_field_data', 'author');
-          $alias = $query->join('node_field_data', 'workspace_page', 'author.uid = %alias.uid');
-          $base_table = 'node_field_data';
+    foreach ([
+      'one workspace' => [$account, []],
+      'both workspaces' => [$both_account, [(int) $page->id()]],
+    ] as $membership => [$query_account, $expected]) {
+      $this->container->get('current_user')->setAccount($query_account);
+      foreach ([FALSE, TRUE] as $entity_metadata) {
+        foreach ([
+          'node',
+          'node_field_data',
+          'node_revision',
+          'joined',
+          'node_and_data',
+          'metadata_field_data',
+          'duplicate_field_data',
+        ] as $shape) {
+          [$query, $base_table, $alias] = $this->workspaceNodeQueryShape(
+            $shape,
+            (int) $page->id(),
+          );
+          $query->addField($alias, 'nid');
+          $query->condition($alias . '.nid', $page->id());
+          $query->addTag('node_access')
+            ->addMetaData('account', $query_account);
+          if ($entity_metadata) {
+            $query->addMetaData('entity_type', 'node');
+          }
+          markaspot_group_query_node_access_alter($query);
+          $grant_storage->alterQuery(
+            $query,
+            $query->getTables(),
+            'view',
+            $query_account,
+            $base_table,
+          );
+          $this->assertSame(
+            $expected,
+            array_map('intval', $query->execute()->fetchCol()),
+            sprintf('%s with %s must enforce every workspace.', $shape, $membership),
+          );
         }
-        else {
-          $query = $database->select($shape, 'custom_node_alias');
-          $alias = 'custom_node_alias';
-          $base_table = $shape;
-        }
-        $query->addField($alias, 'nid');
-        $query->condition($alias . '.nid', $page->id());
-        $query->addTag('node_access')->addMetaData('account', $account);
-        if ($entity_metadata) {
-          $query->addMetaData('entity_type', 'node');
-        }
-        markaspot_group_query_node_access_alter($query);
-        $grant_storage->alterQuery($query, $query->getTables(), 'view', $account, $base_table);
-        $this->assertSame([], $query->execute()->fetchCol(), $shape . ' must require both workspace memberships.');
       }
+
+      $query = $database->select('users_field_data', 'author');
+      $query->condition('author.uid', [1, $this->outsiderAccount->id()], 'IN');
+      $alias = $query->leftJoin(
+        'node_field_data',
+        'nullable_workspace_page',
+        'author.uid = %alias.uid AND %alias.nid = :nullable_page_nid',
+        [':nullable_page_nid' => $page->id()],
+      );
+      $query->addField('author', 'uid');
+      $query->addField($alias, 'nid');
+      $query->orderBy('author.uid');
+      $query->addTag('node_access')
+        ->addMetaData('base_table', 'node_field_data')
+        ->addMetaData('account', $query_account);
+      markaspot_group_query_node_access_alter($query);
+      $grant_storage->alterQuery(
+        $query,
+        $query->getTables(),
+        'view',
+        $query_account,
+        'node_field_data',
+      );
+      $rows = array_map(
+        static fn(object $row): array => [
+          (int) $row->uid,
+          $row->nid === NULL ? NULL : (int) $row->nid,
+        ],
+        $query->execute()->fetchAll(),
+      );
+      $expected_rows = $membership === 'one workspace'
+        ? [[(int) $this->outsiderAccount->id(), NULL]]
+        : [
+          [1, (int) $page->id()],
+          [(int) $this->outsiderAccount->id(), NULL],
+        ];
+      $this->assertSame(
+        $expected_rows,
+        $rows,
+        sprintf('The nullable join must preserve non-node rows for %s.', $membership),
+      );
     }
   }
 
@@ -540,13 +603,86 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
    * A tag on a non-node query does not cause conditions on a nonexistent nid.
    */
   public function testNonNodeQueryRemainsUnchanged(): void {
+    $this->container->get('current_user')->setAccount($this->outsiderAccount);
+    /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $visibility */
+    $visibility = $this->container->get('markaspot_group.workspace_visibility');
+    $this->assertNotEmpty(
+      $visibility->getUnreadableJurisdictionIds($this->outsiderAccount),
+    );
     $query = $this->container->get('database')
       ->select('users_field_data', 'account');
     $query->addField('account', 'uid');
-    $query->addTag('node_access');
+    $query->addTag('node_access')
+      ->addMetaData('account', $this->outsiderAccount);
     $conditions = $query->conditions();
     markaspot_group_query_node_access_alter($query);
     $this->assertSame($conditions, $query->conditions());
+  }
+
+  /**
+   * Builds a node access SQL shape around one page.
+   *
+   * @return array{\Drupal\Core\Database\Query\SelectInterface, string, string}
+   *   Query, core base table name, and selected nid alias.
+   */
+  private function workspaceNodeQueryShape(string $shape, int $page_id): array {
+    $database = $this->container->get('database');
+    switch ($shape) {
+      case 'joined':
+        $query = $database->select('users_field_data', 'author');
+        $alias = $query->join(
+          'node_field_data',
+          'workspace_page',
+          'author.uid = %alias.uid',
+        );
+        return [$query, 'node_field_data', $alias];
+
+      case 'node_and_data':
+        $query = $database->select('node_revision', 'workspace_revision');
+        $node_alias = $query->join(
+          'node',
+          'workspace_node',
+          'workspace_revision.nid = %alias.nid',
+        );
+        $alias = $query->join(
+          'node_field_data',
+          'workspace_node_data',
+          "$node_alias.nid = %alias.nid",
+        );
+        return [$query, 'node', $alias];
+
+      case 'metadata_field_data':
+        $query = $database->select('node', 'metadata_node');
+        $alias = $query->join(
+          'node_field_data',
+          'metadata_node_data',
+          'metadata_node.nid = %alias.nid',
+        );
+        $query->addMetaData('base_table', 'node_field_data');
+        return [$query, 'node_field_data', $alias];
+
+      case 'duplicate_field_data':
+        $query = $database->select('node_field_data', 'primary_node_data');
+        $alias = $query->join(
+          'node_field_data',
+          'secondary_node_data',
+          'primary_node_data.nid = %alias.nid',
+        );
+        return [$query, 'node_field_data', $alias];
+
+      case 'node':
+      case 'node_field_data':
+      case 'node_revision':
+        $query = $database->select($shape, 'custom_node_alias');
+        return [$query, $shape, 'custom_node_alias'];
+
+      default:
+        throw new \InvalidArgumentException(sprintf(
+          'Unknown node query shape %s for page %d.',
+          $shape,
+          $page_id,
+        ));
+    }
   }
 
   /**

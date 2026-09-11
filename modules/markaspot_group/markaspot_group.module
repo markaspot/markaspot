@@ -15,6 +15,7 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Core\Url;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
+use Drupal\Core\Database\Query\ConditionInterface;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -754,11 +755,43 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
 /**
  * Implements hook_node_access_records_alter().
  *
- * Node access realms are additive. Restricted workspace pages therefore keep
- * no view grant from another realm: their only view records are the workspace
- * member and site administrator grants added here.
+ * Node access realms are additive. Contractor organisation grants preserve
+ * access to in-scope unpublished requests after page visibility enables
+ * core's grant query. Restricted workspace pages keep no view grant from
+ * another realm: their only view records are the workspace member and site
+ * administrator grants added here.
  */
 function markaspot_group_node_access_records_alter(array &$grants, NodeInterface $node): void {
+  if ($node->bundle() === 'service_request'
+    && $node->hasField('field_organisation')
+    && !$node->get('field_organisation')->isEmpty()) {
+    $had_grants = $grants !== [];
+    foreach (array_values(array_unique(array_filter(array_map(
+      'intval',
+      array_column($node->get('field_organisation')->getValue(), 'target_id'),
+    )))) as $organisation_id) {
+      $grants[] = [
+        'realm' => 'markaspot_contractor_organisation',
+        'gid' => $organisation_id,
+        'grant_view' => 1,
+        'grant_update' => 1,
+        'grant_delete' => 0,
+      ];
+    }
+    // Adding the contractor record prevents core from supplying its default
+    // grant. Preserve that default for otherwise ungoverned published nodes.
+    if (!$had_grants && $node->isPublished()) {
+      $grants[] = [
+        'realm' => 'all',
+        'gid' => 0,
+        'grant_view' => 1,
+        'grant_update' => 0,
+        'grant_delete' => 0,
+      ];
+    }
+    return;
+  }
+
   if ($node->bundle() !== 'page') {
     return;
   }
@@ -821,17 +854,25 @@ function markaspot_group_node_access_records_alter(array &$grants, NodeInterface
  * Implements hook_node_grants().
  */
 function markaspot_group_node_grants(AccountInterface $account, string $operation): array {
-  if ($operation !== 'view') {
-    return [];
+  $grants = [];
+  if (in_array($operation, ['view', 'update'], TRUE)
+    && _markaspot_group_account_has_restricted_contractor_access($account)) {
+    $organisation_ids = _markaspot_group_account_organisation_ids($account);
+    if ($organisation_ids !== []) {
+      $grants['markaspot_contractor_organisation'] = $organisation_ids;
+    }
   }
 
-  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
-  $service = \Drupal::service('markaspot_group.workspace_visibility');
-  $grant_ids = $service->getPageViewGrantIds($account);
+  if ($operation === 'view') {
+    /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
+    $service = \Drupal::service('markaspot_group.workspace_visibility');
+    $grant_ids = $service->getPageViewGrantIds($account);
+    if ($grant_ids !== []) {
+      $grants['markaspot_page_visibility'] = $grant_ids;
+    }
+  }
 
-  return $grant_ids === []
-    ? []
-    : ['markaspot_page_visibility' => $grant_ids];
+  return $grants;
 }
 
 /**
@@ -1373,8 +1414,14 @@ function markaspot_group_entity_create_access(AccountInterface $account, array $
  */
 function markaspot_group_query_node_access_alter(AlterableInterface $query): void {
   if (!$query instanceof SelectInterface
-    || _markaspot_group_node_query_base_alias($query) === NULL
-    || $query->hasTag('markaspot_open311_workspace_visibility')) {
+    || _markaspot_group_node_query_base_alias($query) === NULL) {
+    return;
+  }
+
+  // Entity queries also invoke the entity_query alter below. Calling it from
+  // this tag covers Views and custom SQL; its metadata guard prevents doubles.
+  markaspot_group_query_entity_query_alter($query);
+  if ($query->hasTag('markaspot_open311_workspace_visibility')) {
     return;
   }
 
@@ -1508,8 +1555,8 @@ function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $qu
     return;
   }
 
-  $base_alias = _markaspot_group_node_query_base_alias($query);
-  if ($base_alias === NULL) {
+  $base_aliases = _markaspot_group_node_query_base_aliases($query);
+  if ($base_aliases === []) {
     _markaspot_group_exclude_node_bundle($query, $bundle);
     return;
   }
@@ -1550,55 +1597,139 @@ function _markaspot_group_exclude_unreadable_workspace_nodes(SelectInterface $qu
       // Keep the complete jurisdiction excluded if org scope cannot be proven.
     }
   }
-  $query->condition($base_alias . '.nid', $restricted_nodes, 'NOT IN');
+  foreach ($base_aliases as $base_alias) {
+    $restriction = $query->andConditionGroup()
+      ->condition($base_alias . '.nid', $restricted_nodes, 'NOT IN');
+    _markaspot_group_add_node_query_restriction(
+      $query,
+      $base_alias,
+      $restriction,
+    );
+  }
 }
 
 /**
  * Fails closed for one node bundle while preserving all other bundles.
  */
 function _markaspot_group_exclude_node_bundle(SelectInterface $query, string $bundle): void {
-  $data_alias = NULL;
-  $base_alias = _markaspot_group_node_query_base_alias($query);
-  foreach ($query->getTables() as $alias => $table) {
-    if ($table['table'] === 'node_field_data') {
-      $data_alias = $alias;
-    }
-  }
-
-  if ($data_alias === NULL && $base_alias !== NULL) {
-    $data_alias = $query->join(
-      'node_field_data',
-      'workspace_visibility_node_data',
-      "$base_alias.nid = %alias.nid",
-    );
-  }
-  if ($data_alias === NULL) {
+  $base_aliases = _markaspot_group_node_query_base_aliases($query);
+  if ($base_aliases === []) {
     $query->where('1 = 0');
     return;
   }
 
-  $query->condition($data_alias . '.type', $bundle, '<>');
+  foreach ($base_aliases as $base_alias) {
+    $data_alias = _markaspot_group_node_query_data_alias(
+      $query,
+      $base_alias,
+      'workspace_visibility_node_data',
+    );
+    $restriction = $query->andConditionGroup()
+      ->condition($data_alias . '.type', $bundle, '<>');
+    _markaspot_group_add_node_query_restriction(
+      $query,
+      $base_alias,
+      $restriction,
+    );
+  }
 }
 
 /**
  * Gets a node table alias from an entity query or tagged SQL query.
  */
 function _markaspot_group_node_query_base_alias(SelectInterface $query): ?string {
-  // Views and custom node_access SQL queries need not set entity_type metadata
-  // and may join nodes from a non-node base table. Never assume an arbitrary
-  // base table has a nid column just because the query carries an access tag.
-  foreach ($query->getTables() as $alias => $table) {
-    if (in_array($table['table'], [
-      'node',
-      'node_field_data',
-      'node_revision',
-      'node_field_revision',
-    ], TRUE)) {
-      return $alias;
+  return _markaspot_group_node_query_base_aliases($query)[0] ?? NULL;
+}
+
+/**
+ * Gets every alias for the node base table selected with Drupal core's rules.
+ *
+ * @return string[]
+ *   Aliases for every occurrence of the selected physical base table.
+ */
+function _markaspot_group_node_query_base_aliases(SelectInterface $query): array {
+  $tables = $query->getTables();
+  $base_table = $query->getMetaData('base_table');
+  if (!is_string($base_table) || $base_table === '') {
+    // Match core: current node tables win over revision tables regardless of
+    // their order in a View or custom node_access query.
+    $base_table = NULL;
+    foreach ($tables as $table) {
+      if ($table['table'] instanceof SelectInterface) {
+        continue;
+      }
+      if (in_array($table['table'], ['node', 'node_field_data'], TRUE)) {
+        $base_table = $table['table'];
+        break;
+      }
+      if (in_array($table['table'], [
+        'node_revision',
+        'node_field_revision',
+      ], TRUE)) {
+        $base_table = $table['table'];
+      }
     }
   }
 
-  return NULL;
+  if ($base_table === NULL) {
+    return [];
+  }
+
+  $aliases = [];
+  foreach ($tables as $alias => $table) {
+    if (!$table['table'] instanceof SelectInterface
+      && $table['table'] === $base_table) {
+      $aliases[] = $alias;
+    }
+  }
+  return $aliases;
+}
+
+/**
+ * Checks whether the selected node table is joined to another base table.
+ */
+function _markaspot_group_node_query_alias_is_joined(SelectInterface $query, string $alias): bool {
+  $tables = $query->getTables();
+  return isset($tables[$alias]) && $tables[$alias]['join type'] !== NULL;
+}
+
+/**
+ * Gets field data for the selected node alias without reusing another join.
+ */
+function _markaspot_group_node_query_data_alias(SelectInterface $query, string $base_alias, string $suggested_alias): string {
+  $tables = $query->getTables();
+  if (isset($tables[$base_alias])
+    && $tables[$base_alias]['table'] === 'node_field_data') {
+    return $base_alias;
+  }
+
+  return _markaspot_group_node_query_alias_is_joined($query, $base_alias)
+    ? $query->leftJoin(
+      'node_field_data',
+      $suggested_alias,
+      "$base_alias.nid = %alias.nid",
+    )
+    : $query->join(
+      'node_field_data',
+      $suggested_alias,
+      "$base_alias.nid = %alias.nid",
+    );
+}
+
+/**
+ * Adds a restriction without dropping an outer row whose joined nid is NULL.
+ */
+function _markaspot_group_add_node_query_restriction(SelectInterface $query, string $base_alias, ConditionInterface $restriction): void {
+  if (_markaspot_group_node_query_alias_is_joined($query, $base_alias)) {
+    $query->condition(
+      $query->orConditionGroup()
+        ->isNull($base_alias . '.nid')
+        ->condition($restriction),
+    );
+    return;
+  }
+
+  $query->condition($restriction);
 }
 
 /**
@@ -1611,62 +1742,68 @@ function _markaspot_group_node_query_base_alias(SelectInterface $query): ?string
  */
 function markaspot_group_query_entity_query_alter(AlterableInterface $query): void {
   if (!$query instanceof SelectInterface
-    || $query->getMetaData('entity_type') !== 'node'
-    || !$query->hasTag('node_access')) {
+    || !$query->hasTag('node_access')
+    || _markaspot_group_node_query_base_alias($query) === NULL
+    || $query->getMetaData('markaspot_group_contractor_scope_applied')) {
     return;
   }
 
-  $account = \Drupal::currentUser();
+  $account = $query->getMetaData('account');
+  if (!$account instanceof AccountInterface) {
+    $account = \Drupal::currentUser();
+  }
   if (!_markaspot_group_account_has_restricted_contractor_access($account)) {
     return;
   }
+  $query->addMetaData('markaspot_group_contractor_scope_applied', TRUE);
 
-  $base_alias = NULL;
-  $data_alias = NULL;
-  foreach ($query->getTables() as $alias => $table) {
-    if ($table['join type'] === NULL) {
-      $base_alias = $alias;
-    }
-    if ($table['table'] === 'node_field_data') {
-      $data_alias = $alias;
-    }
-  }
-  if ($base_alias === NULL) {
+  $base_aliases = _markaspot_group_node_query_base_aliases($query);
+  if ($base_aliases === []) {
     return;
-  }
-  if ($data_alias === NULL) {
-    $data_alias = $query->join(
-      'node_field_data',
-      'contractor_node_data',
-      "$base_alias.nid = %alias.nid",
-    );
   }
 
   $organisation_ids = _markaspot_group_account_organisation_ids($account);
-  if ($organisation_ids === []) {
-    $query->condition("$data_alias.type", 'service_request', '<>');
-    return;
-  }
+  foreach ($base_aliases as $base_alias) {
+    $data_alias = _markaspot_group_node_query_data_alias(
+      $query,
+      $base_alias,
+      'contractor_node_data',
+    );
+    if ($organisation_ids === []) {
+      $restriction = $query->andConditionGroup()
+        ->condition("$data_alias.type", 'service_request', '<>');
+      _markaspot_group_add_node_query_restriction(
+        $query,
+        $base_alias,
+        $restriction,
+      );
+      continue;
+    }
 
-  // field_organisation is the routing authority used by direct entity access.
-  // Do not trust the mirrored Group relationship here: integrity repair treats
-  // relation drift as recoverable, and stale relations must fail closed.
-  $organisation_alias = $query->leftJoin(
-    'node__field_organisation',
-    'contractor_request_scope',
-    "$base_alias.nid = %alias.entity_id"
-      . ' AND %alias.deleted = 0'
-      . ' AND %alias.field_organisation_target_id IN (:contractor_organisation_ids[])',
-    [
-      ':contractor_organisation_ids[]' => $organisation_ids,
-    ],
-  );
-  $query->condition(
-    $query->orConditionGroup()
+    // field_organisation is the routing authority used by direct entity
+    // access. Do not trust the mirrored Group relationship here: integrity
+    // repair treats relation drift as recoverable, and stale relations must
+    // fail closed.
+    $organisation_alias = $query->leftJoin(
+      'node__field_organisation',
+      'contractor_request_scope',
+      "$base_alias.nid = %alias.entity_id"
+        . ' AND %alias.deleted = 0'
+        . ' AND %alias.field_organisation_target_id IN (:contractor_organisation_ids[])',
+      [
+        ':contractor_organisation_ids[]' => $organisation_ids,
+      ],
+    );
+    $restriction = $query->orConditionGroup()
       ->condition("$data_alias.type", 'service_request', '<>')
-      ->isNotNull("$organisation_alias.entity_id"),
-  );
-  $query->distinct();
+      ->isNotNull("$organisation_alias.entity_id");
+    _markaspot_group_add_node_query_restriction(
+      $query,
+      $base_alias,
+      $restriction,
+    );
+    $query->distinct();
+  }
 }
 
 /**

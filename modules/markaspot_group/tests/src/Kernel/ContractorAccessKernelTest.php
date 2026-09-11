@@ -335,6 +335,30 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     $this->assertFalse($this->organisationBRequest->access('view', $this->contractor));
     $this->assertFalse($this->organisationBRequest->access('update', $this->contractor));
 
+    // A Views-style self-join must scope every alias using the query account,
+    // even when the active account itself has the site bypass.
+    $root = User::load(1);
+    $this->assertInstanceOf(UserInterface::class, $root);
+    $this->container->get('current_user')->setAccount($root);
+    $query = $this->container->get('database')
+      ->select('node_field_data', 'in_scope_request');
+    $foreign_alias = $query->join(
+      'node_field_data',
+      'foreign_request',
+      '%alias.nid = :foreign_request_nid',
+      [':foreign_request_nid' => $this->organisationBRequest->id()],
+    );
+    $query->addField($foreign_alias, 'nid');
+    $query->condition(
+      'in_scope_request.nid',
+      $this->organisationARequest->id(),
+    );
+    $query->addTag('node_access')
+      ->addMetaData('base_table', 'node_field_data')
+      ->addMetaData('account', $this->contractor);
+    $this->assertSame([], $query->execute()->fetchCol());
+    $this->container->get('current_user')->setAccount($this->contractor);
+
     // Simulate recoverable Group mirror drift. The authoritative routing field
     // still points to organisation B, so a stale A relationship must not leak
     // the request into contractor entity queries or Open311 result lists.
