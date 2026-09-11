@@ -1,0 +1,10 @@
+name: Mark-a-Spot Tenant Import
+description: 'Optional Drush tooling for importing tenant configuration during onboarding.'
+type: module
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11
+dependencies:
+  - markaspot:markaspot_group
+  - group:group
+  - drupal:taxonomy
+  - drupal:user
