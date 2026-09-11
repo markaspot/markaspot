@@ -11,6 +11,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -479,8 +480,8 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
    * A staff session cookie does not upgrade a public-proxy request carrying a
    * key. Other visibility modes keep their existing account semantics.
    */
-  protected function requestUsesPublicApiKey(): bool {
-    $request = $this->requestStack?->getCurrentRequest();
+  public function requestUsesPublicApiKey(?Request $request = NULL): bool {
+    $request ??= $this->requestStack?->getCurrentRequest();
     if ($request === NULL) {
       return FALSE;
     }

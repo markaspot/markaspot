@@ -5759,13 +5759,17 @@ function markaspot_group_update_11948(): string {
     $storage_changed = 1;
   }
 
-  node_access_needs_rebuild(TRUE);
+  $rebuild_required = $nodes_touched > 0 || $translations_touched > 0;
+  if ($rebuild_required) {
+    node_access_needs_rebuild(TRUE);
+  }
   $message = sprintf(
-    'Node jurisdiction translation repair: %d nodes and %d translations updated; %d field instances and %d field storage updated; node access rebuild required.',
+    'Node jurisdiction translation repair: %d nodes and %d translations updated; %d field instances and %d field storage updated; node access rebuild %s.',
     $nodes_touched,
     $translations_touched,
     $instances_changed,
     $storage_changed,
+    $rebuild_required ? 'required' : 'not required',
   );
   \Drupal::logger('markaspot_group')->notice($message);
 

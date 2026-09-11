@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Routing\RouteMatch;
 use Drupal\markaspot_group\Access\FormOnlyReportRouteAccessCheck;
@@ -297,11 +298,17 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
     $this->container->get('current_user')->setAccount(
       new AnonymousUserSession(),
     );
+    $context = new RenderContext();
+    $anonymous_ids = $this->container->get('renderer')->executeInRenderContext(
+      $context,
+      fn(): array => $this->visibleRequestIds(),
+    );
     $this->assertSame(
       [$this->requestIds['public']],
-      $this->visibleRequestIds(),
+      $anonymous_ids,
       'Anonymous: public is visible; all other modes are hidden.',
     );
+    $this->assertSame(Cache::PERMANENT, $context->pop()->getCacheMaxAge());
 
     $this->container->get('current_user')->setAccount(
       $this->authenticatedAccount,
@@ -564,9 +571,14 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
     $node->set('field_organisation', ['target_id' => $org->id()])->save();
     $other_id = $this->createRequest('Unassigned private report', [$jurisdiction_id]);
     $this->container->get('current_user')->setAccount($staff);
-    $visible = $this->visibleRequestIds();
+    $context = new RenderContext();
+    $visible = $this->container->get('renderer')->executeInRenderContext(
+      $context,
+      fn(): array => $this->visibleRequestIds(),
+    );
     $this->assertContains((int) $node->id(), $visible);
     $this->assertNotContains($other_id, $visible);
+    $this->assertSame(0, $context->pop()->getCacheMaxAge());
     $this->assertContains((int) $node->id(), $this->aggregateVisibleIds(FALSE));
     $this->assertNotContains($other_id, $this->aggregateVisibleIds(FALSE));
     $handler = WorkspaceVisibilityNodeAccessControlHandler::createInstance(
@@ -704,11 +716,39 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
     finally {
       $stack->pop();
     }
+    $this->container->get('current_user')->setAccount(
+      $this->administratorAccount,
+    );
     $this->assertTrue($visibility->allowsReadFor($this->administratorAccount, $jurisdiction_id));
+    $this->assertSame(
+      [],
+      $visibility->getUnreadableJurisdictionIds($this->administratorAccount),
+    );
+    $this->assertSame(
+      [],
+      $visibility->getUnreadablePageJurisdictionIds($this->administratorAccount),
+    );
+    foreach ($visibility->getReportViewJurisdictionIds($this->administratorAccount) as $view_id) {
+      $this->assertNull(
+        $visibility->getFormOnlyOrganisationScope(
+          $this->administratorAccount,
+          $view_id,
+        ),
+      );
+    }
     $this->assertTrue($global_access->access($this->administratorAccount, Request::create('/api/ai/processing/status'))->isAllowed());
+    $query = $this->container->get('database')
+      ->select('node_field_data', 'n');
+    $query->addField('n', 'nid');
+    $query->addTag('node_access');
+    $query->addMetaData('account', $this->administratorAccount);
+    $query->addMetaData('entity_type', 'node');
     $context = new RenderContext();
-    $this->container->get('renderer')->executeInRenderContext($context, fn(): array => $this->visibleRequestIds());
-    $this->assertSame(0, $context->pop()->getCacheMaxAge());
+    $this->container->get('renderer')->executeInRenderContext(
+      $context,
+      static fn() => markaspot_group_query_node_access_alter($query),
+    );
+    $this->assertTrue($context->isEmpty());
   }
 
   /**

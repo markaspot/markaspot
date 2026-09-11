@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_group\Service;
 
 use Drupal\Core\Session\AccountInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Public contract for workspace visibility decisions.
@@ -82,6 +83,11 @@ interface WorkspaceVisibilityInterface {
    *   NULL for full jurisdiction access, [] for denied, or allowed org IDs.
    */
   public function getFormOnlyOrganisationScope(AccountInterface $account, int $groupId): ?array;
+
+  /**
+   * Whether the current or supplied request uses public API-key credentials.
+   */
+  public function requestUsesPublicApiKey(?Request $request = NULL): bool;
 
   /**
    * Checks report visibility including its responsible organisation.

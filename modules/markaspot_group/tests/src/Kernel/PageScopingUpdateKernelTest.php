@@ -181,11 +181,14 @@ final class PageScopingUpdateKernelTest extends KernelTestBase {
       ->fetchField();
     $this->assertSame(1, (int) $copied_rows);
 
+    node_access_needs_rebuild(FALSE);
+    $this->assertFalse((bool) node_access_needs_rebuild());
     $this->assertSame(
-      'Node jurisdiction translation repair: 0 nodes and 0 translations updated; 0 field instances and 0 field storage updated; node access rebuild required.',
+      'Node jurisdiction translation repair: 0 nodes and 0 translations updated; 0 field instances and 0 field storage updated; node access rebuild not required.',
       markaspot_group_update_11948(),
     );
     $this->assertSame(0, (int) $this->container->get('current_user')->id());
+    $this->assertFalse((bool) node_access_needs_rebuild());
 
     $this->assertSame(
       'Page translation publication settings preserved; no data changes required.',

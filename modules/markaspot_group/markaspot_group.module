@@ -1386,19 +1386,21 @@ function markaspot_group_query_node_access_alter(AlterableInterface $query): voi
   }
   $unreadable_request_ids = $service->getUnreadableJurisdictionIds($account);
   $unreadable_page_ids = $service->getUnreadablePageJurisdictionIds($account);
+  $has_workspace_exclusion = FALSE;
   foreach ($service->getReportViewJurisdictionIds($account) as $jurisdiction_id) {
     $organisation_ids = $service->getFormOnlyOrganisationScope($account, $jurisdiction_id);
     if ($organisation_ids !== NULL && $organisation_ids !== []) {
       _markaspot_group_exclude_unreadable_workspace_nodes($query, [$jurisdiction_id], 'service_request', $organisation_ids);
+      $has_workspace_exclusion = TRUE;
     }
   }
-  _markaspot_group_bubble_workspace_query_cacheability($account);
   if ($unreadable_request_ids !== []) {
     _markaspot_group_exclude_unreadable_workspace_nodes(
       $query,
       $unreadable_request_ids,
       'service_request',
     );
+    $has_workspace_exclusion = TRUE;
   }
   if ($unreadable_page_ids !== []) {
     _markaspot_group_exclude_unreadable_workspace_nodes(
@@ -1406,6 +1408,10 @@ function markaspot_group_query_node_access_alter(AlterableInterface $query): voi
       $unreadable_page_ids,
       'page',
     );
+    $has_workspace_exclusion = TRUE;
+  }
+  if ($has_workspace_exclusion) {
+    _markaspot_group_bubble_workspace_query_cacheability($account);
   }
 }
 
@@ -1433,18 +1439,21 @@ function _markaspot_group_bubble_workspace_query_cacheability(AccountInterface $
       . $account_id;
   }
 
+  /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $visibility */
   $visibility = \Drupal::service('markaspot_group.workspace_visibility');
-  $has_form_only = FALSE;
+  $request_dependent = $visibility->requestUsesPublicApiKey();
   foreach ($visibility->getRestrictedJurisdictionIds() as $id) {
-    if ($visibility->getVisibility($id) === 'form_only') {
-      $has_form_only = TRUE;
+    $scope = $visibility->getFormOnlyOrganisationScope($account, $id);
+    if ($visibility->getVisibility($id) === 'form_only'
+      && $scope !== NULL && $scope !== []) {
+      $request_dependent = TRUE;
       break;
     }
   }
   $build = [
     '#cache' => [
       'contexts' => ['user'],
-      'max-age' => $has_form_only ? 0 : Cache::PERMANENT,
+      'max-age' => $request_dependent ? 0 : Cache::PERMANENT,
       'tags' => $tags,
     ],
   ];

@@ -17,13 +17,6 @@ final class FormOnlyReportRouteSubscriber extends RouteSubscriberBase {
    */
   protected function alterRoutes(RouteCollection $collection): void {
     foreach ([
-      'markaspot_service_provider.response_form',
-      'markaspot_service_provider.rest_update',
-      'markaspot_service_provider.rest_get',
-      'markaspot_service_provider.rest_auth',
-      'markaspot_feedback.form',
-      'markaspot_feedback.rest',
-      'markaspot_feedback.get',
       'markaspot_nuxt.vote_sum',
       'markaspot_ai.sentiment_analyze',
     ] as $name) {

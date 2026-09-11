@@ -33,7 +33,7 @@ class FormOnlyReportRouteSubscriberTest extends UnitTestCase {
     }
     $subscriber = new FormOnlyReportRouteSubscriber();
     (new \ReflectionMethod($subscriber, 'alterRoutes'))->invoke($subscriber, $collection);
-    $protected = [
+    $token_authenticated = [
       'markaspot_service_provider.response_form',
       'markaspot_service_provider.rest_update',
       'markaspot_service_provider.rest_get',
@@ -41,6 +41,8 @@ class FormOnlyReportRouteSubscriberTest extends UnitTestCase {
       'markaspot_feedback.form',
       'markaspot_feedback.rest',
       'markaspot_feedback.get',
+    ];
+    $protected = [
       'markaspot_nuxt.vote_sum',
       'markaspot_ai.sentiment_analyze',
     ];
@@ -51,6 +53,8 @@ class FormOnlyReportRouteSubscriberTest extends UnitTestCase {
       'markaspot_ai.attributes.status',
       'markaspot_ai.attributes.queue',
     ];
+    $actual_protected = [];
+    $actual_global = [];
     foreach ($collection as $name => $route) {
       $expected = $original[$name]->getRequirements();
       if (in_array($name, $protected, TRUE)) {
@@ -62,9 +66,23 @@ class FormOnlyReportRouteSubscriberTest extends UnitTestCase {
       $this->assertSame($expected, $route->getRequirements(), $name);
       $this->assertSame($original[$name]->getMethods(), $route->getMethods(), $name);
       $this->assertSame($original[$name]->getDefaults(), $route->getDefaults(), $name);
+      if ($route->getRequirement('_form_only_report_access') === 'TRUE') {
+        $actual_protected[] = $name;
+      }
+      if ($route->getRequirement('_form_only_global_report_access') === 'TRUE') {
+        $actual_global[] = $name;
+      }
     }
-    foreach (array_merge($protected, $global) as $name) {
+    $this->assertSame($protected, $actual_protected);
+    $this->assertSame($global, $actual_global);
+    foreach (array_merge($token_authenticated, $protected, $global) as $name) {
       $this->assertNotNull($collection->get($name), $name);
+    }
+    foreach ($token_authenticated as $name) {
+      $this->assertNull(
+        $collection->get($name)?->getRequirement('_form_only_report_access'),
+        $name,
+      );
     }
   }
 
