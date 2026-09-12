@@ -1,0 +1,187 @@
+{
+  "$comment": "Mark-a-Spot Mandantenkonfiguration v1. Wird vom Drush-Befehl mas:tenant:import eingelesen und ergaenzt jurisdiction-config.json (Branding/Features) in markaspot-cloud/setup/<tenant>/. Idempotenz-Schluessel: categories.code, statuses.name, organisations.code, users.email.",
+  "version": 1,
+  "tenant": {
+    "slug": "erfurt",
+    "label": "Landeshauptstadt Erfurt",
+    "short_name": "Erfurt",
+    "platform_name": "Mängelmelder Erfurt",
+    "email": "maengelmelder@erfurt.de",
+    "address": "Fischmarkt 1, 99084 Erfurt",
+    "languages": [
+      "de"
+    ],
+    "contact": {
+      "name": "Erika Muster",
+      "email": "erika.muster@erfurt.de",
+      "phone": "+49 361 0000",
+      "unit": "Amt für Digitalisierung"
+    },
+    "map_center_address": "Fischmarkt 1, 99084 Erfurt",
+    "primary_color": "#1F3E5D",
+    "logo_file": "logos/erfurt.svg",
+    "custom_domain": "maengelmelder.erfurt.de",
+    "legal_notice_url": "https://www.erfurt.de/impressum",
+    "privacy_policy_url": "https://www.erfurt.de/datenschutz",
+    "features": {
+      "aiAnalysis": true,
+      "publicReports": true,
+      "statistics": true
+    }
+  },
+  "organisations": [
+    {
+      "code": "TBA",
+      "name": "Tiefbau- und Verkehrsamt",
+      "email": "tiefbau@erfurt.de",
+      "type": "internal",
+      "parent_code": null
+    },
+    {
+      "code": "GFA",
+      "name": "Garten- und Friedhofsamt",
+      "email": "gruen@erfurt.de",
+      "type": "internal",
+      "parent_code": null
+    },
+    {
+      "code": "SWE",
+      "name": "Stadtwerke Erfurt (Beleuchtung)",
+      "email": "stoerung@stadtwerke-erfurt.de",
+      "type": "contractor",
+      "parent_code": null
+    }
+  ],
+  "categories": [
+    {
+      "code": "1",
+      "name": "Straßen und Wege",
+      "parent_code": null,
+      "description": "",
+      "hex": "#1F3E5D",
+      "icon": "i-lucide-route",
+      "organisation_code": null,
+      "active": true
+    },
+    {
+      "code": "1.1",
+      "name": "Schlagloch / Straßenschaden",
+      "parent_code": "1",
+      "description": "Schäden an der Fahrbahn, lose Pflastersteine, Absackungen.",
+      "hex": "#8B0000",
+      "icon": "i-lucide-construction",
+      "organisation_code": "TBA",
+      "active": true
+    },
+    {
+      "code": "1.4",
+      "name": "Straßenbeleuchtung",
+      "parent_code": "1",
+      "description": "Defekte oder dauerhaft leuchtende Straßenlaternen.",
+      "hex": "#E69F00",
+      "icon": "i-lucide-lightbulb",
+      "organisation_code": "SWE",
+      "active": true,
+      "attributes": [
+        {
+          "code": "lamp_number",
+          "datatype": "string",
+          "required": false,
+          "description": "Nummer der Laterne (am Mast)"
+        }
+      ]
+    },
+    {
+      "code": "3",
+      "name": "Grün und Spielplätze",
+      "parent_code": null,
+      "description": "",
+      "hex": "#1F3E5D",
+      "icon": "i-lucide-trees",
+      "organisation_code": null,
+      "active": true
+    },
+    {
+      "code": "3.2",
+      "name": "Baum",
+      "parent_code": "3",
+      "description": "Astbruch, kranke oder umgestürzte Bäume, Gefahr durch Bäume.",
+      "hex": "#2E8B57",
+      "icon": "i-lucide-tree-pine",
+      "organisation_code": "GFA",
+      "active": true
+    }
+  ],
+  "statuses": [
+    {
+      "name": "Erfasst",
+      "kind": "initial",
+      "open311": "open",
+      "hex": "#0072B2",
+      "icon": "i-lucide-plus-circle",
+      "notify_citizen": true,
+      "description": "Meldung ist eingegangen und wartet auf Sichtung.",
+      "weight": 0
+    },
+    {
+      "name": "In Bearbeitung",
+      "kind": "open",
+      "open311": "open",
+      "hex": "#E69F00",
+      "icon": "i-lucide-clock",
+      "notify_citizen": true,
+      "description": "Meldung wurde geprüft und wird bearbeitet.",
+      "weight": 1
+    },
+    {
+      "name": "Erledigt",
+      "kind": "closed",
+      "open311": "closed",
+      "hex": "#009E73",
+      "icon": "i-lucide-check",
+      "notify_citizen": true,
+      "description": "Das Anliegen wurde behoben.",
+      "weight": 3
+    },
+    {
+      "name": "Archiviert",
+      "kind": "archived",
+      "open311": "closed",
+      "hex": "#B0B0B0",
+      "icon": "i-lucide-archive",
+      "notify_citizen": false,
+      "description": "Abgeschlossene Meldung nach Ablauf der Aufbewahrungsfrist.",
+      "weight": 5
+    }
+  ],
+  "users": [
+    {
+      "email": "erika.muster@erfurt.de",
+      "first_name": "Erika",
+      "last_name": "Muster",
+      "role": "tenant_admin",
+      "organisation_code": null
+    },
+    {
+      "email": "max.beispiel@erfurt.de",
+      "first_name": "Max",
+      "last_name": "Beispiel",
+      "role": "moderator",
+      "organisation_code": null
+    },
+    {
+      "email": "lampen@stadtwerke-erfurt.de",
+      "first_name": "Störungsdienst",
+      "last_name": "Stadtwerke",
+      "role": "org_member",
+      "organisation_code": "SWE"
+    },
+    {
+      "email": "presse@erfurt.de",
+      "first_name": "Pressestelle",
+      "last_name": "Erfurt",
+      "role": "editorial",
+      "organisation_code": null
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+services:
+  markaspot_tenant_import.tenant_importer:
+    class: Drupal\markaspot_tenant_import\Service\TenantImporter
+    arguments: ['@entity_type.manager', '@entity_field.manager', '@markaspot_group.hierarchy_resolver', '@database', '@markaspot_tenant_import.tenant_config_validator', '@markaspot_tenant_import.tenant_import_field_mapper', '@password_generator', '@lock']
+  markaspot_tenant_import.tenant_config_validator:
+    class: Drupal\markaspot_tenant_import\Service\TenantConfigValidator
+    arguments: ['@email.validator']
+  markaspot_tenant_import.tenant_import_field_mapper:
+    class: Drupal\markaspot_tenant_import\Service\TenantImportFieldMapper
