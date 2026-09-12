@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.191](https://github.com/markaspot/markaspot/compare/11.9.190...11.9.191) (2026-09-12)
+
+### Features
+
+* add mas:tenant:import drush command ([abd684d](https://github.com/markaspot/markaspot/commit/abd684d6928e4ef2551694b3dd4654a60dcd699f))
+
+### Bug Fixes
+
+* **group:** align node access query alter with core base-table rules ([33eee50](https://github.com/markaspot/markaspot/commit/33eee50fda3b37eb94a262d0d2175f3806fdc40e))
+* **group:** scope form-only access checks to the requested workspace ([adcc27f](https://github.com/markaspot/markaspot/commit/adcc27f6b933acb9790d7d5a2305c2a98704cfd1))
+* **tenant-import:** preserve live data and harden safety paths ([8393d4e](https://github.com/markaspot/markaspot/commit/8393d4e237a5e7609b1f67654f4d87d83831200d))
+* **tests:** repair the profile test gate and add a phpunit testsuite ([42347b2](https://github.com/markaspot/markaspot/commit/42347b2d5bdae04bbe687aa2cea50efab4b81d24))
+
 ## [11.9.190](https://github.com/markaspot/markaspot/compare/11.9.189...11.9.190) (2026-09-09)
 
 ### Features
