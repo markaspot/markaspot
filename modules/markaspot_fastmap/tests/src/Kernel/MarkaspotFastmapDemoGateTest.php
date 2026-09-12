@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Kernel;
 
-use Symfony\Component\HttpFoundation\Request;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 use Drupal\Tests\node\Traits\NodeCreationTrait;
 use Drupal\Tests\user\Traits\UserCreationTrait;
@@ -17,6 +18,7 @@ use Drupal\node\Entity\Node;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Kernel test for the GDPR demo-compliance gate in hook_node_presave().
@@ -72,8 +74,22 @@ class MarkaspotFastmapDemoGateTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+    $container->register('markaspot_nuxt.feature_scope_resolver', FeatureScopeResolver::class)
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp(): void {
     parent::setUp();
+
+    $feature_scope_resolver = $this->createMock(FeatureScopeResolver::class);
+    $feature_scope_resolver->method('isSelfServicePlatform')->willReturn(FALSE);
+    $this->container->set('markaspot_nuxt.feature_scope_resolver', $feature_scope_resolver);
 
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');

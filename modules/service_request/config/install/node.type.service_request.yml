@@ -4,9 +4,6 @@ dependencies:
   enforced:
     module:
       - service_request
-    enforced:
-      module:
-        - service_request
 name: 'Service Request'
 type: service_request
 description: 'Open311 Service Requests'
