@@ -192,6 +192,28 @@ final class TenantConfigValidator {
   }
 
   /**
+   * Reports tenant properties that are valid source data but are not imported.
+   *
+   * @return string[]
+   *   One operator-facing notice per unsupported tenant property.
+   */
+  public function notices(array $configuration): array {
+    $tenant = $configuration['tenant'] ?? [];
+    if (!is_array($tenant) || array_is_list($tenant)) {
+      return [];
+    }
+
+    $notices = [];
+    foreach (array_diff(array_keys($tenant), self::STRINGS['tenant']) as $key) {
+      $notices[] = sprintf(
+        'tenant.%s: not imported by this command',
+        (string) $key,
+      );
+    }
+    return $notices;
+  }
+
+  /**
    * Validates only supported v1 attributes; unknown properties are discarded.
    *
    * @return string[]

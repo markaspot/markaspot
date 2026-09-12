@@ -17,12 +17,15 @@ wieder deaktiviert werden. Die importierten Inhalte bleiben dabei erhalten.
 
 `mas:tenant:import` imports version 1 JSON into an existing jurisdiction. The
 explicit group ID selects the target; the plan displays its label and warns when
-the JSON slug differs. It does not rename the jurisdiction or change its slug.
+the JSON slug differs only when `--allow-slug-mismatch` is present. By default,
+a mismatch with the target's `field_slug` is rejected. The command never
+renames the jurisdiction or changes its slug.
 
 ```sh
 drush mas:tenant:import /path/tenant-config.json --jurisdiction=1
 drush mas:tenant:import /path/tenant-config.json --jurisdiction=1 --apply
 drush mas:tenant:import /path/tenant-config.json --jurisdiction=1 --apply --skip=users
+drush mas:tenant:import /path/tenant-config.json --jurisdiction=1 --apply --allow-slug-mismatch
 ```
 
 Without `--apply`, the command validates the file and prints a plan without
@@ -42,7 +45,11 @@ accounts are reported as `blocked, membership skipped` and are not modified.
 Existing UID 1, administrators and accounts belonging to jurisdictions outside
 the target root are rejected by default. `--allow-cross-tenant-users` explicitly
 overrides this guard only; it never renames or unblocks an account. The plan
-reports `member of N other jurisdictions` when this option is used.
+reports `member of N other jurisdictions` when this option is used. Accounts
+with unexpected Drupal roles, `field_all_groups_member`, or the `administer
+nodes` permission are privileged too. Privileged and cross-root accounts never
+receive profile changes. Other existing accounts only receive first or last
+names when the corresponding stored field is empty.
 In form-only tenants, `org_member` alone is not sufficient for report visibility:
 `org-moderator` or `contractor` is additionally required. The plan points this
 out but the importer does not grant either role.
@@ -112,6 +119,10 @@ separate negative test deliberately removes that parent to test validation.
 The v1 attribute whitelist is `code`, `datatype`, `description`, `required`,
 `variable`, `order`, `values`, and `media_type`. Unknown keys are discarded, not
 stored as unchecked JSON. Values retain only their `key` and `name` properties.
+On existing categories, imported attributes are merged by code. Existing
+attribute keys such as `media_group` and existing attributes omitted from the
+JSON are preserved. A non-empty stored definition is never replaced by an empty
+one. Unsupported tenant properties are listed as skipped notice rows.
 Strings are capped at 255 characters, emails at 254 and codes at 32; installed
 field storage can impose a stricter code limit, which is checked before writes.
 

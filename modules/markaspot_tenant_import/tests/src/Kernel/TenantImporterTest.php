@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_tenant_import\Kernel;
 
+use Drupal\Core\Lock\DatabaseLockBackend;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -49,6 +50,7 @@ final class TenantImporterTest extends KernelTestBase {
     'group',
     'markaspot_group',
     'markaspot_tenant_import',
+    'markaspot_tenant_import_test',
   ];
 
   /**
@@ -120,10 +122,15 @@ final class TenantImporterTest extends KernelTestBase {
 
     $this->createModelFields();
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+    $this->container->set(
+      'lock',
+      new DatabaseLockBackend($this->container->get('database')),
+    );
 
     $this->jurisdiction = Group::create([
       'type' => 'jur',
       'label' => 'Fresh jurisdiction',
+      'field_slug' => 'erfurt',
     ]);
     $this->jurisdiction->save();
     $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
@@ -241,7 +248,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertSame([], $second['errors']);
     $this->assertNotEmpty($second['rows']);
     $this->assertSame(
-      ['unchanged'],
+      ['skip', 'unchanged'],
       array_values(array_unique(array_column($second['rows'], 'action'))),
       (string) json_encode($second['rows'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
     );
@@ -317,18 +324,26 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertTrue($account->isBlocked());
     $this->assertSame('Existing login', $account->getAccountName());
     $account->activate()->save();
-    $this->jurisdiction->addRelationship($account, 'group_membership', ['group_roles' => ['jur-editorial']])->save();
+    $this->jurisdiction->addRelationship($account, 'group_membership', ['group_roles' => ['jur-editorial']]);
     $result = $this->importer->import($configuration, $id, $skip, TRUE);
     $this->assertSame([], $result['errors']);
     $account = User::load($account->id());
     $this->assertSame('Existing login', $account->getAccountName());
     $this->assertSame(strtoupper($row['email']), $account->getEmail());
+    $this->assertSame($row['first_name'], $account->get('field_first_name')->getString());
+    $this->assertSame($row['last_name'], $account->get('field_last_name')->getString());
     $this->assertEqualsCanonicalizing(['jur-editorial', 'jur-moderator'], $this->storedMembershipRoles($this->jurisdiction, $account));
     $this->assertStringNotContainsString($row['first_name'], json_encode($result['rows']));
     $this->assertStringNotContainsString($row['last_name'], json_encode($result['rows']));
-    $again = $this->importer->import($configuration, $id, $skip);
+    $configuration['users'][0]['first_name'] = 'Replacement';
+    $configuration['users'][0]['last_name'] = 'Name';
+    $again = $this->importer->import($configuration, $id, $skip, TRUE);
     $userRows = array_values(array_filter($again['rows'], static fn(array $row): bool => $row['entity'] === 'user'));
     $this->assertSame('unchanged', $userRows[0]['action']);
+    $account = User::load($account->id());
+    $this->assertInstanceOf(UserInterface::class, $account);
+    $this->assertSame($row['first_name'], $account->get('field_first_name')->getString());
+    $this->assertSame($row['last_name'], $account->get('field_last_name')->getString());
   }
 
   /**
@@ -383,7 +398,7 @@ final class TenantImporterTest extends KernelTestBase {
     $jurisdiction->set('field_service_statuses', []);
     $jurisdiction->save();
     $result = $this->importer->import($configuration, $id, [], TRUE);
-    $this->assertSame(['unchanged'], array_values(array_unique(array_column($result['rows'], 'action'))));
+    $this->assertSame(['skip', 'unchanged'], array_values(array_unique(array_column($result['rows'], 'action'))));
     $jurisdiction = Group::load($id);
     $this->assertTrue($jurisdiction->get('field_service_categories')->isEmpty());
     $this->assertTrue($jurisdiction->get('field_service_statuses')->isEmpty());
@@ -394,7 +409,7 @@ final class TenantImporterTest extends KernelTestBase {
     $term = $this->loadCategory('1.4');
     $this->assertNotContains((int) $term->id(), array_map('intval', array_column(Group::load($id)->get('field_service_categories')->getValue(), 'target_id')));
     $this->assertTrue($this->loadOrganisation('SWE')->get('field_service_categories')->isEmpty());
-    $this->assertSame(['unchanged'], array_values(array_unique(array_column($this->importer->import($configuration, $id)['rows'], 'action'))));
+    $this->assertSame(['skip', 'unchanged'], array_values(array_unique(array_column($this->importer->import($configuration, $id)['rows'], 'action'))));
 
     $configuration['organisations'][0]['name'] = 'Skipped change';
     $configuration['categories'][1]['name'] = 'Updated category';
@@ -506,7 +521,762 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertSame((int) $this->loadOrganisation('TBA')->id(), (int) $this->loadCategory('1.1')->get('field_category_gid')->target_id);
     $this->assertSame((int) $this->loadCategory('1')->id(), (int) $this->loadCategory('1.1')->get('parent')->target_id);
     $this->assertSame((int) $this->loadOrganisation('TBA')->id(), (int) $this->loadOrganisation('SWE')->get('field_parent_org')->target_id);
-    $this->assertSame(['unchanged'], array_values(array_unique(array_column($this->importer->import($configuration, $id)['rows'], 'action'))));
+    $this->assertSame(['skip', 'unchanged'], array_values(array_unique(array_column($this->importer->import($configuration, $id)['rows'], 'action'))));
+  }
+
+  /**
+   * Merges imported attributes without deleting UI-maintained definition data.
+   */
+  public function testServiceDefinitionsMergeOnReimport(): void {
+    $configuration = $this->exampleConfiguration();
+    $id = (int) $this->jurisdiction->id();
+    $this->assertSame([], $this->importer->import($configuration, $id, [], TRUE)['errors']);
+
+    $streetlight = $this->loadCategory('1.4');
+    $definition = json_decode(
+      (string) $streetlight->get('field_service_definition')->value,
+      TRUE,
+      512,
+      JSON_THROW_ON_ERROR,
+    );
+    $definition['attributes'][0]['description'] = 'Changed in the UI';
+    $definition['attributes'][0]['media_group'] = 'streetlights';
+    $definition['attributes'][0]['ui_only'] = 'keep';
+    $definition['attributes'][] = [
+      'code' => 'ui_attribute',
+      'datatype' => 'string',
+      'description' => 'Maintained only in Drupal',
+      'custom_setting' => TRUE,
+    ];
+    $streetlight->set('field_service_definition', [
+      'value' => json_encode($definition, JSON_THROW_ON_ERROR),
+      'format' => 'plain_text',
+    ])->save();
+
+    $road = $this->loadCategory('1.1');
+    $roadDefinition = '{"attributes":[{"code":"ui_only","datatype":"string","media_group":"roads"}]}';
+    $road->set('field_service_definition', [
+      'value' => $roadDefinition,
+      'format' => 'plain_text',
+    ])->save();
+    $configuration['categories'][2]['attributes'][0]['description'] = 'Imported description wins';
+
+    $result = $this->importer->import($configuration, $id, [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $this->container->get('entity_type.manager')->getStorage('taxonomy_term')->resetCache();
+    $definition = json_decode(
+      (string) $this->loadCategory('1.4')->get('field_service_definition')->value,
+      TRUE,
+      512,
+      JSON_THROW_ON_ERROR,
+    );
+    $this->assertSame('Imported description wins', $definition['attributes'][0]['description']);
+    $this->assertSame('streetlights', $definition['attributes'][0]['media_group']);
+    $this->assertSame('keep', $definition['attributes'][0]['ui_only']);
+    $this->assertSame('ui_attribute', $definition['attributes'][1]['code']);
+    $this->assertTrue($definition['attributes'][1]['custom_setting']);
+    $this->assertSame(
+      $roadDefinition,
+      (string) $this->loadCategory('1.1')->get('field_service_definition')->value,
+    );
+  }
+
+  /**
+   * Rejects a foreign tenant slug unless the explicit override is provided.
+   */
+  public function testSlugMismatchRequiresExplicitOverride(): void {
+    $configuration = $this->exampleConfiguration();
+    $this->jurisdiction->set('field_slug', 'another-tenant')->save();
+    $id = (int) $this->jurisdiction->id();
+
+    try {
+      $this->importer->import($configuration, $id);
+      $this->fail('A slug mismatch must fail by default.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString(
+        '--allow-slug-mismatch',
+        implode(' ', $exception->getErrors()),
+      );
+    }
+    $result = $this->importer->import(
+      $configuration,
+      $id,
+      [],
+      TRUE,
+      FALSE,
+      FALSE,
+      TRUE,
+    );
+    $this->assertSame([], $result['errors']);
+    $this->assertSame(
+      'another-tenant',
+      Group::load($id)->get('field_slug')->getString(),
+    );
+    $this->assertStringContainsString(
+      'slug mismatch explicitly allowed',
+      json_encode($result['rows'], JSON_THROW_ON_ERROR),
+    );
+  }
+
+  /**
+   * Rejects usernames that cannot be created and validates users before save.
+   */
+  public function testNewUserPreflightAndEntityValidation(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [$configuration['users'][1]];
+    $skip = ['organisations', 'categories', 'statuses'];
+    $id = (int) $this->jurisdiction->id();
+
+    $configuration['users'][0]['email'] = str_repeat('a', 50) . '@example.com';
+    try {
+      $this->importer->import($configuration, $id, $skip);
+      $this->fail('An overlong new username must fail preflight.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString(
+        'users[0].email exceeds installed username maximum of 60',
+        implode(' ', $exception->getErrors()),
+      );
+    }
+
+    $configuration['users'][0]['email'] = 'new@example.com';
+    User::create([
+      'name' => 'new@example.com',
+      'mail' => 'different@example.com',
+      'status' => 1,
+    ])->save();
+    try {
+      $this->importer->import($configuration, $id, $skip);
+      $this->fail('An existing username must fail preflight.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString(
+        'users[0].email cannot be used as a username',
+        implode(' ', $exception->getErrors()),
+      );
+    }
+
+    $configuration['users'][0]['email'] = 'valid-new@example.com';
+    $configuration['users'][0]['first_name'] = str_repeat('x', 40);
+    $result = $this->importer->import($configuration, $id, $skip, TRUE);
+    $this->assertNotEmpty($result['errors']);
+    $this->assertStringContainsString(
+      'users[0] failed validation',
+      implode(' ', $result['errors']),
+    );
+    $this->assertSame([], $this->container->get('entity_type.manager')
+      ->getStorage('user')
+      ->loadByProperties(['mail' => 'valid-new@example.com']));
+  }
+
+  /**
+   * Creates jurisdiction memberships with roles on the first and only save.
+   */
+  public function testMembershipRolesExistOnInsert(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [$configuration['users'][1]];
+    $this->container->get('state')->delete(
+      'markaspot_tenant_import_test.empty_jurisdiction_roles_on_insert',
+    );
+    $result = $this->importer->import(
+      $configuration,
+      (int) $this->jurisdiction->id(),
+      ['organisations', 'categories', 'statuses'],
+      TRUE,
+    );
+    $this->assertSame([], $result['errors']);
+    $this->assertFalse($this->container->get('state')->get(
+      'markaspot_tenant_import_test.empty_jurisdiction_roles_on_insert',
+      FALSE,
+    ));
+  }
+
+  /**
+   * Protects unexpected-role and all-groups accounts and their profile fields.
+   */
+  public function testExpandedPrivilegedAccountGuards(): void {
+    Role::create(['id' => 'api_editor', 'label' => 'API editor'])->save();
+    $accounts = [
+      User::create([
+        'name' => 'API editor',
+        'mail' => 'api-editor@example.com',
+        'status' => 1,
+        'roles' => ['api_editor'],
+        'field_first_name' => 'Protected',
+        'field_last_name' => 'API',
+      ]),
+      User::create([
+        'name' => 'All groups',
+        'mail' => 'all-groups@example.com',
+        'status' => 1,
+        'field_all_groups_member' => TRUE,
+        'field_first_name' => 'Protected',
+        'field_last_name' => 'Groups',
+      ]),
+    ];
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [$configuration['users'][1]];
+    $skip = ['organisations', 'categories', 'statuses'];
+    $id = (int) $this->jurisdiction->id();
+
+    foreach ($accounts as $account) {
+      $account->save();
+      $configuration['users'][0]['email'] = $account->getEmail();
+      try {
+        $this->importer->import($configuration, $id, $skip);
+        $this->fail('A privileged account must require the override.');
+      }
+      catch (TenantImportValidationException $exception) {
+        $this->assertStringContainsString(
+          '--allow-cross-tenant-users',
+          implode(' ', $exception->getErrors()),
+        );
+      }
+      $result = $this->importer->import(
+        $configuration,
+        $id,
+        $skip,
+        TRUE,
+        FALSE,
+        TRUE,
+      );
+      $this->assertSame([], $result['errors']);
+      $reloaded = User::load($account->id());
+      $this->assertInstanceOf(UserInterface::class, $reloaded);
+      $this->assertSame('Protected', $reloaded->get('field_first_name')->getString());
+      $this->assertNotSame(
+        $configuration['users'][0]['last_name'],
+        $reloaded->get('field_last_name')->getString(),
+      );
+      $this->assertStringContainsString(
+        'profile not changed',
+        json_encode($result['rows'], JSON_THROW_ON_ERROR),
+      );
+    }
+  }
+
+  /**
+   * Reconciles the Drupal tenant_admin role from an existing membership.
+   */
+  public function testExistingTenantAdminRoleDriftIsReconciled(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [$configuration['users'][0]];
+    $email = $configuration['users'][0]['email'];
+    $account = User::create([
+      'name' => $email,
+      'mail' => $email,
+      'status' => 1,
+    ]);
+    $account->save();
+    $this->jurisdiction->addRelationship(
+      $account,
+      'group_membership',
+      ['group_roles' => ['jur-member', 'jur-tenant_admin']],
+    );
+    $account = User::load($account->id());
+    $this->assertInstanceOf(UserInterface::class, $account);
+    $this->assertTrue($account->hasRole('tenant_admin'));
+    $account->removeRole('tenant_admin')->save();
+
+    $skip = ['organisations', 'categories', 'statuses'];
+    $id = (int) $this->jurisdiction->id();
+    $plan = $this->importer->import($configuration, $id, $skip);
+    $userRows = array_values(array_filter(
+      $plan['rows'],
+      static fn(array $row): bool => $row['entity'] === 'user',
+    ));
+    $this->assertSame('update', $userRows[0]['action']);
+    $this->assertStringContainsString(
+      'Drupal tenant_admin role sync',
+      $userRows[0]['reason'],
+    );
+
+    $result = $this->importer->import($configuration, $id, $skip, TRUE);
+    $this->assertSame([], $result['errors']);
+    $account = User::load($account->id());
+    $this->assertInstanceOf(UserInterface::class, $account);
+    $this->assertTrue($account->hasRole('tenant_admin'));
+    $second = $this->importer->import($configuration, $id, $skip);
+    $userRows = array_values(array_filter(
+      $second['rows'],
+      static fn(array $row): bool => $row['entity'] === 'user',
+    ));
+    $this->assertSame('unchanged', $userRows[0]['action']);
+  }
+
+  /**
+   * Makes inherited-selection writes visible in the dry-run plan.
+   */
+  public function testInheritedSelectionFreezeIsPlanned(): void {
+    $configuration = $this->exampleConfiguration();
+    $id = (int) $this->jurisdiction->id();
+    $plan = $this->importer->import($configuration, $id);
+    $selectionRows = array_values(array_filter(
+      $plan['rows'],
+      static fn(array $row): bool => $row['entity'] === 'jurisdiction'
+        && in_array($row['key'], [
+          'field_service_categories',
+          'field_service_statuses',
+        ], TRUE),
+    ));
+    $this->assertCount(2, $selectionRows);
+    $this->assertSame(['update', 'update'], array_column($selectionRows, 'action'));
+    $this->assertStringContainsString(
+      'freezes the inherited category set',
+      $selectionRows[0]['reason'],
+    );
+    $this->assertStringContainsString(
+      'freezes the inherited status set',
+      $selectionRows[1]['reason'],
+    );
+
+    $this->assertSame([], $this->importer->import($configuration, $id, [], TRUE)['errors']);
+    $second = $this->importer->import($configuration, $id);
+    $this->assertSame([], array_values(array_filter(
+      $second['rows'],
+      static fn(array $row): bool => $row['entity'] === 'jurisdiction'
+        && in_array($row['key'], [
+          'field_service_categories',
+          'field_service_statuses',
+        ], TRUE),
+    )));
+  }
+
+  /**
+   * Lists every unsupported tenant property as an explicit skipped notice.
+   */
+  public function testUnknownTenantKeysAreReportedAsNotices(): void {
+    $result = $this->importer->import(
+      $this->exampleConfiguration(),
+      (int) $this->jurisdiction->id(),
+    );
+    $rows = array_values(array_filter(
+      $result['rows'],
+      static fn(array $row): bool => $row['entity'] === 'tenant',
+    ));
+    $this->assertSame([
+      'tenant.short_name',
+      'tenant.languages',
+      'tenant.contact',
+      'tenant.map_center_address',
+      'tenant.primary_color',
+      'tenant.logo_file',
+      'tenant.custom_domain',
+      'tenant.legal_notice_url',
+      'tenant.privacy_policy_url',
+      'tenant.features',
+    ], array_column($rows, 'key'));
+    $this->assertSame(array_fill(0, 10, 'skip'), array_column($rows, 'action'));
+    foreach ($rows as $row) {
+      $this->assertSame(
+        $row['key'] . ': not imported by this command',
+        $row['reason'],
+      );
+    }
+  }
+
+  /**
+   * Uses the production category and organisation code storage limits.
+   */
+  public function testInstalledCodeLengthLimitsAreEnforced(): void {
+    $configuration = $this->exampleConfiguration();
+    $organisationCode = str_repeat('o', 17);
+    $categoryCode = str_repeat('c', 13);
+    $configuration['organisations'][0]['code'] = $organisationCode;
+    $configuration['categories'][1]['organisation_code'] = $organisationCode;
+    $configuration['categories'][0]['code'] = $categoryCode;
+    $configuration['categories'][1]['parent_code'] = $categoryCode;
+    $configuration['categories'][2]['parent_code'] = $categoryCode;
+
+    try {
+      $this->importer->import(
+        $configuration,
+        (int) $this->jurisdiction->id(),
+      );
+      $this->fail('Installed code limits must be checked before writes.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $errors = implode(' ', $exception->getErrors());
+      $this->assertStringContainsString(
+        'organisations[0].code exceeds installed field maximum of 16',
+        $errors,
+      );
+      $this->assertStringContainsString(
+        'categories[0].code exceeds installed field maximum of 12',
+        $errors,
+      );
+    }
+  }
+
+  /**
+   * Rolls back every entity when one apply-time save fails.
+   */
+  public function testApplyFailureRollsBackAllCreatedEntities(): void {
+    $this->container->get('state')->set(
+      'markaspot_tenant_import_test.fail_status',
+      'In Bearbeitung',
+    );
+    $result = $this->importer->import(
+      $this->exampleConfiguration(),
+      (int) $this->jurisdiction->id(),
+      [],
+      TRUE,
+    );
+    $this->container->get('state')->delete(
+      'markaspot_tenant_import_test.fail_status',
+    );
+
+    $this->assertNotEmpty($result['errors']);
+    $this->assertFalse($result['created_terms']);
+    $this->assertSame([], array_intersect(
+      ['create', 'update', 'error'],
+      array_column($result['rows'], 'action'),
+    ));
+    $rolledBack = array_filter(
+      $result['rows'],
+      static fn(array $row): bool => str_starts_with(
+        $row['reason'],
+        'Transaction rolled back after application errors. ',
+      ),
+    );
+    $this->assertNotEmpty($rolledBack);
+    $this->assertSame(
+      array_fill(0, count($rolledBack), 'skip'),
+      array_column($rolledBack, 'action'),
+    );
+
+    $entityTypeManager = $this->container->get('entity_type.manager');
+    foreach (['group', 'taxonomy_term', 'user', 'group_relationship'] as $type) {
+      $entityTypeManager->getStorage($type)->resetCache();
+    }
+    $organisationIds = $entityTypeManager->getStorage('group')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'org')
+      ->execute();
+    $termIds = $entityTypeManager->getStorage('taxonomy_term')->getQuery()
+      ->accessCheck(FALSE)
+      ->execute();
+    $userIds = $entityTypeManager->getStorage('user')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('uid', 1, '>')
+      ->execute();
+    $membershipIds = $entityTypeManager->getStorage('group_relationship')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->execute();
+    $this->assertSame([], array_values($organisationIds));
+    $this->assertSame([], array_values($termIds));
+    $this->assertSame([], array_values($userIds));
+    $this->assertSame([], array_values($membershipIds));
+  }
+
+  /**
+   * Sends one password-reset message per created user and never on re-import.
+   */
+  public function testPasswordResetMailsAreSentOnlyForCreatedUsers(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [$configuration['users'][1]];
+    $skip = ['organisations', 'categories', 'statuses'];
+    $id = (int) $this->jurisdiction->id();
+
+    try {
+      $this->importer->import($configuration, $id, $skip, FALSE, TRUE);
+      $this->fail('--send-mails without --apply must fail.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertContains(
+        '--send-mails can only be used together with --apply.',
+        $exception->getErrors(),
+      );
+    }
+
+    $this->config('system.site')->set('mail', 'site@example.com')->save();
+    $this->container->get('state')->set('system.test_mail_collector', []);
+    $first = $this->importer->import(
+      $configuration,
+      $id,
+      $skip,
+      TRUE,
+      TRUE,
+    );
+    $this->assertSame([], $first['errors']);
+    $messages = $this->container->get('state')->get(
+      'system.test_mail_collector',
+      [],
+    );
+    $passwordReset = array_values(array_filter(
+      $messages,
+      static fn(array $message): bool => $message['module'] === 'user'
+        && $message['key'] === 'password_reset',
+    ));
+    $this->assertCount(1, $passwordReset);
+    $this->assertSame(
+      $configuration['users'][0]['email'],
+      $passwordReset[0]['to'],
+    );
+    $this->assertStringContainsString(
+      'Password-reset mail sent.',
+      json_encode($first['rows'], JSON_THROW_ON_ERROR),
+    );
+
+    $second = $this->importer->import(
+      $configuration,
+      $id,
+      $skip,
+      TRUE,
+      TRUE,
+    );
+    $this->assertSame([], $second['errors']);
+    $this->assertCount(1, $this->container->get('state')->get(
+      'system.test_mail_collector',
+      [],
+    ));
+  }
+
+  /**
+   * Serializes applies, leaves dry-runs unlocked, and releases failures.
+   */
+  public function testImportLockingAndRelease(): void {
+    $configuration = $this->exampleConfiguration();
+    $lockName = 'markaspot_tenant_import.tenant_import';
+    $database = $this->container->get('database');
+    $competingLock = new DatabaseLockBackend($database);
+    $this->assertTrue($competingLock->acquire($lockName, 3600.0));
+    try {
+      $this->importer->import(
+        $configuration,
+        (int) $this->jurisdiction->id(),
+        [],
+        TRUE,
+      );
+      $this->fail('A concurrent apply must fail.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertContains(
+        'Another tenant import is already running.',
+        $exception->getErrors(),
+      );
+    }
+    $dryRun = $this->importer->import(
+      $configuration,
+      (int) $this->jurisdiction->id(),
+    );
+    $this->assertSame([], $dryRun['errors']);
+    $competingLock->release($lockName);
+
+    try {
+      $this->importer->import($configuration, 999999, [], TRUE);
+      $this->fail('A missing jurisdiction must fail during context preparation.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString(
+        'does not exist',
+        $exception->getMessage(),
+      );
+    }
+    $afterFailure = new DatabaseLockBackend($database);
+    $this->assertTrue($afterFailure->acquire($lockName, 1.0));
+    $afterFailure->release($lockName);
+  }
+
+  /**
+   * Validates file existence, size, JSON shape, and successful decoding.
+   */
+  public function testDecodeFileValidationAndHappyPath(): void {
+    $missing = sys_get_temp_dir() . '/missing-tenant-config-' . uniqid() . '.json';
+    try {
+      $this->importer->decodeFile($missing);
+      $this->fail('A missing file must fail.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString(
+        'does not exist or is not readable',
+        $exception->getMessage(),
+      );
+    }
+
+    $path = tempnam(sys_get_temp_dir(), 'tenant-import-');
+    $this->assertNotFalse($path);
+    $handle = fopen($path, 'wb');
+    $this->assertIsResource($handle);
+    $this->assertTrue(ftruncate($handle, (10 * 1024 * 1024) + 1));
+    fclose($handle);
+    clearstatcache(TRUE, $path);
+    try {
+      $this->importer->decodeFile($path);
+      $this->fail('A file over 10 MiB must fail.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('10 MiB size limit', $exception->getMessage());
+    }
+
+    file_put_contents($path, '{');
+    clearstatcache(TRUE, $path);
+    try {
+      $this->importer->decodeFile($path);
+      $this->fail('Invalid JSON must fail.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('not valid JSON', $exception->getMessage());
+    }
+
+    file_put_contents($path, '[]');
+    try {
+      $this->importer->decodeFile($path);
+      $this->fail('A list root must fail.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString(
+        'root must be a JSON object',
+        $exception->getMessage(),
+      );
+    }
+    unlink($path);
+
+    $fixture = dirname(__DIR__, 2) . '/fixtures/tenant-config.example.json';
+    $this->assertSame(
+      $this->exampleConfiguration(),
+      $this->importer->decodeFile($fixture),
+    );
+  }
+
+  /**
+   * Updates status mappings and presentation while preserving definitions.
+   */
+  public function testStatusUpdatesPreserveDefinition(): void {
+    $configuration = $this->exampleConfiguration();
+    $id = (int) $this->jurisdiction->id();
+    $this->assertSame([], $this->importer->import($configuration, $id, [], TRUE)['errors']);
+
+    $definition = '{"attributes":[{"code":"internal_note","ui_only":true}]}';
+    $status = $this->loadStatus('In Bearbeitung');
+    $status->set('field_status_definition', [
+      'value' => $definition,
+      'format' => 'plain_text',
+    ])->save();
+    $configuration['statuses'][0]['kind'] = 'open';
+    $configuration['statuses'][1]['kind'] = 'initial';
+    $configuration['statuses'][1]['hex'] = '#123456';
+    $configuration['statuses'][1]['icon'] = 'i-lucide-hammer';
+    $configuration['statuses'][1]['weight'] = 9;
+    $configuration['statuses'][1]['description'] = 'Updated status description.';
+    $configuration['statuses'][1]['notify_citizen'] = FALSE;
+
+    $result = $this->importer->import($configuration, $id, [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $this->container->get('entity_type.manager')->getStorage('taxonomy_term')->resetCache();
+    $status = $this->loadStatus('In Bearbeitung');
+    $this->assertSame('#123456', strtoupper((string) $status->get('field_status_hex')->color));
+    $this->assertSame('i-lucide-hammer', $status->get('field_status_icon')->getString());
+    $this->assertSame(9, (int) $status->getWeight());
+    $this->assertSame('Updated status description.', $status->getDescription());
+    $this->assertSame('initial', $status->get('field_open311_mapping')->getString());
+    $this->assertTrue($status->get('field_notification_key')->isEmpty());
+    $this->assertSame($definition, (string) $status->get('field_status_definition')->value);
+    $this->assertSame('open', $this->loadStatus('Erfasst')->get('field_open311_mapping')->getString());
+
+    $initialStatuses = array_filter(
+      Term::loadMultiple(),
+      static fn(TermInterface $term): bool => $term->bundle() === 'service_status'
+        && $term->get('field_open311_mapping')->getString() === 'initial',
+    );
+    $this->assertCount(1, $initialStatuses);
+    $this->assertSame(
+      ['skip', 'unchanged'],
+      array_values(array_unique(array_column(
+        $this->importer->import($configuration, $id)['rows'],
+        'action',
+      ))),
+    );
+  }
+
+  /**
+   * Allows child-only tenant fields and users while rejecting shared sections.
+   */
+  public function testChildJurisdictionScopePaths(): void {
+    $configuration = $this->exampleConfiguration();
+    $child = Group::create([
+      'type' => 'jur',
+      'label' => 'Child',
+      'field_slug' => 'erfurt',
+      'field_parent_jurisdiction' => $this->jurisdiction->id(),
+    ]);
+    $child->save();
+    try {
+      $this->importer->import($configuration, (int) $child->id(), [], TRUE);
+      $this->fail('A child must reject root-owned sections.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('root-owned', $exception->getMessage());
+    }
+
+    $configuration['users'] = [$configuration['users'][1]];
+    $configuration['tenant']['platform_name'] = 'Child platform';
+    $result = $this->importer->import(
+      $configuration,
+      (int) $child->id(),
+      ['organisations', 'categories', 'statuses'],
+      TRUE,
+    );
+    $this->assertSame([], $result['errors']);
+    $child = Group::load($child->id());
+    $this->assertInstanceOf(GroupInterface::class, $child);
+    $this->assertSame('Child platform', $child->get('field_platform_name')->getString());
+    $moderator = $this->loadUser($configuration['users'][0]['email']);
+    $this->assertSame(['jur-moderator'], $this->storedMembershipRoles($child, $moderator));
+    $this->assertSame([], array_values($this->container->get('entity_type.manager')
+      ->getStorage('taxonomy_term')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->execute()));
+    $this->assertCount(2, Group::loadMultiple());
+  }
+
+  /**
+   * Does not treat a sibling child in the same root tree as cross-tenant.
+   */
+  public function testSiblingChildMembershipIsNotCrossTenant(): void {
+    $siblings = [];
+    foreach (['First child', 'Second child'] as $label) {
+      $sibling = Group::create([
+        'type' => 'jur',
+        'label' => $label,
+        'field_slug' => 'erfurt',
+        'field_parent_jurisdiction' => $this->jurisdiction->id(),
+      ]);
+      $sibling->save();
+      $siblings[] = $sibling;
+    }
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [$configuration['users'][1]];
+    $account = User::create([
+      'name' => 'Sibling member',
+      'mail' => $configuration['users'][0]['email'],
+      'status' => 1,
+    ]);
+    $account->save();
+    $siblings[0]->addRelationship(
+      $account,
+      'group_membership',
+      ['group_roles' => ['jur-moderator']],
+    );
+
+    $result = $this->importer->import(
+      $configuration,
+      (int) $siblings[1]->id(),
+      ['organisations', 'categories', 'statuses'],
+      TRUE,
+    );
+    $this->assertSame([], $result['errors']);
+    $this->assertInstanceOf(
+      GroupMembership::class,
+      GroupMembership::loadSingle($siblings[1], $account),
+    );
+    $this->assertStringNotContainsString(
+      'profile not changed',
+      json_encode($result['rows'], JSON_THROW_ON_ERROR),
+    );
   }
 
   /**
@@ -514,8 +1284,11 @@ final class TenantImporterTest extends KernelTestBase {
    */
   private function createModelFields(): void {
     $this->createField('user', 'user', 'field_all_groups_member', 'boolean');
+    $this->createField('user', 'user', 'field_first_name', 'string', ['max_length' => 32]);
+    $this->createField('user', 'user', 'field_last_name', 'string', ['max_length' => 32]);
 
     $this->createField('group', 'jur', 'field_parent_jurisdiction', 'entity_reference', ['target_type' => 'group']);
+    $this->createField('group', 'jur', 'field_slug', 'string');
     $this->createField('group', 'jur', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'org', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'jur', 'field_service_statuses', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
@@ -525,7 +1298,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->createField('group', 'jur', 'field_legal_notice', 'text_long');
     $this->createField('group', 'jur', 'field_privacy_policy', 'text_long');
 
-    $this->createField('group', 'org', 'field_org_code', 'string');
+    $this->createField('group', 'org', 'field_org_code', 'string', ['max_length' => 16]);
     $this->createField('group', 'org', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     $this->createField('group', 'org', 'field_parent_org', 'entity_reference', ['target_type' => 'group']);
     $this->createField('group', 'org', 'field_head_organisation_e_mail', 'email');
@@ -533,7 +1306,7 @@ final class TenantImporterTest extends KernelTestBase {
     foreach (['service_category', 'service_status'] as $bundle) {
       $this->createField('taxonomy_term', $bundle, 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     }
-    $this->createField('taxonomy_term', 'service_category', 'field_service_code', 'string');
+    $this->createField('taxonomy_term', 'service_category', 'field_service_code', 'string', ['max_length' => 12]);
     $this->createField('taxonomy_term', 'service_category', 'field_category_gid', 'entity_reference', ['target_type' => 'group']);
     $this->createField('taxonomy_term', 'service_category', 'field_category_hex', 'color_field_type');
     $this->createField('taxonomy_term', 'service_category', 'field_category_icon', 'string');

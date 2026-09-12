@@ -16,6 +16,13 @@ final class TenantImportFieldMapper {
    * Builds category field values that do not depend on imported entity IDs.
    */
   public function categoryFieldValues(TermInterface $term, array $category, int $index, int $rootId): array {
+    $definition = $term->get('field_service_definition')->isEmpty()
+      ? [$this->textValue('')]
+      : $term->get('field_service_definition')->getValue();
+    $definition[0]['value'] = $this->serviceDefinitionJson(
+      $category,
+      (string) ($definition[0]['value'] ?? ''),
+    );
     return [
       'description' => trim((string) $category['description']) === ''
         ? []
@@ -24,7 +31,7 @@ final class TenantImportFieldMapper {
       'field_service_code' => (string) $category['code'],
       'field_category_hex' => $this->colourValue($term, 'field_category_hex', (string) $category['hex']),
       'field_category_icon' => (string) $category['icon'],
-      'field_service_definition' => $this->textValue($this->serviceDefinitionJson($category)),
+      'field_service_definition' => $definition,
       'field_jurisdiction' => ['target_id' => $rootId],
     ];
   }
@@ -102,7 +109,7 @@ final class TenantImportFieldMapper {
   /**
    * Builds normalized Open311 service definition JSON.
    */
-  public function serviceDefinitionJson(array $category): string {
+  public function serviceDefinitionJson(array $category, string $existingDefinition = ''): string {
     $attributes = [];
     /** @var list<array<string, mixed>> $sourceAttributes */
     $sourceAttributes = isset($category['attributes']) && is_array($category['attributes'])
@@ -118,8 +125,55 @@ final class TenantImportFieldMapper {
         : [];
       $attributes[] = $normalized;
     }
+
+    if ($attributes === [] && trim($existingDefinition) !== '') {
+      return $existingDefinition;
+    }
+
+    $definition = ['attributes' => []];
+    if (trim($existingDefinition) !== '') {
+      try {
+        $decoded = json_decode(
+          $existingDefinition,
+          TRUE,
+          512,
+          JSON_THROW_ON_ERROR,
+        );
+        if (is_array($decoded)) {
+          if (array_is_list($decoded)) {
+            $definition['attributes'] = $decoded;
+          }
+          else {
+            $definition = $decoded;
+            $definition['attributes'] = is_array($decoded['attributes'] ?? NULL)
+              ? $decoded['attributes']
+              : [];
+          }
+        }
+      }
+      catch (\JsonException) {
+        // A supplied non-empty attribute list replaces invalid stored JSON.
+      }
+    }
+
+    foreach ($attributes as $attribute) {
+      $matched = FALSE;
+      foreach ($definition['attributes'] as &$existingAttribute) {
+        if (is_array($existingAttribute)
+          && isset($existingAttribute['code'])
+          && $existingAttribute['code'] === $attribute['code']) {
+          $existingAttribute = array_replace($existingAttribute, $attribute);
+          $matched = TRUE;
+        }
+      }
+      unset($existingAttribute);
+      if (!$matched) {
+        $definition['attributes'][] = $attribute;
+      }
+    }
+
     return (string) json_encode(
-      ['attributes' => $attributes],
+      $definition,
       JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
     );
   }

@@ -1,0 +1,37 @@
+<?php
+
+/**
+ * @file
+ * Provides failure and relationship hooks for tenant importer tests.
+ */
+
+declare(strict_types=1);
+
+use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\taxonomy\TermInterface;
+
+/**
+ * Implements hook_group_relationship_insert().
+ */
+function markaspot_tenant_import_test_group_relationship_insert(GroupRelationshipInterface $relationship): void {
+  if ($relationship->getPluginId() === 'group_membership'
+    && $relationship->getGroup()->bundle() === 'jur'
+    && $relationship->get('group_roles')->isEmpty()) {
+    \Drupal::state()->set(
+      'markaspot_tenant_import_test.empty_jurisdiction_roles_on_insert',
+      TRUE,
+    );
+  }
+}
+
+/**
+ * Implements hook_taxonomy_term_presave().
+ */
+function markaspot_tenant_import_test_taxonomy_term_presave(TermInterface $term): void {
+  $name = \Drupal::state()->get('markaspot_tenant_import_test.fail_status');
+  if (is_string($name)
+    && $term->bundle() === 'service_status'
+    && $term->label() === $name) {
+    throw new RuntimeException('Injected status save failure.');
+  }
+}

@@ -21,7 +21,7 @@ use Drupal\user\UserInterface;
 /**
  * Plans and applies versioned tenant configuration imports.
  */
-final class TenantImporter {
+class TenantImporter {
 
   /**
    * Supported top-level import sections.
@@ -71,7 +71,7 @@ final class TenantImporter {
     }
 
     try {
-      $configuration = json_decode($contents, TRUE, 512, JSON_THROW_ON_ERROR);
+      $decoded = json_decode($contents, FALSE, 512, JSON_THROW_ON_ERROR);
     }
     catch (\JsonException $exception) {
       throw new TenantImportValidationException([
@@ -79,11 +79,14 @@ final class TenantImporter {
       ]);
     }
 
-    if (!is_array($configuration)) {
+    if (!is_object($decoded)) {
       throw new TenantImportValidationException([
         'Configuration root must be a JSON object.',
       ]);
     }
+
+    /** @var array<string, mixed> $configuration */
+    $configuration = json_decode($contents, TRUE, 512, JSON_THROW_ON_ERROR);
 
     return $configuration;
   }
@@ -101,6 +104,7 @@ final class TenantImporter {
     bool $apply = FALSE,
     bool $sendMails = FALSE,
     bool $allowCrossTenantUsers = FALSE,
+    bool $allowSlugMismatch = FALSE,
   ): array {
     $skip = array_values(array_unique($skip));
     $errors = $this->validate($configuration, $skip);
@@ -120,7 +124,13 @@ final class TenantImporter {
           $this->entityTypeManager->getStorage($type)->resetCache();
         }
       }
-      $context = $this->prepareContext($configuration, $jurisdictionId, $skip, $allowCrossTenantUsers);
+      $context = $this->prepareContext(
+        $configuration,
+        $jurisdictionId,
+        $skip,
+        $allowCrossTenantUsers,
+        $allowSlugMismatch,
+      );
       $rows = $this->buildPlan($configuration, $context, $skip);
       return $apply
         ? $this->applyPlan($configuration, $context, $skip, $rows, $sendMails)
@@ -143,7 +153,13 @@ final class TenantImporter {
   /**
    * Prepares entity lookups and validates the installed model.
    */
-  private function prepareContext(array $configuration, int $jurisdictionId, array $skip, bool $allowCrossTenantUsers): array {
+  private function prepareContext(
+    array $configuration,
+    int $jurisdictionId,
+    array $skip,
+    bool $allowCrossTenantUsers,
+    bool $allowSlugMismatch,
+  ): array {
     $errors = [];
     $references = $this->organisationReferences($configuration, $skip);
     $needsOrganisations = !in_array('organisations', $skip, TRUE) || $references !== [];
@@ -174,6 +190,18 @@ final class TenantImporter {
       throw new TenantImportValidationException([
         sprintf('Group %d has type "%s"; expected "jur".', $jurisdictionId, $jurisdiction->bundle()),
       ]);
+    }
+    if ($jurisdiction->hasField('field_slug')) {
+      $targetSlug = $jurisdiction->get('field_slug')->getString();
+      $sourceSlug = (string) $configuration['tenant']['slug'];
+      if (strcasecmp($targetSlug, $sourceSlug) !== 0 && !$allowSlugMismatch) {
+        $errors[] = sprintf(
+          'Configuration tenant.slug "%s" does not match target jurisdiction %d field_slug "%s". Use --allow-slug-mismatch only after verifying the target.',
+          $sourceSlug,
+          $jurisdictionId,
+          $targetSlug,
+        );
+      }
     }
 
     $rootId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
@@ -314,20 +342,43 @@ final class TenantImporter {
     }
     $users = [];
     $userNotices = [];
-    foreach ($userRows as $row) {
+    $profileProtected = [];
+    $userStorage = $this->entityTypeManager->getStorage('user');
+    foreach ($userRows as $index => $row) {
       $email = (string) $row['email'];
-      $users[mb_strtolower($email)] = in_array('users', $skip, TRUE)
+      $key = mb_strtolower($email);
+      $users[$key] = in_array('users', $skip, TRUE)
         ? NULL
         : $this->loadUserByEmail($email);
-      $existing = $users[mb_strtolower($email)];
+      $existing = $users[$key];
+      $profileProtected[$key] = FALSE;
+      if (!in_array('users', $skip, TRUE) && !$existing instanceof UserInterface) {
+        if (mb_strlen($email) > UserInterface::USERNAME_MAX_LENGTH) {
+          $errors[] = sprintf(
+            'users[%d].email exceeds installed username maximum of %d characters for a new account.',
+            $index,
+            UserInterface::USERNAME_MAX_LENGTH,
+          );
+        }
+        if ($userStorage->loadByProperties(['name' => $email]) !== []) {
+          $errors[] = sprintf(
+            'users[%d].email cannot be used as a username because that name is already in use.',
+            $index,
+          );
+        }
+      }
       if ($existing instanceof UserInterface) {
         $otherJurisdictions = $this->otherJurisdictions($existing, $rootId);
-        $privileged = (int) $existing->id() === 1 || $existing->hasRole('administrator');
+        $privileged = $this->isPrivilegedUser($existing);
+        $profileProtected[$key] = $privileged || $otherJurisdictions > 0;
         if (($privileged || $otherJurisdictions > 0) && !$allowCrossTenantUsers) {
           $errors[] = sprintf('User "%s" is privileged or a member of jurisdictions outside target root %d; use --allow-cross-tenant-users only after review.', $email, $rootId);
         }
         if ($allowCrossTenantUsers) {
-          $userNotices[mb_strtolower($email)] = sprintf(' member of %d other jurisdictions.%s', $otherJurisdictions, $privileged ? ' Privileged account explicitly allowed.' : '');
+          $userNotices[$key] = sprintf(' member of %d other jurisdictions.%s', $otherJurisdictions, $privileged ? ' Privileged account explicitly allowed.' : '');
+        }
+        if ($profileProtected[$key]) {
+          $userNotices[$key] = ($userNotices[$key] ?? '') . ' profile not changed.';
         }
       }
     }
@@ -390,6 +441,7 @@ final class TenantImporter {
       'statuses' => $statuses,
       'users' => $users,
       'user_notices' => $userNotices,
+      'profile_protected' => $profileProtected,
       'organisation_categories' => in_array('categories', $skip, TRUE) ? []
         : $this->plannedOrganisationCategories($configuration, $organisations, $categories, $rootCategories, $jurisdiction),
       'root_categories' => $rootCategories,
@@ -424,6 +476,11 @@ final class TenantImporter {
     /** @var array<string, mixed> $tenant */
     $tenant = $configuration['tenant'];
 
+    foreach ($this->validator->notices($configuration) as $notice) {
+      $key = explode(':', $notice, 2)[0];
+      $rows[] = $this->row('tenant', $key, 'skip', $notice);
+    }
+
     $targetReason = sprintf(
       'Explicit target GID %d is "%s".',
       (int) $jurisdiction->id(),
@@ -433,8 +490,8 @@ final class TenantImporter {
       $targetSlug = $jurisdiction->get('field_slug')->getString();
       $sourceSlug = (string) $tenant['slug'];
       $targetReason .= sprintf(' Target slug is "%s"; configuration slug is "%s".', $targetSlug, $sourceSlug);
-      if ($targetSlug !== '' && strcasecmp($targetSlug, $sourceSlug) !== 0) {
-        $targetReason .= ' Warning: slugs differ; the explicit --jurisdiction option remains authoritative.';
+      if (strcasecmp($targetSlug, $sourceSlug) !== 0) {
+        $targetReason .= ' Warning: slug mismatch explicitly allowed by --allow-slug-mismatch.';
       }
     }
     $rows[] = $this->row(
@@ -493,6 +550,7 @@ final class TenantImporter {
         'field_service_categories',
         $context['root_categories'],
       );
+    $categorySelectionChanges = FALSE;
     foreach ($categories as $index => $category) {
       $code = (string) $category['code'];
       if (in_array('categories', $skip, TRUE)) {
@@ -505,6 +563,7 @@ final class TenantImporter {
           $rows[] = $this->row('category', $code, 'skip', 'Inactive category is not created.');
         }
         elseif (in_array((int) $existing->id(), $selectedCategoryIds, TRUE)) {
+          $categorySelectionChanges = TRUE;
           $rows[] = $this->row('category', $code, 'update', 'Inactive category will be removed from the jurisdiction selection; the term is retained.');
         }
         else {
@@ -513,14 +572,22 @@ final class TenantImporter {
         continue;
       }
       if (!$existing instanceof TermInterface) {
+        $categorySelectionChanges = TRUE;
         $rows[] = $this->row('category', $code, 'create', 'Active category does not exist in the root jurisdiction.');
         continue;
       }
       $changes = $this->categoryChanges($existing, $category, $index, $rootId, $existingCategories, $existingOrganisations);
       if (!in_array((int) $existing->id(), $selectedCategoryIds, TRUE)) {
+        $categorySelectionChanges = TRUE;
         $changes[] = 'field_service_categories selection';
       }
       $rows[] = $this->row('category', $code, $changes === [] ? 'unchanged' : 'update', $changes === [] ? 'All category values and relationships already match.' : 'Changed values: ' . implode(', ', array_unique($changes)) . '.');
+    }
+    if (!in_array('categories', $skip, TRUE) && $categorySelectionChanges) {
+      $reason = $jurisdiction->get('field_service_categories')->isEmpty()
+        ? 'Applying this selection change freezes the inherited category set as an explicit ID list.'
+        : 'The explicit category selection will be updated.';
+      $rows[] = $this->row('jurisdiction', 'field_service_categories', 'update', $reason);
     }
 
     $selectedStatusIds = in_array('statuses', $skip, TRUE)
@@ -530,6 +597,7 @@ final class TenantImporter {
         'field_service_statuses',
         $context['root_statuses'],
       );
+    $statusSelectionChanges = FALSE;
     foreach ($statuses as $status) {
       $name = (string) $status['name'];
       if (in_array('statuses', $skip, TRUE)) {
@@ -538,14 +606,22 @@ final class TenantImporter {
       }
       $existing = $existingStatuses[mb_strtolower($name)];
       if (!$existing instanceof TermInterface) {
+        $statusSelectionChanges = TRUE;
         $rows[] = $this->row('status', $name, 'create', 'Status does not exist in the root jurisdiction.');
         continue;
       }
       $changes = $this->statusChanges($existing, $status, $rootId);
       if (!in_array((int) $existing->id(), $selectedStatusIds, TRUE)) {
+        $statusSelectionChanges = TRUE;
         $changes[] = 'field_service_statuses selection';
       }
       $rows[] = $this->row('status', $name, $changes === [] ? 'unchanged' : 'update', $changes === [] ? 'All status values and relationships already match.' : 'Changed values: ' . implode(', ', array_unique($changes)) . '.');
+    }
+    if (!in_array('statuses', $skip, TRUE) && $statusSelectionChanges) {
+      $reason = $jurisdiction->get('field_service_statuses')->isEmpty()
+        ? 'Applying this selection change freezes the inherited status set as an explicit ID list.'
+        : 'The explicit status selection will be updated.';
+      $rows[] = $this->row('jurisdiction', 'field_service_statuses', 'update', $reason);
     }
 
     foreach ($users as $user) {
@@ -569,7 +645,13 @@ final class TenantImporter {
         $rows[] = $this->row('user', $email, 'create', $reason);
         continue;
       }
-      $changes = $this->userChanges($existing, $user, $jurisdiction, $existingOrganisations);
+      $changes = $this->userChanges(
+        $existing,
+        $user,
+        $jurisdiction,
+        $existingOrganisations,
+        $context['profile_protected'][mb_strtolower($email)],
+      );
       $reason = $changes === []
         ? 'User profile and required memberships already match.'
         : 'Changed values: ' . implode(', ', array_unique($changes)) . '.';
@@ -846,7 +928,7 @@ final class TenantImporter {
     }
 
     if (!in_array('users', $skip, TRUE)) {
-      foreach ($userRows as $userRow) {
+      foreach ($userRows as $index => $userRow) {
         $email = (string) $userRow['email'];
         try {
           $user = $userEntities[mb_strtolower($email)];
@@ -854,7 +936,7 @@ final class TenantImporter {
             continue;
           }
           $wasNew = !$user instanceof UserInterface;
-          $profileChanged = FALSE;
+          $profileUpdates = [];
           if ($wasNew) {
             /** @var \Drupal\user\UserInterface $user */
             $user = $this->entityTypeManager->getStorage('user')->create([
@@ -865,18 +947,20 @@ final class TenantImporter {
             ]);
           }
           else {
-            $profileChanged = $this->userProfileDiffers($user, $userRow);
-
+            $profileUpdates = $this->userProfileUpdates(
+              $user,
+              $userRow,
+              $context['profile_protected'][mb_strtolower($email)],
+            );
           }
-          foreach ([
-            'field_first_name' => (string) $userRow['first_name'],
-            'field_last_name' => (string) $userRow['last_name'],
-          ] as $field => $value) {
-            if ($user->hasField($field)) {
-              $user->set($field, $value);
-            }
+          if ($wasNew) {
+            $profileUpdates = $this->userProfileUpdates($user, $userRow, FALSE, TRUE);
           }
-          if ($wasNew || $profileChanged) {
+          foreach ($profileUpdates as $field => $value) {
+            $user->set($field, $value);
+          }
+          if ($wasNew || $profileUpdates !== []) {
+            $this->validateUserBeforeSave($user, $index);
             $user->save();
           }
           $userEntities[mb_strtolower($email)] = $user;
@@ -887,7 +971,12 @@ final class TenantImporter {
           $sourceRole = (string) $userRow['role'];
           $jurisdictionRole = TenantConfigValidator::ROLES[$sourceRole];
           $roleIds = MembershipRoleNormalizer::normalize([$jurisdictionRole], 'jur');
-          $this->ensureMembershipRoles($jurisdiction, $user, $roleIds);
+          $this->ensureMembershipRoles(
+            $jurisdiction,
+            $user,
+            $roleIds,
+            $sourceRole === 'tenant_admin' && !$user->hasRole('tenant_admin'),
+          );
 
           if ($sourceRole === 'org_member') {
             $organisationCode = mb_strtolower(trim((string) $userRow['organisation_code']));
@@ -927,7 +1016,7 @@ final class TenantImporter {
         $this->entityTypeManager->getStorage($entityType)->resetCache();
       }
       foreach ($rows as &$row) {
-        if (in_array($row['action'], ['create', 'update'], TRUE)) {
+        if (in_array($row['action'], ['create', 'update', 'error'], TRUE)) {
           $row['action'] = 'skip';
           $row['reason'] = 'Transaction rolled back after application errors. ' . $row['reason'];
         }
@@ -1028,9 +1117,15 @@ final class TenantImporter {
   /**
    * Returns user profile and membership changes.
    */
-  private function userChanges(UserInterface $user, array $row, GroupInterface $jurisdiction, array $organisations): array {
+  private function userChanges(
+    UserInterface $user,
+    array $row,
+    GroupInterface $jurisdiction,
+    array $organisations,
+    bool $profileProtected,
+  ): array {
     $changes = [];
-    if ($this->userProfileDiffers($user, $row)) {
+    if ($this->userProfileUpdates($user, $row, $profileProtected) !== []) {
       $changes[] = 'profile';
     }
     $sourceRole = (string) $row['role'];
@@ -1039,6 +1134,9 @@ final class TenantImporter {
     ], 'jur');
     if (!$this->membershipHasRoles($jurisdiction, $user, $requiredRoles)) {
       $changes[] = 'jurisdiction membership';
+    }
+    if ($sourceRole === 'tenant_admin' && !$user->hasRole('tenant_admin')) {
+      $changes[] = 'Drupal tenant_admin role sync';
     }
     if ($sourceRole === 'org_member') {
       $code = mb_strtolower(trim((string) $row['organisation_code']));
@@ -1051,35 +1149,96 @@ final class TenantImporter {
   }
 
   /**
-   * Checks mapped user profile fields.
+   * Returns the profile values this import is permitted to fill.
    */
-  private function userProfileDiffers(UserInterface $user, array $row): bool {
+  private function userProfileUpdates(
+    UserInterface $user,
+    array $row,
+    bool $profileProtected,
+    bool $newAccount = FALSE,
+  ): array {
+    if ($profileProtected) {
+      return [];
+    }
+
+    $updates = [];
     foreach ([
       'field_first_name' => (string) $row['first_name'],
       'field_last_name' => (string) $row['last_name'],
     ] as $field => $value) {
-      if ($user->hasField($field) && $this->fieldDiffers($user, $field, $value)) {
-        return TRUE;
+      if ($user->hasField($field)
+        && ($newAccount || $user->get($field)->isEmpty())
+        && $value !== ''
+        && $this->fieldDiffers($user, $field, $value)) {
+        $updates[$field] = $value;
       }
     }
-    return FALSE;
+    return $updates;
+  }
+
+  /**
+   * Converts entity constraint violations into an import row failure.
+   */
+  private function validateUserBeforeSave(UserInterface $user, int $index): void {
+    $violations = $user->validate();
+    if ($violations->count() === 0) {
+      return;
+    }
+
+    $messages = [];
+    foreach ($violations as $violation) {
+      $path = $violation->getPropertyPath();
+      $messages[] = ($path === '' ? '' : $path . ': ') . $violation->getMessage();
+    }
+    throw new \RuntimeException(sprintf(
+      'users[%d] failed validation: %s',
+      $index,
+      implode('; ', $messages),
+    ));
+  }
+
+  /**
+   * Detects accounts whose authority must require explicit import review.
+   */
+  private function isPrivilegedUser(UserInterface $user): bool {
+    if ((int) $user->id() === 1
+      || $user->hasPermission('administer nodes')
+      || ($user->hasField('field_all_groups_member')
+        && (bool) $user->get('field_all_groups_member')->value)) {
+      return TRUE;
+    }
+
+    return array_diff(
+      $user->getRoles(),
+      ['authenticated', 'tenant_admin'],
+    ) !== [];
   }
 
   /**
    * Ensures a membership exists and contains all requested individual roles.
    */
-  private function ensureMembershipRoles(GroupInterface $group, UserInterface $user, array $roleIds): void {
+  private function ensureMembershipRoles(
+    GroupInterface $group,
+    UserInterface $user,
+    array $roleIds,
+    bool $forceRoleSync = FALSE,
+  ): void {
     $membership = GroupMembership::loadSingle($group, $user);
     if (!$membership) {
-      $relationship = $group->addRelationship($user, 'group_membership');
-      $relationship->set('group_roles', $roleIds);
-      $relationship->save();
+      $group->addRelationship(
+        $user,
+        'group_membership',
+        ['group_roles' => $roleIds],
+      );
       return;
     }
     $existing = array_column($membership->get('group_roles')->getValue(), 'target_id');
     $desired = array_values(array_unique(array_merge($existing, $roleIds)));
     if ($desired !== $existing) {
       $membership->set('group_roles', $desired);
+      $membership->save();
+    }
+    elseif ($forceRoleSync) {
       $membership->save();
     }
   }
@@ -1089,7 +1248,7 @@ final class TenantImporter {
    */
   private function ensurePlainMembership(GroupInterface $group, UserInterface $user): void {
     if (!GroupMembership::loadSingle($group, $user)) {
-      $group->addRelationship($user, 'group_membership')->save();
+      $group->addRelationship($user, 'group_membership');
     }
   }
 

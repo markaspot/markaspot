@@ -1,5 +1,5 @@
 {
-  "$comment": "Mark-a-Spot Mandantenkonfiguration v1. Entsteht aus dem Excel-Konfigurationsbogen (Tools/scripts/konfigurationsbogen_to_json.py) und wird vom Drush-Befehl mas:tenant:import eingelesen. Ergaenzt jurisdiction-config.json (Branding/Features) in markaspot-cloud/setup/<tenant>/. Idempotenz-Schluessel: categories.code, statuses.name, organisations.code, users.email.",
+  "$comment": "Mark-a-Spot Mandantenkonfiguration v1. Wird vom Drush-Befehl mas:tenant:import eingelesen und ergaenzt jurisdiction-config.json (Branding/Features) in markaspot-cloud/setup/<tenant>/. Idempotenz-Schluessel: categories.code, statuses.name, organisations.code, users.email.",
   "version": 1,
   "tenant": {
     "slug": "erfurt",

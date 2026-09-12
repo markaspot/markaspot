@@ -49,6 +49,8 @@ final class TenantImportCommands extends DrushCommands {
    *   Comma-separated sections to skip.
    * @option send-mails
    *   Send password-reset mail to newly created users. Requires --apply.
+   * @option allow-slug-mismatch
+   *   Permit tenant.slug to differ from the target field_slug.
    *
    * @return \Consolidation\OutputFormatters\StructuredData\RowsOfFields
    *   Plan or application rows.
@@ -64,6 +66,7 @@ final class TenantImportCommands extends DrushCommands {
   #[CLI\Option(name: 'skip', description: 'Comma-separated sections: organisations, categories, statuses, users.')]
   #[CLI\Option(name: 'send-mails', description: 'With --apply, send password-reset mail to newly created users.')]
   #[CLI\Option(name: 'allow-cross-tenant-users', description: 'Explicitly allow privileged and cross-root existing users; never rename or unblock them.')]
+  #[CLI\Option(name: 'allow-slug-mismatch', description: 'Explicitly allow tenant.slug to differ from the target jurisdiction field_slug.')]
   #[CLI\FieldLabels(labels: [
     'entity' => 'Entity',
     'key' => 'Key',
@@ -86,6 +89,7 @@ final class TenantImportCommands extends DrushCommands {
       'skip' => NULL,
       'send-mails' => FALSE,
       'allow-cross-tenant-users' => FALSE,
+      'allow-slug-mismatch' => FALSE,
     ],
   ): RowsOfFields {
     $jurisdictionId = filter_var(
@@ -110,6 +114,7 @@ final class TenantImportCommands extends DrushCommands {
         !empty($options['apply']),
         !empty($options['send-mails']),
         !empty($options['allow-cross-tenant-users']),
+        !empty($options['allow-slug-mismatch']),
       );
     }
     catch (TenantImportValidationException $exception) {
