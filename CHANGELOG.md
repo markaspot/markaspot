@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.192](https://github.com/markaspot/markaspot/compare/11.9.191...11.9.192) (2026-09-15)
+
+### Bug Fixes
+
+* preserve ECA models during config imports ([313f780](https://github.com/markaspot/markaspot/commit/313f78053eafaa6318a531302131a4b1b50d877d))
+
 ## [11.9.191](https://github.com/markaspot/markaspot/compare/11.9.190...11.9.191) (2026-09-12)
 
 ### Features
