@@ -1,14 +1,9 @@
 uuid: b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e
 langcode: en
-status: false
-dependencies:
-  config:
-    - eca.eca.process_apply_jurisdiction
-id: process_apply_jurisdiction
-tags:
-  - untagged
-documentation: 'Adds all new service requests to the default jurisdiction group (ID 1).'
-modeldata: |
+status: true
+dependencies: {  }
+id: eca_bpmn_io_process_apply_jurisdiction
+data: |
   <?xml version="1.0" encoding="UTF-8"?>
   <bpmn2:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="sample-diagram" targetNamespace="http://bpmn.io/schema/bpmn" xsi:schemaLocation="http://www.omg.org/spec/BPMN/20100524/MODEL BPMN20.xsd">
     <bpmn2:process id="Process_apply_jurisdiction" name="Apply Jurisdiction" isExecutable="true">

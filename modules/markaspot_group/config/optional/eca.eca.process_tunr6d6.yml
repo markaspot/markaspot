@@ -7,11 +7,15 @@ dependencies:
     - node.type.service_request
   module:
     - eca_content
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: 'Notify Status'
+    version: '1.0'
 id: process_tunr6d6
-modeller: bpmn_io
-label: 'Notify Status'
-version: '1.0'
 weight: -10
+template: null
 events:
   Event_04bz8yl:
     plugin: 'content_entity:update'
@@ -93,7 +97,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send E-Mail Closed'
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_e_mail:value]'
       subject: 'Solved! Your Service Request #[node:request_id]'
       message: |
@@ -112,7 +116,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send E-Mail'
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_e_mail:value]'
       subject: 'Your Request #[node:request_id] in Mark-a-Spot. Unfortunately, we are not responsible.'
       message: |
@@ -136,7 +140,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send E-Mail Update'
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_e_mail:value]'
       subject: 'Update! Your Request #[node:request_id] in Mascity 311'
       message: |

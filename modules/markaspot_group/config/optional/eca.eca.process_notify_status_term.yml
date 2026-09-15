@@ -14,11 +14,15 @@ dependencies:
   module:
     - eca_content
     - markaspot_mail
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: 'Notify Status from Term'
+    version: '1.0'
 id: process_notify_status_term
-modeller: bpmn_io
-label: 'Notify Status from Term'
-version: '1.0'
 weight: 10
+template: null
 events:
   Event_status_update:
     plugin: 'content_entity:update'
@@ -58,6 +62,6 @@ actions:
     plugin: markaspot_mail_send_term_notification
     label: 'Send Status Notification from Term'
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_e_mail:value]'
     successors: {  }

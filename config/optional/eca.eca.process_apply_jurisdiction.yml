@@ -8,8 +8,15 @@ dependencies:
     - eca_content
     - eca_user
     - group_action
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: bpmn_io
+    data: 'hash:7b0e8bbef2714643ef1f616c8080ad99'
+    label: 'Apply Jurisdiction'
 id: process_apply_jurisdiction
 weight: -10
+template: null
 events:
   Event_SR_Insert_Jur:
     plugin: 'content_entity:insert'

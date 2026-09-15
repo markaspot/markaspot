@@ -9,11 +9,14 @@ use Drupal\Core\Config\ExtensionInstallStorage;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\InstallStorage;
 use Drupal\Core\Config\StorageInterface;
+use Drupal\Core\Config\StorageTransformerException;
 use Drupal\Core\Config\StorageTransformEvent;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\Extension\ProfileExtensionList;
 use Drupal\Core\Installer\InstallerKernel;
 use Drupal\Core\Site\Settings;
+use Drupal\eca\Entity\Eca;
+use Drupal\markaspot\Config\EcaModelImportNormalizer;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
@@ -105,10 +108,10 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * ------
  * The subscriber is a pure function of (active core.extension, import
  * core.extension, shipped-config-set). It never writes active state, never
- * touches the `profile`/`theme`/`_core` keys of core.extension, never throws
- * (any unexpected condition logs and returns, degrading to core's original
- * behaviour — strictly no worse), runs only on the default collection, and is
- * idempotent.
+ * touches the `profile`/`theme`/`_core` keys of core.extension, runs only on
+ * the default collection, and is idempotent. Unsafe ECA model conversion aborts
+ * import before the comparer can delete migrated diagrams. Other unexpected
+ * conditions retain the historical warning-and-return behavior.
  *
  * RUNTIME API KEY ENTITIES (OPT-IN)
  * ---------------------------------
@@ -239,6 +242,8 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
    *   Logger channel for non-fatal degradation diagnostics.
    * @param \Drupal\Core\Extension\ProfileExtensionList|null $profileExtensionList
    *   Locates config shipped by the active installation profile.
+   * @param \Drupal\markaspot\Config\EcaModelImportNormalizer|null $ecaModelNormalizer
+   *   Converts legacy ECA imports without writing active configuration.
    */
   public function __construct(
     private readonly ModuleExtensionList $moduleExtensionList,
@@ -246,6 +251,7 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     private readonly string|false|null $installProfile,
     private readonly LoggerInterface $logger,
     private readonly ?ProfileExtensionList $profileExtensionList = NULL,
+    private readonly ?EcaModelImportNormalizer $ecaModelNormalizer = NULL,
   ) {}
 
   /**
@@ -285,8 +291,14 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
       $this->protectRequiredModules($importStorage);
       $this->protectShippedConfig($importStorage);
+      try {
+        $this->protectMigratedEcaModels($importStorage);
+        $this->protectMigratedMailModels($importStorage);
+      }
+      catch (\Throwable $exception) {
+        throw new StorageTransformerException('ECA import protection failed: ' . $exception->getMessage(), 0, $exception);
+      }
       $this->protectUserSwitching($importStorage);
-      $this->protectMigratedMailModels($importStorage);
       $this->protectManagementPackageConfig($importStorage);
       $this->protectManagementViewTranslation($importStorage);
       $this->protectDefaultLanguageMailOverride($importStorage);
@@ -295,6 +307,10 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       // Run AFTER protectShippedConfig so any view re-injected from active is
       // also screened for anonymous access.
       $this->protectViewAccess($importStorage);
+    }
+    catch (StorageTransformerException $e) {
+      // Continuing here would let core delete the migrated model data.
+      throw $e;
     }
     catch (\Throwable $e) {
       // Never abort a deploy from inside the guard. Degrading to core's
@@ -373,6 +389,27 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       $data = $this->activeStorage->read($name);
       if ($data === FALSE) {
         continue;
+      }
+      if (str_starts_with($name, 'eca.model.')) {
+        $eca = $this->activeStorage->read('eca.eca.' . substr($name, strlen('eca.model.')));
+        if (isset($eca['third_party_settings']['modeler_api'])) {
+          continue;
+        }
+      }
+      // Keep the diagram paired with a still-shipped executable default that
+      // this existing guard restores. Tenant-only model deletions stay deleted.
+      if (str_starts_with($name, 'eca.eca.')
+        && str_starts_with($data['third_party_settings']['modeler_api']['data'] ?? '', 'hash:')) {
+        $modeler = $data['third_party_settings']['modeler_api']['modeler_id'];
+        $id = $data['id'] ?? substr($name, strlen('eca.eca.'));
+        $modelName = "modeler_api.data_model.eca_{$modeler}_{$id}";
+        if (!$importStorage->exists($modelName)) {
+          $model = $this->activeStorage->read($modelName);
+          if (!is_array($model)) {
+            throw new StorageTransformerException('The shipped ECA default ' . $name . ' has no active diagram. Repair it before importing.');
+          }
+          $importStorage->write($modelName, $model);
+        }
       }
       $importStorage->write($name, $data);
     }
@@ -474,6 +511,29 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   }
 
   /**
+   * Prevents stale ECA 2 sync from undoing the ECA 3 model handover.
+   */
+  private function protectMigratedEcaModels(StorageInterface $importStorage): void {
+    $extension = $this->activeStorage->read(self::CORE_EXTENSION);
+    // ECA 2 declares a label property; ECA 3 moved it to Modeler API. Checking
+    // that capability also protects the first import when no active model has
+    // third-party settings yet, without requiring optional services on ECA 2.
+    if (isset($extension['module']['modeler_api'])
+      && class_exists(Eca::class)
+      && !property_exists(Eca::class, 'label')) {
+      ($this->ecaModelNormalizer ?? new EcaModelImportNormalizer(NULL, NULL, $this->activeStorage))->normalize($importStorage);
+      return;
+    }
+    foreach ($this->activeStorage->listAll('eca.eca.') as $name) {
+      $active = $this->activeStorage->read($name);
+      if (isset($active['third_party_settings']['modeler_api']['modeler_id'])) {
+        ($this->ecaModelNormalizer ?? new EcaModelImportNormalizer(NULL, NULL, $this->activeStorage))->normalize($importStorage);
+        return;
+      }
+    }
+  }
+
+  /**
    * Prevents stale sync from reverting migrated ECA mail actions and BPMN XML.
    *
    * The mail module update migrates active runtime actions and their
@@ -495,11 +555,18 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
         continue;
       }
 
-      $modelId = $activeData['third_party_settings']['modeler_api']['modeler_id'] ?? NULL;
+      $modelId = $importData['third_party_settings']['modeler_api']['modeler_id']
+        ?? $activeData['third_party_settings']['modeler_api']['modeler_id'] ?? NULL;
       $ecaId = $activeData['id'] ?? substr($name, strlen('eca.eca.'));
       $modelName = is_string($modelId) && is_string($ecaId)
         ? "modeler_api.data_model.eca_{$modelId}_{$ecaId}"
         : '';
+      $sourceData = $importData['third_party_settings']['modeler_api']['data'] ?? NULL;
+      if (is_string($sourceData) && $sourceData !== '' && !str_starts_with($sourceData, 'hash:')) {
+        // Embedded diagrams belong to the executable config. Do not alter an
+        // unrelated external model that the source no longer references.
+        $modelName = $name;
+      }
       $changed = FALSE;
       foreach (($activeData['actions'] ?? []) as $activityId => $activeAction) {
         $importAction = $importData['actions'][$activityId] ?? NULL;
@@ -508,8 +575,14 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
           continue;
         }
         if (($importAction['plugin'] ?? NULL) === self::LEGACY_MAIL_ACTION) {
-          $importAction = $activeAction;
-          $importData['actions'][$activityId] = $activeAction;
+          // Retain source labels, successors and explicit recipient changes.
+          $importAction['plugin'] = self::NOTIFICATION_MAIL_ACTION;
+          $configuration = $activeAction['configuration'] ?? [];
+          if (isset($importAction['configuration']['recipient'])) {
+            $configuration['recipient'] = $importAction['configuration']['recipient'];
+          }
+          $importAction['configuration'] = $configuration;
+          $importData['actions'][$activityId] = $importAction;
           $changed = TRUE;
         }
         if (($importAction['plugin'] ?? NULL) === self::NOTIFICATION_MAIL_ACTION
@@ -535,24 +608,21 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     }
 
     $modelHashes = [];
-    $modelFallbacks = [];
     foreach ($modelActions as $name => $actions) {
       $activeData = $this->activeStorage->read($name);
       $importData = $importStorage->read($name);
       $activeXml = is_array($activeData) ? ($activeData['data'] ?? NULL) : NULL;
       $importXml = is_array($importData) ? ($importData['data'] ?? NULL) : NULL;
-      if (!is_string($activeXml) || !is_string($importXml)
-        || !str_contains($activeXml, self::NOTIFICATION_MAIL_ACTION)
-        || !str_contains($importXml, self::LEGACY_MAIL_ACTION)) {
+      if (!is_string($importXml)) {
         continue;
       }
 
-      $mergedXml = self::mergeMigratedBpmnActions($activeXml, $importXml, $actions);
-      // A malformed legacy model has no safe tenant changes to merge. Keep the
-      // valid migrated active source and its matching runtime configuration.
+      $mergedXml = self::mergeMigratedBpmnActions($activeXml ?? '', $importXml, $actions);
       if ($mergedXml === NULL) {
-        $mergedXml = $activeXml;
-        $modelFallbacks[$name] = array_keys($actions);
+        throw new StorageTransformerException('Cannot safely migrate imported ECA mail diagram ' . $name . '. Check its XML and matching mail task IDs/plugins before retrying.');
+      }
+      if ($mergedXml === $importXml) {
+        continue;
       }
       $importData['data'] = $mergedXml;
       $importStorage->write($name, $importData);
@@ -560,86 +630,125 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     }
 
     foreach ($ecaImports as $name => $entry) {
-      $activeData = $entry['active'];
       $importData = $entry['import'];
       $modelName = $entry['model_name'];
       $changed = $entry['changed'];
-      foreach ($modelFallbacks[$modelName] ?? [] as $activityId) {
-        if (isset($activeData['actions'][$activityId])) {
-          $importData['actions'][$activityId] = $activeData['actions'][$activityId];
+      $inlineData = $importData['third_party_settings']['modeler_api']['data'] ?? NULL;
+      if (is_string($inlineData) && $inlineData !== '' && !str_starts_with($inlineData, 'hash:')) {
+        $mergedXml = self::mergeMigratedBpmnActions('', $inlineData, $modelActions[$modelName] ?? []);
+        if ($mergedXml === NULL) {
+          throw new StorageTransformerException('Cannot safely migrate embedded ECA mail diagram ' . $name . '. Check its XML and matching mail task IDs/plugins before retrying.');
+        }
+        if ($mergedXml !== $inlineData) {
+          $importData['third_party_settings']['modeler_api']['data'] = $mergedXml;
           $changed = TRUE;
         }
       }
-      if (isset($modelHashes[$modelName])) {
+      elseif (isset($modelHashes[$modelName])) {
         $importData['third_party_settings']['modeler_api']['data'] = $modelHashes[$modelName];
         $changed = TRUE;
       }
-      elseif ($changed) {
-        $activeHash = $activeData['third_party_settings']['modeler_api']['data'] ?? NULL;
-        if (is_string($activeHash) && str_starts_with($activeHash, 'hash:')) {
-          $importData['third_party_settings']['modeler_api']['data'] = $activeHash;
-        }
-      }
       if ($changed) {
+        $importData = ($this->ecaModelNormalizer ?? new EcaModelImportNormalizer(NULL, NULL, $this->activeStorage))->updateDependencies($importData);
         $importStorage->write($name, $importData);
       }
     }
   }
 
   /**
-   * Replaces only legacy BPMN mail tasks with their migrated active version.
+   * Rewrites selected legacy BPMN tasks in place using migrated configuration.
    *
    * @param string $activeXml
-   *   Migrated active BPMN XML.
+   *   Previously used active XML; retained for compatibility with callers.
    * @param string $importXml
    *   Potentially stale imported BPMN XML.
    * @param array<string, array<string, mixed>> $actions
    *   Activity IDs and their effective imported runtime configuration.
    *
    * @return string|null
-   *   Merged imported XML, or NULL when either model cannot be parsed safely.
+   *   Updated imported XML, or NULL when it cannot be parsed safely.
    */
   public static function mergeMigratedBpmnActions(string $activeXml, string $importXml, array $actions): ?string {
     $previous = libxml_use_internal_errors(TRUE);
-    $active = new \DOMDocument();
-    $import = new \DOMDocument();
-    $active->preserveWhiteSpace = FALSE;
-    $import->preserveWhiteSpace = FALSE;
-    $import->formatOutput = TRUE;
-    $loaded = $active->loadXML($activeXml, LIBXML_NONET | LIBXML_NOBLANKS)
-      && $import->loadXML($importXml, LIBXML_NONET | LIBXML_NOBLANKS);
-    libxml_clear_errors();
-    libxml_use_internal_errors($previous);
-    if (!$loaded) {
-      return NULL;
-    }
-
-    $namespace = 'http://www.omg.org/spec/BPMN/20100524/MODEL';
-    $activeTasks = [];
-    foreach ($active->getElementsByTagNameNS($namespace, 'task') as $task) {
-      if ($task instanceof \DOMElement
-        && self::bpmnTaskUsesPlugin($task, self::NOTIFICATION_MAIL_ACTION)) {
-        $activeTasks[$task->getAttribute('id')] = $task;
+    try {
+      $import = new \DOMDocument();
+      $import->preserveWhiteSpace = FALSE;
+      $import->formatOutput = TRUE;
+      if (!$import->loadXML($importXml, LIBXML_NONET | LIBXML_NOBLANKS)
+        || $import->doctype !== NULL) {
+        return NULL;
       }
-    }
-
-    $replacements = [];
-    foreach ($import->getElementsByTagNameNS($namespace, 'task') as $task) {
-      $id = $task instanceof \DOMElement ? $task->getAttribute('id') : '';
-      if ($task instanceof \DOMElement && isset($activeTasks[$id], $actions[$id])
-        && self::bpmnTaskUsesPlugin($task, self::LEGACY_MAIL_ACTION)) {
-        $replacements[] = [$task, $activeTasks[$id], $actions[$id]];
+      $changed = FALSE;
+      $namespace = 'http://www.omg.org/spec/BPMN/20100524/MODEL';
+      $camunda = 'http://camunda.org/schema/1.0/bpmn';
+      $targets = [];
+      foreach ($import->getElementsByTagNameNS($namespace, 'task') as $task) {
+        if ($task instanceof \DOMElement && isset($actions[$task->getAttribute('id')])) {
+          $id = $task->getAttribute('id');
+          if (isset($targets[$id])) {
+            return NULL;
+          }
+          $targets[$id] = $task;
+        }
       }
-    }
-    foreach ($replacements as [$legacyTask, $migratedTask, $configuration]) {
-      $replacement = $import->importNode($migratedTask, TRUE);
-      if ($replacement instanceof \DOMElement && is_array($configuration)) {
-        self::applyBpmnActionConfiguration($replacement, $configuration);
+      foreach ($actions as $id => $configuration) {
+        if (!isset($targets[$id])) {
+          return NULL;
+        }
+        // A matching task ID alone is insufficient: the parser reads pluginid
+        // from extension properties. Missing/conflicting metadata must not let
+        // an executable action migrate while its diagram stays on another one.
+        $task = $targets[$id];
+        $plugins = [];
+        foreach ($task->getElementsByTagNameNS($camunda, 'property') as $property) {
+          if ($property instanceof \DOMElement && $property->getAttribute('name') === 'pluginid') {
+            $plugins[] = $property->getAttribute('value');
+          }
+        }
+        if (count($plugins) !== 1
+          || !in_array($plugins[0], [self::LEGACY_MAIL_ACTION, self::NOTIFICATION_MAIL_ACTION], TRUE)
+          || !$task->getElementsByTagNameNS($namespace, 'extensionElements')->item(0)) {
+          return NULL;
+        }
+        $template = $task->getAttributeNS($camunda, 'modelerTemplate');
+        if ($template !== '' && $template !== 'org.drupal.action.' . $plugins[0]) {
+          return NULL;
+        }
       }
-      $legacyTask->parentNode?->replaceChild($replacement, $legacyTask);
+      foreach ($import->getElementsByTagNameNS($namespace, 'task') as $task) {
+        if (!$task instanceof \DOMElement
+          || !isset($actions[$task->getAttribute('id')])
+          || !self::bpmnTaskUsesPlugin($task, self::LEGACY_MAIL_ACTION)) {
+          continue;
+        }
+        // Change the source task in place. Copying an active task also copies
+        // old labels, edges and extension data, discarding valid source edits.
+        $task->setAttributeNS($camunda, 'camunda:modelerTemplate', 'org.drupal.action.' . self::NOTIFICATION_MAIL_ACTION);
+        foreach ($task->getElementsByTagNameNS($camunda, 'property') as $property) {
+          if ($property instanceof \DOMElement && $property->getAttribute('name') === 'pluginid') {
+            $property->setAttribute('value', self::NOTIFICATION_MAIL_ACTION);
+          }
+        }
+        // Legacy subject/message fields are replaced by the migrated template.
+        $remove = [];
+        foreach ($task->getElementsByTagNameNS($camunda, 'field') as $field) {
+          if ($field instanceof \DOMElement
+            && in_array($field->getAttribute('name'), ['subject', 'message'], TRUE)) {
+            $remove[] = $field;
+          }
+        }
+        foreach ($remove as $field) {
+          $field->parentNode->removeChild($field);
+        }
+        self::applyBpmnActionConfiguration($task, $actions[$task->getAttribute('id')]);
+        $changed = TRUE;
+      }
+      return $changed ? ($import->saveXML() ?: NULL) : $importXml;
     }
-
-    return $replacements !== [] ? ($import->saveXML() ?: NULL) : $importXml;
+    finally {
+      libxml_clear_errors();
+      libxml_use_internal_errors($previous);
+    }
   }
 
   /**

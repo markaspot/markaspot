@@ -19,8 +19,14 @@ dependencies:
     - eca_content
     - eca_user
     - group_action
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: process_apply_group
 id: process_apply_group
 weight: null
+template: null
 events:
   Create_Service_Request:
     plugin: 'content_entity:insert'
@@ -235,7 +241,7 @@ actions:
     configuration:
       field_name: field_organisation.target_id
       field_value: '[node:field_category:entity:field_category_gid:target_id]'
-      method: 'append'
+      method: append
       strip_tags: false
       trim: false
       save_entity: true
@@ -248,7 +254,7 @@ actions:
     label: 'Notify Group'
     plugin: action_send_email_action
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_organisation:entity:field_head_organisation_e_mail]'
       subject: 'A request #[node:request_id] for the category [node:field_category]'
       message: |-

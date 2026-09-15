@@ -10,11 +10,15 @@ dependencies:
   module:
     - eca_content
     - markaspot_mail
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: 'Confirm Report'
+    version: '1.0'
 id: process_confirm_report
-modeller: bpmn_io
-label: 'Confirm Report'
-version: '1.0'
 weight: 10
+template: null
 events:
   Event_confirm_insert:
     plugin: 'content_entity:insert'
@@ -42,7 +46,7 @@ actions:
     plugin: markaspot_mail_send_notification
     label: 'Send Confirmation Email'
     configuration:
-      object: 'entity'
+      object: entity
       notification_key: report_confirmation
       recipient: '[node:field_e_mail:value]'
     successors: {  }

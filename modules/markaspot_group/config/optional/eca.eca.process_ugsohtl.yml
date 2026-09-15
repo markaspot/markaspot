@@ -11,11 +11,15 @@ dependencies:
     - eca_base
     - eca_content
     - eca_user
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: 'Set Initital Status'
+    version: 0.1.1
 id: process_ugsohtl
-modeller: bpmn_io
-label: 'Set Initital Status'
-version: 0.1.1
 weight: -10
+template: null
 events:
   Event_1083g6k:
     plugin: 'content_entity:insert'
@@ -72,7 +76,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Mail (Welcome Closed)'
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_e_mail:value]'
       subject: 'Your request [node:request_id] status update'
       message: |-
@@ -117,7 +121,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Mail (Welcome Open)'
     configuration:
-      object: 'entity'
+      object: entity
       recipient: '[node:field_e_mail:value]'
       subject: 'Your request [node:request_id] status update'
       message: |-
@@ -162,7 +166,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Mail (Welcome Open)'
     configuration:
-      object: 'entity'
+      object: entity
       replace_tokens: false
       recipient: '[node:field_e_mail:value]'
       subject: 'Your request [node:request_id] status update'
