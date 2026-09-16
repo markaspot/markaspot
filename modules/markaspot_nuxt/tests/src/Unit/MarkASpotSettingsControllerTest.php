@@ -2293,7 +2293,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->fieldConfigStorage->method('load')
       ->willReturnCallback(static fn(string $id) => $id === 'node.service_request.field_district' ? $district : NULL);
 
-    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management', Request::create('/api/form-mode', 'GET'));
     $data = json_decode($response->getContent(), TRUE);
 
     $this->assertArrayNotHasKey('field_district', $data['fields']);
@@ -2323,7 +2323,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->formDisplayStorage->method('load')->willReturn($display);
     $this->fieldConfigStorage->method('load')->willReturn(NULL);
 
-    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management', Request::create('/api/form-mode', 'GET'));
     $data = json_decode($response->getContent(), TRUE);
     $this->assertSame([], $data['export_fixed_relationships']);
   }
@@ -2348,7 +2348,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $display->method('getCacheMaxAge')->willReturn(-1);
     $this->formDisplayStorage->method('load')->willReturn($display);
 
-    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management', Request::create('/api/form-mode', 'GET'));
     $data = json_decode($response->getContent(), TRUE);
     $this->assertArrayNotHasKey('export_fixed_relationships', $data);
   }
