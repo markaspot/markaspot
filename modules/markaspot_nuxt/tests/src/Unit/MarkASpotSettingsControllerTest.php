@@ -197,8 +197,6 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->termStorage->method('loadByProperties')->willReturn([]);
     $this->termStorage->method('loadMultiple')->willReturn([]);
-    $this->formDisplayStorage = $this->createMock(EntityStorageInterface::class);
-    $this->fieldConfigStorage = $this->createMock(EntityStorageInterface::class);
 
     $groupTypeStorage = $this->createMock(EntityStorageInterface::class);
     $groupTypeStorage->method('load')->willReturn(NULL);
