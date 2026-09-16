@@ -7,15 +7,22 @@ namespace Drupal\Tests\service_request\Unit;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeInterface;
 use Drupal\service_request\Plugin\Validation\Constraint\ServiceRequestRequiredEmailConstraint;
 use Drupal\service_request\Plugin\Validation\Constraint\ServiceRequestRequiredEmailConstraintValidator;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use Symfony\Component\Validator\Violation\ConstraintViolationBuilderInterface;
 
 require_once dirname(__DIR__, 3) . '/service_request.module';
+require_once dirname(__DIR__, 3) . '/src/Access/InternalServiceRequestCreatePolicy.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/ServiceRequestRequiredEmailConstraint.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/ServiceRequestRequiredEmailConstraintValidator.php';
 
 /**
  * Tests lifecycle-aware required email validation.
@@ -33,6 +40,30 @@ final class ServiceRequestRequiredEmailConstraintValidatorTest extends UnitTestC
       ->method('buildViolation')
       ->with('This value should not be empty.')
       ->willReturn($builder);
+    $builder->expects($this->once())->method('addViolation');
+
+    $validator->validate($field, new ServiceRequestRequiredEmailConstraint());
+  }
+
+  /**
+   * Trusted staff may create through the server-owned JSON:API route.
+   */
+  public function testTrustedStaffJsonApiCreateAcceptsEmptyEmail(): void {
+    $request = $this->staffRequest('jsonapi.node--service_request.collection.post');
+    [$validator, $context, $field] = $this->validator(TRUE, NULL, $request, ['moderator']);
+    $context->expects($this->never())->method('buildViolation');
+
+    $validator->validate($field, new ServiceRequestRequiredEmailConstraint());
+  }
+
+  /**
+   * Staff sessions cannot enable the exception on public creation routes.
+   */
+  public function testPublicCreateRouteStillRejectsEmptyEmail(): void {
+    $request = $this->staffRequest('markaspot_open311.georeport_service_resource.post');
+    [$validator, $context, $field] = $this->validator(TRUE, NULL, $request, ['moderator']);
+    $builder = $this->createMock(ConstraintViolationBuilderInterface::class);
+    $context->expects($this->once())->method('buildViolation')->willReturn($builder);
     $builder->expects($this->once())->method('addViolation');
 
     $validator->validate($field, new ServiceRequestRequiredEmailConstraint());
@@ -89,7 +120,12 @@ final class ServiceRequestRequiredEmailConstraintValidatorTest extends UnitTestC
    * @return array{0: \Drupal\service_request\Plugin\Validation\Constraint\ServiceRequestRequiredEmailConstraintValidator, 1: \Symfony\Component\Validator\Context\ExecutionContextInterface, 2: \Drupal\Core\Field\FieldItemListInterface}
    *   Validator, context, and field.
    */
-  private function validator(bool $is_new, ?bool $original_empty): array {
+  private function validator(
+    bool $is_new,
+    ?bool $original_empty,
+    ?Request $request = NULL,
+    array $roles = [],
+  ): array {
     $node = $this->createMock(NodeInterface::class);
     $node->method('bundle')->willReturn('service_request');
     $node->method('isNew')->willReturn($is_new);
@@ -115,10 +151,36 @@ final class ServiceRequestRequiredEmailConstraintValidatorTest extends UnitTestC
     }
 
     $context = $this->createMock(ExecutionContextInterface::class);
-    $validator = new ServiceRequestRequiredEmailConstraintValidator($entity_type_manager);
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn($roles !== []);
+    $account->method('id')->willReturn(42);
+    $account->method('getRoles')->willReturn($roles);
+
+    $request_stack = new RequestStack();
+    if ($request instanceof Request) {
+      $request_stack->push($request);
+    }
+
+    $validator = new ServiceRequestRequiredEmailConstraintValidator(
+      $entity_type_manager,
+      $account,
+      $request_stack,
+    );
     $validator->initialize($context);
 
     return [$validator, $context, $field];
+  }
+
+  /**
+   * Builds a POST request backed by uid 42's server-side session.
+   */
+  private function staffRequest(string $route): Request {
+    $request = Request::create('/jsonapi/node/service_request', 'POST');
+    $request->attributes->set('_route', $route);
+    $session = $this->createMock(SessionInterface::class);
+    $session->method('get')->with('uid', 0)->willReturn(42);
+    $request->setSession($session);
+    return $request;
   }
 
 }

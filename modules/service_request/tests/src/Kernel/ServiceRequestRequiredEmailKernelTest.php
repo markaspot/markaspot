@@ -7,9 +7,17 @@ namespace Drupal\Tests\service_request\Kernel;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\Core\Session\UserSession;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+
+require_once dirname(__DIR__, 3) . '/src/Access/InternalServiceRequestCreatePolicy.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/ServiceRequestRequiredEmailConstraint.php';
+require_once dirname(__DIR__, 3) . '/src/Plugin/Validation/Constraint/ServiceRequestRequiredEmailConstraintValidator.php';
 
 /**
  * Covers required email behavior through Drupal entity validation.
@@ -122,6 +130,35 @@ final class ServiceRequestRequiredEmailKernelTest extends KernelTestBase {
     $this->assertNotNull($populated);
     $populated->set('field_e_mail', NULL);
     $this->assertCount(1, $populated->validate()->getByField('field_e_mail'));
+  }
+
+  /**
+   * A trusted staff JSON:API session may create without citizen contact data.
+   */
+  public function testStaffJsonApiCreateMayOmitEmail(): void {
+    $account = new UserSession([
+      'uid' => 42,
+      'roles' => ['authenticated', 'moderator'],
+    ]);
+    $this->container->get('current_user')->setAccount($account);
+
+    $request = Request::create('/jsonapi/node/service_request', 'POST');
+    $request->attributes->set('_route', 'jsonapi.node--service_request.collection.post');
+    $session = new Session(new MockArraySessionStorage());
+    $session->set('uid', 42);
+    $request->setSession($session);
+    $this->container->get('request_stack')->push($request);
+
+    try {
+      $new = Node::create([
+        'type' => 'service_request',
+        'title' => 'Internal staff report without email',
+      ]);
+      $this->assertCount(0, $new->validate()->getByField('field_e_mail'));
+    }
+    finally {
+      $this->container->get('request_stack')->pop();
+    }
   }
 
 }

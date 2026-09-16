@@ -12,6 +12,7 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Display\EntityFormDisplayInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageInterface;
@@ -19,6 +20,8 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\file\FileInterface;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
@@ -31,12 +34,14 @@ use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrgHierarchyResolverInterface.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrganisationMetadataBuilder.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/StatusTermScope.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
+require_once dirname(__DIR__, 4) . '/service_request/src/Access/InternalServiceRequestCreatePolicy.php';
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
 require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
@@ -98,6 +103,21 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected EntityStorageInterface $termStorage;
+
+  /**
+   * Mocked form and field configuration storages.
+   */
+  protected EntityStorageInterface $formDisplayStorage;
+
+  /**
+   * The field configuration storage.
+   */
+  protected EntityStorageInterface $fieldConfigStorage;
+
+  /**
+   * The field storage configuration storage.
+   */
+  protected EntityStorageInterface $fieldStorageConfigStorage;
 
   /**
    * The mocked module handler.
@@ -175,6 +195,9 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
 
     $groupTypeStorage = $this->createMock(EntityStorageInterface::class);
     $groupTypeStorage->method('load')->willReturn(NULL);
+    $this->formDisplayStorage = $this->createMock(EntityStorageInterface::class);
+    $this->fieldConfigStorage = $this->createMock(EntityStorageInterface::class);
+    $this->fieldStorageConfigStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->entityTypeManager->method('getStorage')
@@ -182,6 +205,9 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
         'group' => $this->groupStorage,
         'taxonomy_term' => $this->termStorage,
         'group_type' => $groupTypeStorage,
+        'entity_form_display' => $this->formDisplayStorage,
+        'field_config' => $this->fieldConfigStorage,
+        'field_storage_config' => $this->fieldStorageConfigStorage,
         default => $this->createMock(EntityStorageInterface::class),
       });
 
@@ -2160,7 +2186,9 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertStringContainsString("\$form_mode === 'management'", $source);
     $this->assertStringContainsString('currentUserCanAccessManagementFormSettings', $source);
     $this->assertStringContainsString('AccessDeniedHttpException', $source);
-    $this->assertStringContainsString("\$cache_metadata->addCacheContexts(['user.permissions', 'user.roles'])", $source);
+    $this->assertStringContainsString("'url.query_args:operation'", $source);
+    $this->assertStringContainsString("'user.permissions'", $source);
+    $this->assertStringContainsString("'user.roles'", $source);
     $this->assertStringContainsString('edit any service_request content', $source);
     $this->assertStringContainsString("['field_status', 'field_request_media', 'field_status_notes']", $source);
     $this->assertStringContainsString("'effective_cardinality'", $source);
@@ -2180,7 +2208,12 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     \Drupal::getContainer()->set('current_user', $account);
 
     $this->expectException(AccessDeniedHttpException::class);
-    $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'management',
+      Request::create('/api/form-mode', 'GET'),
+    );
   }
 
   /**
@@ -2197,7 +2230,12 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     \Drupal::getContainer()->set('current_user', $account);
 
     $this->expectException(AccessDeniedHttpException::class);
-    $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'management',
+      Request::create('/api/form-mode', 'GET'),
+    );
   }
 
   /**
@@ -2211,7 +2249,12 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $account->method('getRoles')->willReturn(['authenticated', 'contractor']);
     \Drupal::getContainer()->set('current_user', $account);
 
-    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $response = $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'management',
+      Request::create('/api/form-mode', 'GET'),
+    );
 
     // The mocked storage has no display. Reaching the normal 404 response
     // proves the contractor passed the management-form access gate.
@@ -2250,11 +2293,169 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $account->method('getRoles')->willReturn(['moderator']);
     \Drupal::getContainer()->set('current_user', $account);
 
-    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $response = $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'management',
+      Request::create('/api/form-mode', 'GET'),
+    );
 
     $this->assertSame(404, $response->getStatusCode());
     $this->assertContains('user.permissions', $response->getCacheableMetadata()->getCacheContexts());
     $this->assertContains('user.roles', $response->getCacheableMetadata()->getCacheContexts());
+  }
+
+  /**
+   * Trusted management creation exposes an optional email contract.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testTrustedManagementCreateEmailContractIsOptional(): void {
+    $field_config = $this->configureRequiredEmailFormContract();
+    $this->setCurrentAccount(['authenticated', 'moderator']);
+    $request = $this->formModeRequest('management', 'create', 42);
+
+    $response = $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'management',
+      $request,
+    );
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse($data['fields']['field_e_mail']['required']);
+    $this->assertNotContains(
+      'NotNull',
+      array_column($data['fields']['field_e_mail']['validation'], 'name'),
+    );
+    $this->assertTrue($field_config->isRequired(), 'Stored field contract remains required.');
+    $this->assertSame(0, $response->getCacheableMetadata()->getCacheMaxAge());
+    $this->assertContains(
+      'url.query_args:operation',
+      $response->getCacheableMetadata()->getCacheContexts(),
+    );
+  }
+
+  /**
+   * Edit management contracts keep the configured email requirement.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementEditEmailContractRemainsRequired(): void {
+    $this->configureRequiredEmailFormContract();
+    $this->setCurrentAccount(['authenticated', 'moderator']);
+    $request = $this->formModeRequest('management', NULL, 42);
+
+    $response = $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'management',
+      $request,
+    );
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue($data['fields']['field_e_mail']['required']);
+    $this->assertContains(
+      'NotNull',
+      array_column($data['fields']['field_e_mail']['validation'], 'name'),
+    );
+    $this->assertSame(3600, $response->getCacheableMetadata()->getCacheMaxAge());
+  }
+
+  /**
+   * Client-supplied creation context cannot relax the public form contract.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testCitizenDefaultCreateEmailContractRemainsRequired(): void {
+    $this->configureRequiredEmailFormContract();
+    $this->setCurrentAccount(['authenticated']);
+    $request = $this->formModeRequest('default', 'create', 42);
+
+    $response = $this->controller->getFormModeSettings(
+      'node',
+      'service_request',
+      'default',
+      $request,
+    );
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue($data['fields']['field_e_mail']['required']);
+    $this->assertContains(
+      'NotNull',
+      array_column($data['fields']['field_e_mail']['validation'], 'name'),
+    );
+  }
+
+  /**
+   * Configures one required email component for form-contract tests.
+   */
+  private function configureRequiredEmailFormContract(): RequiredEmailFieldConfig {
+    $form_display = $this->createMock(EntityFormDisplayInterface::class);
+    $form_display->method('getComponents')->willReturn([
+      'field_e_mail' => [
+        'type' => 'email_default',
+        'settings' => [],
+      ],
+    ]);
+    $form_display->method('getComponent')->with('field_e_mail')->willReturn([
+      'type' => 'email_default',
+      'settings' => [],
+    ]);
+    $form_display->method('getThirdPartySettings')->with('field_group')->willReturn([]);
+    $form_display->method('getCacheContexts')->willReturn([]);
+    $form_display->method('getCacheTags')->willReturn([]);
+    $form_display->method('getCacheMaxAge')->willReturn(-1);
+    $this->formDisplayStorage->method('load')->willReturn($form_display);
+
+    $field_config = new RequiredEmailFieldConfig([
+      'id' => 'node.service_request.field_e_mail',
+      'field_name' => 'field_e_mail',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Email',
+      'description' => '',
+      'required' => TRUE,
+      'field_type' => 'email',
+      'settings' => [],
+    ], 'field_config');
+    $this->fieldConfigStorage->method('load')->willReturn($field_config);
+
+    $field_storage = $this->createMock(FieldStorageConfig::class);
+    $field_storage->method('getCardinality')->willReturn(1);
+    $field_storage->method('getSettings')->willReturn([]);
+    $field_storage->method('getCacheContexts')->willReturn([]);
+    $field_storage->method('getCacheTags')->willReturn([]);
+    $field_storage->method('getCacheMaxAge')->willReturn(-1);
+    $this->fieldStorageConfigStorage->method('load')->willReturn($field_storage);
+
+    return $field_config;
+  }
+
+  /**
+   * Sets the current account used by ControllerBase.
+   *
+   * @param string[] $roles
+   *   Account roles.
+   */
+  private function setCurrentAccount(array $roles): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('id')->willReturn(42);
+    $account->method('getRoles')->willReturn($roles);
+    \Drupal::getContainer()->set('current_user', $account);
+  }
+
+  /**
+   * Builds a form-contract request with optional operation and session.
+   */
+  private function formModeRequest(string $form_mode, ?string $operation, int $session_uid): Request {
+    $query = $operation === NULL ? '' : '?operation=' . $operation;
+    $request = Request::create('/api/form-mode/' . $form_mode . $query, 'GET');
+    $session = $this->createMock(SessionInterface::class);
+    $session->method('get')->with('uid', 0)->willReturn($session_uid);
+    $request->setSession($session);
+    return $request;
   }
 
   /**
@@ -2624,6 +2825,76 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   protected function tearDown(): void {
     new Settings([]);
     parent::tearDown();
+  }
+
+}
+
+/**
+ * Field config whose required constraint follows the cloned required state.
+ */
+final class RequiredEmailFieldConfig extends FieldConfig {
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getLabel() {
+    return $this->label;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDescription() {
+    return $this->description;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getType() {
+    return $this->field_type;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDefaultValueLiteral() {
+    return $this->default_value;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getSettings() {
+    return $this->settings;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getConstraints(): array {
+    return $this->isRequired() ? ['NotNull' => []] : [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheTags(): array {
+    return [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheContexts(): array {
+    return [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheMaxAge(): int {
+    return -1;
   }
 
 }
