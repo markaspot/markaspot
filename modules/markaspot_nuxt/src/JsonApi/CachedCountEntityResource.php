@@ -132,7 +132,7 @@ final class CachedCountEntityResource extends EntityResource {
   protected function getCollectionCountQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
     $inner = parent::getCollectionCountQuery($resource_type, $params, $query_cacheability);
 
-    if ($resource_type->getTypeName() !== 'node--service_request' || $query_cacheability->getCacheMaxAge() === 0) {
+    if ($resource_type->getTypeName() !== 'node--service_request') {
       return $inner;
     }
 
@@ -151,6 +151,14 @@ final class CachedCountEntityResource extends EntityResource {
       return $inner;
     }
 
+    // Organisation-scoped queries must never reuse cached totals, but an
+    // explicit skip-count request must still avoid executing the count query.
+    $skip_count = self::requestWantsSkippedCount();
+    $cache_enabled = $query_cacheability->getCacheMaxAge() !== 0;
+    if (!$cache_enabled && !$skip_count) {
+      return $inner;
+    }
+
     // $params['filter'] is a \Drupal\jsonapi\Query\Filter VALUE OBJECT (built
     // by Filter::createFromQueryParameter()), not an array. serialize() is
     // deterministic for identical query strings, so hashing it is fine — but
@@ -165,7 +173,8 @@ final class CachedCountEntityResource extends EntityResource {
       \Drupal::currentUser(),
       $resource_type->getTypeName(),
       $filter_hash,
-      self::requestWantsSkippedCount(),
+      $skip_count,
+      $cache_enabled,
     );
   }
 

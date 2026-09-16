@@ -82,6 +82,13 @@ final class CountCacheQueryWrapper implements QueryInterface {
   private bool $skipOnCacheMiss;
 
   /**
+   * Whether access-dependent totals may be read from or written to cache.
+   *
+   * @var bool
+   */
+  private bool $cacheEnabled;
+
+  /**
    * Constructs a CountCacheQueryWrapper.
    *
    * @param \Drupal\Core\Entity\Query\QueryInterface $inner
@@ -102,6 +109,8 @@ final class CountCacheQueryWrapper implements QueryInterface {
    *   TRUE to return SKIPPED_COUNT_SENTINEL on cache miss without executing
    *   or caching the inner count query. Cache hits still return the exact
    *   cached count.
+   * @param bool $cache_enabled
+   *   FALSE to bypass all cache reads and writes for uncacheable access scopes.
    */
   public function __construct(
     QueryInterface $inner,
@@ -110,11 +119,13 @@ final class CountCacheQueryWrapper implements QueryInterface {
     string $resource_type_name,
     string $filter_hash,
     bool $skip_on_cache_miss = FALSE,
+    bool $cache_enabled = TRUE,
   ) {
     $this->inner = $inner;
     $this->cache = $cache;
     $this->account = $account;
     $this->skipOnCacheMiss = $skip_on_cache_miss;
+    $this->cacheEnabled = $cache_enabled;
 
     $roles = $account->getRoles();
     sort($roles);
@@ -126,6 +137,10 @@ final class CountCacheQueryWrapper implements QueryInterface {
    * {@inheritdoc}
    */
   public function execute() {
+    if (!$this->cacheEnabled) {
+      return $this->skipOnCacheMiss ? self::SKIPPED_COUNT_SENTINEL : $this->inner->execute();
+    }
+
     $cached = $this->cache->get($this->cid);
     if ($cached !== FALSE) {
       return $cached->data;

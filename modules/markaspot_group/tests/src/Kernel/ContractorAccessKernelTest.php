@@ -551,6 +551,24 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     $this->assertNotInstanceOf(CountCacheQueryWrapper::class, $count);
     $this->assertSame(1, (int) $count->execute());
 
+    // The row request must skip expensive totals even when organisation
+    // access makes the query uncacheable. The separate exact count above
+    // must continue to execute with the same access scope.
+    $request_stack = $this->container->get('request_stack');
+    foreach (['skipCount', 'skip-count'] as $parameter) {
+      $request_stack->push(Request::create('/jsonapi/node/service_request', 'GET', [$parameter => '1']));
+      try {
+        $skipped_cache = new CacheableMetadata();
+        $skipped = $reflection->getMethod('getCollectionCountQuery')->invoke($resource, $type, $params, $skipped_cache);
+        $this->assertInstanceOf(CountCacheQueryWrapper::class, $skipped);
+        $this->assertSame(CountCacheQueryWrapper::SKIPPED_COUNT_SENTINEL, $skipped->execute());
+        $this->assertSame(0, $skipped_cache->getCacheMaxAge());
+      }
+      finally {
+        $request_stack->pop();
+      }
+    }
+
     $no_filter = $method->invoke($resource, $type, [], new CacheableMetadata());
     $this->assertSame([(int) $this->organisationARequest->id()], array_map('intval', array_values($no_filter->execute())));
 

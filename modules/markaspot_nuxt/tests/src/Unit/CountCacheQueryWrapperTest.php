@@ -37,6 +37,7 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
     string $resource_type = 'node--service_request',
     string $filter_hash = 'testhash',
     bool $skip_on_cache_miss = FALSE,
+    bool $cache_enabled = TRUE,
   ): CountCacheQueryWrapper {
     return new CountCacheQueryWrapper(
       $inner,
@@ -45,6 +46,7 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
       $resource_type,
       $filter_hash,
       $skip_on_cache_miss,
+      $cache_enabled,
     );
   }
 
@@ -151,6 +153,36 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
     $result = $wrapper->execute();
 
     $this->assertSame(123, $result);
+  }
+
+  /**
+   * @covers ::execute
+   * Skipping an uncacheable count never reads stale totals or executes SQL.
+   */
+  public function testUncacheableSkippedCountDoesNotReadWriteOrExecute(): void {
+    $inner = $this->createMock(QueryInterface::class);
+    $inner->expects($this->never())->method('execute');
+    $cache = $this->createMock(CacheBackendInterface::class);
+    $cache->expects($this->never())->method('get');
+    $cache->expects($this->never())->method('set');
+
+    $wrapper = $this->buildWrapper($inner, $cache, $this->buildAccount(), skip_on_cache_miss: TRUE, cache_enabled: FALSE);
+    $this->assertSame(CountCacheQueryWrapper::SKIPPED_COUNT_SENTINEL, $wrapper->execute());
+  }
+
+  /**
+   * @covers ::execute
+   * An exact uncacheable count still executes without reading or storing cache.
+   */
+  public function testUncacheableExactCountExecutesWithoutCaching(): void {
+    $inner = $this->createMock(QueryInterface::class);
+    $inner->expects($this->once())->method('execute')->willReturn(7);
+    $cache = $this->createMock(CacheBackendInterface::class);
+    $cache->expects($this->never())->method('get');
+    $cache->expects($this->never())->method('set');
+
+    $wrapper = $this->buildWrapper($inner, $cache, $this->buildAccount(), cache_enabled: FALSE);
+    $this->assertSame(7, $wrapper->execute());
   }
 
   /**
