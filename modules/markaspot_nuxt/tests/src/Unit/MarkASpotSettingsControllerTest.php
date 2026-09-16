@@ -11,6 +11,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\Display\EntityFormDisplayInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -26,6 +27,7 @@ use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
 use Drupal\Core\Site\Settings;
+use Drupal\field\Entity\FieldConfig;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
@@ -100,6 +102,20 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   protected EntityStorageInterface $termStorage;
 
   /**
+   * The mocked entity form display storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $formDisplayStorage;
+
+  /**
+   * The mocked field configuration storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $fieldConfigStorage;
+
+  /**
    * The mocked module handler.
    *
    * @var \Drupal\Core\Extension\ModuleHandlerInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -172,6 +188,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->termStorage->method('loadByProperties')->willReturn([]);
     $this->termStorage->method('loadMultiple')->willReturn([]);
+    $this->formDisplayStorage = $this->createMock(EntityStorageInterface::class);
+    $this->fieldConfigStorage = $this->createMock(EntityStorageInterface::class);
 
     $groupTypeStorage = $this->createMock(EntityStorageInterface::class);
     $groupTypeStorage->method('load')->willReturn(NULL);
@@ -181,6 +199,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       ->willReturnCallback(fn(string $type) => match ($type) {
         'group' => $this->groupStorage,
         'taxonomy_term' => $this->termStorage,
+        'entity_form_display' => $this->formDisplayStorage,
+        'field_config' => $this->fieldConfigStorage,
         'group_type' => $groupTypeStorage,
         default => $this->createMock(EntityStorageInterface::class),
       });
@@ -2216,6 +2236,93 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     // The mocked storage has no display. Reaching the normal 404 response
     // proves the contractor passed the management-form access gate.
     $this->assertSame(404, $response->getStatusCode());
+  }
+
+  /**
+   * Hidden fixed export fields are advertised without entering form fields.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementSettingsExposeOnlyConfiguredFixedExportRelationships(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['moderator']);
+    $account->method('hasPermission')->willReturn(FALSE);
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $display = $this->createMock(EntityFormDisplayInterface::class);
+    $display->method('getComponents')->willReturn([]);
+    $display->method('getThirdPartySettings')->willReturn([]);
+    $display->method('getCacheTags')->willReturn(['config:core.entity_form_display.node.service_request.management']);
+    $display->method('getCacheContexts')->willReturn([]);
+    $display->method('getCacheMaxAge')->willReturn(-1);
+    $this->formDisplayStorage->method('load')->willReturn($display);
+
+    $district = $this->createMock(FieldConfig::class);
+    $district->method('getCacheTags')->willReturn(['config:field.field.node.service_request.field_district']);
+    $district->method('getCacheContexts')->willReturn([]);
+    $district->method('getCacheMaxAge')->willReturn(-1);
+    $this->fieldConfigStorage->method('load')
+      ->willReturnCallback(static fn(string $id) => $id === 'node.service_request.field_district' ? $district : NULL);
+
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertArrayNotHasKey('field_district', $data['fields']);
+    $this->assertSame(['field_district'], $data['export_fixed_relationships']);
+    $this->assertContains('config:field.field.node.service_request.field_district', $response->getCacheableMetadata()->getCacheTags());
+    $this->assertContains('config:field.field.node.service_request.field_sublocality', $response->getCacheableMetadata()->getCacheTags());
+  }
+
+  /**
+   * Missing fixed fields are represented by an explicit empty capability.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementSettingsExposeEmptyFixedExportCapabilityWhenFieldsAreAbsent(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['moderator']);
+    $account->method('hasPermission')->willReturn(FALSE);
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $display = $this->createMock(EntityFormDisplayInterface::class);
+    $display->method('getComponents')->willReturn([]);
+    $display->method('getThirdPartySettings')->willReturn([]);
+    $display->method('getCacheTags')->willReturn([]);
+    $display->method('getCacheContexts')->willReturn([]);
+    $display->method('getCacheMaxAge')->willReturn(-1);
+    $this->formDisplayStorage->method('load')->willReturn($display);
+    $this->fieldConfigStorage->method('load')->willReturn(NULL);
+
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame([], $data['export_fixed_relationships']);
+  }
+
+  /**
+   * Restricted contractor form contracts never expose export capabilities.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testContractorManagementSettingsOmitFixedExportCapability(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['authenticated', 'contractor']);
+    $account->method('hasPermission')->willReturn(FALSE);
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $display = $this->createMock(EntityFormDisplayInterface::class);
+    $display->method('getComponents')->willReturn([]);
+    $display->method('getThirdPartySettings')->willReturn([]);
+    $display->method('getCacheTags')->willReturn([]);
+    $display->method('getCacheContexts')->willReturn([]);
+    $display->method('getCacheMaxAge')->willReturn(-1);
+    $this->formDisplayStorage->method('load')->willReturn($display);
+
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertArrayNotHasKey('export_fixed_relationships', $data);
   }
 
   /**

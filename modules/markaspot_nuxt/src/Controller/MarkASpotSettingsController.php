@@ -1144,15 +1144,39 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
+    // The CSV exporter has fixed District and Sublocality columns. Their
+    // fields may be hidden from the form display, so expose only this explicit
+    // allowlist for staff management exports. Do not expose hidden generic
+    // fields or add this capability to the restricted contractor contract.
+    $export_fixed_relationships = NULL;
+    if ($is_management_form_mode
+      && !$is_contractor_management_form
+      && $entity_type === 'node'
+      && $bundle === 'service_request') {
+      $export_fixed_relationships = [];
+      foreach (['field_district', 'field_sublocality'] as $field_name) {
+        $cache_metadata->addCacheTags(["config:field.field.{$entity_type}.{$bundle}.{$field_name}"]);
+        $field_config = FieldConfig::loadByName($entity_type, $bundle, $field_name);
+        if ($field_config) {
+          $cache_metadata->addCacheableDependency($field_config);
+          $export_fixed_relationships[] = $field_name;
+        }
+      }
+    }
+
     // Return the form display settings with fields and groups as cacheable
     // JSON.
-    $response = new CacheableJsonResponse([
+    $response_data = [
       'entity_type' => $entity_type,
       'bundle' => $bundle,
       'form_mode' => $form_mode,
       'fields' => $fields,
       'field_groups' => $field_groups,
-    ]);
+    ];
+    if ($export_fixed_relationships !== NULL) {
+      $response_data['export_fixed_relationships'] = $export_fixed_relationships;
+    }
+    $response = new CacheableJsonResponse($response_data);
     $response->addCacheableDependency($cache_metadata);
     return $response;
   }
