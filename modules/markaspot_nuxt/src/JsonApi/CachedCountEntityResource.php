@@ -13,6 +13,7 @@ use Drupal\jsonapi\JsonApiResource\IncludedData;
 use Drupal\jsonapi\JsonApiResource\NullIncludedData;
 use Drupal\jsonapi\JsonApiResource\ResourceObjectData;
 use Drupal\jsonapi\Query\OffsetPage;
+use Drupal\jsonapi\Query\Filter;
 use Drupal\jsonapi\ResourceType\ResourceType;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -77,10 +78,21 @@ final class CachedCountEntityResource extends EntityResource {
    * pass straight through to the inner query.
    */
   protected function getCollectionQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
-    $inner = parent::getCollectionQuery($resource_type, $params, $query_cacheability);
-
     if ($resource_type->getTypeName() !== 'node--service_request') {
-      return $inner;
+      return parent::getCollectionQuery($resource_type, $params, $query_cacheability);
+    }
+
+    // Build the normal access-checked, bundle-scoped query, then apply the
+    // filter with Group-aware subsets instead of Core's published/own subset.
+    $filter = $params[Filter::KEY_NAME] ?? NULL;
+    unset($params[Filter::KEY_NAME]);
+    $inner = parent::getCollectionQuery($resource_type, $params, $query_cacheability);
+    if ($filter instanceof Filter) {
+      $inner->condition($filter->queryCondition($inner));
+      OrganisationQueryGuard::setFieldManager($this->fieldManager);
+      // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+      OrganisationQueryGuard::setModuleHandler(\Drupal::moduleHandler());
+      OrganisationQueryGuard::applyAccessControls($filter, $inner, $query_cacheability);
     }
 
     // The inner query must be a Sql\Query for CandidateEntityQuery::fromQuery()
@@ -120,7 +132,7 @@ final class CachedCountEntityResource extends EntityResource {
   protected function getCollectionCountQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
     $inner = parent::getCollectionCountQuery($resource_type, $params, $query_cacheability);
 
-    if ($resource_type->getTypeName() !== 'node--service_request') {
+    if ($resource_type->getTypeName() !== 'node--service_request' || $query_cacheability->getCacheMaxAge() === 0) {
       return $inner;
     }
 

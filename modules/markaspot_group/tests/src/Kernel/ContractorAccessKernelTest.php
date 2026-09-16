@@ -6,12 +6,26 @@ namespace Drupal\Tests\markaspot_group\Kernel;
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\jsonapi\Query\EntityCondition;
+use Drupal\jsonapi\Query\EntityConditionGroup;
+use Drupal\jsonapi\Query\Filter;
+use Drupal\jsonapi\Access\TemporaryQueryGuard;
+use Drupal\jsonapi\JsonApiFilter;
+use Drupal\markaspot_nuxt\JsonApi\OrganisationQueryGuard;
+use Drupal\markaspot_nuxt\JsonApi\CachedCountEntityResource;
+use Drupal\markaspot_nuxt\JsonApi\CountCacheQueryWrapper;
+use Drupal\markaspot_nuxt\JsonApi\DeferredAccessQueryWrapper;
+use Drupal\jsonapi\ResourceType\ResourceType;
 use Drupal\markaspot_group\Controller\RequestResponsibilityController;
 use Drupal\media\Entity\Media;
 use Drupal\node\Entity\Node;
@@ -27,6 +41,8 @@ use Drupal\user\PermissionHandlerInterface;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
+
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/OrganisationQueryGuard.php';
 
 /**
  * Tests organisation scope and personal-data shielding for contractors.
@@ -62,6 +78,8 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     'field_permissions',
     'markaspot_validation',
     'markaspot_group',
+    'serialization',
+    'jsonapi',
   ];
 
   /**
@@ -386,6 +404,194 @@ final class ContractorAccessKernelTest extends KernelTestBase {
       ->get('entity_type.manager')->getStorage('node')->getQuery()
       ->accessCheck(TRUE)->condition('type', 'service_request')
       ->condition('status', 0)->sort('nid')->execute()));
+  }
+
+  /**
+   * JSON:API subsets include permitted drafts and exclude foreign drafts.
+   */
+  public function testJsonApiOrganisationFilterSubsets(): void {
+    $this->organisationBRequest->setUnpublished()->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $ids = [(int) $this->organisationARequest->id(), (int) $this->organisationBRequest->id()];
+    $query = $this->createGuardedQuery('nid', $ids);
+    $this->assertSame([(int) $this->organisationARequest->id()], array_map('intval', array_values($query->execute())));
+    $this->assertSame(1, (int) $this->createGuardedQuery('nid', $ids)->count()->execute());
+
+    $role = GroupRole::load('org-insider');
+    $role->revokePermission('view unpublished group_node:service_request entity')->save();
+    $this->assertSame([], $this->createGuardedQuery('nid', [(int) $this->organisationARequest->id()])->execute());
+  }
+
+  /**
+   * Traversed node filters cannot reveal a foreign unpublished reference.
+   */
+  public function testJsonApiReferencedNodeSubsets(): void {
+    FieldStorageConfig::create([
+      'field_name' => 'field_test_reference',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'node'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_test_reference',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+    ])->save();
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    $this->organisationARequest = $storage->loadUnchanged($this->organisationARequest->id());
+    $this->organisationBRequest = $storage->loadUnchanged($this->organisationBRequest->id());
+    $this->organisationBRequest->setUnpublished()->save();
+    $this->organisationARequest->set('field_test_reference', $this->organisationBRequest->id())->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $this->assertSame([], $this->createGuardedQuery('field_test_reference.entity.nid', [(int) $this->organisationBRequest->id()])->execute());
+
+    $this->organisationARequest->set('field_test_reference', $this->organisationARequest->id())->save();
+    $this->assertSame([], $this->createGuardedQuery('field_test_reference.entity.nid', [(int) $this->organisationARequest->id()])->execute());
+    $this->organisationARequest->setPublished()->save();
+    $this->assertSame([(int) $this->organisationARequest->id()], array_map('intval', array_values($this->createGuardedQuery('field_test_reference.entity.nid', [(int) $this->organisationARequest->id()])->execute())));
+  }
+
+  /**
+   * Other unpublished node bundles never enter the organisation subset.
+   */
+  public function testJsonApiOtherNodeBundlesKeepCoreFilterGuard(): void {
+    NodeType::create(['type' => 'page', 'name' => 'Page'])->save();
+    $page = Node::create(['type' => 'page', 'title' => 'Private page', 'uid' => $this->contractor->id(), 'status' => 0]);
+    $page->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $this->assertSame([], $this->createGuardedQuery('nid', [(int) $page->id()])->execute());
+    $this->organisationA->removeMember($this->moderator);
+    $this->assertSame([], $this->createGuardedQuery('nid', [(int) $this->organisationARequest->id()])->execute());
+    $this->container->get('current_user')->setAccount(User::load(0));
+    $this->assertSame([], $this->createGuardedQuery('nid', [(int) $this->organisationARequest->id()])->execute());
+  }
+
+  /**
+   * Contractors retain scoped draft access while PII remains shielded.
+   */
+  public function testJsonApiContractorDraftScope(): void {
+    $this->organisationBRequest->setUnpublished()->save();
+    $this->container->get('current_user')->setAccount($this->contractor);
+    $ids = [(int) $this->organisationARequest->id(), (int) $this->organisationBRequest->id()];
+    $this->assertSame([(int) $this->organisationARequest->id()], array_map('intval', array_values($this->createGuardedQuery('nid', $ids)->execute())));
+    $this->assertFalse($this->organisationARequest->get('field_e_mail')->access('view', $this->contractor));
+  }
+
+  /**
+   * Organisation grants cannot override Core's mandatory base permission.
+   */
+  public function testJsonApiRequiresAccessContent(): void {
+    Role::load('moderator')->revokePermission('access content')->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $this->assertFalse($this->moderator->hasPermission('access content'));
+    $this->assertSame([], $this->createGuardedQuery('nid', [(int) $this->organisationARequest->id()])->execute());
+  }
+
+  /**
+   * Accounts without organisation grants preserve Core's cacheability.
+   */
+  public function testJsonApiNoOrganisationPreservesCoreGuard(): void {
+    $this->useCoreNodeFilterSubsets();
+    $this->organisationA->removeMember($this->moderator);
+    OrganisationQueryGuard::setModuleHandler($this->container->get('module_handler'));
+    $entity_type = $this->container->get('entity_type.manager')->getDefinition('node');
+    $core_cache = new CacheableMetadata();
+    $org_cache = new CacheableMetadata();
+    $method = new \ReflectionMethod(TemporaryQueryGuard::class, 'getAccessConditionForKnownSubsets');
+    $core = $method->invoke(NULL, $entity_type, $this->moderator, $core_cache);
+    $method = new \ReflectionMethod(OrganisationQueryGuard::class, 'getAccessConditionForKnownSubsets');
+    $scoped = $method->invoke(NULL, $entity_type, $this->moderator, $org_cache);
+    $this->assertEquals($core, $scoped);
+    $this->assertSame($core_cache->getCacheMaxAge(), $org_cache->getCacheMaxAge());
+  }
+
+  /**
+   * Explicit filter vetoes from other modules remain authoritative.
+   */
+  public function testJsonApiPreservesExplicitModuleVeto(): void {
+    $this->useCoreNodeFilterSubsets();
+    $handler = $this->createMock(ModuleHandlerInterface::class);
+    $handler->method('invokeAllWith')->willReturnCallback(static function ($hook, $callback): void {
+      $callback(static fn() => [JsonApiFilter::AMONG_ALL => AccessResult::forbidden()], 'test_veto');
+    });
+    OrganisationQueryGuard::setModuleHandler($handler);
+    $cache = new CacheableMetadata();
+    $method = new \ReflectionMethod(OrganisationQueryGuard::class, 'getAccessConditionForKnownSubsets');
+    $condition = $method->invoke(NULL, $this->container->get('entity_type.manager')->getDefinition('node'), $this->moderator, $cache);
+    $query = $this->container->get('entity_type.manager')->getStorage('node')->getQuery()->accessCheck(TRUE);
+    $filter = new Filter(new EntityConditionGroup('AND', [$condition]));
+    $query->condition($filter->queryCondition($query));
+    $this->assertSame([], $query->execute());
+  }
+
+  /**
+   * The real resource decorator wires filter, count and pass-through paths.
+   */
+  public function testJsonApiResourceDecoratorIntegration(): void {
+    $this->useCoreNodeFilterSubsets();
+    $this->organisationBRequest->setUnpublished()->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    // Only the two dependencies used by the query builder are needed here.
+    $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+    $resource = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+    $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+    $type = new ResourceType('node', 'service_request', Node::class);
+    $filter = new Filter(new EntityConditionGroup('AND', [new EntityCondition('nid', (int) $this->organisationARequest->id())]));
+    $params = [Filter::KEY_NAME => $filter];
+    $cache = new CacheableMetadata();
+    $method = $reflection->getMethod('getCollectionQuery');
+    $query = $method->invoke($resource, $type, $params, $cache);
+    $this->assertInstanceOf(DeferredAccessQueryWrapper::class, $query);
+    $this->assertSame([(int) $this->organisationARequest->id()], array_map('intval', array_values($query->execute())));
+    $this->assertSame(0, $cache->getCacheMaxAge());
+
+    $count_cache = new CacheableMetadata();
+    $count = $reflection->getMethod('getCollectionCountQuery')->invoke($resource, $type, $params, $count_cache);
+    $this->assertNotInstanceOf(CountCacheQueryWrapper::class, $count);
+    $this->assertSame(1, (int) $count->execute());
+
+    $no_filter = $method->invoke($resource, $type, [], new CacheableMetadata());
+    $this->assertSame([(int) $this->organisationARequest->id()], array_map('intval', array_values($no_filter->execute())));
+
+    NodeType::create(['type' => 'page', 'name' => 'Page'])->save();
+    $page = Node::create(['type' => 'page', 'title' => 'Private page', 'uid' => $this->contractor->id(), 'status' => 0]);
+    $page->save();
+    $page_type = new ResourceType('node', 'page', Node::class);
+    $page_filter = new Filter(new EntityConditionGroup('AND', [new EntityCondition('nid', (int) $page->id())]));
+    $query = $method->invoke($resource, $page_type, [Filter::KEY_NAME => $page_filter], new CacheableMetadata());
+    $this->assertNotInstanceOf(DeferredAccessQueryWrapper::class, $query);
+    $this->assertSame([], $query->execute());
+  }
+
+  /**
+   * Exercises Core's published/own guard instead of Entity's fixture bypass.
+   *
+   * The minimal fixture has no Entity query-access events. Its empty handler
+   * consequently advertises AMONG_ALL, unlike the scoped runtime. Removing only
+   * that fixture handler retains the real node_access grants and SQL checks.
+   */
+  private function useCoreNodeFilterSubsets(): void {
+    $entity_type = $this->container->get('entity_type.manager')->getDefinition('node');
+    $entity_type->setHandlerClass('query_access', NULL);
+    TemporaryQueryGuard::setModuleHandler($this->container->get('module_handler'));
+    $method = new \ReflectionMethod(TemporaryQueryGuard::class, 'getAccessConditionForKnownSubsets');
+    $this->assertNotNull($method->invoke(NULL, $entity_type, $this->moderator, new CacheableMetadata()));
+  }
+
+  /**
+   * Builds the real access-checked query with JSON:API's recursive guard.
+   */
+  private function createGuardedQuery(string $field, array $ids): QueryInterface {
+    $this->useCoreNodeFilterSubsets();
+    $query = $this->container->get('entity_type.manager')->getStorage('node')->getQuery()->accessCheck(TRUE)->sort('nid');
+    $filter = new Filter(new EntityConditionGroup('AND', [new EntityCondition($field, $ids, 'IN')]));
+    $query->condition($filter->queryCondition($query));
+    $cacheability = new CacheableMetadata();
+    OrganisationQueryGuard::setFieldManager($this->container->get('entity_field.manager'));
+    OrganisationQueryGuard::setModuleHandler($this->container->get('module_handler'));
+    OrganisationQueryGuard::applyAccessControls($filter, $query, $cacheability);
+    return $query;
   }
 
   /**
