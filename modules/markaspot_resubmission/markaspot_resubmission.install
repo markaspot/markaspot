@@ -7,7 +7,10 @@
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\FileStorage;
+use Drupal\Core\Entity\Sql\DefaultTableMapping;
+use Drupal\Core\Entity\Sql\SqlContentEntityStorageSchema;
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Utility\UpdateException;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\markaspot_resubmission\Entity\ResubmissionReminder;
@@ -16,7 +19,8 @@ use Drupal\markaspot_resubmission\Entity\ResubmissionReminder;
  * Implements hook_install().
  */
 function markaspot_resubmission_install() {
-  // Entity schema is auto-created by Drupal for content entities.
+  // Drupal installs content entity definitions before invoking hook_install().
+  // The update repair helper is only needed for already-enabled migrations.
   // Create field_resubmission_days on taxonomy_term.service_category.
   _markaspot_resubmission_create_resubmission_days_field();
 
@@ -388,6 +392,96 @@ function markaspot_resubmission_update_9007(): string {
   }
 
   return implode('; ', $parts) . '.';
+}
+
+/**
+ * Restore missing installed definitions for migrated reminder entities.
+ */
+function markaspot_resubmission_update_9008(): string {
+  return _markaspot_resubmission_repair_entity_definition();
+}
+
+/**
+ * Installs reminder definitions while preserving any migrated audit records.
+ *
+ * @return string
+ *   A summary of the repair or the reason no repair was needed.
+ *
+ * @throws \Drupal\Core\Utility\UpdateException
+ *   When the existing table lacks entity identifiers that cannot be recovered.
+ */
+function _markaspot_resubmission_repair_entity_definition(): string {
+  $entity_type_id = 'resubmission_reminder';
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+  if ($update_manager->getEntityType($entity_type_id) !== NULL) {
+    return (string) t('Resubmission reminder entity already installed.');
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $entity_field_manager = \Drupal::service('entity_field.manager');
+  $entity_type_manager->clearCachedDefinitions();
+  $entity_field_manager->clearCachedFieldDefinitions();
+  /** @var \Drupal\Core\Entity\ContentEntityTypeInterface $entity_type */
+  $entity_type = $entity_type_manager->getDefinition($entity_type_id);
+  // The field manager normalizes the entity class's base field definitions,
+  // including their names, provider and target entity type.
+  $fields = $entity_field_manager->getFieldStorageDefinitions($entity_type_id);
+  $schema = \Drupal::database()->schema();
+  $table = $entity_type->getBaseTable();
+
+  if (!$schema->tableExists($table)) {
+    $update_manager->installFieldableEntityType($entity_type, $fields);
+    return (string) t('Installed resubmission reminder entity and table.');
+  }
+
+  // Repair the existing table before registering it as fully installed.
+  $mapping = DefaultTableMapping::create($entity_type, $fields);
+  $key_fields = array_filter($entity_type->getKeys());
+  foreach ($key_fields as $field_name) {
+    foreach ($mapping->getColumnNames($field_name) as $column_name) {
+      if (!$schema->fieldExists($table, $column_name)) {
+        throw new UpdateException(sprintf('Cannot repair %s: identifier column %s is missing.', $table, $column_name));
+      }
+    }
+  }
+  foreach ($mapping->getFieldNames($table) as $field_name) {
+    $field = $fields[$field_name];
+    $columns = $field->getColumns();
+    $defaults = $field->getDefaultValueLiteral()[0] ?? [];
+    foreach ($mapping->getColumnNames($field_name) as $property => $column_name) {
+      if (!$schema->fieldExists($table, $column_name)) {
+        $spec = $columns[$property];
+        // Core allows NULL for non-key fields in shared entity tables.
+        $spec['not null'] = FALSE;
+        // Populate newly added fields only, e.g. legacy reminder_scope = org.
+        if (array_key_exists($property, $defaults)) {
+          $spec['initial'] = $defaults[$property];
+        }
+        $schema->addField($table, $column_name, $spec);
+      }
+    }
+  }
+
+  // Core's SQL schema handler skips CREATE TABLE for existing tables and
+  // records their per-field SQL metadata. Keep this in sync as well, so a
+  // previously missing field does not remain a pending schema update.
+  $storage_schema = new SqlContentEntityStorageSchema(
+    $entity_type_manager,
+    $entity_type,
+    $entity_type_manager->getStorage($entity_type_id),
+    \Drupal::database(),
+    $entity_field_manager,
+  );
+  $storage_schema->onFieldableEntityTypeCreate($entity_type, $fields);
+
+  $repository = \Drupal::service('entity.last_installed_schema.repository');
+  $repository->setLastInstalledFieldStorageDefinitions($entity_type_id, $fields);
+  // Publish the type last so a failed column repair remains retryable.
+  $repository->setLastInstalledDefinition($entity_type);
+  $entity_type_manager->clearCachedDefinitions();
+  $entity_field_manager->clearCachedFieldDefinitions();
+
+  return (string) t('Restored resubmission reminder entity definitions; existing records preserved.');
 }
 
 /**
