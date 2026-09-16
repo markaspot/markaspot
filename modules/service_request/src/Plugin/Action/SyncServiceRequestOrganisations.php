@@ -17,6 +17,7 @@ use Drupal\Core\Utility\Token;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\node\NodeInterface;
 use Drupal\user\UserInterface;
+use Drupal\service_request\OrganisationNotificationPolicy;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -350,6 +351,10 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
           '@nid' => $node->id(),
           '@gid' => $group_id,
         ]);
+        continue;
+      }
+
+      if (!OrganisationNotificationPolicy::isEnabled($group)) {
         continue;
       }
 

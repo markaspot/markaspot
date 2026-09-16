@@ -11,6 +11,9 @@
 
 declare(strict_types=1);
 
+use Drupal\service_request\Plugin\Action\OrganisationAwareEmailAction;
+use Drupal\Core\Action\Plugin\Action\EmailAction;
+use Drupal\service_request\OrganisationNotificationPolicy;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Url;
 use Drupal\Core\Access\AccessResult;
@@ -1878,19 +1881,48 @@ function _markaspot_group_account_organisation_ids(AccountInterface $account): a
 }
 
 /**
+ * Implements hook_action_info_alter().
+ */
+function markaspot_group_action_info_alter(array &$definitions): void {
+  $id = 'action_send_email_action';
+  if (($definitions[$id]['class'] ?? NULL) === EmailAction::class) {
+    $definitions[$id]['class'] = OrganisationAwareEmailAction::class;
+  }
+}
+
+/**
+ * Implements hook_field_widget_single_element_form_alter().
+ */
+function markaspot_group_field_widget_single_element_form_alter(array &$element, FormStateInterface $form_state, array $context): void {
+  $items = $context['items'] ?? NULL;
+  if (!$items instanceof FieldItemListInterface
+    || $items->getFieldDefinition()->getName() !== 'field_assignment_notifications'
+    || !$items->isEmpty()) {
+    return;
+  }
+  $entity = $items->getEntity();
+  if ($entity instanceof GroupInterface
+    && $entity->bundle() === _markaspot_group_get_org_group_type()
+    && ($element['value']['#type'] ?? NULL) === 'checkbox') {
+    // An unset legacy value means enabled, including on an unrelated form save.
+    $element['value']['#default_value'] = TRUE;
+  }
+}
+
+/**
  * Implements hook_entity_field_access().
  */
 function markaspot_group_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
   $field_entity = $items?->getEntity();
-  $is_organisation_mailbox = $field_definition->getTargetEntityTypeId() === 'group'
-    && $field_definition->getName() === 'field_head_organisation_e_mail'
+  $is_organisation_mail_setting = $field_definition->getTargetEntityTypeId() === 'group'
+    && in_array($field_definition->getName(), ['field_head_organisation_e_mail', 'field_assignment_notifications'], TRUE)
     && ($field_definition->getTargetBundle() === _markaspot_group_get_org_group_type()
       || ($field_entity instanceof GroupInterface
         && $field_entity->bundle() === _markaspot_group_get_org_group_type()));
 
-  if ($is_organisation_mailbox && $operation === 'view') {
+  if ($is_organisation_mail_setting && ($operation === 'view' || ($operation === 'edit' && $field_definition->getName() === 'field_assignment_notifications'))) {
     if (!$field_entity instanceof GroupInterface) {
-      return AccessResult::forbidden('Organisation context is required for mailbox access.')
+      return AccessResult::forbidden('Organisation context is required for notification settings access.')
         ->setCacheMaxAge(0);
     }
 
@@ -1903,7 +1935,7 @@ function markaspot_group_entity_field_access(string $operation, FieldDefinitionI
 
     $result = $allowed
       ? AccessResult::allowed()
-      : AccessResult::forbidden('Organisation mailboxes are restricted to jurisdiction administrators.');
+      : AccessResult::forbidden('Organisation notification settings are restricted to jurisdiction administrators.');
     return $result
       ->setCacheMaxAge(0)
       ->addCacheableDependency($field_entity);
@@ -5333,6 +5365,10 @@ function _markaspot_group_notify_organisation_group(NodeInterface $node, GroupIn
     return;
   }
 
+  if (!OrganisationNotificationPolicy::isEnabled($org_group)) {
+    return;
+  }
+
   $recipients = _markaspot_group_organisation_notification_recipients($org_group);
   if ($recipients === []) {
     \Drupal::logger('markaspot_group')->notice(
@@ -6114,6 +6150,10 @@ function _markaspot_group_normalize_notification_langcode(string $langcode): ?st
  *   Valid recipient addresses.
  */
 function _markaspot_group_organisation_notification_recipients(GroupInterface $org_group): array {
+  if (!OrganisationNotificationPolicy::isEnabled($org_group)) {
+    return [];
+  }
+
   $field_recipients = _markaspot_group_email_field_values($org_group, 'field_head_organisation_e_mail');
   if ($field_recipients !== []) {
     return $field_recipients;

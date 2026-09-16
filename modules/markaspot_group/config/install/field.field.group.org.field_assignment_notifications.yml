@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_assignment_notifications
+    - group.type.org
+id: group.org.field_assignment_notifications
+field_name: field_assignment_notifications
+entity_type: group
+bundle: org
+label: 'Assignment email notifications'
+description: 'Send email when a report is assigned or delegated to this organisation. Disabling this affects only this organisation, not access or responsibility.'
+required: false
+translatable: false
+default_value:
+  -
+    value: 1
+default_value_callback: ''
+settings:
+  on_label: Enabled
+  off_label: Disabled
+field_type: boolean

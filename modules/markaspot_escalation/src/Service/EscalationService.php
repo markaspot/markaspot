@@ -17,6 +17,7 @@ use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
+use Drupal\service_request\OrganisationNotificationPolicy;
 use Drupal\paragraphs\Entity\Paragraph;
 use Psr\Log\LoggerInterface;
 
@@ -1012,6 +1013,10 @@ class EscalationService implements EscalationServiceInterface {
    *   The delegation note.
    */
   protected function sendDelegationNotification($orgGroup, NodeInterface $node, string $note): void {
+    if (!OrganisationNotificationPolicy::isEnabled($orgGroup)) {
+      return;
+    }
+
     if (!$orgGroup->hasField('field_head_organisation_e_mail')
         || $orgGroup->get('field_head_organisation_e_mail')->isEmpty()) {
       $this->logger->notice('No email configured for organisation "@org" (id=@oid). Skipping delegation notification.', [

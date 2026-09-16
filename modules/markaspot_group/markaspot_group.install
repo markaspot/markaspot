@@ -5865,3 +5865,45 @@ function markaspot_group_update_11950(array &$sandbox): string {
     $sandbox['rewritten'],
   );
 }
+
+/**
+ * Adds per-organisation assignment mail preferences without changing opt-outs.
+ */
+function markaspot_group_update_11951(): string {
+  $field_name = 'field_assignment_notifications';
+  if (!FieldStorageConfig::loadByName('group', $field_name)) {
+    FieldStorageConfig::create([
+      'entity_type' => 'group',
+      'field_name' => $field_name,
+      'type' => 'boolean',
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ])->save();
+  }
+  if (!\Drupal::entityTypeManager()->getStorage('group_type')->load('org')) {
+    return 'Assignment notification field storage added; no org bundle exists.';
+  }
+  if (!FieldConfig::loadByName('group', 'org', $field_name)) {
+    FieldConfig::create([
+      'entity_type' => 'group',
+      'bundle' => 'org',
+      'field_name' => $field_name,
+      'label' => 'Assignment email notifications',
+      'description' => 'Send email when a report is assigned or delegated to this organisation. Disabling this affects only this organisation, not access or responsibility.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 1]],
+      'settings' => ['on_label' => 'Enabled', 'off_label' => 'Disabled'],
+    ])->save();
+  }
+  $display = \Drupal::entityTypeManager()->getStorage('entity_form_display')->load('group.org.default');
+  if ($display && !$display->getComponent($field_name)) {
+    $display->setComponent($field_name, [
+      'type' => 'boolean_checkbox',
+      'weight' => 8,
+      'settings' => ['display_label' => TRUE],
+    ])->save();
+  }
+  \Drupal::service('plugin.manager.action')->clearCachedDefinitions();
+  return 'Per-organisation assignment mail preferences are available; existing behaviour and stored preferences are preserved.';
+}

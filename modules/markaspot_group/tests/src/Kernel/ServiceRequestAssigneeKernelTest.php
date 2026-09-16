@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\service_request\Plugin\Action\OrganisationAwareEmailAction;
+use Drupal\Core\Form\FormState;
+use Drupal\service_request\OrganisationNotificationPolicy;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -1171,6 +1174,117 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       ->resetCache([(int) $this->jurisdiction->id()]);
     $this->jurisdiction = Group::load($this->jurisdiction->id());
     $this->assertInstanceOf(Group::class, $this->jurisdiction);
+  }
+
+  /**
+   * Tests update repeatability and independent mail choices on real entities.
+   */
+  public function testOrganisationNotificationPreferencesPreserveResponsibility(): void {
+    require_once dirname(__DIR__, 3) . '/markaspot_group.install';
+    markaspot_group_update_11951();
+    $storage = $this->container->get('entity_type.manager')->getStorage('group');
+    $storage->resetCache();
+    $enabled = Group::load($this->organisation->id());
+    $disabled = Group::load($this->parksOrganisation->id());
+    $this->assertTrue(OrganisationNotificationPolicy::isEnabled($enabled));
+    // Existing empty storage must render enabled in the standard Drupal widget.
+    $enabled->set('field_assignment_notifications', NULL);
+    $items = $enabled->get('field_assignment_notifications');
+    $widget = $this->container->get('plugin.manager.field.widget')->getInstance([
+      'field_definition' => $items->getFieldDefinition(),
+      'form_mode' => 'default',
+      'configuration' => ['type' => 'boolean_checkbox'],
+    ]);
+    $form = [];
+    $form_state = new FormState();
+    $element = $widget->formElement($items, 0, [], $form, $form_state);
+    markaspot_group_field_widget_single_element_form_alter($element, $form_state, ['items' => $items]);
+    $this->assertTrue($element['value']['#default_value']);
+    $enabled->set('field_assignment_notifications', FALSE);
+    $element = $widget->formElement($items, 0, [], $form, $form_state);
+    markaspot_group_field_widget_single_element_form_alter($element, $form_state, ['items' => $items]);
+    $this->assertFalse($element['value']['#default_value']);
+    $enabled->set('field_assignment_notifications', TRUE);
+    $disabled->set('field_assignment_notifications', FALSE)->save();
+    markaspot_group_update_11951();
+    $storage->resetCache();
+    $disabled = Group::load($disabled->id());
+    $this->assertFalse(OrganisationNotificationPolicy::isEnabled($disabled));
+
+    $this->clearCollectedMails();
+    $request = $this->createServiceRequest($disabled);
+    $this->assertSame([], $this->collectedMails());
+    $this->assertSame([(int) $disabled->id()], $this->organisationIds($request));
+    $this->assertSame([(int) $disabled->id()], $this->organisationRelationshipIds($request));
+
+    $request->set('field_organisation', [$enabled->id()])->save();
+    $request = $this->reloadNode($request);
+    $this->assertNotEmpty($this->collectedMails());
+    $this->assertSame([(int) $enabled->id()], $this->organisationRelationshipIds($request));
+
+    $this->clearCollectedMails();
+    $request->set('field_organisation', [$disabled->id()])->save();
+    $request = $this->reloadNode($request);
+    $this->assertSame([], $this->collectedMails());
+    $this->assertSame([(int) $disabled->id()], $this->organisationRelationshipIds($request));
+  }
+
+  /**
+   * Tests legacy mail intent survives ECA token expansion.
+   */
+  public function testLegacyOrganisationEmailActionHonorsPreference(): void {
+    require_once dirname(__DIR__, 3) . '/markaspot_group.install';
+    markaspot_group_update_11951();
+    $storage = $this->container->get('entity_type.manager')->getStorage('group');
+    $storage->resetCache();
+    $organisation = Group::load($this->organisation->id());
+    $organisation->set('field_assignment_notifications', FALSE)->save();
+    $request = $this->createServiceRequest($organisation);
+    $this->clearCollectedMails();
+    $manager = $this->container->get('plugin.manager.action');
+    $config = [
+      'recipient' => '[node:field_organisation:entity:field_head_organisation_e_mail]',
+      'subject' => 'Legacy assignment',
+      'message' => 'A report was assigned.',
+    ];
+    $action = $manager->createInstance('action_send_email_action', $config);
+    $this->assertInstanceOf(OrganisationAwareEmailAction::class, $action);
+    // EcaAction replaces all configuration tokens before calling execute().
+    $expanded = $config;
+    $expanded['recipient'] = 'organisation@example.test';
+    $action->setConfiguration($expanded);
+    $action->execute($request);
+    $this->assertSame([], $this->collectedMails());
+
+    // Preserve core's first-reference semantics on multi-organisation reports.
+    $request->set('field_organisation', [$organisation->id(), $this->parksOrganisation->id()]);
+    $action->execute($request);
+    $this->assertSame([], $this->collectedMails());
+    $request->set('field_organisation', [$this->parksOrganisation->id(), $organisation->id()]);
+    $action->execute($request);
+    $this->assertCount(1, $this->collectedMails());
+    $this->clearCollectedMails();
+    $request->set('field_organisation', [$organisation->id()]);
+
+    // The same address used for a different purpose must not be suppressed.
+    $reporter = $manager->createInstance('action_send_email_action', [
+      'recipient' => '[node:field_e_mail:value]',
+      'subject' => 'Reporter confirmation',
+      'message' => 'Confirmation',
+    ]);
+    $reporter->setConfiguration($expanded);
+    $reporter->execute($request);
+    $this->assertCount(1, $this->collectedMails());
+
+    $this->clearCollectedMails();
+    $organisation->set('field_assignment_notifications', TRUE)->save();
+    $storage->resetCache();
+    $request = $this->reloadNode($request);
+    $action = $manager->createInstance('action_send_email_action', $config);
+    $action->setConfiguration($expanded);
+    $action->execute($request);
+    $this->assertCount(1, $this->collectedMails());
+    $this->assertSame([(int) $organisation->id()], $this->organisationRelationshipIds($request));
   }
 
   /**

@@ -179,6 +179,28 @@ class OrganisationGroupAccessTest extends UnitTestCase {
   }
 
   /**
+   * Tests the notification opt-out cannot be read or edited across scopes.
+   */
+  public function testNotificationPreferenceAccessIsScoped(): void {
+    $items = $this->createMock(FieldItemListInterface::class);
+    $items->method('getEntity')->willReturn($this->organisation(6));
+    $definition = $this->createMock(FieldDefinitionInterface::class);
+    $definition->method('getTargetEntityTypeId')->willReturn('group');
+    $definition->method('getTargetBundle')->willReturn('org');
+    $definition->method('getName')->willReturn('field_assignment_notifications');
+    $access_checker = $this->createMock(OrganisationManagementAccess::class);
+    $access_checker->method('hasBypass')->willReturn(FALSE);
+    $access_checker->method('canManageJurisdiction')->willReturnOnConsecutiveCalls(TRUE, FALSE, TRUE, FALSE);
+    $this->setContainer($access_checker);
+    $account = $this->createMock(AccountInterface::class);
+    foreach (['view', 'edit'] as $operation) {
+      $this->assertTrue(markaspot_group_entity_field_access($operation, $definition, $account, $items)->isAllowed());
+      $this->assertTrue(markaspot_group_entity_field_access($operation, $definition, $account, $items)->isForbidden());
+      $this->assertTrue(markaspot_group_entity_field_access($operation, $definition, $account)->isForbidden());
+    }
+  }
+
+  /**
    * Tests referenced organisations direct operators to deactivation.
    */
   public function testDeleteRefusalMessageDirectsToStatusDeactivation(): void {

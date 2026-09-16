@@ -2,6 +2,7 @@ langcode: en
 status: true
 dependencies:
   config:
+    - field.field.group.org.field_assignment_notifications
     - field.field.group.org.field_head_organisation_e_mail
     - field.field.group.org.field_jurisdiction
     - field.field.group.org.field_service_categories
@@ -13,6 +14,13 @@ targetEntityType: group
 bundle: org
 mode: default
 content:
+  field_assignment_notifications:
+    type: boolean_checkbox
+    weight: 8
+    region: content
+    settings:
+      display_label: true
+    third_party_settings: {  }
   field_head_organisation_e_mail:
     type: email_default
     weight: 7

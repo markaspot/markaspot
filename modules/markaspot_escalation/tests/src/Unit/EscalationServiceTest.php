@@ -249,6 +249,35 @@ class EscalationServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests direct delegation respects an organisation's explicit mail opt-out.
+   */
+  public function testDelegationNotificationPreference(): void {
+    $enabled = FALSE;
+    $preference = $this->createMock(FieldItemListInterface::class);
+    $preference->method('isEmpty')->willReturn(FALSE);
+    $preference->method('__get')->willReturnCallback(static function () use (&$enabled): bool {
+      return $enabled;
+    });
+    $mailbox = $this->createMock(FieldItemListInterface::class);
+    $mailbox->method('isEmpty')->willReturn(FALSE);
+    $mailbox->method('__get')->willReturn('org@example.test');
+    $org = $this->createMock(GroupInterface::class);
+    $org->method('label')->willReturn('Fixture organisation');
+    $org->method('hasField')->willReturn(TRUE);
+    $org->method('get')->willReturnCallback(static fn (string $field) => $field === 'field_assignment_notifications' ? $preference : $mailbox);
+    $this->mailManager->expects($this->once())->method('mail')
+      ->with('markaspot_escalation', 'delegation_notification', 'org@example.test')
+      ->willReturn(['result' => TRUE]);
+    $this->service->setStringTranslation($this->getStringTranslationStub());
+    $method = new \ReflectionMethod(EscalationService::class, 'sendDelegationNotification');
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('getTitle')->willReturn('Fixture request');
+    $method->invoke($this->service, $org, $node, 'Delegation test');
+    $enabled = TRUE;
+    $method->invoke($this->service, $org, $node, 'Delegation test');
+  }
+
+  /**
    * Creates a mock jurisdiction group.
    *
    * @param int $id

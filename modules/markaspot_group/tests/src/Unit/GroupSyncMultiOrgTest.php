@@ -803,6 +803,26 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   }
 
   /**
+   * Tests each organisation controls its own mail without member fallback.
+   */
+  public function testOrganisationNotificationPreferenceIsIndependent(): void {
+    $node = $this->serviceRequestNode();
+    $enabled = $this->organisationGroup(id: 100, notifications: TRUE);
+    $disabled = $this->organisationGroup(id: 101, email: '', notifications: FALSE);
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())->method('mail')
+      ->with('markaspot_group', 'org_notification', 'org@example.test')
+      ->willReturn(['result' => TRUE]);
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->expects($this->never())->method('getStorage');
+    $this->installNotificationContainer($mailManager, entityTypeManager: $entityTypeManager);
+
+    _markaspot_group_notify_organisation_group($node, $disabled);
+    _markaspot_group_notify_organisation_group($node, $enabled);
+    $this->assertSame([], _markaspot_group_organisation_notification_recipients($disabled));
+  }
+
+  /**
    * Tests org relationship mail falls back to active group members.
    */
   public function testOrgRelationshipFallsBackToActiveMemberEmails(): void {
@@ -1216,12 +1236,16 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   /**
    * Creates an organisation group mock with jurisdiction and mail fields.
    */
-  private function organisationGroup(int $id = 100, int $jurisdictionId = 1, string $email = 'org@example.test'): GroupInterface {
+  private function organisationGroup(int $id = 100, int $jurisdictionId = 1, string $email = 'org@example.test', ?bool $notifications = NULL): GroupInterface {
     $emailValues = $email === '' ? [] : [['value' => $email]];
     $fields = [
       'field_jurisdiction' => $this->field([['target_id' => $jurisdictionId]], ['target_id' => $jurisdictionId]),
       'field_head_organisation_e_mail' => $this->field($emailValues, ['value' => $email]),
     ];
+
+    if ($notifications !== NULL) {
+      $fields['field_assignment_notifications'] = $this->field([['value' => $notifications]], ['value' => $notifications]);
+    }
 
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($id);

@@ -1,0 +1,17 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - group
+id: group.field_assignment_notifications
+field_name: field_assignment_notifications
+entity_type: group
+type: boolean
+settings: {  }
+module: core
+locked: false
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false
