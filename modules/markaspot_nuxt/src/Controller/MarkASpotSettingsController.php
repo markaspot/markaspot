@@ -17,6 +17,7 @@ use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
+use Drupal\service_request\Access\InternalServiceRequestCreatePolicy;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -1018,11 +1019,13 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The bundle (e.g., article, page).
    * @param string $form_mode
    *   The form mode (e.g., default, teaser).
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The current request, including the requested form operation.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The form display settings in JSON format.
    */
-  public function getFormModeSettings($entity_type, $bundle, $form_mode) {
+  public function getFormModeSettings($entity_type, $bundle, $form_mode, Request $request) {
     $is_management_form_mode = $form_mode === 'management';
     if ($is_management_form_mode && !$this->currentUserCanAccessManagementFormSettings()) {
       throw new AccessDeniedHttpException('Management form settings require dashboard staff access.');
@@ -1031,6 +1034,11 @@ class MarkASpotSettingsController extends ControllerBase {
       && $entity_type === 'node'
       && $bundle === 'service_request'
       && $this->currentUserHasRestrictedContractorRole();
+    $is_trusted_internal_create = $is_management_form_mode
+      && $entity_type === 'node'
+      && $bundle === 'service_request'
+      && $request->query->get('operation') === 'create'
+      && InternalServiceRequestCreatePolicy::allows($this->currentUser(), $request);
     $single_organisation_assignment = $entity_type === 'node'
       && $bundle === 'service_request'
       && $this->configFactory
@@ -1042,7 +1050,14 @@ class MarkASpotSettingsController extends ControllerBase {
     // Set max-age for HTTP caching (1 hour).
     $cache_metadata->setCacheMaxAge(3600);
     if ($is_management_form_mode) {
-      $cache_metadata->addCacheContexts(['user.permissions', 'user.roles']);
+      $cache_metadata->addCacheContexts([
+        'url.query_args:operation',
+        'user.permissions',
+        'user.roles',
+      ]);
+      if ($request->query->get('operation') === 'create') {
+        $cache_metadata->setCacheMaxAge(0);
+      }
     }
     if ($entity_type === 'node' && $bundle === 'service_request') {
       $cache_metadata->addCacheTags(['config:markaspot_group.settings']);
@@ -1088,21 +1103,29 @@ class MarkASpotSettingsController extends ControllerBase {
       }
 
       if ($field_config) {
+        $effective_field_config = $field_config;
+        if ($is_trusted_internal_create && $field_name === 'field_e_mail') {
+          // Keep active field configuration required for citizen and edit
+          // contracts. Only this response receives an optional clone, which
+          // also removes FieldConfig's derived NotNull constraint.
+          $effective_field_config = clone $field_config;
+          $effective_field_config->setRequired(FALSE);
+        }
         $field_data = [
-          'label' => $field_config->getLabel(),
-          'description' => $field_config->getDescription(),
-          'required' => $field_config->isRequired(),
+          'label' => $effective_field_config->getLabel(),
+          'description' => $effective_field_config->getDescription(),
+          'required' => $effective_field_config->isRequired(),
           'cardinality' => $field_storage ? $field_storage->getCardinality() : NULL,
           'effective_cardinality' => $single_organisation_assignment && $field_name === 'field_organisation'
             ? 1
             : ($field_storage ? $field_storage->getCardinality() : NULL),
-          'field_type' => $field_config->getType(),
-          'default_value' => $field_config->getDefaultValueLiteral(),
-          'settings' => $field_config->getSettings(),
+          'field_type' => $effective_field_config->getType(),
+          'default_value' => $effective_field_config->getDefaultValueLiteral(),
+          'settings' => $effective_field_config->getSettings(),
           'widget' => $component['type'] ?? NULL,
           'widget_settings' => $component['settings'] ?? [],
           'display_settings' => $form_display->getComponent($field_name) ?? [],
-          'validation' => $this->getFieldValidation($field_config),
+          'validation' => $this->getFieldValidation($effective_field_config),
         ];
 
         // For list fields, include allowed_values from field storage.

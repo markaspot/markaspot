@@ -7,8 +7,12 @@ namespace Drupal\service_request\Plugin\Validation\Constraint;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeInterface;
+use Drupal\service_request\Access\InternalServiceRequestCreatePolicy;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 
@@ -22,13 +26,19 @@ final class ServiceRequestRequiredEmailConstraintValidator extends ConstraintVal
    */
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly AccountInterface $currentUser,
+    private readonly RequestStack $requestStack,
   ) {}
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): self {
-    return new self($container->get('entity_type.manager'));
+    return new self(
+      $container->get('entity_type.manager'),
+      $container->get('current_user'),
+      $container->get('request_stack'),
+    );
   }
 
   /**
@@ -46,6 +56,10 @@ final class ServiceRequestRequiredEmailConstraintValidator extends ConstraintVal
       return;
     }
 
+    if ($node->isNew() && $this->isTrustedInternalJsonApiCreate()) {
+      return;
+    }
+
     if (!$node->isNew()) {
       $original = $this->entityTypeManager
         ->getStorage('node')
@@ -58,6 +72,17 @@ final class ServiceRequestRequiredEmailConstraintValidator extends ConstraintVal
     }
 
     $this->context->buildViolation($constraint->message)->addViolation();
+  }
+
+  /**
+   * Checks the server-owned context for an internal JSON:API creation.
+   */
+  private function isTrustedInternalJsonApiCreate(): bool {
+    $request = $this->requestStack->getCurrentRequest();
+    return $request instanceof Request
+      && $request->isMethod('POST')
+      && $request->attributes->get('_route') === 'jsonapi.node--service_request.collection.post'
+      && InternalServiceRequestCreatePolicy::allows($this->currentUser, $request);
   }
 
 }
