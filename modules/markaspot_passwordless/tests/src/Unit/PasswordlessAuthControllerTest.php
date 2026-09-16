@@ -853,6 +853,68 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $result = $method->invoke($controller, $user);
     $this->assertNull($result[0]['slug']);
     $this->assertSame('org', $result[0]['type']);
+    $this->assertNull($result[0]['jurisdiction_id']);
+  }
+
+  /**
+   * Tests organisation scope comes only from a valid stored jurisdiction.
+   *
+   * @dataProvider organisationJurisdictionProvider
+   * @covers ::getUserGroups
+   */
+  public function testOrganisationJurisdictionClaim(?string $parent_bundle, ?string $expected): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+    $parent = NULL;
+    if ($parent_bundle !== NULL) {
+      $parent = $this->createMock(GroupInterface::class);
+      $parent->method('bundle')->willReturn($parent_bundle);
+      $parent->method('id')->willReturn(69);
+    }
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('__get')->with('entity')->willReturn($parent);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('org');
+    $group->method('label')->willReturn('Department');
+    $group->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $group->method('get')->with('field_jurisdiction')->willReturn($field);
+    $membership = new class($group) {
+
+      public function __construct(private readonly GroupInterface $group) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets effective membership roles.
+       */
+      public function getRoles(): array {
+        return [];
+      }
+
+    };
+    $module_handler = $this->createMock(ModuleHandlerInterface::class);
+    $module_handler->method('moduleExists')->with('group')->willReturn(TRUE);
+    \Drupal::getContainer()->set('module_handler', $module_handler);
+    $controller = $this->buildController(NULL, NULL, [$membership]);
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $result = $method->invoke($controller, $user);
+    $this->assertSame($expected, $result[0]['jurisdiction_id']);
+  }
+
+  /**
+   * Provides valid, stale, and non-jurisdiction references.
+   */
+  public static function organisationJurisdictionProvider(): array {
+    return [
+      'valid parent' => ['jur', '69'],
+      'missing parent' => [NULL, NULL],
+      'wrong parent type' => ['org', NULL],
+    ];
   }
 
   /**

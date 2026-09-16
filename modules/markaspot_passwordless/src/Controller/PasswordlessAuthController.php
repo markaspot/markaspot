@@ -1498,7 +1498,7 @@ class PasswordlessAuthController extends ControllerBase {
           }
         }
 
-        $groups[] = [
+        $group_info = [
           'id' => $group->id(),
           'uuid' => $group->uuid(),
           'label' => $this->getEntityLabelForUserLanguage($group, $user),
@@ -1506,6 +1506,17 @@ class PasswordlessAuthController extends ControllerBase {
           'slug' => $slug,
           'roles' => $group_roles,
         ];
+        if ($group->bundle() === 'org') {
+          // Bind organisation capabilities to their stored parent jurisdiction.
+          // Consumers must not infer this link from other user memberships.
+          $jurisdiction = $group->hasField('field_jurisdiction')
+            ? $group->get('field_jurisdiction')->entity
+            : NULL;
+          $group_info['jurisdiction_id'] = $this->isJurisdictionGroup($jurisdiction)
+            ? (string) $jurisdiction->id()
+            : NULL;
+        }
+        $groups[] = $group_info;
       }
     }
     catch (\Exception $e) {
