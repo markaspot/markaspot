@@ -1,0 +1,63 @@
+<?php
+
+/**
+ * @file
+ * Tripwires ensure migration does not execute entity lifecycle hooks.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\legacy_notes_migration_test\FailingMigrationNode;
+
+/**
+ * Implements hook_entity_bundle_info_alter().
+ */
+function legacy_notes_migration_test_entity_bundle_info_alter(array &$bundles): void {
+  if (isset($bundles['node']['service_request'])) {
+    $bundles['node']['service_request']['class'] = FailingMigrationNode::class;
+  }
+}
+
+/**
+ * Implements hook_entity_create().
+ */
+function legacy_notes_migration_test_entity_create(EntityInterface $entity): void {
+  _legacy_notes_migration_test_tripwire($entity);
+}
+
+/**
+ * Implements hook_entity_presave().
+ */
+function legacy_notes_migration_test_entity_presave(EntityInterface $entity): void {
+  _legacy_notes_migration_test_tripwire($entity);
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function legacy_notes_migration_test_entity_insert(EntityInterface $entity): void {
+  _legacy_notes_migration_test_tripwire($entity);
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function legacy_notes_migration_test_entity_update(EntityInterface $entity): void {
+  _legacy_notes_migration_test_tripwire($entity);
+}
+
+/**
+ * Implements hook_entity_field_values_init().
+ */
+function legacy_notes_migration_test_entity_field_values_init(EntityInterface $entity): void {
+  _legacy_notes_migration_test_tripwire($entity);
+}
+
+/**
+ * Fails if any business lifecycle callback runs while the tripwire is armed.
+ */
+function _legacy_notes_migration_test_tripwire(EntityInterface $entity): void {
+  if (in_array($entity->getEntityTypeId(), ['node', 'paragraph'], TRUE)
+    && \Drupal::state()->get('legacy_notes_test.tripwire')) {
+    throw new RuntimeException('Entity lifecycle executed during migration.');
+  }
+}

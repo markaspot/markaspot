@@ -1,0 +1,7 @@
+name: Legacy notes migration test
+type: module
+description: Lifecycle tripwires and rollback injection for migration kernel tests.
+package: Testing
+core_version_requirement: ^11
+dependencies:
+  - drupal:node

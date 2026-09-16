@@ -27,6 +27,11 @@ use Psr\Log\LoggerInterface;
  */
 class AttributeFillingService {
 
+  /**
+   * Offline import compatibility: legacy remarks are excluded from prompts.
+   */
+  public const LEGACY_NOTES_POLICY_VERSION = 1;
+
   use JurisdictionIdResolverTrait;
 
   /**
@@ -1473,7 +1478,15 @@ class AttributeFillingService {
     $paragraphs = $node->get('field_internal_remark')->referencedEntities();
     $paragraphs = array_reverse($paragraphs);
 
-    foreach (array_slice($paragraphs, 0, 10) as $paragraph) {
+    foreach ($paragraphs as $paragraph) {
+      // Legacy field_notes was never prompt input. Moving it into paragraphs
+      // must not silently expose historical free text to an external AI.
+      if ($paragraph->getBehaviorSetting('markaspot_legacy_notes', 'exclude_from_ai', FALSE)) {
+        continue;
+      }
+      if (count($lines) >= 10) {
+        break;
+      }
       $date = $paragraph->get('created')->value ?? '';
       if ($date) {
         $date = date('Y-m-d', (int) $date);

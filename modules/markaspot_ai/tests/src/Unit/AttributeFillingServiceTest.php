@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_ai\Unit;
 
 use Drupal\taxonomy\TermInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Connection;
@@ -18,6 +19,7 @@ use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_ai\Service\AttributeFillingService;
 use Drupal\markaspot_ai\Service\TokenTrackingService;
 use Drupal\node\NodeInterface;
+use Drupal\paragraphs\ParagraphInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
@@ -102,6 +104,46 @@ class AttributeFillingServiceTest extends UnitTestCase {
     $reflection = new \ReflectionMethod($object, $methodName);
     $reflection->setAccessible(TRUE);
     return $reflection->invokeArgs($object, $parameters);
+  }
+
+  /**
+   * Legacy notes never enter AI context or displace ten normal remarks.
+   *
+   * @covers ::buildInternalRemarks
+   */
+  public function testLegacyRemarksExcludedFromAiContext(): void {
+    $remarks = [];
+    for ($i = 0; $i < 12; $i++) {
+      $created = $this->createMock(FieldItemListInterface::class);
+      $created->method('__get')->willReturn('1700000000');
+      $text = $this->createMock(FieldItemListInterface::class);
+      $text->method('isEmpty')->willReturn(FALSE);
+      $text->method('__get')->willReturn('Ordinary remark ' . $i);
+      $remark = $this->createMock(ParagraphInterface::class);
+      $remark->method('getBehaviorSetting')->willReturn(FALSE);
+      $remark->method('hasField')->willReturn(TRUE);
+      $remark->method('get')->willReturnMap([
+        ['created', $created], ['field_internal_remark_text', $text],
+      ]);
+      $remarks[] = $remark;
+    }
+    // Most recent entry: its private text must never even be read.
+    $legacy = $this->createMock(ParagraphInterface::class);
+    $legacy->method('getBehaviorSetting')
+      ->with('markaspot_legacy_notes', 'exclude_from_ai', FALSE)->willReturn(TRUE);
+    $legacy->expects($this->never())->method('get');
+    $remarks[] = $legacy;
+    $items = $this->createMock(EntityReferenceFieldItemListInterface::class);
+    $items->method('isEmpty')->willReturn(FALSE);
+    $items->method('referencedEntities')->willReturn($remarks);
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('hasField')->with('field_internal_remark')->willReturn(TRUE);
+    $node->method('get')->with('field_internal_remark')->willReturn($items);
+    $result = $this->invokeMethod($this->createService(), 'buildInternalRemarks', [$node]);
+    $this->assertCount(10, explode("\n", $result));
+    $this->assertStringContainsString('Ordinary remark 11', $result);
+    $this->assertStringContainsString('Ordinary remark 2', $result);
+    $this->assertStringNotContainsString('Ordinary remark 0', $result);
   }
 
   /**
