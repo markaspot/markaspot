@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_notification\NotificationCollector;
 use Drupal\node\NodeInterface;
+use Drupal\user\UserInterface;
 
 /**
  * Decorates plugin.manager.mail to intercept ECA action e-mails.
@@ -79,12 +80,12 @@ class NotifyMailManager implements MailManagerInterface, CachedDiscoveryInterfac
    * Returns whether a mail invocation should surface in the dashboard.
    *
    * Core's action_send_email action covers ECA-driven reporter, organisation,
-   * and service-provider notifications. markaspot_group:org_notification is
-   * the PHP replacement for the older process_apply_group ECA mail action.
+   * and service-provider notifications. markaspot_group notifications cover
+   * direct assignee and organisation assignment mails.
    */
   private function shouldRecordMail($module, $key): bool {
     return ($module === 'system' && $key === 'action_send_email')
-      || ($module === 'markaspot_group' && $key === 'org_notification')
+      || ($module === 'markaspot_group' && in_array($key, ['org_notification', 'assignee_notification'], TRUE))
       || ($module === 'markaspot_escalation' && $key === 'delegation_notification');
   }
 
@@ -102,6 +103,13 @@ class NotifyMailManager implements MailManagerInterface, CachedDiscoveryInterfac
    *   Notification payload with recipient_type and optional display label.
    */
   private function buildNotificationPayload($to, array $params, ?NodeInterface $node): array {
+    if (($params['assignee'] ?? NULL) instanceof UserInterface) {
+      return [
+        'recipient_type' => 'assignee',
+        'recipient_id' => $params['assignee']->uuid(),
+      ];
+    }
+
     $emails = $this->normalizeEmails($to);
 
     if ($node instanceof NodeInterface) {
