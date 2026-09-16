@@ -56,6 +56,18 @@ final class MailAlterHook {
    * Alter entry point, called from markaspot_mail_mail_alter().
    */
   public function alter(array &$message): void {
+    // Optional entity references can resolve an action's recipient to nothing
+    // when an assignment is removed. Cancel before transport and branding;
+    // MailManager returns NULL for a cancelled send, not a false delivery
+    // success or a transport error. Non-empty invalid addresses and unrelated
+    // mail retain their existing error handling.
+    if (($message['module'] ?? NULL) === 'system'
+      && ($message['key'] ?? NULL) === 'action_send_email'
+      && trim((string) ($message['to'] ?? '')) === '') {
+      $message['send'] = FALSE;
+      return;
+    }
+
     // Normalize token-generated URLs for every outgoing mail, including
     // unbranded and hard-blocklisted messages. This is intentionally done
     // before builder dispatch so fail-open plaintext also cannot retain a

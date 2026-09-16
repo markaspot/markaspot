@@ -31,6 +31,39 @@ require_once dirname(__DIR__, 3) . '/src/Hook/MailAlterHook.php';
 final class MailAlterHookTest extends UnitTestCase {
 
   /**
+   * An optional action recipient resolving to nothing cancels delivery.
+   */
+  public function testEmptyActionRecipientCancelsMailWithoutBranding(): void {
+    $hook = $this->buildHook(NULL);
+    foreach (['', " \t\r\n", NULL] as $recipient) {
+      $message = $this->buildMessage('system', 'action_send_email');
+      $message['to'] = $recipient;
+      $message['send'] = TRUE;
+      $hook->alter($message);
+      $this->assertFalse($message['send']);
+    }
+  }
+
+  /**
+   * Valid recipients and unrelated mail keep their normal delivery path.
+   */
+  public function testRecipientGuardPreservesNormalMailAndInvalidAddressErrors(): void {
+    $hook = $this->buildHook(NULL);
+    foreach (['provider@example.test', 'not-an-email'] as $recipient) {
+      $message = $this->buildMessage('system', 'action_send_email');
+      $message['to'] = $recipient;
+      $message['send'] = TRUE;
+      $hook->alter($message);
+      $this->assertTrue($message['send']);
+    }
+    $message = $this->buildMessage('user', 'password_reset');
+    $message['to'] = '';
+    $message['send'] = TRUE;
+    $hook->alter($message);
+    $this->assertTrue($message['send']);
+  }
+
+  /**
    * Prevents header injection through a builder-generated subject.
    *
    * Regression guard for mail header injection (CWE-93) via Subject:. A

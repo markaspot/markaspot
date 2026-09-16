@@ -328,6 +328,67 @@ final class ContractorAccessKernelTest extends KernelTestBase {
   }
 
   /**
+   * Organisation read permission also applies to access-checked queries.
+   */
+  public function testModeratorCanQueryOwnUnpublishedRequest(): void {
+    $this->organisationBRequest->setUnpublished()->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $this->assertFalse($this->moderator->hasPermission('bypass node access'));
+    $this->assertTrue($this->organisationARequest->access('view', $this->moderator));
+    $this->assertTrue($this->organisationA->hasPermission('view unpublished group_node:service_request entity', $this->moderator));
+    $this->assertSame(
+      [(int) $this->organisationARequest->id()],
+      $this->queryUnpublishedRequests(),
+    );
+    // Read grants must not introduce new update or delete grants for staff.
+    $this->assertArrayNotHasKey('markaspot_contractor_organisation', markaspot_group_node_grants($this->moderator, 'update'));
+    $this->assertArrayNotHasKey('markaspot_contractor_organisation', markaspot_group_node_grants($this->moderator, 'delete'));
+  }
+
+  /**
+   * Own-unpublished permission alone must not grant other authors' drafts.
+   */
+  public function testMembershipWithoutUnpublishedPermissionGetsNoReadGrant(): void {
+    $role = GroupRole::load('org-insider');
+    $this->assertNotNull($role);
+    $role->revokePermission('view unpublished group_node:service_request entity')->save();
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $this->assertTrue($this->organisationA->hasPermission('view own unpublished group_node:service_request entity', $this->moderator));
+    $this->assertFalse($this->organisationA->hasPermission('view unpublished group_node:service_request entity', $this->moderator));
+    $this->assertArrayNotHasKey('markaspot_contractor_organisation', markaspot_group_node_grants($this->moderator, 'view'));
+    $this->assertSame([], $this->queryUnpublishedRequests());
+  }
+
+  /**
+   * Removing membership revokes the core grant as well as query access.
+   */
+  public function testRemovedMembershipRevokesUnpublishedReadGrant(): void {
+    $this->container->get('current_user')->setAccount($this->moderator);
+    $this->assertSame([(int) $this->organisationARequest->id()], $this->queryUnpublishedRequests());
+    $this->organisationA->removeMember($this->moderator);
+    $this->assertArrayNotHasKey('markaspot_contractor_organisation', markaspot_group_node_grants($this->moderator, 'view'));
+    $this->assertSame([], $this->queryUnpublishedRequests());
+  }
+
+  /**
+   * Unauthenticated callers receive no unpublished organisation records.
+   */
+  public function testAnonymousCannotQueryUnpublishedRequests(): void {
+    $this->container->get('current_user')->setAccount(User::load(0));
+    $this->assertSame([], $this->queryUnpublishedRequests());
+  }
+
+  /**
+   * Runs the real entity query used by report collections.
+   */
+  private function queryUnpublishedRequests(): array {
+    return array_values(array_map('intval', $this->container
+      ->get('entity_type.manager')->getStorage('node')->getQuery()
+      ->accessCheck(TRUE)->condition('type', 'service_request')
+      ->condition('status', 0)->sort('nid')->execute()));
+  }
+
+  /**
    * Contractors cannot access or query another organisation's request.
    */
   public function testContractorCannotAccessForeignOrganisationRequest(): void {
