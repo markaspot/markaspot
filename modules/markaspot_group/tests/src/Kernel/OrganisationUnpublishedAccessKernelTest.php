@@ -19,12 +19,18 @@ use Drupal\jsonapi\Query\Filter;
 use Drupal\jsonapi\ResourceType\ResourceType;
 use Drupal\markaspot_nuxt\JsonApi\CachedCountEntityResource;
 use Drupal\markaspot_nuxt\JsonApi\GroupRootQueryGuard;
+use Drupal\markaspot_nuxt\Controller\ExportJurisdictionsController;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\taxonomy\Entity\Vocabulary;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\Request;
 
 require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/GroupRootQueryGuard.php';
 require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/CachedCountEntityResource.php';
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/Controller/ExportJurisdictionsController.php';
 
 /**
  * Tests unpublished organisation collection access for jurisdiction managers.
@@ -43,6 +49,9 @@ final class OrganisationUnpublishedAccessKernelTest extends KernelTestBase {
     'field',
     'file',
     'filter',
+    'text',
+    'node',
+    'taxonomy',
     'entity',
     'flexible_permissions',
     'group',
@@ -235,6 +244,153 @@ final class OrganisationUnpublishedAccessKernelTest extends KernelTestBase {
   }
 
   /**
+   * Export scope crosses unpublished ancestors without granting their scope.
+   */
+  public function testExportScopeUsesRealMembershipsAndUnpublishedHierarchy(): void {
+    $root_id = (int) $this->managedOrganisation->get('field_jurisdiction')->target_id;
+    $root = Group::load($root_id);
+    $root->setUnpublished()->save();
+    $child = Group::create([
+      'type' => 'jur',
+      'label' => 'Inactive intermediate jurisdiction',
+      'status' => 0,
+      'field_parent_jurisdiction' => $root_id,
+    ]);
+    $child->save();
+    $grandchild = Group::create([
+      'type' => 'jur',
+      'label' => 'Managed descendant',
+      'status' => 0,
+      'field_parent_jurisdiction' => $child->id(),
+    ]);
+    $grandchild->save();
+    $grandchild->addMember($this->manager, ['group_roles' => ['jur-tenant_admin']]);
+    $this->container->get('current_user')->setAccount($this->manager);
+    $controller = new ExportJurisdictionsController(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('markaspot_group.organisation_hierarchy_resolver'),
+      $this->container->get('current_user'),
+      $this->container->get('config.factory'),
+    );
+    $response = $controller->getScope(new Request(['roots' => (string) $root_id]));
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame([
+      'requestedRootIds' => [$root_id],
+      'jurisdictionIds' => [$root_id, (int) $grandchild->id()],
+      'taxonomyRoots' => [
+        ['jurisdictionId' => $root_id, 'rootId' => $root_id],
+        ['jurisdictionId' => (int) $grandchild->id(), 'rootId' => $root_id],
+      ],
+      'coversAllJurisdictions' => FALSE,
+    ], json_decode($response->getContent(), TRUE));
+    $leaf_response = $controller->getScope(new Request(['roots' => (string) $grandchild->id()]));
+    $this->assertSame(200, $leaf_response->getStatusCode());
+    $this->assertSame([
+      'requestedRootIds' => [(int) $grandchild->id()],
+      'jurisdictionIds' => [(int) $grandchild->id()],
+      'taxonomyRoots' => [['jurisdictionId' => (int) $grandchild->id(), 'rootId' => $root_id]],
+      'coversAllJurisdictions' => FALSE,
+    ], json_decode($leaf_response->getContent(), TRUE));
+    $foreign_id = (int) $this->foreignOrganisation->get('field_jurisdiction')->target_id;
+    $this->assertSame(403, $controller->getScope(new Request(['roots' => "$root_id,$foreign_id"]))->getStatusCode());
+    $this->container->get('current_user')->setAccount(new AnonymousUserSession());
+    $this->assertSame(403, $controller->getScope(new Request(['roots' => (string) $root_id]))->getStatusCode());
+  }
+
+  /**
+   * Child-only export accounts can read inherited published taxonomy metadata.
+   */
+  public function testChildOnlyExportCanReadInheritedPublishedTaxonomy(): void {
+    $this->installEntitySchema('taxonomy_term');
+    FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+    ])->save();
+    foreach (['service_category', 'service_status'] as $bundle) {
+      Vocabulary::create(['vid' => $bundle, 'name' => $bundle])->save();
+      FieldConfig::create([
+        'field_name' => 'field_jurisdiction',
+        'entity_type' => 'taxonomy_term',
+        'bundle' => $bundle,
+        'label' => 'Jurisdiction',
+      ])->save();
+    }
+    $root_id = (int) $this->managedOrganisation->get('field_jurisdiction')->target_id;
+    $foreign_id = (int) $this->foreignOrganisation->get('field_jurisdiction')->target_id;
+    Group::load($root_id)->setUnpublished()->save();
+    $child = Group::create([
+      'type' => 'jur',
+      'label' => 'Unpublished child-only export jurisdiction',
+      'status' => 0,
+      'field_parent_jurisdiction' => $root_id,
+    ]);
+    $child->save();
+    $role = Role::load('tenant_admin') ?? Role::create([
+      'id' => 'tenant_admin',
+      'label' => 'Tenant administrator',
+    ]);
+    $role->grantPermission('access content')->save();
+    $account = User::create([
+      'name' => 'child-only-exporter',
+      'status' => 1,
+      'roles' => ['tenant_admin'],
+    ]);
+    $account->save();
+    $child->addMember($account, ['group_roles' => ['jur-tenant_admin']]);
+    $terms = [];
+    foreach (['service_category', 'service_status'] as $bundle) {
+      foreach ([$root_id, $foreign_id] as $jurisdiction) {
+        $term = Term::create([
+          'vid' => $bundle,
+          'name' => "$bundle metadata for $jurisdiction",
+          'status' => 1,
+          'field_jurisdiction' => $jurisdiction,
+        ]);
+        $term->save();
+        $terms[$bundle][$jurisdiction] = $term;
+      }
+    }
+    $this->container->get('current_user')->setAccount($account);
+    $controller = new ExportJurisdictionsController(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('markaspot_group.organisation_hierarchy_resolver'),
+      $this->container->get('current_user'),
+      $this->container->get('config.factory'),
+    );
+    $response = $controller->getScope(new Request(['roots' => (string) $child->id()]));
+    $this->assertSame(200, $response->getStatusCode());
+    $scope = json_decode($response->getContent(), TRUE);
+    $this->assertSame([(int) $child->id()], $scope['jurisdictionIds']);
+    $this->assertSame([['jurisdictionId' => (int) $child->id(), 'rootId' => $root_id]], $scope['taxonomyRoots']);
+    $this->assertSame(403, $controller->getScope(new Request(['roots' => (string) $root_id]))->getStatusCode());
+
+    // Exercise the actual JSON:API collection query and its SQL access hook,
+    // using scalar reference IDs rather than traversing group entity access.
+    $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+    $resource = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+    $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+    foreach (['service_category', 'service_status'] as $bundle) {
+      $this->assertTrue($terms[$bundle][$root_id]->access('view', $account));
+      foreach ([$root_id, $foreign_id] as $jurisdiction) {
+        $filter = new Filter(new EntityConditionGroup('AND', [
+          new EntityCondition('field_jurisdiction.target_id', $jurisdiction),
+        ]));
+        $query = $reflection->getMethod('getCollectionQuery')->invoke(
+          $resource,
+          new ResourceType('taxonomy_term', $bundle, Term::class),
+          [Filter::KEY_NAME => $filter],
+          new CacheableMetadata(),
+        );
+        $expected = $jurisdiction === $root_id ? [(int) $terms[$bundle][$root_id]->id()] : [];
+        $this->assertSame($expected, array_map('intval', array_values($query->execute())));
+      }
+    }
+  }
+
+  /**
    * Builds the filtered, access-checked collection query used by JSON:API.
    */
   private function guardedOrganisationQuery(string $field, mixed $value): array {
@@ -262,7 +418,7 @@ final class OrganisationUnpublishedAccessKernelTest extends KernelTestBase {
       ->getQuery()
       ->accessCheck(TRUE)
       ->condition('type', 'org')
-      ->condition('status', FALSE)
+      ->condition('status', 0)
       ->sort('id')
       ->execute();
     return array_map('intval', array_values($ids));

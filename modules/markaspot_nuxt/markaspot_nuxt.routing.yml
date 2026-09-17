@@ -84,6 +84,15 @@ markaspot_nuxt.jurisdictions:
   requirements:
     _permission: 'access content'
 
+markaspot_nuxt.export_jurisdictions:
+  path: '/api/export-jurisdictions'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\ExportJurisdictionsController::getScope'
+    _format: 'json'
+  methods: [GET]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
 markaspot_nuxt.jurisdiction_hosts:
   path: '/api/jurisdiction-hosts'
   defaults:

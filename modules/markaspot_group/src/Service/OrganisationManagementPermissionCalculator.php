@@ -54,7 +54,9 @@ final class OrganisationManagementPermissionCalculator extends PermissionCalcula
       ->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'org')
-      ->condition('status', FALSE)
+      // Status is stored as an integer. SQLite does not coerce a FALSE
+      // parameter (bound as an empty string) to the stored unpublished value.
+      ->condition('status', 0)
       ->condition('field_jurisdiction', $managedJurisdictionIds, 'IN')
       ->execute();
 
