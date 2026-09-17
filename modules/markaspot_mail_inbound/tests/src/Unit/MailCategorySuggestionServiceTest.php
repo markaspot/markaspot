@@ -11,9 +11,12 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 
@@ -44,10 +47,11 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
     ?object $vision = NULL,
     ?object $aiClient = NULL,
     ?object $tokenTracking = NULL,
-    ?object $featureFlag = NULL,
-    int $jurId = 0,
+    ?object $featureScopeResolver = NULL,
+    int $jurId = 1,
     array $categories = [],
     ?TermInterface $term = NULL,
+    ?LoggerChannelInterface $logger = NULL,
   ): TestableSuggestionService {
     // Build config mock.
     $config = $this->createMock(ImmutableConfig::class);
@@ -88,33 +92,10 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
       $tokenTracking = $tokenTrackingMock;
     }
 
-    // Feature flag stub.
-    if ($featureFlag === NULL) {
-      $featureFlagMock = new class($aiEnabled) {
-
-        /**
-         * Whether the AI feature is enabled.
-         *
-         * @var bool
-         */
-        public bool $enabled;
-
-        /**
-         * Constructs the stub.
-         */
-        public function __construct(bool $enabled) {
-          $this->enabled = $enabled;
-        }
-
-        /**
-         * Returns whether the given feature flag is enabled.
-         */
-        public function isEnabled(string $feature, mixed $entity, bool $default): bool {
-          return $this->enabled;
-        }
-
-      };
-      $featureFlag = $featureFlagMock;
+    // Exercise the production tenant gate through its current dependency.
+    if ($featureScopeResolver === NULL) {
+      $featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+      $featureScopeResolver->method('isEnabledEffective')->willReturn($aiEnabled);
     }
 
     // Entity type manager: taxonomy_term storage.
@@ -123,10 +104,15 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
       static fn($id) => $term
     );
     $termStorage->method('loadByProperties')->willReturn([]);
+    $jurisdiction = $this->createMock(GroupInterface::class);
+    $jurisdiction->method('id')->willReturn($jurId);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')->willReturnMap([[$jurId, $jurisdiction]]);
 
     $etm = $this->createMock(EntityTypeManagerInterface::class);
     $etm->method('getStorage')->willReturnMap([
       ['taxonomy_term', $termStorage],
+      ['group', $groupStorage],
     ]);
 
     // Language manager stub: always returns 'de' as site default.
@@ -136,7 +122,7 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
     $languageManager->method('getDefaultLanguage')->willReturn($language);
 
     $categoryRepo = $this->createMock(PromotableCategoryRepository::class);
-    $logger = $this->createMock(LoggerChannelInterface::class);
+    $logger ??= $this->createMock(LoggerChannelInterface::class);
 
     $svc = new TestableSuggestionService(
       $etm,
@@ -147,10 +133,9 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
       $vision,
       $aiClient,
       $tokenTracking,
-      $featureFlag,
+      $featureScopeResolver,
     );
     $svc->overrideCategories = $categories;
-    $svc->overrideJurId = $jurId;
     $svc->overrideTerm = $term;
 
     return $svc;
@@ -212,14 +197,65 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
    * @covers ::suggest
    */
   public function testTenantFeatureFlagDisabledSkips(): void {
-    $svc = $this->service(aiEnabled: FALSE);
-    $mail = $this->mail();
+    $resolver = $this->createMock(FeatureScopeResolver::class);
+    $resolver->expects($this->once())->method('isEnabledEffective')
+      ->with('aiAnalysis', $this->callback(static fn(GroupInterface $group): bool => $group->id() === 17), TRUE)
+      ->willReturn(FALSE);
+    $provider = $this->createMock(AiClientService::class);
+    $provider->expects($this->never())->method('chat');
+    $logger = $this->createMock(LoggerChannelInterface::class);
+    $logger->expects($this->once())->method('info')->with(
+      'AI suggestion skipped for mail @id: tenant AI feature disabled (jur @jid).',
+      ['@id' => 99, '@jid' => 17],
+    );
+    $svc = $this->service(
+      aiClient: $provider,
+      featureScopeResolver: $resolver,
+      jurId: 17,
+      categories: [['tid' => 5, 'path' => 'Roads', 'label' => 'Roads']],
+      logger: $logger,
+    );
+    $mail = $this->mail(jurId: 17);
 
     $mail->expects($this->once())
       ->method('setSuggestionStatus')
       ->with(InboundMail::SUGGESTION_SKIPPED);
     $mail->expects($this->once())->method('save');
 
+    $svc->suggest($mail);
+  }
+
+  /**
+   * An enabled tenant feature reaches the provider and stores its suggestion.
+   *
+   * @covers ::suggest
+   */
+  public function testTenantFeatureFlagEnabledReachesProvider(): void {
+    $resolver = $this->createMock(FeatureScopeResolver::class);
+    $resolver->expects($this->once())->method('isEnabledEffective')
+      ->with('aiAnalysis', $this->callback(static fn(GroupInterface $group): bool => $group->id() === 17), TRUE)
+      ->willReturn(TRUE);
+    $provider = $this->createMock(AiClientService::class);
+    $provider->expects($this->once())->method('chat')->willReturn([
+      'choices' => [['message' => ['content' => json_encode([
+        'category_tid' => 5,
+        'confidence' => 0.9,
+        'address' => NULL,
+        'is_report' => TRUE,
+        'summary' => 'A road defect needs repair.',
+      ])]]],
+    ]);
+    $svc = $this->service(
+      aiClient: $provider,
+      featureScopeResolver: $resolver,
+      jurId: 17,
+      categories: [['tid' => 5, 'path' => 'Roads', 'label' => 'Roads']],
+    );
+    $svc->overrideTermId = 5;
+    $mail = $this->mail(jurId: 17);
+    $mail->expects($this->once())->method('setSuggestedCategoryTid')->with(5);
+    $mail->expects($this->once())->method('setSuggestionStatus')->with(InboundMail::SUGGESTION_DONE);
+    $mail->expects($this->once())->method('save');
     $svc->suggest($mail);
   }
 
@@ -673,13 +709,6 @@ class TestableSuggestionService extends MailCategorySuggestionService {
   public ?array $overrideCategories = NULL;
 
   /**
-   * Override for jurisdiction ID.
-   *
-   * @var int|null
-   */
-  public ?int $overrideJurId = NULL;
-
-  /**
    * Override for term lookup.
    *
    * @var \Drupal\taxonomy\TermInterface|null
@@ -723,23 +752,6 @@ class TestableSuggestionService extends MailCategorySuggestionService {
    */
   protected function resolveAttachmentUris(InboundMail $mail): array {
     return $this->overrideAttachmentUris ?? [];
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function isTenantAiEnabled(int $jurId): bool {
-    if (
-      $this->featureFlagChecker !== NULL
-      && method_exists($this->featureFlagChecker, 'isEnabled')
-    ) {
-      return (bool) $this->featureFlagChecker->isEnabled(
-        'features.aiAnalysis',
-        NULL,
-        TRUE,
-      );
-    }
-    return TRUE;
   }
 
   /**
