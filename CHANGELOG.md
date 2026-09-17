@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.194](https://github.com/markaspot/markaspot/compare/11.9.193...11.9.194) (2026-09-17)
+
+### Bug Fixes
+
+* check report access before assignee notifications ([f3100a3](https://github.com/markaspot/markaspot/commit/f3100a3bd9dd0729545e2968e624a70639482336))
+* preserve authenticated export scope for inactive jurisdictions ([86ede53](https://github.com/markaspot/markaspot/commit/86ede53ed4023992815a8f3d6d31d826323f547c))
+* preserve group access in filtered organisation collections ([d094683](https://github.com/markaspot/markaspot/commit/d094683099b3e1f5f55095b2a84af7d6dd8a8f16))
+* preserve jurisdiction draft access in report queries ([9095c24](https://github.com/markaspot/markaspot/commit/9095c24d4ceefa5a79e2e559e69a8c09b3e396e1))
+* recover workspace signup login after lost responses ([3359e3f](https://github.com/markaspot/markaspot/commit/3359e3f51470da1893448d4a67d9d8924398a581))
+* require complete authority for global account changes ([e0936fc](https://github.com/markaspot/markaspot/commit/e0936fc0684dcb8511f198c67337e0afe5601a25))
+* restrict organisation writes to dedicated installations ([d23b0f2](https://github.com/markaspot/markaspot/commit/d23b0f26f8ee6ba2fdb26b1d1e69e6d776355f6e))
+* use typed Drupal database fetch modes ([8490b42](https://github.com/markaspot/markaspot/commit/8490b42be9b833e38bd3e2ecc40eed080b9c71df))
+
 ## [11.9.193](https://github.com/markaspot/markaspot/compare/11.9.192...11.9.193) (2026-09-17)
 
 ### Features
