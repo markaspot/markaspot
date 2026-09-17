@@ -5352,6 +5352,16 @@ function _markaspot_group_notify_assignee(NodeInterface $node): void {
     return;
   }
 
+  // Jurisdiction membership makes a person assignable, but does not imply
+  // access to every report (for example, contractors remain org-scoped).
+  // Relationships have been reconciled before this hook runs. Discard access
+  // results cached before that reconciliation and check the final report scope
+  // before constructing a mail containing its description and address.
+  \Drupal::entityTypeManager()->getAccessControlHandler('node')->resetCache();
+  if (!$node->access('view', $assignee)) {
+    return;
+  }
+
   $email = _markaspot_group_normalize_notification_email((string) $assignee->getEmail());
   if ($email === NULL) {
     return;

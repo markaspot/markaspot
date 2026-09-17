@@ -8,6 +8,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Entity\EntityAccessControlHandlerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
@@ -697,6 +698,7 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $assignee->method('getEmail')->willReturn('assignee@example.test');
     $assignee->method('getPreferredLangcode')->with(FALSE)->willReturn('de');
     $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee);
+    $node->method('access')->with('view', $assignee)->willReturn(TRUE);
 
     $mailManager = $this->createMock(MailManagerInterface::class);
     $mailManager->expects($this->once())
@@ -737,6 +739,7 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $assignee->method('getPreferredLangcode')->with(FALSE)->willReturn('en');
     $original = $this->serviceRequestNode(organisationId: 0, assignee: $originalAssignee);
     $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee, original: $original);
+    $node->method('access')->with('view', $assignee)->willReturn(TRUE);
 
     $mailManager = $this->createMock(MailManagerInterface::class);
     $mailManager->expects($this->once())->method('mail')->willReturn(['result' => TRUE]);
@@ -798,6 +801,29 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $actingUser = $this->createMock(AccountInterface::class);
     $actingUser->method('id')->willReturn(99);
     $this->installNotificationContainer($mailManager, currentUser: $actingUser, isGroupMember: FALSE);
+
+    _markaspot_group_notify_assignee($node);
+  }
+
+  /**
+   * Assignment eligibility cannot substitute for effective report read access.
+   */
+  public function testAssigneeNotificationRejectsUnreadableReport(): void {
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(42);
+    $assignee->method('isActive')->willReturn(TRUE);
+    $assignee->expects($this->never())->method('getEmail');
+    $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee);
+    $node->expects($this->once())->method('access')->with('view', $assignee)->willReturn(FALSE);
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $actor = $this->createMock(AccountInterface::class);
+    $actor->method('id')->willReturn(99);
+    $access = $this->createMock(EntityAccessControlHandlerInterface::class);
+    $access->expects($this->once())->method('resetCache');
+    $manager = $this->createMock(EntityTypeManagerInterface::class);
+    $manager->method('getAccessControlHandler')->with('node')->willReturn($access);
+    $this->installNotificationContainer($mailManager, entityTypeManager: $manager, currentUser: $actor, isGroupMember: TRUE);
 
     _markaspot_group_notify_assignee($node);
   }
@@ -1148,9 +1174,12 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
       $database->method('select')->willReturn($query);
       $container->set('database', $database);
     }
-    if ($entityTypeManager !== NULL) {
-      $container->set('entity_type.manager', $entityTypeManager);
+    if ($entityTypeManager === NULL) {
+      $access = $this->createMock(EntityAccessControlHandlerInterface::class);
+      $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+      $entityTypeManager->method('getAccessControlHandler')->with('node')->willReturn($access);
     }
+    $container->set('entity_type.manager', $entityTypeManager);
     \Drupal::setContainer($container);
   }
 

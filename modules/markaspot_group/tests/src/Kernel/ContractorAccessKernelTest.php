@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_group\Kernel;
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Access\AccessResult;
@@ -40,6 +41,7 @@ use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\PermissionHandlerInterface;
 use Drupal\user\UserInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -854,6 +856,147 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     $request->save();
 
     $this->assertTrue($request->get('field_status')->isEmpty());
+  }
+
+  /**
+   * Final effective access controls mail after actual assignment persistence.
+   */
+  #[DataProvider('assigneeNotificationScopes')]
+  public function testAssigneeNotificationRespectsFinalReportScope(bool $initialOwnOrg, bool $finalOwnOrg): void {
+    $node = $this->prepareAssigneeNotificationNode($initialOwnOrg);
+    $manager = $this->container->get('entity_type.manager');
+    $manager->getAccessControlHandler('node')->resetCache();
+    $this->assertSame($initialOwnOrg, $node->access('view', $this->contractor));
+    $finalOrg = $finalOwnOrg
+      ? $this->organisationA->id()
+      : $this->organisationBRequest->get('field_organisation')->target_id;
+    $node->set('field_organisation', $finalOrg);
+    $node->set('field_assignee', $this->contractor->id());
+    $this->assertFalse(_markaspot_group_assignment_syncs_organisation($node));
+    $this->assertTrue(_markaspot_group_service_request_assignee_is_valid($node, $this->contractor));
+    $mail = $this->createMock(MailManagerInterface::class);
+    $personMails = [];
+    $mail->method('mail')->willReturnCallback(function ($module, $key, $to, $language, $params) use (&$personMails, $finalOwnOrg, $finalOrg): array {
+      $this->assertSame('markaspot_group', $module);
+      if ($key === 'assignee_notification') {
+        $personMails[] = $to;
+        $this->assertSame($this->contractor->getEmail(), $to);
+        $this->assertStringContainsString('PRIVATE-ASSIGNEE-TEST-DESCRIPTION', $params['message']);
+      }
+      else {
+        // Routing changes may independently notify the responsible org.
+        $this->assertSame('org_notification', $key);
+        $this->assertSame((int) $finalOrg, (int) $params['organisation']->id());
+      }
+      if (!$finalOwnOrg) {
+        $this->assertNotSame($this->contractor->getEmail(), $to, 'No mail may disclose the foreign report to this contractor.');
+      }
+      return ['result' => TRUE];
+    });
+    $this->container->set('plugin.manager.mail', $mail);
+    $node->save();
+    $this->assertCount($finalOwnOrg ? 1 : 0, $personMails);
+    $stored = $manager->getStorage('node')->loadUnchanged($node->id());
+    $this->assertSame((int) $finalOrg, (int) $stored->get('field_organisation')->target_id);
+    $this->assertSame((int) $this->contractor->id(), (int) $stored->get('field_assignee')->target_id);
+    $this->assertSame($finalOwnOrg, $stored->access('view', $this->contractor));
+  }
+
+  /**
+   * Existing and changed organisation responsibility with warm access results.
+   */
+  public static function assigneeNotificationScopes(): iterable {
+    yield 'foreign organisation remains denied' => [FALSE, FALSE];
+    yield 'own organisation remains allowed' => [TRUE, TRUE];
+    yield 'warm allowed moves to foreign organisation' => [TRUE, FALSE];
+    yield 'warm denied moves to own organisation' => [FALSE, TRUE];
+  }
+
+  /**
+   * An eligible moderator still receives the person assignment notification.
+   */
+  public function testAssigneeNotificationStillReachesModerator(): void {
+    $node = $this->prepareAssigneeNotificationNode(TRUE);
+    $node->set('field_assignee', $this->moderator->id());
+    $this->assertTrue($node->access('view', $this->moderator));
+    $mail = $this->createMock(MailManagerInterface::class);
+    $mail->expects($this->once())->method('mail')->willReturnCallback(function ($module, $key, $to, $language, $params): array {
+      $this->assertSame('markaspot_group', $module);
+      $this->assertSame('assignee_notification', $key);
+      $this->assertSame($this->moderator->getEmail(), $to);
+      $this->assertStringContainsString('PRIVATE-ASSIGNEE-TEST-DESCRIPTION', $params['message']);
+      return ['result' => TRUE];
+    });
+    $this->container->set('plugin.manager.mail', $mail);
+    $node->save();
+    $this->assertSame((int) $this->organisationA->id(), (int) $node->get('field_organisation')->target_id);
+  }
+
+  /**
+   * Permission changes cannot reuse access results for the same node revision.
+   */
+  public function testAssigneeNotificationRefreshesCachedPermissionDecision(): void {
+    $node = $this->prepareAssigneeNotificationNode(TRUE);
+    $node->set('field_assignee', $this->contractor->id());
+    $node->save();
+    $revisionId = $node->getRevisionId();
+    $access = $this->container->get('entity_type.manager')->getAccessControlHandler('node');
+    $access->resetCache();
+    $this->assertTrue($node->access('view', $this->contractor));
+    $role = GroupRole::load('org-contractor');
+    $role->revokePermission('view unpublished group_node:service_request entity')->save();
+    $this->assertTrue($node->access('view', $this->contractor), 'Core still holds the warmed allow before notification.');
+    $mail = $this->createMock(MailManagerInterface::class);
+    $sent = 0;
+    $mail->expects($this->once())->method('mail')->willReturnCallback(static function () use (&$sent): array {
+      $sent++;
+      return ['result' => TRUE];
+    });
+    $this->container->set('plugin.manager.mail', $mail);
+    _markaspot_group_notify_assignee($node);
+    $this->assertSame(0, $sent, 'Revoked read access suppresses the notification.');
+    $this->assertFalse($node->access('view', $this->contractor));
+    $role->grantPermission('view unpublished group_node:service_request entity')->save();
+    $this->assertFalse($node->access('view', $this->contractor), 'Core still holds the warmed deny before notification.');
+    _markaspot_group_notify_assignee($node);
+    $this->assertSame(1, $sent, 'Restored read access permits the person notification.');
+    $this->assertTrue($node->access('view', $this->contractor));
+    $this->assertSame($revisionId, $node->getRevisionId());
+    $this->assertSame((int) $this->organisationA->id(), (int) $node->get('field_organisation')->target_id);
+  }
+
+  /**
+   * Adds mail fields to the isolated fixture and creates an unpublished report.
+   */
+  private function prepareAssigneeNotificationNode(bool $ownOrg): Node {
+    foreach ([
+      'field_assignee' => ['entity_reference', ['target_type' => 'user']],
+      'body' => ['text_long', []],
+    ] as $name => [$type, $settings]) {
+      FieldStorageConfig::create([
+        'field_name' => $name,
+        'entity_type' => 'node',
+        'type' => $type,
+        'settings' => $settings,
+      ])->save();
+      FieldConfig::create([
+        'field_name' => $name,
+        'entity_type' => 'node',
+        'bundle' => 'service_request',
+        'label' => $name,
+      ])->save();
+    }
+    $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    $node = $storage->loadUnchanged($ownOrg ? $this->organisationARequest->id() : $this->organisationBRequest->id());
+    $node->setUnpublished();
+    $node->set('body', ['value' => 'PRIVATE-ASSIGNEE-TEST-DESCRIPTION', 'format' => 'plain_text']);
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $mail = $this->createMock(MailManagerInterface::class);
+    $mail->method('mail')->willReturn(['result' => TRUE]);
+    $this->container->set('plugin.manager.mail', $mail);
+    $node->save();
+    return $node;
   }
 
   /**
