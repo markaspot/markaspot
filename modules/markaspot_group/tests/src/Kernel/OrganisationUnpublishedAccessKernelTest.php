@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\field\Entity\FieldConfig;
@@ -12,9 +13,18 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\jsonapi\Query\EntityCondition;
+use Drupal\jsonapi\Query\EntityConditionGroup;
+use Drupal\jsonapi\Query\Filter;
+use Drupal\jsonapi\ResourceType\ResourceType;
+use Drupal\markaspot_nuxt\JsonApi\CachedCountEntityResource;
+use Drupal\markaspot_nuxt\JsonApi\GroupRootQueryGuard;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/GroupRootQueryGuard.php';
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/CachedCountEntityResource.php';
 
 /**
  * Tests unpublished organisation collection access for jurisdiction managers.
@@ -31,10 +41,14 @@ final class OrganisationUnpublishedAccessKernelTest extends KernelTestBase {
     'system',
     'user',
     'field',
+    'file',
+    'filter',
     'entity',
     'flexible_permissions',
     'group',
     'markaspot_group',
+    'serialization',
+    'jsonapi',
   ];
 
   /**
@@ -159,6 +173,80 @@ final class OrganisationUnpublishedAccessKernelTest extends KernelTestBase {
 
     $this->container->get('current_user')->setAccount(new AnonymousUserSession());
     $this->assertSame([], $this->unpublishedOrganisationIds());
+  }
+
+  /**
+   * JSON:API filters retain Group grants and produce consistent counts.
+   */
+  public function testJsonApiRootFiltersRespectGroupAccess(): void {
+    $this->container->get('current_user')->setAccount($this->manager);
+    foreach ([
+      ['label', $this->managedOrganisation->label()],
+      ['field_jurisdiction.target_id', $this->managedOrganisation->get('field_jurisdiction')->target_id],
+    ] as [$field, $value]) {
+      [$query, $cacheability] = $this->guardedOrganisationQuery($field, $value);
+      $countQuery = clone $query;
+      $this->assertSame([(int) $this->managedOrganisation->id()], array_map('intval', array_values($query->execute())));
+      $this->assertSame(1, (int) $countQuery->count()->execute());
+      $this->assertContains('user.group_permissions', $cacheability->getCacheContexts());
+      $this->assertContains('group_list', $cacheability->getCacheTags());
+    }
+
+    [$foreignQuery] = $this->guardedOrganisationQuery('field_jurisdiction.target_id', $this->foreignOrganisation->get('field_jurisdiction')->target_id);
+    $this->assertSame([], $foreignQuery->execute());
+    foreach ([$this->foreignAccount, new AnonymousUserSession()] as $account) {
+      $this->container->get('current_user')->setAccount($account);
+      [$query] = $this->guardedOrganisationQuery('label', $this->managedOrganisation->label());
+      $this->assertSame([], $query->execute());
+    }
+  }
+
+  /**
+   * Referenced groups keep Core's filter subset protection.
+   */
+  public function testReferencedGroupFiltersKeepCoreProtection(): void {
+    $this->container->get('current_user')->setAccount($this->manager);
+    // Exercise Core's default subset without Entity's query-access grant.
+    $this->container->get('entity_type.manager')->getDefinition('group')->setHandlerClass('query_access', NULL);
+    [$query] = $this->guardedOrganisationQuery('field_jurisdiction.entity.label', 'Managed jurisdiction');
+    $this->assertSame([], $query->execute());
+  }
+
+  /**
+   * The actual resource decorator applies the guard to rows and counts.
+   */
+  public function testOrganisationResourceDecoratorIntegration(): void {
+    $this->container->get('current_user')->setAccount($this->manager);
+    $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+    $resource = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+    $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+    $type = new ResourceType('group', 'org', Group::class);
+    $filter = new Filter(new EntityConditionGroup('AND', [
+      new EntityCondition('field_jurisdiction.target_id', $this->managedOrganisation->get('field_jurisdiction')->target_id),
+    ]));
+    $params = [Filter::KEY_NAME => $filter];
+    $query = $reflection->getMethod('getCollectionQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+    $this->assertSame([(int) $this->managedOrganisation->id()], array_map('intval', array_values($query->execute())));
+    $count = $reflection->getMethod('getCollectionCountQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+    $this->assertSame(1, (int) $count->execute());
+    $unfiltered = $reflection->getMethod('getCollectionQuery')->invoke($resource, $type, [], new CacheableMetadata());
+    $this->assertSame([(int) $this->managedOrganisation->id()], array_map('intval', array_values($unfiltered->execute())));
+  }
+
+  /**
+   * Builds the filtered, access-checked collection query used by JSON:API.
+   */
+  private function guardedOrganisationQuery(string $field, mixed $value): array {
+    $query = $this->container->get('entity_type.manager')->getStorage('group')
+      ->getQuery()->accessCheck(TRUE)->condition('type', 'org')->sort('id');
+    $filter = new Filter(new EntityConditionGroup('AND', [new EntityCondition($field, $value)]));
+    $query->condition($filter->queryCondition($query));
+    $cacheability = new CacheableMetadata();
+    GroupRootQueryGuard::setFieldManager($this->container->get('entity_field.manager'));
+    GroupRootQueryGuard::setModuleHandler($this->container->get('module_handler'));
+    GroupRootQueryGuard::applyAccessControls($filter, $query, $cacheability);
+    return [$query, $cacheability];
   }
 
   /**
