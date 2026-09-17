@@ -99,6 +99,9 @@ class AiClientService {
    *   - 'max_tokens': Maximum tokens in response.
    *   - 'response_format': Response format specification.
    *   - 'provider': Override the default provider.
+   *   - 'timeout': Per-attempt HTTP timeout in seconds, clamped to 1-120.
+   *   - 'connect_timeout': Connection timeout, clamped to 1-30 and timeout.
+   *   - 'max_attempts': Maximum attempts, clamped to 1-3 (default: 3).
    *
    * @return array
    *   The API response containing:
@@ -150,9 +153,9 @@ class AiClientService {
       $payload['top_p'] = (float) $options['top_p'];
     }
 
-    return $this->executeWithRetry(function () use ($endpoint, $headers, $payload) {
-      return $this->sendRequest('POST', $endpoint, $headers, $payload);
-    });
+    return $this->executeWithRetry(function () use ($endpoint, $headers, $payload, $options) {
+      return $this->sendRequest('POST', $endpoint, $headers, $payload, $options);
+    }, max(1, min(3, (int) ($options['max_attempts'] ?? 3))));
   }
 
   /**
@@ -377,6 +380,8 @@ class AiClientService {
    *   The request headers.
    * @param array|null $payload
    *   The request payload (for POST requests).
+   * @param array $requestOptions
+   *   Optional timeout and connect_timeout limits.
    *
    * @return array
    *   The decoded JSON response.
@@ -384,12 +389,13 @@ class AiClientService {
    * @throws \Exception
    *   When the request fails or returns an error status.
    */
-  protected function sendRequest(string $method, string $url, array $headers, ?array $payload = NULL): array {
+  protected function sendRequest(string $method, string $url, array $headers, ?array $payload = NULL, array $requestOptions = []): array {
+    $timeout = max(1.0, min(120.0, (float) ($requestOptions['timeout'] ?? 120)));
     $options = [
       'headers' => $headers,
       'http_errors' => FALSE,
-      'timeout' => 120,
-      'connect_timeout' => 30,
+      'timeout' => $timeout,
+      'connect_timeout' => max(1.0, min(30.0, $timeout, (float) ($requestOptions['connect_timeout'] ?? 30))),
     ];
 
     if ($payload !== NULL) {
@@ -479,9 +485,9 @@ class AiClientService {
       $payload['top_p'] = (float) $options['top_p'];
     }
 
-    $response = $this->executeWithRetry(function () use ($endpoint, $headers, $payload) {
-      return $this->sendRequest('POST', $endpoint, $headers, $payload);
-    });
+    $response = $this->executeWithRetry(function () use ($endpoint, $headers, $payload, $options) {
+      return $this->sendRequest('POST', $endpoint, $headers, $payload, $options);
+    }, max(1, min(3, (int) ($options['max_attempts'] ?? 3))));
 
     $content = '';
     foreach ($response['content'] ?? [] as $block) {

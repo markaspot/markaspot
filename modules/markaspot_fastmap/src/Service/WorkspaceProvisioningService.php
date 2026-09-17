@@ -1782,6 +1782,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $response = $this->aiClient->chat($messages, [
         'temperature' => 0.8,
         'max_tokens' => 200 * count($categoryNames),
+        // Keep optional example prose within the verification response budget.
+        // Never wait for provider retries or their exponential backoff here.
+        'timeout' => 5,
+        'connect_timeout' => 2,
+        'max_attempts' => 1,
       ]);
     }
     catch (\Exception $e) {

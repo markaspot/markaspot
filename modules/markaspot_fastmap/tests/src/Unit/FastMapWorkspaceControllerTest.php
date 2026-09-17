@@ -860,6 +860,10 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(409, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertStringContainsString('already in progress', $data['error']);
+    $this->assertSame('verification_in_progress', $data['code']);
+    $this->assertSame(5, $data['retry_after']);
+    $this->assertSame('5', $response->headers->get('Retry-After'));
+    $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
   }
 
   /**
@@ -1130,14 +1134,16 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertInstanceOf(TrustedRedirectResponse::class, $response);
     $this->assertStringContainsString('/redirect-ws/dashboard', $response->headers->get('location'));
     $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', (string) $response->headers->get('X-Login-Token'));
+    $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
   }
 
   /**
-   * Tests that an unclaimed recent verified token can return a login token.
+   * Verification returns an initial or recovered token within its lifetime.
    *
+   * @dataProvider verifiedDeliveryProvider
    * @covers ::verifyWorkspace
    */
-  public function testVerifyWorkspaceAlreadyVerifiedJsonResponseIncludesLoginTokenWithinGrace(): void {
+  public function testVerifyWorkspaceAlreadyVerifiedJsonResponseIncludesLoginTokenWithinGrace(bool $lostResponse): void {
     $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
     $this->pushCurrentRequest([
       'HTTP_ACCEPT' => 'application/json',
@@ -1152,7 +1158,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       'slug' => 'verified-ws',
       'selected_tier' => 'starter',
       'created' => time(),
-      'login_claimed' => 0,
+      'login_claimed' => $lostResponse ? 1 : 0,
     ]);
 
     $pendingSelect = $this->createMock(SelectInterface::class);
@@ -1236,6 +1242,25 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $container = \Drupal::getContainer();
     $container->set('entity_type.manager', $entityTypeManager);
 
+    $originalToken = str_repeat('ac', 32);
+    if ($lostResponse) {
+      $recovery = $this->createMock(KeyValueStoreExpirableInterface::class);
+      $recovery->method('get')->with(hash('sha256', str_repeat('ef', 32)))
+        ->willReturn($originalToken);
+      $recovery->expects($this->never())->method('setWithExpire');
+      $login = $this->createMock(KeyValueStoreExpirableInterface::class);
+      $login->method('get')->with($originalToken)
+        ->willReturn(['uid' => 123, 'slug' => 'verified-ws']);
+      $login->expects($this->never())->method('setWithExpire');
+      $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+      $factory->method('get')->willReturnCallback(fn(string $collection) =>
+        $collection === 'markaspot_fastmap_login_recovery' ? $recovery : $login
+      );
+      $container->set('keyvalue.expirable', $factory);
+      $this->database->expects($this->never())->method('update');
+      $this->provisioning->expects($this->never())->method('provisionWorkspace');
+      $this->controller = FastMapWorkspaceController::create($container);
+    }
     $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
@@ -1244,6 +1269,20 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals('verified-ws', $data['slug']);
     $this->assertEquals('starter', $data['selected_tier']);
     $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $data['login_token']);
+    $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+    if ($lostResponse) {
+      $this->assertSame($originalToken, $data['login_token']);
+    }
+  }
+
+  /**
+   * Covers first delivery and recovery of a response lost after minting.
+   */
+  public static function verifiedDeliveryProvider(): array {
+    return [
+      'first delivery' => [FALSE],
+      'lost response' => [TRUE],
+    ];
   }
 
   /**
@@ -1995,7 +2034,9 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $token = $method->invoke($controller, 99, 'verified-ws', $validVerifyToken);
 
     $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $token);
-    $this->assertCount(1, $storedPayloads);
+    $this->assertCount(2, $storedPayloads);
+    $this->assertSame($token, $storedPayloads[1]);
+    $this->assertStringNotContainsString($validVerifyToken, json_encode($storedPayloads));
     $payload = $storedPayloads[0];
     $this->assertSame(99, $payload['uid']);
     $this->assertSame('verified-ws', $payload['slug']);
@@ -2004,6 +2045,95 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       $payload,
       'Login-token keyvalue payload must never carry the verify_token derivative secret.'
     );
+  }
+
+  /**
+   * Delivery retries recover one token without extending its lifetime.
+   *
+   * @dataProvider verifiedDeliveryProvider
+   * @covers ::createWorkspaceLoginToken
+   * @covers ::claimLoginToken
+   */
+  public function testLostResponseRecoveryExpiresAndNeverRemints(bool $consume): void {
+    $verifyToken = str_repeat('ab', 32);
+    $entries = [];
+    $writes = [];
+    $clock = 1000;
+    $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $factory->method('get')->willReturnCallback(function (string $collection) use (&$entries, &$writes, &$clock) {
+      $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+      $store->method('setWithExpire')->willReturnCallback(function (string $key, $value, int $ttl) use ($collection, &$entries, &$writes, &$clock): void {
+        $entries[$collection][$key] = [$value, $clock + $ttl];
+        $writes[] = [$collection, $key, $value, $ttl];
+      });
+      $store->method('get')->willReturnCallback(function (string $key) use ($collection, &$entries, &$clock) {
+        $entry = $entries[$collection][$key] ?? NULL;
+        return $entry && $clock < $entry[1] ? $entry[0] : NULL;
+      });
+      $store->method('delete')->willReturnCallback(function (string $key) use ($collection, &$entries): void {
+        unset($entries[$collection][$key]);
+      });
+      return $store;
+    });
+    $update = $this->createMock(Update::class);
+    $update->method('fields')->willReturnSelf();
+    $update->method('condition')->willReturnSelf();
+    $update->expects($this->exactly(2))->method('execute')->willReturnOnConsecutiveCalls(1, 0);
+    $database = $this->createMock(Connection::class);
+    $database->method('update')->willReturn($update);
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $factory);
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+    $mint = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
+
+    // The first response is lost, but a retry receives precisely its token.
+    $token = $mint->invoke($controller, 99, 'recovery-ws', $verifyToken);
+    $clock = 1100;
+    $this->assertSame($token, $mint->invoke($controller, 99, 'recovery-ws', $verifyToken));
+    $this->assertCount(2, $writes);
+    $this->assertSame(hash('sha256', $verifyToken), $writes[1][1]);
+    $this->assertStringNotContainsString($verifyToken, json_encode($writes));
+    $this->assertSame(300, $writes[0][3]);
+    $this->assertSame(300, $writes[1][3]);
+
+    // Even a failed account lookup burns the token. No recovery after claim.
+    if ($consume) {
+      $request = $this->createClaimRequest(['token' => $token]);
+      $response = $controller->claimLoginToken($request);
+      $this->assertSame(403, $response->getStatusCode());
+      $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+      $this->assertNull($mint->invoke($controller, 99, 'recovery-ws', $verifyToken));
+      $this->assertSame(401, $controller->claimLoginToken($request)->getStatusCode());
+    }
+
+    // When both entries expire the atomic database claim still denies mint.
+    $clock = 1300;
+    $this->assertNull($mint->invoke($controller, 99, 'recovery-ws', $verifyToken));
+    $this->assertCount(2, $writes);
+  }
+
+  /**
+   * An overlapping claim cannot read or consume the same token.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testConcurrentLoginClaimDoesNotReadToken(): void {
+    $token = str_repeat('bc', 32);
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->once())->method('acquire')
+      ->with('markaspot_fastmap:claim_login:' . hash('sha256', $token), 30.0)
+      ->willReturn(FALSE);
+    $lock->expects($this->never())->method('release');
+    $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $factory->expects($this->never())->method('get');
+    $container = \Drupal::getContainer();
+    $container->set('lock', $lock);
+    $container->set('keyvalue.expirable', $factory);
+    $controller = FastMapWorkspaceController::create($container);
+    $response = $controller->claimLoginToken($this->createClaimRequest(['token' => $token]));
+    $this->assertSame(409, $response->getStatusCode());
+    $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
   }
 
   /**

@@ -241,7 +241,7 @@ class AiClientServiceTest extends UnitTestCase {
    *
    * @covers ::buildAuthHeaders
    */
-  public function testXApiKeyHeader(): void {
+  public function testPrefixedApiKeyHeader(): void {
     $headers = $this->service->buildAuthHeaders('x_api_key', 'anthropic-key');
 
     $this->assertEquals('anthropic-key', $headers['x-api-key']);
@@ -367,6 +367,42 @@ class AiClientServiceTest extends UnitTestCase {
         'top_p' => 0.9,
       ]
     );
+  }
+
+  /**
+   * Critical-path callers can bound provider time and disable retry backoff.
+   *
+   * @dataProvider boundedChatProvider
+   * @covers ::chat
+   */
+  public function testBoundedChatTimesOutWithoutRetry(string $provider): void {
+    $this->tokenTracking->method('checkLimit')->willReturn(TRUE);
+    $this->service->expects($this->never())->method('wait');
+    $this->httpClient->expects($this->once())->method('request')
+      ->with('POST', $this->anything(), $this->callback(function (array $options): bool {
+        return $options['timeout'] === 5.0
+          && $options['connect_timeout'] === 2.0
+          && !isset($options['json']['timeout'], $options['json']['max_attempts']);
+      }))
+      ->willThrowException(new ConnectException('Connection timeout', new Request('POST', 'https://example.com')));
+    $this->expectException(\Exception::class);
+    $this->expectExceptionMessage('failed after 1 attempts');
+    $this->service->chat([['role' => 'user', 'content' => 'test']], [
+      'provider' => $provider,
+      'timeout' => 5,
+      'connect_timeout' => 2,
+      'max_attempts' => 1,
+    ]);
+  }
+
+  /**
+   * Covers both chat transport paths.
+   */
+  public static function boundedChatProvider(): array {
+    return [
+      'OpenAI compatible' => ['openai'],
+      'Anthropic' => ['anthropic'],
+    ];
   }
 
   /**

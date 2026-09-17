@@ -506,7 +506,11 @@ class FastMapWorkspaceController extends ControllerBase {
     if (!$this->lock->acquire($tokenLockName, self::VERIFY_TOKEN_LOCK_TTL)) {
       $this->lock->wait($tokenLockName, 5);
       if (!$this->lock->acquire($tokenLockName, self::VERIFY_TOKEN_LOCK_TTL)) {
-        return new JsonResponse(['error' => 'Workspace verification is already in progress'], 409);
+        return $this->sensitiveJsonResponse([
+          'error' => 'Workspace verification is already in progress',
+          'code' => 'verification_in_progress',
+          'retry_after' => 5,
+        ], 409, ['Retry-After' => '5']);
       }
     }
 
@@ -551,10 +555,10 @@ class FastMapWorkspaceController extends ControllerBase {
           if ($loginToken) {
             $response['login_token'] = $loginToken;
           }
-          return new JsonResponse($response, 200);
+          return $this->sensitiveJsonResponse($response, 200);
         }
 
-        return new JsonResponse(['error' => 'Invalid or expired verification token'], 404);
+        return $this->sensitiveJsonResponse(['error' => 'Invalid or expired verification token'], 404);
       }
 
       // Check expiration using a fixed 48-hour security window.
@@ -564,12 +568,12 @@ class FastMapWorkspaceController extends ControllerBase {
         $this->database->delete('markaspot_fastmap_pending')
           ->condition('id', $record['id'])
           ->execute();
-        return new JsonResponse(['error' => 'Verification token has expired'], 410);
+        return $this->sensitiveJsonResponse(['error' => 'Verification token has expired'], 410);
       }
 
       $workspaceData = json_decode($record['workspace_data'], TRUE);
       if (!$workspaceData) {
-        return new JsonResponse(['error' => 'Corrupted workspace data'], 500);
+        return $this->sensitiveJsonResponse(['error' => 'Corrupted workspace data'], 500);
       }
 
       try {
@@ -578,12 +582,12 @@ class FastMapWorkspaceController extends ControllerBase {
       }
       catch (\RuntimeException $e) {
         if ($e->getMessage() === 'Slug already taken') {
-          return new JsonResponse(['error' => $e->getMessage()], 409);
+          return $this->sensitiveJsonResponse(['error' => $e->getMessage()], 409);
         }
         $this->fastmapLogger->error('Workspace provisioning failed during verification: @msg', [
           '@msg' => $e->getMessage(),
         ]);
-        return new JsonResponse(['error' => 'Workspace provisioning failed'], 500);
+        return $this->sensitiveJsonResponse(['error' => 'Workspace provisioning failed'], 500);
       }
 
       // Move from pending to verified (allows re-verify after prefetch).
@@ -655,7 +659,7 @@ class FastMapWorkspaceController extends ControllerBase {
       // Clean up verified rows older than 24 hours.
       $this->cleanupVerified();
 
-      return new JsonResponse($response, 201);
+      return $this->sensitiveJsonResponse($response, 201);
     }
     catch (\Throwable $e) {
       if ($provisionedGroupId !== NULL) {
@@ -671,7 +675,7 @@ class FastMapWorkspaceController extends ControllerBase {
       $this->fastmapLogger->error('Workspace verification failed: @msg', [
         '@msg' => $e->getMessage(),
       ]);
-      return new JsonResponse(['error' => 'Workspace verification failed'], 500);
+      return $this->sensitiveJsonResponse(['error' => 'Workspace verification failed'], 500);
     }
     finally {
       $this->lock->release($tokenLockName);
@@ -723,38 +727,50 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * Creates a short-lived workspace login token.
+   * Creates or recovers the original short-lived workspace login token.
    *
-   * When a verified-email token is supplied, the originating row in
-   * markaspot_fastmap_verified is marked claimed atomically as part of the
-   * mint. This prevents the keyvalue entry from carrying the verify_token as
-   * a derivative secret: a compromised login_token can no longer be combined
-   * with the verify_token to brute-force a re-mint, because the verify_token
-   * is never persisted next to the login_token in the first place.
-   *
-   * Trade-off: an unused login_token still consumes its verified-row claim
-   * after at most LOGIN_TOKEN_TTL (5 minutes), after which the keyvalue entry
-   * expires automatically. We accept that ephemeral window because the
-   * verify_token is single-purpose and the verified row otherwise lives for
-   * VERIFIED_TOKEN_RECOVERY_TTL anyway.
+   * The verified row is claimed atomically at mint time. A separate recovery
+   * entry indexed by the verification token's hash permits delivery retries
+   * only while that same login token remains unconsumed. Neither retry nor
+   * expiry permits a second mint or extends either entry's lifetime. No raw
+   * verification secret is stored in either keyvalue collection.
    */
   private function createWorkspaceLoginToken(int $uid, string $slug, ?string $verifyToken = NULL): ?string {
-    if ($verifyToken !== NULL && !$this->markVerifiedTokenClaimed($verifyToken)) {
-      return NULL;
-    }
-
     try {
-      $loginToken = bin2hex(random_bytes(32));
       $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
-      $tokenData = [
+      $recoveryStore = NULL;
+      $recoveryKey = NULL;
+      if ($verifyToken !== NULL) {
+        if (!preg_match('/^[0-9a-f]{64}$/', $verifyToken)) {
+          return NULL;
+        }
+        $recoveryStore = $this->keyValueExpirable->get('markaspot_fastmap_login_recovery');
+        $recoveryKey = hash('sha256', $verifyToken);
+        $existingToken = $recoveryStore->get($recoveryKey);
+        if (is_string($existingToken)) {
+          $existingData = $store->get($existingToken);
+          return is_array($existingData)
+            && ($existingData['uid'] ?? NULL) === $uid
+            && ($existingData['slug'] ?? NULL) === $slug
+              ? $existingToken : NULL;
+        }
+        if (!$this->markVerifiedTokenClaimed($verifyToken)) {
+          return NULL;
+        }
+      }
+
+      $loginToken = bin2hex(random_bytes(32));
+      $store->setWithExpire($loginToken, [
         'uid' => $uid,
         'slug' => $slug,
-      ];
-      $store->setWithExpire($loginToken, $tokenData, self::LOGIN_TOKEN_TTL);
+      ], self::LOGIN_TOKEN_TTL);
+      if ($recoveryStore !== NULL && $recoveryKey !== NULL) {
+        $recoveryStore->setWithExpire($recoveryKey, $loginToken, self::LOGIN_TOKEN_TTL);
+      }
       return $loginToken;
     }
     catch (\Exception $e) {
-      // Non-fatal: workspace is provisioned, user just won't be auto-logged in.
+      // Keep the mint claim consumed on storage failure: never mint twice.
       $this->fastmapLogger->warning('Could not generate login token for @slug: @msg', [
         '@slug' => $slug,
         '@msg' => $e->getMessage(),
@@ -805,7 +821,7 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * Returns TRUE if a verified email token may still mint a login token.
+   * Returns TRUE if a verified email token is within the recovery window.
    *
    * The boundary is aligned with markVerifiedTokenClaimed(): rows older than
    * VERIFIED_TOKEN_RECOVERY_TTL are rejected by the atomic UPDATE. A small
@@ -815,10 +831,6 @@ class FastMapWorkspaceController extends ControllerBase {
    * in the meantime.
    */
   private function canReissueVerifiedLoginToken(array $verified): bool {
-    if (!empty($verified['login_claimed'])) {
-      return FALSE;
-    }
-
     $created = (int) ($verified['created'] ?? 0);
     return $created > 0
       && (time() - $created) <= self::VERIFIED_TOKEN_RECOVERY_TTL - self::LOGIN_TOKEN_TTL;
@@ -875,6 +887,7 @@ class FastMapWorkspaceController extends ControllerBase {
     }
 
     $redirect = new TrustedRedirectResponse($redirectUrl);
+    $redirect->headers->set('Cache-Control', 'private, no-store');
     if ($loginToken) {
       $redirect->headers->set('X-Login-Token', $loginToken);
     }
@@ -901,7 +914,7 @@ class FastMapWorkspaceController extends ControllerBase {
     // Flood control: max 10 attempts per IP per hour.
     $ip = $request->getClientIp() ?? 'unknown';
     if (!$this->flood->isAllowed('fastmap_claim_token', 10, 3600, $ip)) {
-      return new JsonResponse(['error' => 'Too many attempts. Try again later.'], 429);
+      return $this->sensitiveJsonResponse(['error' => 'Too many attempts. Try again later.'], 429);
     }
     $this->flood->register('fastmap_claim_token', 3600, $ip);
 
@@ -909,29 +922,37 @@ class FastMapWorkspaceController extends ControllerBase {
     $token = trim($data['token'] ?? '');
 
     if (!$token || !preg_match('/^[0-9a-f]{64}$/', $token)) {
-      return new JsonResponse(['error' => 'Invalid token format'], 400);
+      return $this->sensitiveJsonResponse(['error' => 'Invalid token format'], 400);
     }
 
-    $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
-    $tokenData = $store->get($token);
-
-    if (!$tokenData) {
-      return new JsonResponse(['error' => 'Invalid or expired login token'], 401);
+    // Serialize the read/delete pair: expirable keyvalue has no atomic take.
+    $claimLockName = 'markaspot_fastmap:claim_login:' . hash('sha256', $token);
+    if (!$this->lock->acquire($claimLockName, 30.0)) {
+      return $this->sensitiveJsonResponse(['error' => 'Login token is already being claimed'], 409);
     }
-
-    // Consume token immediately (single-use guarantee).
-    $store->delete($token);
+    try {
+      $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
+      $tokenData = $store->get($token);
+      if (!$tokenData) {
+        return $this->sensitiveJsonResponse(['error' => 'Invalid or expired login token'], 401);
+      }
+      // Consume before any login side effects. Failures also stay single-use.
+      $store->delete($token);
+    }
+    finally {
+      $this->lock->release($claimLockName);
+    }
 
     $uid = (int) ($tokenData['uid'] ?? 0);
     if (!$uid) {
-      return new JsonResponse(['error' => 'Token data corrupted'], 500);
+      return $this->sensitiveJsonResponse(['error' => 'Token data corrupted'], 500);
     }
 
     $userStorage = $this->entityTypeManager()->getStorage('user');
     $user = $userStorage->load($uid);
 
     if (!$user || $user->isBlocked()) {
-      return new JsonResponse(['error' => 'User account not available'], 403);
+      return $this->sensitiveJsonResponse(['error' => 'User account not available'], 403);
     }
 
     try {
@@ -976,7 +997,7 @@ class FastMapWorkspaceController extends ControllerBase {
         }
       }
 
-      return new JsonResponse([
+      return $this->sensitiveJsonResponse([
         'success' => TRUE,
         'user' => [
           'uid' => $user->id(),
@@ -992,8 +1013,15 @@ class FastMapWorkspaceController extends ControllerBase {
         '@uid' => $uid,
         '@msg' => $e->getMessage(),
       ]);
-      return new JsonResponse(['error' => 'Login failed'], 500);
+      return $this->sensitiveJsonResponse(['error' => 'Login failed'], 500);
     }
+  }
+
+  /**
+   * Prevents caches from retaining authentication responses or bearer tokens.
+   */
+  private function sensitiveJsonResponse(array $data, int $status = 200, array $headers = []): JsonResponse {
+    return new JsonResponse($data, $status, ['Cache-Control' => 'private, no-store'] + $headers);
   }
 
   /**

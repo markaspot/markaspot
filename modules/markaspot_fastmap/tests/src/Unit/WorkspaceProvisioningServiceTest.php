@@ -2297,7 +2297,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       $configFactory = $this->buildConfigFactoryWithAiConfigured();
 
       $aiClient = $this->createMock(AiClientService::class);
-      $aiClient->method('chat')->willThrowException(new \Exception('Rate limit exceeded'));
+      $aiClient->expects($this->once())->method('chat')
+        ->with($this->anything(), $this->callback(fn(array $options): bool =>
+          $options['timeout'] === 5
+          && $options['connect_timeout'] === 2
+          && $options['max_attempts'] === 1
+        ))
+        ->willThrowException(new \Exception('HTTP request failed: Connection timeout'));
 
       $service = new WorkspaceProvisioningService(
         $this->entityTypeManager,
