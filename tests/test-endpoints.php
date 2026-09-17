@@ -386,14 +386,17 @@ if ($jur_id) {
 
 // GET /georeport/v2/requests.json.
 if ($api_key) {
-  [$code, $data] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&limit=5");
+  // Self-service accounts spanning multiple jurisdictions need an explicit
+  // scope for list reads. Exercise the normal list contract with that scope.
+  $request_scope = $jur_id ? "&jurisdiction_id=$jur_id" : '';
+  [$code, $data] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&limit=5$request_scope");
   assert_true(in_array($code, [200, 403]), "GET requests.json responds ($code)");
   if ($code === 200 && is_array($data) && !empty($data)) {
     assert_json_keys($data[0], ['service_request_id', 'status', 'service_code', 'lat', 'long'], 'requests[0]');
   }
 
   // With extensions.
-  [$code, $data] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&limit=1&extensions=true");
+  [$code, $data] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&limit=1&extensions=true$request_scope");
   if ($code === 200 && is_array($data) && !empty($data)) {
     assert_true(isset($data[0]['extended_attributes']), 'extensions=true returns extended_attributes');
   }

@@ -291,6 +291,7 @@ foreach ($jurs as $id => $j) {
 }
 
 $svc_codes_by_jur = [];
+$expected_codes_by_jur = [];
 foreach ($jurs as $id => $j) {
   $rJ = $http->get("$base/georeport/v2/services.json?jurisdiction_id=$id", $opts);
   $svc = json_decode($rJ->getBody()->getContents(), TRUE) ?? [];
@@ -298,15 +299,25 @@ foreach ($jurs as $id => $j) {
     // Group selected an explicit (possibly narrower) subset of categories.
     $expected = $own_category_counts[$id];
     $source = ' (own field_service_categories selection)';
+    $expected_categories = $j['group']->get('field_service_categories')->referencedEntities();
   }
   else {
     // Falls through to root jurisdiction's taxonomy.
     $tax_root = $resolve_root($id);
     $expected = $jurs[$tax_root]['catCount'];
+    $expected_categories = $jurs[$tax_root]['cats'];
     $source = $tax_root !== $id ? " (inherited from {$jurs[$tax_root]['label']})" : '';
   }
   assert_equal($expected, count($svc), "{$j['label']}: $expected services$source");
   $svc_codes_by_jur[$id] = array_column($svc, 'service_code');
+  $expected_codes_by_jur[$id] = array_values(array_map(
+    static fn($term) => $term->get('field_service_code')->value,
+    $expected_categories,
+  ));
+  sort($svc_codes_by_jur[$id]);
+  sort($expected_codes_by_jur[$id]);
+  assert_equal($expected_codes_by_jur[$id], $svc_codes_by_jur[$id],
+    "{$j['label']}: service codes match configured categories");
 }
 
 // Pairwise service_code isolation: skip parent-child pairs (they share taxonomy).
@@ -319,7 +330,11 @@ for ($i = 0; $i < count($ids); $i++) {
       continue;
     }
     $overlap = array_intersect($svc_codes_by_jur[$a], $svc_codes_by_jur[$b]);
-    assert_equal(0, count($overlap), "No service_code overlap: {$jurs[$a]['label']} vs {$jurs[$b]['label']}");
+    // Codes are scoped by jurisdiction, so separate taxonomies may reuse a code.
+    // Only overlap present in their configured categories is valid.
+    $expected_overlap = array_intersect($expected_codes_by_jur[$a], $expected_codes_by_jur[$b]);
+    assert_equal(array_values($expected_overlap), array_values($overlap),
+      "Configured service_code overlap: {$jurs[$a]['label']} vs {$jurs[$b]['label']}");
   }
 }
 
@@ -644,14 +659,16 @@ foreach ($jurs as $id => $j) {
 // ===========================================================================
 test_group('12. Access Control - Group Roles');
 
-// Need at least 2 jurisdictions to test cross-jurisdiction denial.
-if (count($jurs) < 2) {
-  skip_test('Need 2+ jurisdictions for access control tests');
+// A child belongs to its parent's access scope and is not a foreign tenant.
+$independent_roots = array_values(array_filter(array_keys($jurs),
+  static fn($id): bool => !isset($parent_of[$id])));
+if (count($independent_roots) < 2) {
+  skip_test('Need 2+ independent root jurisdictions for access control tests');
 }
 else {
-  // Pick two jurisdictions: first as "home", second as "foreign".
-  $home_id = array_keys($jurs)[0];
-  $foreign_id = array_keys($jurs)[1];
+  // Pick two independent roots for the cross-tenant denial checks.
+  $home_id = $independent_roots[0];
+  $foreign_id = $independent_roots[1];
   $home = $jurs[$home_id];
   $foreign = $jurs[$foreign_id];
 
@@ -1120,6 +1137,21 @@ else {
     $cat_counts_effective[$id] = count($effective_cats);
   }
 
+  // Disabled statistics must deny access, including for fixture jurisdictions.
+  // Keep data-shape assertions for enabled jurisdictions only.
+  $stats_jurs = [];
+  $flag_checker = \Drupal::service('markaspot_nuxt.feature_flag_checker');
+  foreach ($jurs as $id => $j) {
+    if ($flag_checker->isEnabled('features.statistics', $j['group'], FALSE)) {
+      $stats_jurs[$id] = $j;
+      continue;
+    }
+    foreach (['status', 'categories', 'categories/hierarchical'] as $path) {
+      $denied = $http->get("$base/stats/$path?jurisdiction=$id", $opts);
+      assert_equal(403, $denied->getStatusCode(), "{$j['label']}: disabled statistics deny $path");
+    }
+  }
+
   // --- Status stats ---
   // /stats/* is feature-flag gated (features.statistics) and requires a
   // resolvable jurisdiction; the legacy unfiltered baseline call now 403's.
@@ -1128,10 +1160,14 @@ else {
   // pre-routing 403 even when the access service would allow). Reusing
   // `$opts` (Accept: application/json) keeps the response shape JSON.
   $status_totals = [];
-  foreach ($jurs as $id => $j) {
+  foreach ($stats_jurs as $id => $j) {
     $r = $http->get("$base/stats/status?jurisdiction=$id", $opts);
     assert_equal(200, $r->getStatusCode(), "{$j['label']}: /stats/status returns 200");
     $status_data = json_decode($r->getBody()->getContents(), TRUE);
+    assert_true(is_array($status_data), "{$j['label']}: status statistics return an array");
+    if (!is_array($status_data)) {
+      continue;
+    }
     $jur_total = array_sum(array_column($status_data, 'count'));
     $status_totals[$id] = $jur_total;
 
@@ -1150,13 +1186,16 @@ else {
   // Parent aggregation: parent total >= each child's total.
   foreach ($children_of as $pid => $cids) {
     foreach ($cids as $cid) {
+      if (!isset($status_totals[$pid], $status_totals[$cid])) {
+        continue;
+      }
       assert_true($status_totals[$pid] >= $status_totals[$cid],
         "{$jurs[$pid]['label']} total ({$status_totals[$pid]}) >= child {$jurs[$cid]['label']} ({$status_totals[$cid]})");
     }
   }
 
   // Pairwise: different root jurisdictions return different counts (if they have different node counts).
-  $root_list = array_values($root_ids);
+  $root_list = array_values(array_intersect($root_ids, array_keys($status_totals)));
   if (count($root_list) >= 2) {
     $a = $root_list[0];
     $b = $root_list[1];
@@ -1168,10 +1207,14 @@ else {
 
   // --- Category stats (flat) ---
   // Per-jurisdiction only; the unfiltered baseline call now 403's.
-  foreach ($jurs as $id => $j) {
+  foreach ($stats_jurs as $id => $j) {
     $r = $http->get("$base/stats/categories?jurisdiction=$id", $opts);
     assert_equal(200, $r->getStatusCode(), "{$j['label']}: /stats/categories returns 200");
     $cat_data = json_decode($r->getBody()->getContents(), TRUE);
+    assert_true(is_array($cat_data), "{$j['label']}: category statistics return an array");
+    if (!is_array($cat_data)) {
+      continue;
+    }
 
     // The endpoint may surface additional categories beyond the jurisdiction's
     // own taxonomy (e.g. emergency-mode globals or cross-tenant features), so
@@ -1181,7 +1224,7 @@ else {
   }
 
   // --- Hierarchical category stats (per-jurisdiction only) ---
-  foreach ($jurs as $id => $j) {
+  foreach ($stats_jurs as $id => $j) {
     $r = $http->get("$base/stats/categories/hierarchical?jurisdiction=$id", $opts);
     assert_equal(200, $r->getStatusCode(), "{$j['label']}: /stats/categories/hierarchical returns 200");
     $hier_data = json_decode($r->getBody()->getContents(), TRUE);
