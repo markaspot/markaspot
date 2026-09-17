@@ -14,10 +14,10 @@ use Drupal\jsonapi\Query\EntityCondition;
 use Drupal\jsonapi\Query\EntityConditionGroup;
 
 /**
- * Includes organisation-authorised drafts in JSON:API's filter subsets.
+ * Includes Group-authorised drafts in JSON:API's filter subsets.
  *
  * Core's published/own subsets do not model Group permissions. Add only the
- * service requests belonging to organisations with effective draft permission.
+ * service requests in organisations or jurisdictions with draft permission.
  * Node query access and Core's referenced-entity filter guards still apply.
  *
  * @internal Kept alongside the existing Core EntityResource integration.
@@ -56,20 +56,29 @@ final class OrganisationQueryGuard extends TemporaryQueryGuard {
     if ($access[JsonApiFilter::AMONG_ALL]->isForbidden()) {
       return $condition;
     }
-    $organisation_ids = node_access_grants('view', $account)['markaspot_contractor_organisation'] ?? [];
-    if ($organisation_ids === []) {
+    $grants = node_access_grants('view', $account);
+    $scope_conditions = [];
+    foreach ([
+      'markaspot_contractor_organisation' => 'field_organisation.target_id',
+      'markaspot_jurisdiction' => 'field_jurisdiction.target_id',
+    ] as $realm => $field) {
+      if (!empty($grants[$realm])) {
+        $scope_conditions[] = new EntityCondition($field, $grants[$realm], 'IN');
+      }
+    }
+    if ($scope_conditions === []) {
       return $condition;
     }
     $cacheability->addCacheContexts(['user', 'user.permissions', 'user.node_grants:view']);
     // Effective Group permissions and memberships can change independently of
-    // Drupal roles. Avoid caching a response with a stale organisation subset.
+    // Drupal roles. Avoid caching a response with a stale Group subset.
     $cacheability->setCacheMaxAge(0);
 
     return new EntityConditionGroup('OR', [
       $condition,
       new EntityConditionGroup('AND', [
         new EntityCondition('type', 'service_request'),
-        new EntityCondition('field_organisation.target_id', $organisation_ids, 'IN'),
+        new EntityConditionGroup('OR', $scope_conditions),
       ]),
     ]);
   }

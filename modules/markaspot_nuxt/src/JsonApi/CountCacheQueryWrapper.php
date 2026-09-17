@@ -18,12 +18,13 @@ use Drupal\Core\Session\AccountInterface;
  *   context; uid alone is almost always sufficient, but roles are cheap to
  *   include and protect against edge cases where a user's roles change between
  *   requests within a single session)
- * - xxh64 hash of the serialized filter params (sort/page are irrelevant for
+ * - xxh64 hash of the filter params and effective permission context keys
+ *   supplied by the caller (sort/page are irrelevant for
  *   a count query and MUST be excluded to avoid destroying the hit-rate across
  *   pagination navigation)
  *
  * Cache lifetime: Cache::PERMANENT with 'node_list' and
- * 'group_relationship_list' tags, no TTL needed:
+ * 'group_relationship_list' and 'group_list' tags, no TTL needed:
  * - 'node_list': Core invalidates it on every node save/delete, so content
  *   changes never leave a stale count.
  * - 'group_relationship_list': the access-checked count depends on the
@@ -32,6 +33,8 @@ use Drupal\Core\Session\AccountInterface;
  *   stay stale for that user until some node happens to be saved. Core
  *   invalidates the list tag on every group_relationship CRUD
  *   automatically.
+ * - 'group_list': workspace visibility changes affect readable reports without
+ *   saving any node or changing the account's roles or memberships.
  *
  * All QueryInterface methods other than execute() delegate to the inner
  * query. Fluent methods return $this (the wrapper) when the inner query
@@ -151,7 +154,7 @@ final class CountCacheQueryWrapper implements QueryInterface {
     }
 
     $result = $this->inner->execute();
-    $this->cache->set($this->cid, $result, Cache::PERMANENT, ['node_list', 'group_relationship_list']);
+    $this->cache->set($this->cid, $result, Cache::PERMANENT, ['node_list', 'group_relationship_list', 'group_list']);
     return $result;
   }
 

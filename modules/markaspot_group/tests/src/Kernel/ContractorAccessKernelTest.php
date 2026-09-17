@@ -13,6 +13,7 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
@@ -361,6 +362,30 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     // Read grants must not introduce new update or delete grants for staff.
     $this->assertArrayNotHasKey('markaspot_contractor_organisation', markaspot_group_node_grants($this->moderator, 'update'));
     $this->assertArrayNotHasKey('markaspot_contractor_organisation', markaspot_group_node_grants($this->moderator, 'delete'));
+  }
+
+  /**
+   * A jurisdiction grant never bypasses the contractor organisation overlay.
+   */
+  public function testContractorWithJurisdictionDraftPermissionStaysScoped(): void {
+    GroupRole::create([
+      'id' => 'jur-draft_reader',
+      'label' => 'Draft reader',
+      'group_type' => 'jur',
+      'scope' => 'individual',
+      'permissions' => ['view unpublished group_node:service_request entity'],
+    ])->save();
+    // Organisation onboarding already derived this jurisdiction membership.
+    // Group::addMember() would leave its existing roles unchanged.
+    $membership = GroupMembership::loadSingle($this->jurisdiction, $this->contractor);
+    $this->assertNotNull($membership);
+    $membership->get('group_roles')->appendItem('jur-draft_reader');
+    $membership->save();
+    $this->organisationBRequest->setUnpublished()->save();
+    $this->container->get('current_user')->setAccount($this->contractor);
+    $this->assertContains((int) $this->jurisdiction->id(), markaspot_group_node_grants($this->contractor, 'view')['markaspot_jurisdiction'] ?? []);
+    $this->assertSame([(int) $this->organisationARequest->id()], $this->queryUnpublishedRequests());
+    $this->assertFalse($this->organisationBRequest->access('view', $this->contractor));
   }
 
   /**

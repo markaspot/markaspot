@@ -35,6 +35,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership as GroupMembershipEntity;
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\group\PermissionScopeInterface;
 use Drupal\markaspot_group\Entity\ProtectedGroup;
 use Drupal\markaspot_group\Exception\OrganisationDeleteBlockedException;
 use Drupal\markaspot_group\Field\AssigneeLabelItemList;
@@ -758,21 +759,16 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
 /**
  * Implements hook_node_access_records_alter().
  *
- * Node access realms are additive. Contractor organisation grants preserve
- * access to in-scope unpublished requests after page visibility enables
+ * Node access realms are additive. Organisation and jurisdiction grants
+ * preserve in-scope unpublished requests after page visibility enables
  * core's grant query. Restricted workspace pages keep no view grant from
  * another realm: their only view records are the workspace member and site
  * administrator grants added here.
  */
 function markaspot_group_node_access_records_alter(array &$grants, NodeInterface $node): void {
-  if ($node->bundle() === 'service_request'
-    && $node->hasField('field_organisation')
-    && !$node->get('field_organisation')->isEmpty()) {
+  if ($node->bundle() === 'service_request') {
     $had_grants = $grants !== [];
-    foreach (array_values(array_unique(array_filter(array_map(
-      'intval',
-      array_column($node->get('field_organisation')->getValue(), 'target_id'),
-    )))) as $organisation_id) {
+    foreach (_markaspot_group_field_target_ids($node, 'field_organisation') as $organisation_id) {
       $grants[] = [
         'realm' => 'markaspot_contractor_organisation',
         'gid' => $organisation_id,
@@ -781,7 +777,21 @@ function markaspot_group_node_access_records_alter(array &$grants, NodeInterface
         'grant_delete' => 0,
       ];
     }
-    // Adding the contractor record prevents core from supplying its default
+    // Node::postSave writes grants before insert hooks mirror jurisdiction
+    // relationships, so use the same validated routing field as that sync.
+    $jurisdiction_ids = _markaspot_group_field_target_ids($node, 'field_jurisdiction');
+    foreach (Group::loadMultiple($jurisdiction_ids) as $jurisdiction) {
+      if (_markaspot_group_is_jurisdiction_group($jurisdiction)) {
+        $grants[] = [
+          'realm' => 'markaspot_jurisdiction',
+          'gid' => (int) $jurisdiction->id(),
+          'grant_view' => 1,
+          'grant_update' => 0,
+          'grant_delete' => 0,
+        ];
+      }
+    }
+    // Adding a scoped record prevents core from supplying its default
     // grant. Preserve that default for otherwise ungoverned published nodes.
     if (!$had_grants && $node->isPublished()) {
       $grants[] = [
@@ -867,6 +877,31 @@ function markaspot_group_node_grants(AccountInterface $account, string $operatio
   }
 
   if ($operation === 'view') {
+    // Group allows these drafts directly, but core's additional grant query
+    // otherwise excludes requests that have no organisation assignment.
+    // Require an explicit membership and its effective Group permission;
+    // a Drupal staff role or own-unpublished permission alone is insufficient.
+    if ($account->isAuthenticated()) {
+      $permissions = NULL;
+      foreach (GroupMembershipEntity::loadByUser($account) as $membership) {
+        $jurisdiction = $membership->getGroup();
+        if (!_markaspot_group_is_jurisdiction_group($jurisdiction)) {
+          continue;
+        }
+        // Match GroupPermissionChecker's individual OR insider decision.
+        // Membership is already proven. Merge effective permissions once per
+        // call, without a stale request-static account cache after revocation.
+        $permissions ??= \Drupal::service('group_permission.calculator')->calculateFullPermissions($account);
+        $individual = $permissions->getItem(PermissionScopeInterface::INDIVIDUAL_ID, $jurisdiction->id());
+        $insider = $permissions->getItem(PermissionScopeInterface::INSIDER_ID, $jurisdiction->bundle());
+        $permission = 'view unpublished group_node:service_request entity';
+        if (($individual && $individual->hasPermission($permission))
+          || ($insider && $insider->hasPermission($permission))) {
+          $grants['markaspot_jurisdiction'][] = (int) $jurisdiction->id();
+        }
+      }
+    }
+
     // Organisation records also activate core's grant filter for ordinary
     // staff. Mirror their existing Group permission so unpublished requests
     // do not disappear from queries despite allowed single-entity access.

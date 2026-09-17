@@ -5907,3 +5907,58 @@ function markaspot_group_update_11951(): string {
   \Drupal::service('plugin.manager.action')->clearCachedDefinitions();
   return 'Per-organisation assignment mail preferences are available; existing behaviour and stored preferences are preserved.';
 }
+
+/**
+ * Restores jurisdiction read grants for existing service requests in batches.
+ */
+function markaspot_group_update_11952(array &$sandbox): string {
+  $database = \Drupal::database();
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+  if (!$database->schema()->tableExists('node__field_jurisdiction')) {
+    $sandbox['#finished'] = 1;
+    return 'No jurisdiction field exists; no service request grants to rewrite.';
+  }
+
+  $query = $database->select('node_field_data', 'request');
+  $query->innerJoin(
+    'node__field_jurisdiction',
+    'jurisdiction',
+    'request.nid = jurisdiction.entity_id AND jurisdiction.deleted = 0',
+  );
+  $query->addField('request', 'nid');
+  $query->condition('request.type', 'service_request')->distinct();
+  if (!isset($sandbox['total'])) {
+    $sandbox['total'] = (int) (clone $query)->countQuery()->execute()->fetchField();
+    $sandbox['processed'] = 0;
+    $sandbox['rewritten'] = 0;
+    $sandbox['last_nid'] = 0;
+  }
+  $query->condition('request.nid', $sandbox['last_nid'], '>')
+    ->orderBy('request.nid', 'ASC')->range(0, 50);
+  $nids = array_map('intval', $query->execute()->fetchCol());
+  if ($nids === []) {
+    $sandbox['#finished'] = 1;
+  }
+  else {
+    $sandbox['last_nid'] = max($nids);
+    $node_storage->resetCache($nids);
+    /** @var \Drupal\node\NodeAccessControlHandlerInterface $access_handler */
+    $access_handler = \Drupal::entityTypeManager()->getAccessControlHandler('node');
+    $grant_storage = \Drupal::service('node.grant_storage');
+    foreach ($node_storage->loadMultiple($nids) as $node) {
+      // Recompute derived grants only. Saving nodes here would change content
+      // timestamps and may trigger notifications or organisation assignment.
+      $grant_storage->write($node, $access_handler->acquireGrants($node));
+      $sandbox['rewritten']++;
+    }
+    $sandbox['processed'] += count($nids);
+    $node_storage->resetCache($nids);
+    $sandbox['#finished'] = $sandbox['total'] > 0
+      ? min(1, $sandbox['processed'] / $sandbox['total'])
+      : 1;
+  }
+  return sprintf(
+    'Rewrote jurisdiction read grants for %d service requests.',
+    $sandbox['rewritten'],
+  );
+}

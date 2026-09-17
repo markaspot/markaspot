@@ -167,6 +167,21 @@ final class CachedCountEntityResource extends EntityResource {
       return $inner;
     }
 
+    // Unfiltered collections do not pass through the filter subset guard.
+    // Vary private counts by effective permissions, not only uid/role names:
+    // changing a Group role must not leave its old draft total readable.
+    $permission_contexts = ['user.permissions', 'user.group_permissions'];
+    $query_cacheability->addCacheContexts($permission_contexts);
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+    $permission_keys = \Drupal::service('cache_contexts_manager')->convertTokensToKeys($permission_contexts);
+    $query_cacheability->addCacheableDependency($permission_keys);
+    foreach ($permission_contexts as $context) {
+      // Retained context keys do not include their own cacheability metadata
+      // in convertTokensToKeys(). Honour dynamic permission calculators too.
+      // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+      $query_cacheability->addCacheableDependency(\Drupal::service('cache_context.' . $context)->getCacheableMetadata());
+    }
+
     // Organisation-scoped queries must never reuse cached totals, but an
     // explicit skip-count request must still avoid executing the count query.
     $skip_count = self::requestWantsSkippedCount();
@@ -179,7 +194,11 @@ final class CachedCountEntityResource extends EntityResource {
     // by Filter::createFromQueryParameter()), not an array. serialize() is
     // deterministic for identical query strings, so hashing it is fine — but
     // it must never meet an array type hint. Hash here, pass the string.
-    $filter_hash = hash('xxh64', serialize($params['filter'] ?? []));
+    // Including context keys also leaves pre-fix warm cache entries unused.
+    $filter_hash = hash('xxh64', serialize([
+      $params['filter'] ?? [],
+      $permission_keys->getKeys(),
+    ]));
 
     return new CountCacheQueryWrapper(
       $inner,

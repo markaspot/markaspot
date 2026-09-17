@@ -70,7 +70,7 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
         $this->isType('string'),
         42,
         Cache::PERMANENT,
-        ['node_list', 'group_relationship_list'],
+        ['node_list', 'group_relationship_list', 'group_list'],
       );
 
     $wrapper = $this->buildWrapper($inner, $cache, $this->buildAccount());
