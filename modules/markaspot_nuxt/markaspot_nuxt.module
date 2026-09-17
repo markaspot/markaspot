@@ -24,6 +24,30 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 /**
+ * Implements hook_entity_create_access().
+ */
+function markaspot_nuxt_entity_create_access(AccountInterface $account, array $context, $entity_bundle): AccessResult {
+  if (($context['entity_type_id'] ?? NULL) === 'group' && $entity_bundle === 'org'
+    && \Drupal::service('markaspot_nuxt.feature_scope_resolver')->isSelfServicePlatform()) {
+    return AccessResult::forbidden('Organisation management requires a dedicated enterprise installation.')
+      ->setCacheMaxAge(0);
+  }
+  return AccessResult::neutral();
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_access() for group entities.
+ */
+function markaspot_nuxt_group_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  if ($entity->bundle() === 'org' && in_array($operation, ['update', 'delete'], TRUE)
+    && \Drupal::service('markaspot_nuxt.feature_scope_resolver')->isSelfServicePlatform()) {
+    return AccessResult::forbidden('Organisation management requires a dedicated enterprise installation.')
+      ->setCacheMaxAge(0);
+  }
+  return AccessResult::neutral();
+}
+
+/**
  * Implements hook_entity_presave().
  */
 function markaspot_nuxt_entity_presave(EntityInterface $entity) {
