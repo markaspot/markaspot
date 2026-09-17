@@ -1,5 +1,23 @@
 # Changelog
 
+## [11.9.193](https://github.com/markaspot/markaspot/compare/11.9.192...11.9.193) (2026-09-17)
+
+### Features
+
+* add offline migration for legacy internal notes ([8f413f0](https://github.com/markaspot/markaspot/commit/8f413f01e8f4fa5b27db3816288d78f8d4bed55c))
+* configure assignment emails per organisation ([94cd4a6](https://github.com/markaspot/markaspot/commit/94cd4a632092de7879cdd445af80ce8d78f110d0))
+
+### Bug Fixes
+
+* allow staff session report creation without email ([d8f3ef9](https://github.com/markaspot/markaspot/commit/d8f3ef9440090d44cd66009aa0adefd0bc61e337))
+* expose fixed export relationship capabilities for staff ([54c4e3f](https://github.com/markaspot/markaspot/commit/54c4e3f16b88a1a55f3bd7bba0d578e57d36ee80))
+* expose trusted organisation jurisdiction scope ([4afafdc](https://github.com/markaspot/markaspot/commit/4afafdc2be847ff1d727a1c9288369f000084e41))
+* honor skipped counts for uncached organisation queries ([ce17c69](https://github.com/markaspot/markaspot/commit/ce17c690424344e0902937f81b9e99be678df78b))
+* preserve staff report access and skip empty action recipients ([cf16d28](https://github.com/markaspot/markaspot/commit/cf16d28a50057e8b64d2d339cd628a6522d75506))
+* record notification receipts for assignee emails ([1eec0ab](https://github.com/markaspot/markaspot/commit/1eec0ab6f490fc9aeea7895f954b3ac71f3b055d))
+* restore migrated resubmission entity definitions ([d7ec141](https://github.com/markaspot/markaspot/commit/d7ec1418781bd0fabd34a859dec275d4af40a5b5))
+* retain organisation draft access in JSON API filters ([e2c377a](https://github.com/markaspot/markaspot/commit/e2c377ac61b30702377951c2bc833f050a84b6f5))
+
 ## [11.9.192](https://github.com/markaspot/markaspot/compare/11.9.191...11.9.192) (2026-09-15)
 
 ### Bug Fixes
