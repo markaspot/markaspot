@@ -10,6 +10,7 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -129,7 +130,7 @@ final class AdminStatsController extends ControllerBase {
     $query->leftJoin('group__field_slug', 'fs', 'fs.entity_id = g.id');
     $query->addField('fs', 'field_slug_value', 'slug');
 
-    $rows = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+    $rows = $query->execute()->fetchAll(FetchAs::Associative);
 
     $signups = [];
     foreach ($rows as $row) {

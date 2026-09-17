@@ -318,6 +318,9 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
     $this->currentUserId = 3;
     $this->currentUserRoles = ['authenticated'];
 
+    $this->currentUser->expects($this->once())->method('hasPermission')
+      ->with('access workspace usage')->willReturn(FALSE);
+
     $group = $this->createMockGroup([]);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 

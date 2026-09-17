@@ -6,6 +6,7 @@ namespace Drupal\markaspot_ai\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
 
@@ -169,7 +170,7 @@ class TokenTrackingService {
       $model_query->addExpression('COUNT(*)', 'requests');
       $model_query->groupBy('t.model');
 
-      $by_model = $model_query->execute()->fetchAllAssoc('model', \PDO::FETCH_ASSOC);
+      $by_model = $model_query->execute()->fetchAllAssoc('model', FetchAs::Associative);
 
       // Get breakdown by operation.
       $operation_query = $this->database->select('markaspot_ai_token_usage', 't')
@@ -185,7 +186,7 @@ class TokenTrackingService {
       $operation_query->addExpression('COUNT(*)', 'requests');
       $operation_query->groupBy('t.operation');
 
-      $by_operation = $operation_query->execute()->fetchAllAssoc('operation', \PDO::FETCH_ASSOC);
+      $by_operation = $operation_query->execute()->fetchAllAssoc('operation', FetchAs::Associative);
 
       $total_input = (int) ($totals['total_input'] ?? 0);
       $total_output = (int) ($totals['total_output'] ?? 0);
@@ -250,7 +251,7 @@ class TokenTrackingService {
         ->condition('t.created', $start_time, '>=')
         ->orderBy('t.created', 'DESC');
 
-      $daily_records = $daily_query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+      $daily_records = $daily_query->execute()->fetchAll(FetchAs::Associative);
 
       // Group by date in PHP for database portability.
       $daily_breakdown = [];
@@ -279,7 +280,7 @@ class TokenTrackingService {
       $provider_query->addExpression('COUNT(*)', 'requests');
       $provider_query->groupBy('t.provider');
 
-      $by_provider = $provider_query->execute()->fetchAllAssoc('provider', \PDO::FETCH_ASSOC);
+      $by_provider = $provider_query->execute()->fetchAllAssoc('provider', FetchAs::Associative);
 
       // Get breakdown by model.
       $model_query = $this->database->select('markaspot_ai_token_usage', 't')
@@ -292,7 +293,7 @@ class TokenTrackingService {
       $model_query->groupBy('t.provider');
       $model_query->groupBy('t.model');
 
-      $by_model = $model_query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+      $by_model = $model_query->execute()->fetchAll(FetchAs::Associative);
 
       $total_input = (int) ($totals['total_input'] ?? 0);
       $total_output = (int) ($totals['total_output'] ?? 0);

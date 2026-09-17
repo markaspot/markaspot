@@ -6,6 +6,7 @@ namespace Drupal\markaspot_ai\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_ai\Service\DuplicateDetectionService;
@@ -572,7 +573,7 @@ class DuplicateController extends ControllerBase {
     $query->addField('ns', 'title', 'source_title');
     $query->addField('nm', 'title', 'match_title');
 
-    return $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+    return $query->execute()->fetchAll(FetchAs::Associative);
   }
 
   /**

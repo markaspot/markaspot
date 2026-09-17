@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_ai\Service;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
@@ -463,7 +464,7 @@ class EmbeddingService {
         $query->condition('e.entity_id', $excludeEntityId, '<>');
       }
 
-      $results = $query->execute()->fetchAllAssoc('entity_id', \PDO::FETCH_ASSOC);
+      $results = $query->execute()->fetchAllAssoc('entity_id', FetchAs::Associative);
 
       // Decode vectors.
       foreach ($results as &$row) {

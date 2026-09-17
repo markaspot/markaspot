@@ -21,6 +21,7 @@ use Drupal\markaspot_group\WorkspaceVisibilityNodeAccessControlHandler;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeGrantDatabaseStorage;
+use Drupal\node\NodeGrantsHelper;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -504,12 +505,19 @@ final class PageWorkspaceVisibilityAccessKernelTest extends KernelTestBase {
     $module_handler->method('invokeAll')
       ->willReturnCallback(static fn($hook, $args = []) => $hook === 'node_grants' ? markaspot_group_node_grants(...$args) : []);
     $database = $this->container->get('database');
-    $grant_storage = new NodeGrantDatabaseStorage(
+    $grant_storage_arguments = [
       $database,
       $module_handler,
       $this->container->get('language_manager'),
       $this->container->get('node.view_all_nodes_memory_cache'),
-    );
+    ];
+    // Drupal 11.4 adds a helper that must use the same fixture hooks.
+    if (class_exists(NodeGrantsHelper::class)) {
+      $grant_storage_arguments[] = new NodeGrantsHelper($module_handler);
+    }
+    // Both constructor arities are exercised against their respective cores.
+    // @phpstan-ignore arguments.count (The optional helper exists since 11.4.)
+    $grant_storage = new NodeGrantDatabaseStorage(...$grant_storage_arguments);
     $grant_storage->write($page, $records);
     $this->container->set('module_handler', $module_handler);
     $this->container->set('node.grant_storage', $grant_storage);

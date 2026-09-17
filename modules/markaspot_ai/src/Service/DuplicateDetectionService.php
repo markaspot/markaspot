@@ -6,6 +6,7 @@ namespace Drupal\markaspot_ai\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -206,7 +207,7 @@ class DuplicateDetectionService {
       );
       $query->addField('e', 'embedding');
 
-      $candidates = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+      $candidates = $query->execute()->fetchAll(FetchAs::Associative);
 
       if (empty($candidates)) {
         return [];
@@ -423,7 +424,7 @@ class DuplicateDetectionService {
 
       $query->orderBy('d.similarity_score', 'DESC');
 
-      $results = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+      $results = $query->execute()->fetchAll(FetchAs::Associative);
 
       // Add 'other_nid' field for convenience.
       foreach ($results as &$result) {
@@ -647,7 +648,7 @@ class DuplicateDetectionService {
         $query->condition('grp.id', $jurisdictionIds, 'IN');
       }
 
-      return $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+      return $query->execute()->fetchAll(FetchAs::Associative);
     }
     catch (\Exception $e) {
       $this->logger->error('Failed to get pending matches: @message', [
