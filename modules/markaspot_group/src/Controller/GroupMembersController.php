@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Controller;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Database\Connection;
@@ -20,6 +21,7 @@ use Drupal\group\PermissionScopeInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\user\PermissionHandlerInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -50,6 +52,26 @@ class GroupMembersController extends ControllerBase {
    * Lock TTL for email identity mutations.
    */
   private const USER_EMAIL_LOCK_TTL = 120.0;
+
+  /**
+   * Existing staff capabilities compatible with local account management.
+   *
+   * These restricted permissions already belong to shipped tenant-facing roles
+   * or authorize node-scoped assignment. They do not confer account ownership.
+   * Mail-text administration is a compatibility exception for tenant admins;
+   * its existing global configuration surface is not a tenant scope guarantee.
+   */
+  private const TENANT_PROFILE_COMPATIBLE_PERMISSIONS = [
+    'administer markaspot mail texts',
+    'bypass mas validation',
+    'access dashboard notifications',
+    'access dashboard kpis',
+    'manage dashboard notes',
+    'add dashboard status notes',
+    'split service requests',
+    'use service request management form',
+    'assign service requests',
+  ];
 
   /**
    * The membership loader service.
@@ -85,6 +107,8 @@ class GroupMembersController extends ControllerBase {
    *   The current user.
    * @param \Drupal\Core\Lock\LockBackendInterface $lock
    *   The lock backend.
+   * @param \Drupal\user\PermissionHandlerInterface|null $permissionHandler
+   *   Permission definitions used to protect globally privileged accounts.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
@@ -92,6 +116,7 @@ class GroupMembersController extends ControllerBase {
     JurisdictionHierarchyResolverInterface $hierarchyResolver,
     AccountInterface $currentUser,
     LockBackendInterface $lock,
+    protected ?PermissionHandlerInterface $permissionHandler = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->membershipLoader = $membershipLoader;
@@ -110,6 +135,7 @@ class GroupMembersController extends ControllerBase {
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
       $container->get('lock'),
+      $container->get('user.permissions'),
     );
   }
 
@@ -660,25 +686,22 @@ class GroupMembersController extends ControllerBase {
    *   JSON response with the updated user data or error.
    */
   protected function doUpdateUserProfile(array $content, int $uid): JsonResponse {
-    $currentAccount = $this->currentUser();
-    $isDrupalAdmin = $this->isDrupalAdminAccount($currentAccount);
-
-    $userStorage = $this->entityTypeManager()->getStorage('user');
-    /** @var \Drupal\user\UserInterface|null $targetUser */
-    $targetUser = $userStorage->load($uid);
-    if (!$targetUser) {
-      return new JsonResponse(['error' => 'User not found.'], 404);
+    // Preflight may have primed Group's membership and entity caches before
+    // another request acquired this lock. Re-read the authority under the lock.
+    $this->entityTypeManager()->getStorage('user')->resetCache([$uid]);
+    $this->entityTypeManager()->getStorage('group_relationship')->resetCache();
+    $this->entityTypeManager()->getStorage('group')->resetCache();
+    Cache::invalidateTags([
+      'group_relationship_list:plugin:group_membership:entity:' . $uid,
+      'group_relationship_list:plugin:group_membership:entity:' . $this->currentUser()->id(),
+    ]);
+    $context = $this->prepareProfileUpdateContext($uid);
+    if ($context instanceof JsonResponse) {
+      return $context;
     }
-
-    // Non-admin callers cannot modify Drupal administrators.
-    if (!$isDrupalAdmin && in_array('administrator', $targetUser->getRoles(), TRUE)) {
-      return new JsonResponse(['error' => 'Cannot modify administrator accounts.'], 403);
-    }
-
-    // Verify the target user is within the caller's admin scope.
-    if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
-      return new JsonResponse(['error' => 'Access denied to this user.'], 403);
-    }
+    $currentAccount = $context['current_account'];
+    $targetUser = $context['target_user'];
+    $userStorage = $context['user_storage'];
 
     $isSelf = (int) $currentAccount->id() === $uid;
     $changes = [];
@@ -874,13 +897,9 @@ class GroupMembersController extends ControllerBase {
       return new JsonResponse(['error' => 'User not found.'], 404);
     }
 
-    // Non-admin callers cannot modify Drupal administrators.
-    if (!$isDrupalAdmin && in_array('administrator', $targetUser->getRoles(), TRUE)) {
-      return new JsonResponse(['error' => 'Cannot modify administrator accounts.'], 403);
-    }
-
-    // Verify the target user is within the caller's admin scope.
-    if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
+    // Identity and lifecycle changes affect every tenant using this account.
+    // Unlike membership edits, one overlapping membership is not sufficient.
+    if (!$isDrupalAdmin && !$this->canManageGlobalProfile($targetUser, $currentAccount)) {
       return new JsonResponse(['error' => 'Access denied to this user.'], 403);
     }
 
@@ -890,6 +909,64 @@ class GroupMembersController extends ControllerBase {
       'target_user' => $targetUser,
       'user_storage' => $userStorage,
     ];
+  }
+
+  /**
+   * Checks authority over an account's global identity and lifecycle.
+   *
+   * Own name/email updates are still available to authorized route callers;
+   * self-blocking and self-anonymization remain forbidden by the mutator.
+   * Other accounts must have no platform privileges and every membership must
+   * belong to a jurisdiction or organisation the caller actually administers.
+   */
+  protected function canManageGlobalProfile(UserInterface $targetUser, AccountInterface $account): bool {
+    if ((int) $targetUser->id() === (int) $account->id()) {
+      return TRUE;
+    }
+
+    // Keep system identities and the application's global operator roles out
+    // of tenant administration, even when they also join a local workspace.
+    if ((int) $targetUser->id() <= 2
+      || array_intersect(['administrator', 'editorial_board', 'api_user'], $targetUser->getRoles()) !== []) {
+      return FALSE;
+    }
+    if ($targetUser->hasField('field_all_groups_member')
+      && (bool) $targetUser->get('field_all_groups_member')->value) {
+      return FALSE;
+    }
+
+    // Drupal marks powerful permissions explicitly. Unknown custom restricted
+    // permissions therefore fail closed without extending a denylist for each
+    // module, including impersonation and configuration import capabilities.
+    if ($this->permissionHandler === NULL) {
+      return FALSE;
+    }
+    foreach ($this->permissionHandler->getPermissions() as $permission => $definition) {
+      if (!empty($definition['restrict access'])
+        && !in_array($permission, self::TENANT_PROFILE_COMPATIBLE_PERMISSIONS, TRUE)
+        && $targetUser->hasPermission($permission)) {
+        return FALSE;
+      }
+    }
+
+    // Also protect custom administrator roles and administrative capabilities
+    // whose providers omitted the restricted-permission metadata.
+    /** @var \Drupal\user\RoleInterface[] $roles */
+    $roles = $this->entityTypeManager()->getStorage('user_role')->loadMultiple($targetUser->getRoles());
+    foreach ($roles as $role) {
+      if ($role->isAdmin()) {
+        return FALSE;
+      }
+      foreach ($role->getPermissions() as $permission) {
+        if (str_starts_with($permission, 'administer ')
+          && !in_array($permission, self::TENANT_PROFILE_COMPATIBLE_PERMISSIONS, TRUE)
+          && $targetUser->hasPermission($permission)) {
+          return FALSE;
+        }
+      }
+    }
+
+    return $this->isUserInAdminScope($targetUser, $account, TRUE);
   }
 
   /**
@@ -1816,29 +1893,41 @@ class GroupMembersController extends ControllerBase {
   /**
    * Checks whether a target user is within the caller's admin scope.
    *
-   * A target user is in scope if they hold membership in at least one group
-   * that the calling tenant admin can see (via loadVisibleGroups).
+   * Membership edits need an overlap with visible groups. Global profile
+   * mutations require every membership to belong to the caller's managed scope.
    *
    * @param \Drupal\user\UserInterface $targetUser
    *   The user to check.
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The requesting user account.
+   * @param bool $requireCompleteScope
+   *   Whether every membership must be managed rather than one being visible.
    *
    * @return bool
-   *   TRUE if the target user is in at least one of the caller's visible
-   *   groups.
+   *   TRUE if the requested scope requirement is satisfied.
    */
-  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account): bool {
-    $visibleGroups = $this->loadVisibleGroups('');
+  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account, bool $requireCompleteScope = FALSE): bool {
+    $targetMemberships = $this->membershipLoader->loadByUser($targetUser);
+    if ($targetMemberships === []) {
+      return FALSE;
+    }
+
+    $adminJurIds = $requireCompleteScope ? $this->getAdminJurisdictionIds($account) : [];
+    $visibleGroups = $requireCompleteScope ? [] : $this->loadVisibleGroups('');
     $visibleGroupIds = array_map(fn($g) => (int) $g->id(), $visibleGroups);
 
-    $targetMemberships = $this->membershipLoader->loadByUser($targetUser);
     foreach ($targetMemberships as $membership) {
-      if (in_array((int) $membership->getGroup()->id(), $visibleGroupIds, TRUE)) {
+      $group = $membership->getGroup();
+      if ($requireCompleteScope) {
+        if (!$this->isGroupInAdminScopeWith($group, $adminJurIds)) {
+          return FALSE;
+        }
+      }
+      elseif (in_array((int) $group->id(), $visibleGroupIds, TRUE)) {
         return TRUE;
       }
     }
-    return FALSE;
+    return $requireCompleteScope;
   }
 
 }
