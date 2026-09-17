@@ -281,13 +281,11 @@ assert_equal($catN, count($svc_all ?? []), "Without jurisdiction: $catN services
 // Per-group explicit category selection (group__field_service_categories).
 // A child can opt into a narrower subset of the parent's taxonomy; when the
 // field is empty it falls through to the inherited parent set.
-$db = \Drupal::database();
 $own_category_counts = [];
 foreach ($jurs as $id => $j) {
-  $own_category_counts[$id] = (int) $db->query(
-    'SELECT COUNT(*) FROM {group__field_service_categories} WHERE entity_id = :gid',
-    [':gid' => $id]
-  )->fetchField();
+  // Count this entity's selected categories, not storage rows from every
+  // translation of its field. The latter duplicates multilingual selections.
+  $own_category_counts[$id] = count($j['group']->get('field_service_categories')->referencedEntities());
 }
 
 $svc_codes_by_jur = [];
