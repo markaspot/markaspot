@@ -11,25 +11,17 @@ use Drupal\markaspot_health\HealthCheckResult;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Detects jurisdictions that have no node:page assigned.
+ * Reports jurisdictions without optional published information pages.
  *
- * A `jur` group without any `node:page` referencing it cannot serve a legal
- * notice / imprint / privacy / contact page when Nuxt resolves
- * `<frontend>/<slug>/{imprint,privacy,...}`. The page-by-name mapping is
- * out of scope for this check (it would need a configurable expected list);
- * the threshold here is just "at least one page exists for the tenant".
- *
- * Severity is elevated from `warning` to `error` for tenants whose
- * `field_visibility` is `public`, because a public-facing tenant without
- * pages is a release-blocker — the storefront has no content. Internal /
- * draft / demo workspaces stay on warning.
+ * Legal pages may come from operator metadata rather than node:page entities.
+ * This editorial reminder does not assess legal content or release readiness.
  *
  * @HealthCheck(
  *   id = "tenant_pages_assigned",
  *   label = @Translation("Tenants without node:page"),
  *   severity = "warning",
- *   description = @Translation("Counts jurisdictions that have no published page node referencing them. Elevated to error for visibility=public tenants."),
- *   fix_hint = @Translation("Create at least one node:page assigned to each jurisdiction (or assign existing pages via field_jurisdiction). Public-facing tenants need imprint/privacy/contact at minimum."),
+ *   description = @Translation("Counts jurisdictions without optional published information pages. This does not assess legal pages."),
+ *   fix_hint = @Translation("If additional information pages are wanted, create or assign published node:page content via field_jurisdiction. Verify legal content separately."),
  *   fix_url = "/admin/content?type=page",
  * )
  */
@@ -78,7 +70,6 @@ class TenantPagesAssignedCheck extends HealthCheckPluginBase {
 
     $details = [];
     $count = 0;
-    $errorSeverity = FALSE;
     foreach ($jurisdictions as $jur) {
       $jurId = (int) $jur->id();
       $pageCount = $this->countPagesForJurisdiction($jurId);
@@ -86,31 +77,25 @@ class TenantPagesAssignedCheck extends HealthCheckPluginBase {
         continue;
       }
       $count++;
-      $isPublic = $this->isPublicVisibility($jur);
-      if ($isPublic) {
-        $errorSeverity = TRUE;
-      }
       if (count($details) < self::DETAILS_LIMIT) {
         $details[] = [
           'jurisdiction' => $jurId,
           'jur_label' => (string) $jur->label(),
-          'visibility' => $isPublic ? 'public' : 'non_public',
           'page_count' => 0,
         ];
       }
     }
 
     if ($count === 0) {
-      return $this->pass('Every jurisdiction has at least one node:page assigned.');
+      return $this->pass('Every jurisdiction has at least one published information page. Legal content was not assessed.');
     }
 
     return $this->failWithSeverity(
-      $errorSeverity ? 'error' : 'warning',
+      'warning',
       $count,
       sprintf(
-        '%d jurisdiction(s) without any node:page%s.',
+        '%d jurisdiction(s) without optional published information pages. Legal content was not assessed.',
         $count,
-        $errorSeverity ? ' (at least one is visibility=public)' : '',
       ),
       $details,
       max(0, $count - count($details)),
@@ -154,9 +139,7 @@ class TenantPagesAssignedCheck extends HealthCheckPluginBase {
     if ($fieldDefs === []) {
       return 0;
     }
-    // Only published pages count: a tenant whose imprint/privacy lives in
-    // an unpublished draft is not "ready to go live", which is the whole
-    // point of the editorial-readiness gate.
+    // Draft pages do not satisfy the optional published-content reminder.
     return (int) $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'page')
@@ -164,20 +147,6 @@ class TenantPagesAssignedCheck extends HealthCheckPluginBase {
       ->condition('field_jurisdiction', $jurisdictionId)
       ->count()
       ->execute();
-  }
-
-  /**
-   * Reads the jurisdiction's field_visibility to decide severity elevation.
-   */
-  protected function isPublicVisibility($jurisdiction): bool {
-    // Intentionally stricter than WorkspaceVisibilityService: treating empty
-    // legacy values as public here would raise new missing-page alarms across
-    // municipal production dashboards during the field ownership update.
-    if (!$jurisdiction->hasField('field_visibility')) {
-      return FALSE;
-    }
-    $value = (string) ($jurisdiction->get('field_visibility')->value ?? '');
-    return $value === 'public';
   }
 
 }
