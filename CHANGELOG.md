@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.195](https://github.com/markaspot/markaspot/compare/11.9.194...11.9.195) (2026-09-18)
+
+### Bug Fixes
+
+* preserve category translation alignment during onboarding ([dfce950](https://github.com/markaspot/markaspot/commit/dfce950ef574af71bf4cbfa126eac0c0c0ee5a65))
+
 ## [11.9.194](https://github.com/markaspot/markaspot/compare/11.9.193...11.9.194) (2026-09-17)
 
 ### Bug Fixes
