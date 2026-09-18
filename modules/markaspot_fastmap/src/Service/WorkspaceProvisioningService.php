@@ -18,6 +18,7 @@ use Drupal\file\FileRepositoryInterface;
 use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
+use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\language\Entity\ConfigurableLanguage;
@@ -383,6 +384,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
     if (empty($categories) || !is_array($categories)) {
       throw new \RuntimeException('categories must be provided');
+    }
+    if (!is_string($requestedLang)) {
+      throw new \RuntimeException('Invalid category language');
     }
 
     $multilingualCategories = $this->normalizeCategories($categories, $requestedLang);
@@ -1109,6 +1113,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'field_category_icon' => $icon,
         'field_jurisdiction' => ['target_id' => $groupId],
       ]);
+      if (count($multilingualCategories) > 1 && (!$term->isTranslatable() || !$term->getFieldDefinition('name')->isTranslatable())) {
+        throw new \RuntimeException('Category translations are not enabled for this installation');
+      }
       $term->save();
       $termIds[] = (int) $term->id();
 
@@ -1117,7 +1124,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
           continue;
         }
         $translatedName = $langCategories[$index] ?? NULL;
-        if ($translatedName && $term->isTranslatable()) {
+        if ($translatedName !== NULL) {
           $translation = $term->addTranslation($lang, ['name' => $translatedName]);
           $translation->save();
         }
@@ -1138,36 +1145,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *   Normalized multilingual categories keyed by language code.
    */
   private function normalizeCategories(array $categories, string $requestedLang = ''): array {
-    $firstValue = reset($categories);
-    if (is_string($firstValue)) {
-      $valid = array_filter($categories, fn($c) => is_string($c) && trim($c) !== '');
-      $valid = array_map(fn($c) => mb_substr(trim($c), 0, 255), $valid);
-      $lang = (is_string($requestedLang) && in_array($requestedLang, self::ALLOWED_LANGS, TRUE))
-        ? $requestedLang
-        : 'en';
-      return $valid ? [$lang => array_values($valid)] : [];
-    }
-
-    $result = [];
-    foreach ($categories as $lang => $names) {
-      if (!is_string($lang) || !is_array($names)) {
-        continue;
-      }
-      if (!preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang)) {
-        continue;
-      }
-      $valid = [];
-      foreach ($names as $name) {
-        if (is_string($name) && trim($name) !== '') {
-          $valid[] = mb_substr(trim($name), 0, 255);
-        }
-      }
-      if (!empty($valid)) {
-        $result[$lang] = $valid;
-      }
-    }
-
-    return $result;
+    return CategoryTranslations::normalize($categories, $requestedLang, self::ALLOWED_LANGS);
   }
 
   /**

@@ -16,6 +16,7 @@ use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
+use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
@@ -232,6 +233,15 @@ class FastMapWorkspaceController extends ControllerBase {
 
     if (empty($categories) || !is_array($categories)) {
       return new JsonResponse(['error' => 'categories must be provided'], 400);
+    }
+    if (!is_string($data['language'] ?? '')) {
+      return new JsonResponse(['error' => 'Invalid category language'], 400);
+    }
+    try {
+      $categories = CategoryTranslations::normalize($categories, $data['language'] ?? '', self::ALLOWED_LANGS);
+    }
+    catch (\RuntimeException $e) {
+      return new JsonResponse(['error' => $e->getMessage()], 400);
     }
 
     // Validate optional explicit category icons: index-aligned with the

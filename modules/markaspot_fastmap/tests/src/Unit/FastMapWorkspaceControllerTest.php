@@ -32,6 +32,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
+require_once dirname(__DIR__, 3) . '/src/Validation/CategoryTranslations.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/FastMapWorkspaceController.php';
 require_once dirname(__DIR__, 3) . '/markaspot_fastmap.module';
 
 /**
@@ -614,6 +616,34 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(400, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertEquals('categories must be provided', $data['error']);
+  }
+
+  /**
+   * Incomplete translations never create pending data or send verification.
+   *
+   * @dataProvider invalidCategoryTranslations
+   */
+  public function testInvalidTranslationsDoNotSendVerification(array $categories): void {
+    $this->database->expects($this->never())->method('insert');
+    $this->mailManager->expects($this->never())->method('mail');
+    $request = $this->createJsonRequest($this->validRequestData([
+      'categories' => $categories,
+      'language' => 'en',
+    ]));
+    $response = $this->controller->createWorkspace($request);
+    $this->assertSame(400, $response->getStatusCode());
+  }
+
+  /**
+   * Provides malformed translation payloads at the HTTP entry point.
+   */
+  public static function invalidCategoryTranslations(): array {
+    return [
+      'blank middle' => [['en' => ['Road', 'Graffiti', 'Light'], 'fr' => ['Route', '', 'Éclairage']]],
+      'short secondary' => [['en' => ['Road', 'Light'], 'fr' => ['Route']]],
+      'missing primary' => [['fr' => ['Route']]],
+      'sparse secondary' => [['en' => ['Road', 'Light'], 'fr' => [0 => 'Route', 2 => 'Éclairage']]],
+    ];
   }
 
   /**
