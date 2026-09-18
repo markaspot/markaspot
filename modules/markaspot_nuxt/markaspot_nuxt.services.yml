@@ -1,4 +1,16 @@
 services:
+  markaspot_nuxt.jsonapi_read_language:
+    class: Drupal\markaspot_nuxt\Language\JsonApiReadLanguage
+    arguments: ['@request_stack', '@language_manager', '@config.factory', '%jsonapi.base_path%']
+    tags:
+      - { name: event_subscriber }
+  markaspot_nuxt.jsonapi_entity_repository:
+    class: Drupal\markaspot_nuxt\Language\JsonApiEntityRepository
+    arguments: ['@entity.repository', '@markaspot_nuxt.jsonapi_read_language']
+  markaspot_nuxt.jsonapi_page_cache_request_policy:
+    class: Drupal\markaspot_nuxt\Language\JsonApiPageCacheRequestPolicy
+    arguments: ['@page_cache_request_policy', '@markaspot_nuxt.jsonapi_read_language']
+
   markaspot_nuxt.public_url_validator:
     class: Drupal\markaspot_nuxt\Service\PublicUrlValidator
 
