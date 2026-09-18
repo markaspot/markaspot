@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\taxonomy\TermInterface;
 
 /**
@@ -33,5 +34,16 @@ function markaspot_tenant_import_test_taxonomy_term_presave(TermInterface $term)
     && $term->bundle() === 'service_status'
     && $term->label() === $name) {
     throw new RuntimeException('Injected status save failure.');
+  }
+}
+
+/**
+ * Implements hook_group_presave().
+ */
+function markaspot_tenant_import_test_group_presave(GroupInterface $group): void {
+  if (\Drupal::state()->get('markaspot_tenant_import_test.fail_logo')
+    && $group->hasField('field_logo_light')
+    && !$group->get('field_logo_light')->isEmpty()) {
+    throw new RuntimeException('Injected logo save failure.');
   }
 }

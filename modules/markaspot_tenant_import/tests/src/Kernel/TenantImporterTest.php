@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_tenant_import\Kernel;
 
+use Consolidation\OutputFormatters\FormatterManager;
+use Consolidation\OutputFormatters\Options\FormatterOptions;
 use Drupal\Core\Lock\DatabaseLockBackend;
+use Drupal\Core\Site\Settings;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -14,6 +18,13 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_tenant_import\Exception\TenantImportValidationException;
+use Drupal\markaspot_tenant_import\Drush\Commands\TenantBootstrapCommands;
+use Drush\Attributes\DefaultTableFields;
+use Drush\Config\DrushConfig;
+use Drush\Log\DrushLoggerManager;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Style\SymfonyStyle;
 use Drupal\markaspot_tenant_import\Service\TenantImportFieldMapper;
 use Drupal\markaspot_tenant_import\Service\TenantImporter;
 use Drupal\taxonomy\Entity\Term;
@@ -39,6 +50,9 @@ final class TenantImporterTest extends KernelTestBase {
     'system',
     'user',
     'field',
+    'file',
+    'language',
+    'services_api_key_auth',
     'filter',
     'text',
     'options',
@@ -70,6 +84,8 @@ final class TenantImporterTest extends KernelTestBase {
     parent::setUp();
 
     $this->installEntitySchema('user');
+    $this->installEntitySchema('file');
+    $this->installSchema('file', ['file_usage']);
     $this->installEntitySchema('taxonomy_term');
     $this->installEntitySchema('group');
     $this->installEntitySchema('group_relationship');
@@ -134,6 +150,171 @@ final class TenantImporterTest extends KernelTestBase {
     ]);
     $this->jurisdiction->save();
     $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
+  }
+
+  /**
+   * A new root has no writes in preview and converges on repeated apply.
+   */
+  public function testDedicatedBootstrapIsReadOnlyThenIdempotent(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $this->assertNull($service->bootstrap($configuration)['jurisdiction_id']);
+    $this->assertSame([], Group::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+    $this->assertNull($this->container->get('keyvalue')->get('markaspot_tenant_import.bootstrap')->get('root'));
+    $first = $service->bootstrap($configuration, NULL, TRUE);
+    $initialGroup = Group::load($first['jurisdiction_id']);
+    GroupMembership::loadSingle($initialGroup, User::load(2))->set('group_roles', [])->save();
+    $second = $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertSame($first['jurisdiction_id'], $second['jurisdiction_id']);
+    $this->assertSame('resume', $second['action']);
+    $this->assertNotContains('create', array_column($second['rows'], 'action'));
+    $group = Group::load($first['jurisdiction_id']);
+    $membership = GroupMembership::loadSingle($group, User::load(2));
+    $this->assertNotNull($membership);
+    $this->assertSame(['jur-member'], array_column($membership->get('group_roles')->getValue(), 'target_id'));
+    $runtime = json_decode($group->get('field_nuxt_config')->getString(), TRUE);
+    $this->assertSame([11, 50], $runtime['map']['center']);
+    $this->assertSame('#1F3E5D', $runtime['theme']['primary']);
+  }
+
+  /**
+   * Existing roots may never be silently adopted.
+   */
+  public function testDedicatedBootstrapRejectsUnownedRoot(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    Group::create(['type' => 'jur', 'label' => 'Existing', 'field_slug' => 'erfurt'])->save();
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Refusing adoption');
+    $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+  }
+
+  /**
+   * Import failure rolls back the root, memberships and all child entities.
+   */
+  public function testDedicatedBootstrapRollsBackImportFailure(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $this->container->get('state')->set('markaspot_tenant_import_test.fail_status', $configuration['statuses'][0]['name']);
+    try {
+      $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+      $this->fail('Expected injected import failure.');
+    }
+    catch (\RuntimeException $exception) {
+      $this->assertStringContainsString('Tenant import failed', $exception->getMessage());
+    }
+    $this->assertSame([], Group::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+    $this->assertNull($this->container->get('keyvalue')->get('markaspot_tenant_import.bootstrap')->get('root'));
+  }
+
+  /**
+   * New dedicated stacks must not misrepresent an unsupported private policy.
+   */
+  public function testDedicatedBootstrapRejectsUnsupportedPrivatePolicy(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $configuration['tenant']['features']['publicReports'] = FALSE;
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('publicReports=false cannot bootstrap');
+    $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+  }
+
+  /**
+   * Asset imports converge and failed final saves remove new logo bytes.
+   */
+  public function testDedicatedBootstrapLogoIdempotenceAndRollback(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $directory = sys_get_temp_dir() . '/bootstrap-logo-' . bin2hex(random_bytes(8));
+    mkdir($directory);
+    file_put_contents($directory . '/logo.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2uoAAAAASUVORK5CYII='));
+    $configuration['tenant']['logo_file'] = 'logo.png';
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    try {
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', TRUE);
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected final logo save failure.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('Injected logo save failure', $exception->getMessage());
+      }
+      $this->assertSame([], Group::loadMultiple());
+      $this->assertSame([], $this->container->get('entity_type.manager')->getStorage('file')->loadMultiple());
+      $this->assertSame([], $this->container->get('file_system')->scanDirectory('public://jurisdiction/bootstrap', '/\.png$/'));
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', FALSE);
+      $first = $service->bootstrap($configuration, $directory, TRUE);
+      $second = $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertSame($first['jurisdiction_id'], $second['jurisdiction_id']);
+      $this->assertCount(1, $this->container->get('entity_type.manager')->getStorage('file')->loadMultiple());
+    }
+    finally {
+      unlink($directory . '/logo.png');
+      rmdir($directory);
+    }
+  }
+
+  /**
+   * The real command renders readable tables and preserves structured JSON.
+   */
+  public function testDedicatedBootstrapCommandFormats(): void {
+    if (!class_exists('Drush\\Style\\DrushStyle')) {
+      class_alias(SymfonyStyle::class, 'Drush\\Style\\DrushStyle');
+    }
+    $configuration = $this->prepareDedicatedBootstrap();
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $service->bootstrap($configuration, NULL, TRUE);
+    $path = tempnam(sys_get_temp_dir(), 'bootstrap-input-');
+    file_put_contents($path, json_encode($configuration, JSON_THROW_ON_ERROR));
+    try {
+      $formatter = new FormatterManager();
+      $formatter->addDefaultFormatters();
+      $reflection = new \ReflectionMethod(TenantBootstrapCommands::class, 'bootstrap');
+      $fields = $reflection->getAttributes(DefaultTableFields::class)[0]->newInstance()->fields;
+      foreach (['table', 'json'] as $format) {
+        $output = new BufferedOutput();
+        $command = new TenantBootstrapCommands($this->importer, $service);
+        $config = $this->createMock(DrushConfig::class);
+        $config->method('cwd')->willReturn('/tmp');
+        $command->setConfig($config);
+        $command->setInput(new ArrayInput([]));
+        $command->setOutput($output);
+        $command->setLogger($this->createMock(DrushLoggerManager::class));
+        $result = $command->bootstrap($path, ['format' => $format]);
+        $formatter->write($output, $format, $result, new FormatterOptions(['default-table-fields' => $fields]));
+        $rendered = $output->fetch();
+        if ($format === 'json') {
+          $decoded = json_decode($rendered, TRUE, 512, JSON_THROW_ON_ERROR);
+          $this->assertIsArray($decoded[0]['warnings']);
+          $this->assertIsArray($decoded[0]['rows']);
+          $this->assertFalse($decoded[0]['applied']);
+        }
+        else {
+          $this->assertStringContainsString('Entity', $rendered);
+          $this->assertStringContainsString('resume', $rendered);
+          $this->assertStringNotContainsString('Array', $rendered);
+        }
+      }
+    }
+    finally {
+      unlink($path);
+    }
+  }
+
+  /**
+   * Models dedicated profile prerequisites without touching live data.
+   */
+  private function prepareDedicatedBootstrap(): array {
+    $this->jurisdiction->delete();
+    new Settings(['markaspot_operating_mode' => 'self_hosted'] + Settings::getAll());
+    ConfigurableLanguage::createFromLangcode('de')->save();
+    Role::create(['id' => 'api_user', 'label' => 'API user'])->save();
+    $apiUser = User::create(['uid' => 2, 'name' => 'api_user', 'status' => 1, 'roles' => ['api_user']]);
+    $apiUser->save();
+    $this->container->get('config.factory')->getEditable('services_api_key_auth.api_key.nuxt')->set('user_uuid', $apiUser->uuid())->set('key', str_repeat('a', 64))->save();
+    $configuration = $this->exampleConfiguration();
+    unset($configuration['tenant']['logo_file']);
+    $configuration['tenant']['map_center'] = [11.0, 50.0];
+    $configuration['tenant']['map_zoom'] = 12;
+    return $configuration;
   }
 
   /**
@@ -1289,6 +1470,8 @@ final class TenantImporterTest extends KernelTestBase {
 
     $this->createField('group', 'jur', 'field_parent_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     $this->createField('group', 'jur', 'field_slug', 'string');
+    $this->createField('group', 'jur', 'field_nuxt_config', 'text_long');
+    $this->createField('group', 'jur', 'field_logo_light', 'file', ['uri_scheme' => 'public']);
     $this->createField('group', 'jur', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'org', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'jur', 'field_service_statuses', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);

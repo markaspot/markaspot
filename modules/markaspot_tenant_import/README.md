@@ -97,14 +97,15 @@ outside the database cannot be rolled back.
 - Organisation `type` has no field in this model and is reported as unmapped.
   First and last names are mapped only if `field_first_name` and `field_last_name`
   exist; otherwise the plan says `names not mapped`, without printing names.
-- Filled tenant values update only platform name, jurisdiction email, address,
-  and no other jurisdiction fields. The v1 free-text address is interpreted as a
+- Filled tenant values update platform name, jurisdiction email and address.
+  Supported runtime values also merge into `field_nuxt_config` as described below. The v1 free-text address is interpreted as a
   German address: `street, five-digit postcode locality`; the tenant label is
   used as the address organisation. Other address shapes retain the complete
   text in address line 1 with country DE.
-- Branding, maps, languages, contact details, domains, logos, feature flags and
-  `field_nuxt_config` are outside this import. Use the cloud jurisdiction setup
-  workflow for those values.
+- Branding colours, font families, map coordinates, languages and supported
+  feature flags are included. Contact metadata, domains, SMTP and legal URLs are
+  informational and produce unapplied warnings. PNG logos are handled by the
+  dedicated bootstrap command with an explicit assets directory.
 
 No cache rebuild runs inside the command. After first deploying the new service,
 perform the normal Drupal cache rebuild for command discovery. The output also
@@ -131,3 +132,58 @@ owns document validation; `TenantImportFieldMapper` owns field representations.
 Organisation category sets are planned once using IDs or new-term placeholders
 and resolved after category creation. Apply acquires its lock before preparing
 the entity context, so each application performs that preparation only once.
+
+## Dedicated installation bootstrap
+
+`mas:tenant:bootstrap` complements the existing import command. It creates the
+first permanent root jurisdiction on an installed dedicated Drupal stack. It is
+not SaaS signup and never enables FastMap, billing, expiry or demo reports.
+
+```sh
+drush mas:tenant:bootstrap /input/tenant-config.json --assets-dir=/input/assets --format=json
+drush mas:tenant:bootstrap /input/tenant-config.json --assets-dir=/input/assets --format=json --apply
+```
+
+The default is a read-only preview. JSON output is a one-row list containing
+`jurisdiction_id` (null before creation), `action`, `applied`, `warnings` and
+`rows`. Fresh-root preview checks input and prerequisites; entity-dependent
+import checks execute inside the apply transaction. A failed import rolls back
+the root, taxonomy, users, memberships and ownership marker. No mail is sent.
+
+Prerequisites: explicit `markaspot_operating_mode=self_hosted`, FastMap absent,
+profile fields installed, requested Drupal languages installed, and the GeoReport
+key already linked to the active `api_user` account with no extra privileged
+roles. The key must come from the secret store and is never displayed. Fresh
+bootstrap rejects all existing groups. Subsequent runs accept only the sole
+root whose UUID and slug match the transactional ownership marker. Existing
+jurisdictions are never adopted. Application administrators come from the
+existing `users` input; a document without users creates no tenant admin.
+
+Runtime input supported by both bootstrap and subsequent imports:
+
+- `primary_color`, `secondary_color`: six-digit hex colours; blank preserves.
+- `font_family`: letters, numbers, spaces, commas and hyphens. Applies the family
+  stack to headings and body; does not install licensed font files.
+- `map_center`: `[longitude, latitude]`, and `map_zoom`: integer 1..22. Both are
+  mandatory for bootstrap. Address geocoding is deliberately not implicit.
+- `languages`: supported UI locale codes, first entry is default; lists replace.
+- `features`: boolean `aiAnalysis`, `aiProcessing`, `operationsDashboard`,
+  `statistics`, `photoReporting`, `classicReporting`, `dashboard`, `feedback`.
+  Platform flags such as `passwordless` are configured by stack orchestration.
+- Existing platform name, email, address, client name and short name.
+
+`logo_file` is applied by bootstrap only. It requires `--assets-dir`, realpath
+containment, and a valid PNG no larger than 500 KiB or 4096 pixels per side.
+Content-addressed files make repeat imports idempotent. Failed writes remove only
+newly created logo bytes; existing logo files are preserved. SVG and font upload
+are not supported by this command.
+
+Unspecified runtime keys are preserved. Informational workbook values, including
+legal/privacy URLs, font descriptions, SMTP data and map addresses, are reported
+as unapplied warnings. Legal content still needs to be supplied separately.
+`publicReports=true` warns that the existing access policy remains in force;
+`false` is rejected by bootstrap because no runtime visibility switch implements
+that policy. Existing imports accept it as metadata with an explicit unapplied
+warning. Bootstrap also rejects child jurisdictions: this command manages exactly
+one municipality on a dedicated stack.
+No input is silently described as providing access-control guarantees.

@@ -8,3 +8,4 @@ dependencies:
   - group:group
   - drupal:taxonomy
   - drupal:user
+  - drupal:file

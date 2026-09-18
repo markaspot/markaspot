@@ -56,7 +56,7 @@ final class TenantConfigValidator {
    *   Validation errors.
    */
   public function validate(array $configuration, array $skip = []): array {
-    $errors = [];
+    $errors = is_array($configuration['tenant'] ?? NULL) ? TenantRuntimeConfiguration::validate($configuration['tenant']) : [];
     if (($configuration['version'] ?? NULL) !== 1) {
       $errors[] = 'version must be the integer 1.';
     }

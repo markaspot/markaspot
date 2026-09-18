@@ -1,0 +1,114 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\markaspot_tenant_import\Unit;
+
+use Drupal\markaspot_tenant_import\Service\TenantLogoAsset;
+use Drupal\markaspot_tenant_import\Service\TenantRuntimeConfiguration;
+use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
+
+/**
+ * Tests runtime mapping and fail-closed asset validation.
+ */
+#[Group('markaspot_tenant_import')]
+final class TenantRuntimeConfigurationTest extends UnitTestCase {
+
+  /**
+   * Rejects unsafe CSS, coordinates and unknown switches.
+   */
+  public function testValidationRejectsUnsupportedAndUnsafeValues(): void {
+    foreach ([
+      ['font_family' => 'Arial; color:red'],
+      ['font_family' => "Arial\nbody"],
+      ['primary_color' => 'red'],
+      ['map_center' => [181, 30]],
+      ['map_center' => ['10', 30]],
+      ['map_center' => [NAN, 30]],
+      ['map_zoom' => '12'],
+      ['map_zoom' => 0],
+      ['features' => ['invented' => TRUE]],
+      ['languages' => ['xx']],
+      ['legal_notice_url' => 'javascript:alert(1)'],
+    ] as $tenant) {
+      $this->assertNotEmpty(TenantRuntimeConfiguration::validate($tenant));
+    }
+  }
+
+  /**
+   * Preserves unknown stored keys, replaces lists, and honors explicit false.
+   */
+  public function testRuntimeMergePreservesUnspecifiedConfiguration(): void {
+    $existing = [
+      'theme' => [
+        'neutral' => '#999999',
+        'fonts' => ['bodyUrl' => '/font.woff2'],
+      ],
+      'languages' => ['available' => ['de', 'en', 'fr']],
+      'features' => ['aiAnalysis' => TRUE, 'feedback' => TRUE],
+    ];
+    $tenant = [
+      'secondary_color' => '#FFCC00',
+      'font_family' => 'Arial, Helvetica, sans-serif',
+      'languages' => ['de'],
+      'features' => ['aiAnalysis' => FALSE],
+      'map_center' => [11.0, 50.0],
+      'map_zoom' => 12,
+    ];
+    $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
+    $merged = TenantRuntimeConfiguration::merge($existing, $tenant);
+    $this->assertSame('#999999', $merged['theme']['neutral']);
+    $this->assertSame('/font.woff2', $merged['theme']['fonts']['bodyUrl']);
+    $this->assertFalse($merged['features']['aiAnalysis']);
+    $this->assertTrue($merged['features']['feedback']);
+    $this->assertSame(['de'], $merged['languages']['available']);
+    $this->assertSame($merged, TenantRuntimeConfiguration::merge($merged, $tenant));
+  }
+
+  /**
+   * Existing imports retain their public-policy input as explicit metadata.
+   */
+  public function testExistingImportDoesNotApplyPublicVisibility(): void {
+    $tenant = ['features' => ['publicReports' => FALSE]];
+    $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
+    $this->assertSame([], TenantRuntimeConfiguration::merge([], $tenant));
+    $this->assertStringContainsString('not applied', TenantRuntimeConfiguration::warnings($tenant)[0]);
+  }
+
+  /**
+   * Traversal and symlink escapes are denied; valid PNG bytes remain stable.
+   */
+  public function testAssetContainmentAndValidation(): void {
+    $directory = sys_get_temp_dir() . '/tenant-logo-test-' . bin2hex(random_bytes(8));
+    mkdir($directory);
+    mkdir($directory . '/assets');
+    $bytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2uoAAAAASUVORK5CYII=');
+    file_put_contents($directory . '/outside.png', $bytes);
+    file_put_contents($directory . '/assets/logo.png', $bytes);
+    file_put_contents($directory . '/assets/bad.png', '<svg onload="alert(1)"/>');
+    symlink($directory . '/outside.png', $directory . '/assets/link.png');
+    try {
+      $asset = TenantLogoAsset::read('logo.png', $directory . '/assets');
+      $this->assertSame(hash('sha256', $bytes), $asset['hash']);
+      foreach (['../outside.png', 'link.png', 'bad.png'] as $name) {
+        try {
+          TenantLogoAsset::read($name, $directory . '/assets');
+          $this->fail('Invalid asset was accepted: ' . $name);
+        }
+        catch (\RuntimeException $exception) {
+          $this->assertNotEmpty($exception->getMessage());
+        }
+      }
+    }
+    finally {
+      foreach (['logo.png', 'bad.png', 'link.png'] as $name) {
+        unlink($directory . '/assets/' . $name);
+      }
+      unlink($directory . '/outside.png');
+      rmdir($directory . '/assets');
+      rmdir($directory);
+    }
+  }
+
+}

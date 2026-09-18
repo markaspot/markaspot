@@ -659,7 +659,7 @@ class TenantImporter {
       $rows[] = $this->row('user', $email, $changes === [] ? 'unchanged' : 'update', $reason);
     }
 
-    foreach ($this->fields->jurisdictionFieldValues($tenant) as $field => $value) {
+    foreach ($this->fields->jurisdictionFieldValues($tenant, $jurisdiction) as $field => $value) {
       if (!$jurisdiction->hasField($field)) {
         $rows[] = $this->row('jurisdiction', $field, 'skip', 'Field is not installed on the target jurisdiction.');
         continue;
@@ -668,6 +668,15 @@ class TenantImporter {
       $rows[] = $this->row('jurisdiction', $field, $changed ? 'update' : 'unchanged', $changed ? 'Filled tenant value differs from the stored field.' : 'Filled tenant value already matches.');
     }
 
+    if (!$jurisdiction->hasField('field_nuxt_config')) {
+      $rows[] = $this->row('runtime', 'field_nuxt_config', 'skip', 'Runtime styling, map, languages and features were not applied: field_nuxt_config is not installed.');
+    }
+    foreach (TenantRuntimeConfiguration::warnings($tenant) as $warning) {
+      $rows[] = $this->row('runtime', 'warning', 'skip', $warning);
+    }
+    if (!empty($tenant['logo_file'])) {
+      $rows[] = $this->row('runtime', 'logo_file', 'skip', 'Asset import requires mas:tenant:bootstrap with --assets-dir.');
+    }
     return $rows;
   }
 
@@ -996,7 +1005,7 @@ class TenantImporter {
 
     /** @var array<string, mixed> $tenant */
     $tenant = $configuration['tenant'];
-    foreach ($this->fields->jurisdictionFieldValues($tenant) as $field => $value) {
+    foreach ($this->fields->jurisdictionFieldValues($tenant, $jurisdiction) as $field => $value) {
       if (!$jurisdiction->hasField($field)) {
         continue;
       }

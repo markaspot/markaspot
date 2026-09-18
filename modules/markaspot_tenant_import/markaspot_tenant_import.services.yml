@@ -7,3 +7,6 @@ services:
     arguments: ['@email.validator']
   markaspot_tenant_import.tenant_import_field_mapper:
     class: Drupal\markaspot_tenant_import\Service\TenantImportFieldMapper
+  markaspot_tenant_import.tenant_bootstrapper:
+    class: Drupal\markaspot_tenant_import\Service\TenantBootstrapper
+    arguments: ['@markaspot_tenant_import.tenant_importer', '@entity_type.manager', '@database', '@keyvalue', '@lock', '@config.factory', '@module_handler', '@file.repository', '@file_system', '@language_manager']
