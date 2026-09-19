@@ -56,7 +56,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'ar' => 'تم الإنشاء',
       ],
       'hex' => '#D97706',
-      'icon' => 'i-lucide-plus-circle',
+      'icon' => 'i-lucide-circle-plus',
       'mapping' => 'initial',
     ],
     [

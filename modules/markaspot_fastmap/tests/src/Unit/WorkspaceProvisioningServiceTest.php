@@ -3173,6 +3173,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->assertSame('it', $creates[0]['langcode']);
     $this->assertSame('Creato', $creates[0]['name']);
+    $this->assertSame('i-lucide-circle-plus', $creates[0]['icon']);
     $this->assertSame('initial', $creates[0]['mapping']);
 
     $this->assertSame('it', $creates[1]['langcode']);
@@ -3291,7 +3292,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       /**
        * Captured status-term create() payloads.
        *
-       * @var array<int, array{term_id: int, name: string, langcode: string, mapping: string}>
+       * @var array<int, array{term_id: int, name: string, langcode: string, icon: string, mapping: string}>
        */
       public array $creates = [];
 
@@ -3328,6 +3329,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
             'term_id' => $currentId,
             'name' => $values['name'] ?? '',
             'langcode' => $values['langcode'] ?? '',
+            'icon' => $values['field_status_icon'] ?? '',
             'mapping' => $values['field_open311_mapping'] ?? '',
           ];
         }
