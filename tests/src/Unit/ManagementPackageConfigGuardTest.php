@@ -9,10 +9,12 @@ use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\Extension\ProfileExtensionList;
 use Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber;
+use Drupal\search_api\IndexInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\NullLogger;
 
 require_once dirname(__DIR__, 3) . '/src/EventSubscriber/ProfileConfigGuardSubscriber.php';
+require_once dirname(__DIR__, 3) . '/modules/markaspot_group/markaspot_group.install';
 
 /**
  * Tests deploy protection for the management View package config.
@@ -308,9 +310,9 @@ final class ManagementPackageConfigGuardTest extends UnitTestCase {
   }
 
   /**
-   * Tests that the repair update rebuilds and indexes the complete tracker.
+   * Tests that the repair update queues the complete tracker without indexing.
    */
-  public function testManagementIndexRepairUsesTrackerRebuild(): void {
+  public function testManagementIndexRepairQueuesTrackerWithoutIndexing(): void {
     $install = file_get_contents(dirname(__DIR__, 3) . '/markaspot.install');
     $this->assertIsString($install);
     $matched = preg_match(
@@ -322,14 +324,14 @@ final class ManagementPackageConfigGuardTest extends UnitTestCase {
     $this->assertSame(1, $matched);
     $this->assertStringContainsString('->rebuildTracker()', $matches['body']);
     $this->assertStringContainsString("->addItemsAll(\$index)", $matches['body']);
-    $this->assertStringContainsString('->indexItems(1000)', $matches['body']);
-    $this->assertStringNotContainsString('->reindex()', $matches['body']);
+    $this->assertStringNotContainsString('->indexItems(', $matches['body']);
+    $this->assertStringContainsString('drush search-api:index after maintenance', $matches['body']);
   }
 
   /**
-   * Tests the follow-up repair completes the index through a Drupal batch.
+   * Tests compatibility updates leave queued work for the operator command.
    */
-  public function testManagementIndexCompletionUsesSandboxBatch(): void {
+  public function testManagementIndexCompatibilityUpdatesAreDeferred(): void {
     $install = file_get_contents(dirname(__DIR__, 3) . '/markaspot.install');
     $this->assertIsString($install);
     $matched = preg_match(
@@ -339,8 +341,31 @@ final class ManagementPackageConfigGuardTest extends UnitTestCase {
     );
 
     $this->assertSame(1, $matched);
-    $this->assertStringContainsString('_markaspot_complete_management_index($sandbox)', $matches['body']);
-    $this->assertStringContainsString("['#finished']", $install);
+    $this->assertStringContainsString("\$sandbox['#finished'] = 1", $matches['body']);
+    $this->assertStringContainsString('_markaspot_management_index_deferred_message()', $matches['body']);
+    $this->assertStringContainsString('getRemainingItemsCount()', $install);
+    $this->assertStringNotContainsString('_markaspot_complete_management_index', $install);
+  }
+
+  /**
+   * Tests grant updates retain a non-node content-access index for clearing.
+   */
+  public function testGrantIndexSelectionIncludesNonNodeContentAccessIndexes(): void {
+    $contentAccess = $this->createMock(IndexInterface::class);
+    $contentAccess->method('hasValidTracker')->willReturn(TRUE);
+    $contentAccess->method('status')->willReturn(TRUE);
+    $contentAccess->method('isValidProcessor')
+      ->with('content_access')
+      ->willReturn(TRUE);
+    $notTracked = $this->createMock(IndexInterface::class);
+    $notTracked->method('hasValidTracker')->willReturn(FALSE);
+
+    $selected = _markaspot_group_filter_content_access_indexes([
+      'comment_only' => $contentAccess,
+      'invalid' => $notTracked,
+    ]);
+
+    $this->assertSame([$contentAccess], $selected);
   }
 
 }
