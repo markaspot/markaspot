@@ -411,6 +411,30 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
+   * Tests tier 1 accepts the active language's unedited shipped defaults.
+   */
+  public function testApplyReplacesUneditedGermanShippedDefaults(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $capturedTexts = [];
+    $migrator = $this->buildMigrator(
+      ['eca.eca.process_confirm_report' => $raw],
+      textsCapture: static function (string $key, array $value) use (&$capturedTexts): void {
+        $capturedTexts[$key] = $value;
+      },
+      currentTextsByKey: [
+        'report_confirmation' => $this->loadShippedDefaultSlots('report_confirmation', 'de'),
+      ],
+      textsLangcode: 'de',
+    );
+
+    $result = $migrator->apply($migrator->analyze(), []);
+
+    $this->assertTrue($result[0]['text_applied']);
+    $this->assertFalse($result[0]['texts_preserved']);
+    $this->assertSame('Your Report #[node:request_id] has been received', $capturedTexts['report_confirmation']['subject']);
+  }
+
+  /**
    * Tests non-public temporary backup fallback without private storage.
    */
   public function testApplyUsesTemporaryBackupWithoutPrivateStorage(): void {
@@ -557,6 +581,37 @@ final class EcaMailMigratorTest extends UnitTestCase {
     $this->assertTrue($result[0]['texts_preserved']);
     $this->assertSame('existing wording differs from shipped default, keeping it', $result[0]['texts_preserved_reason']);
     // The ECA action is migrated regardless of the guarded text write.
+    $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
+  }
+
+  /**
+   * Tests a German admin edit is not confused with a shipped German default.
+   */
+  public function testApplyPreservesAdminEditedGermanTextsInsteadOfOverwriting(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $germanSlots = $this->loadShippedDefaultSlots('report_confirmation', 'de');
+    $germanSlots['subject'] = 'WBD individuell bearbeiteter Betreff';
+    $capturedEca = NULL;
+    $migrator = $this->buildMigrator(
+      ['eca.eca.process_confirm_report' => $raw],
+      editableCapture: [
+        'eca.eca.process_confirm_report' => static function (array $data) use (&$capturedEca): void {
+          $capturedEca = $data;
+        },
+      ],
+      textsCapture: function (): never {
+        $this->fail('Config::set() must not overwrite a German admin edit.');
+      },
+      currentTextsByKey: [
+        'report_confirmation' => $germanSlots,
+      ],
+      textsLangcode: 'de',
+    );
+
+    $result = $migrator->apply($migrator->analyze(), []);
+
+    $this->assertFalse($result[0]['text_applied']);
+    $this->assertTrue($result[0]['texts_preserved']);
     $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
   }
 
@@ -743,6 +798,8 @@ final class EcaMailMigratorTest extends UnitTestCase {
    *   defaults to the real shipped install default for that key.
    * @param bool $privateAvailable
    *   Whether the private stream wrapper is available.
+   * @param string $textsLangcode
+   *   Language code from the active markaspot_mail.texts config.
    */
   private function buildMigrator(
     array $rawByName = [],
@@ -751,6 +808,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
     ?callable $textsCapture = NULL,
     array $currentTextsByKey = [],
     bool $privateAvailable = TRUE,
+    string $textsLangcode = 'en',
   ): EcaMailMigrator {
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('listAll')->willReturnCallback(
@@ -761,7 +819,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
       $config->method('getRawData')->willReturn($rawByName[$name] ?? []);
       return $config;
     });
-    $configFactory->method('getEditable')->willReturnCallback(function (string $name) use ($rawByName, $editableCapture, $textsCapture, $currentTextsByKey): Config {
+    $configFactory->method('getEditable')->willReturnCallback(function (string $name) use ($rawByName, $editableCapture, $textsCapture, $currentTextsByKey, $textsLangcode): Config {
       $config = $this->createMock(Config::class);
       $config->method('getRawData')->willReturn($rawByName[$name] ?? []);
       $config->method('setData')->willReturnCallback(function (array $data) use ($config, $name, $editableCapture): Config {
@@ -778,7 +836,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
         // the scenario every existing (pre-guard) test already assumed, so
         // none of them need to change.
         $config->method('get')->willReturnCallback(
-          fn (string $key) => $currentTextsByKey[$key] ?? $this->loadShippedDefaultSlots($key),
+          fn (string $key) => $key === 'langcode' ? $textsLangcode : ($currentTextsByKey[$key] ?? $this->loadShippedDefaultSlots($key)),
         );
       }
       if ($textsCapture !== NULL) {
@@ -838,8 +896,11 @@ final class EcaMailMigratorTest extends UnitTestCase {
    * @return array<string, mixed>
    *   The shipped slots for $key, or an empty array if missing.
    */
-  private function loadShippedDefaultSlots(string $key): array {
-    $path = $this->markaspotMailModulePath() . '/config/install/markaspot_mail.texts.yml';
+  private function loadShippedDefaultSlots(string $key, string $langcode = ''): array {
+    $file = $langcode === ''
+      ? 'config/install/markaspot_mail.texts.yml'
+      : 'config/install/language/' . $langcode . '/markaspot_mail.texts.yml';
+    $path = $this->markaspotMailModulePath() . '/' . $file;
     $decoded = Yaml::decode((string) file_get_contents($path));
     $slots = is_array($decoded) ? ($decoded[$key] ?? []) : [];
     return is_array($slots) ? $slots : [];
