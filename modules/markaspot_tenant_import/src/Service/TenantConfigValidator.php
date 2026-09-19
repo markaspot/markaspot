@@ -21,6 +21,7 @@ final class TenantConfigValidator {
     'moderator' => 'jur-moderator',
     'editorial' => 'jur-editorial',
     'org_member' => 'jur-org_member',
+    'org_moderator' => 'jur-org_member',
   ];
 
   private const STRINGS = [
@@ -184,8 +185,8 @@ final class TenantConfigValidator {
       if (!isset(self::ROLES[$row['role']])) {
         $errors[] = "users[$index].role is not supported.";
       }
-      if ($row['role'] === 'org_member' && empty($row['organisation_code'])) {
-        $errors[] = "users[$index].organisation_code is required for role org_member.";
+      if (in_array($row['role'], ['org_member', 'org_moderator'], TRUE) && empty($row['organisation_code'])) {
+        $errors[] = sprintf('users[%d].organisation_code is required for role %s.', $index, $row['role']);
       }
     }
     return array_values(array_unique($errors));

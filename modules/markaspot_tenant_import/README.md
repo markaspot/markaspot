@@ -54,6 +54,36 @@ In form-only tenants, `org_member` alone is not sufficient for report visibility
 `org-moderator` or `contractor` is additionally required. The plan points this
 out but the importer does not grant either role.
 
+`org_moderator` is an explicit organisation-scoped alternative: it requires one
+`organisation_code`, grants the Drupal `contractor` role, a `jur-org_member`
+membership and a plain membership in exactly that organisation. The installed
+`org-contractor` insider role supplies report access through that membership.
+It does not grant global moderation, editorial or tenant-administration rights.
+Preflight rejects administrative contractor roles and known global node-access
+or account/group-administration permission drift, without restoring permissions
+that an operator deliberately revoked.
+The contractor access model prevents access to other organisations' reports,
+reporter contact data, internal remarks and responsibility reassignment.
+
+Existing `org_moderator` accounts must have no other Drupal roles beyond
+`authenticated` and `contractor`, no elevated group roles, and no memberships
+outside the declared jurisdiction and organisation. UID 1 and all-groups
+accounts are also rejected. This guard cannot be overridden with
+`--allow-cross-tenant-users`. The importer neither removes existing authority
+nor silently migrates another import role into organisation moderation. V1
+rejects existing memberships without the `contractor` role rather than silently
+converting an `org_member` account. An unprivileged account without memberships
+can be assigned for the first time. V1
+accepts one organisation per account and rejects duplicate email rows.
+`tenant_admin` remains the jurisdiction-wide role for municipal administration.
+For dedicated installations, the installer provisions the technical UID 1
+administrator separately; the source `users` list contains municipal accounts.
+The generic import's existing `--allow-cross-tenant-users` semantics for other
+source roles remain unchanged, including privileged-account reuse. The strict
+`org_moderator` guard always rejects UID 1 regardless of that option. Optional
+top-level `provisioning` metadata is ignored by this module; only the dedicated
+installer consumes it.
+
 `--send-mails` requires `--apply`. It sends password-reset emails only for newly
 created accounts after the transaction commits. Mail delivery failures return
 exit code 1 but do not roll back the committed entities. Repeating the import

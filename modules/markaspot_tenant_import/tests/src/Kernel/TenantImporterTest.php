@@ -34,6 +34,7 @@ use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests tenant configuration planning, application, and validation.
@@ -108,6 +109,7 @@ final class TenantImporterTest extends KernelTestBase {
       'id' => 'tenant_admin',
       'label' => 'Tenant administrator',
     ])->save();
+    Role::create(['id' => 'contractor', 'label' => 'Contractor'])->save();
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
     GroupType::create(['id' => 'org', 'label' => 'Organisation'])->save();
@@ -118,6 +120,7 @@ final class TenantImporterTest extends KernelTestBase {
       'jur-editorial' => ['jur', 'individual', NULL],
       'jur-org_member' => ['jur', 'individual', NULL],
       'org-member' => ['org', 'insider', 'authenticated'],
+      'org-contractor' => ['org', 'insider', 'contractor'],
     ] as $id => [$groupType, $scope, $globalRole]) {
       GroupRole::create([
         'id' => $id,
@@ -150,6 +153,267 @@ final class TenantImporterTest extends KernelTestBase {
     ]);
     $this->jurisdiction->save();
     $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
+  }
+
+  /**
+   * Organisation moderation grants only contractor and the declared scope.
+   */
+  public function testOrgModeratorImportIsScopedAndIdempotent(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $first = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $first['errors']);
+    $user = user_load_by_mail($configuration['users'][0]['email']);
+    $this->assertInstanceOf(UserInterface::class, $user);
+    $this->assertSame(['authenticated', 'contractor'], $user->getRoles());
+    $this->assertSame(['jur-org_member'], $this->storedMembershipRoles($this->jurisdiction, $user));
+    $memberships = GroupMembership::loadByUser($user);
+    $this->assertCount(2, $memberships);
+    $organisation = NULL;
+    foreach ($memberships as $membership) {
+      if ($membership->getGroup()->bundle() === 'org') {
+        $organisation = $membership->getGroup();
+      }
+    }
+    $this->assertInstanceOf(GroupInterface::class, $organisation);
+    $this->assertSame('SWE', $organisation->get('field_org_code')->getString());
+    $this->assertSame([], $this->storedMembershipRoles($organisation, $user));
+    $this->assertArrayHasKey('org-contractor', $organisation->getMember($user)->getRoles());
+    $password = $user->getPassword();
+    $second = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $second['errors']);
+    $this->assertNotContains('create', array_column($second['rows'], 'action'));
+    $this->assertNotContains('update', array_column($second['rows'], 'action'));
+    $this->assertSame($password, User::load($user->id())->getPassword());
+    $this->assertCount(2, GroupMembership::loadByUser($user));
+  }
+
+  /**
+   * Missing organisation and dependencies are rejected before any writes.
+   */
+  public function testOrgModeratorRequiresOrganisationAndRoles(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $configuration['users'][0]['organisation_code'] = NULL;
+    $this->assertContains('users[0].organisation_code is required for role org_moderator.', $this->importer->validate($configuration));
+    $configuration = $this->orgModeratorConfiguration();
+    Role::load('contractor')->delete();
+    // Deleting the global role also deletes the dependent insider role.
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Missing contractor model must reject the import.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('Drupal role contractor is required', $exception->getMessage());
+    }
+    $this->assertCount(1, Group::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+  }
+
+  /**
+   * Overrides never reuse broader accounts or silently remove their authority.
+   */
+  #[DataProvider('orgModeratorAuthorityProvider')]
+  public function testOrgModeratorRejectsExistingAuthority(string $authority): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $user = user_load_by_mail($configuration['users'][0]['email']);
+    $this->assertInstanceOf(UserInterface::class, $user);
+    if (str_starts_with($authority, 'global:')) {
+      $roleId = substr($authority, 7);
+      if (!Role::load($roleId)) {
+        Role::create(['id' => $roleId, 'label' => $roleId])->save();
+      }
+      $user->addRole($roleId)->save();
+    }
+    elseif ($authority === 'uid1') {
+      $user = User::load(1);
+      $user->setEmail($configuration['users'][0]['email'])->save();
+      // Keep email lookup unambiguous so the authority check is exercised.
+      $oldUser = User::load(2);
+      $oldUser->setEmail('replaced@example.invalid')->save();
+    }
+    elseif ($authority === 'all_groups') {
+      $user->set('field_all_groups_member', TRUE)->save();
+    }
+    elseif ($authority === 'org_member') {
+      $user->removeRole('contractor')->save();
+    }
+    elseif ($authority === 'org_elevated') {
+      GroupRole::create([
+        'id' => 'org-manager', 'label' => 'Manager',
+        'group_type' => 'org', 'scope' => 'individual',
+      ])->save();
+      $membership = GroupMembership::loadSingle($this->loadOrganisation('SWE'), $user);
+      $membership->set('group_roles', ['org-manager'])->save();
+    }
+    elseif ($authority === 'other_org' || $authority === 'other_root') {
+      $group = Group::create([
+        'type' => $authority === 'other_org' ? 'org' : 'jur',
+        'label' => 'Outside declared scope',
+      ]);
+      if ($authority === 'other_org') {
+        $group->set('field_jurisdiction', $this->jurisdiction->id());
+      }
+      $group->save();
+      $group->addMember($user);
+    }
+    else {
+      $membership = GroupMembership::loadSingle($this->jurisdiction, $user);
+      $membership->set('group_roles', ['jur-org_member', $authority])->save();
+    }
+    $rolesBefore = $user->getRoles();
+    $membershipsBefore = array_map(static fn ($membership) => $membership->toArray(), GroupMembership::loadByUser($user));
+    $groupCount = count(Group::loadMultiple());
+    $configuration['organisations'][] = ['code' => 'NEW', 'name' => 'Must not be created'];
+    foreach ([FALSE, TRUE] as $override) {
+      try {
+        $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE, FALSE, $override);
+        $this->fail('Existing broader authority must reject org_moderator.');
+      }
+      catch (TenantImportValidationException $exception) {
+        $this->assertStringContainsString('cannot be imported as org_moderator', $exception->getMessage());
+      }
+    }
+    $this->assertCount($groupCount, Group::loadMultiple());
+    $this->assertSame($rolesBefore, User::load($user->id())->getRoles());
+    $this->assertSame($membershipsBefore, array_map(static fn ($membership) => $membership->toArray(), GroupMembership::loadByUser($user)));
+  }
+
+  /**
+   * Existing authority that must never be folded into organisation moderation.
+   */
+  public static function orgModeratorAuthorityProvider(): array {
+    return array_map(static fn ($value) => [$value], [
+      'global:administrator', 'global:tenant_admin', 'global:moderator',
+      'global:editorial_board', 'uid1', 'all_groups', 'other_org', 'other_root',
+      'jur-tenant_admin', 'jur-moderator', 'jur-editorial', 'org_member', 'org_elevated',
+    ]);
+  }
+
+  /**
+   * Creating scoped accounts remains part of the whole-import transaction.
+   */
+  public function testOrgModeratorImportRollsBack(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $this->container->get('state')->set('markaspot_tenant_import_test.fail_status', $configuration['statuses'][0]['name']);
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertNotEmpty($result['errors']);
+    $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+    $this->assertCount(1, Group::loadMultiple());
+    $this->assertSame([], GroupMembership::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+  }
+
+  /**
+   * Missing or wrongly mapped contractor insider roles cannot widen authority.
+   */
+  public function testOrgModeratorRejectsMissingOrInvalidInsiderRole(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $contractor = Role::load('contractor');
+    $contractor->set('is_admin', TRUE)->save();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Administrative Drupal contractor role must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('contractor must not grant administrative access', $exception->getMessage());
+    }
+    $contractor->set('is_admin', FALSE)->save();
+    foreach ([
+      'administer nodes',
+      'bypass node access',
+      'administer group',
+      'administer users',
+      'administer permissions',
+    ] as $permission) {
+      // Inject config drift even when its provider (e.g. node) is not enabled.
+      $contractor->setSyncing(TRUE);
+      $contractor->grantPermission($permission)->save();
+      $this->assertContains($permission, Role::load('contractor')->getPermissions());
+      try {
+        $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+        $this->fail('Elevated contractor permissions must be rejected.');
+      }
+      catch (TenantImportValidationException $exception) {
+        $this->assertStringContainsString('contractor must not grant administrative access', $exception->getMessage());
+      }
+      $this->assertCount(1, Group::loadMultiple());
+      $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+      $contractor->revokePermission($permission)->save();
+    }
+    $role = GroupRole::load('org-contractor');
+    $role->set('global_role', 'tenant_admin')->save();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Incorrect insider mapping must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('org-contractor must map', $exception->getMessage());
+    }
+    $role->set('global_role', 'contractor')->set('admin', TRUE)->save();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Administrative insider role must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('without administrative group access', $exception->getMessage());
+    }
+    $role->delete();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Missing insider role must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('Required group role org-contractor does not exist', $exception->getMessage());
+    }
+    $this->assertCount(1, Group::loadMultiple());
+    $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+  }
+
+  /**
+   * An existing account gains only the declared scope and keeps its identity.
+   */
+  public function testOrgModeratorAssignsExistingUnprivilegedAccount(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $user = User::create([
+      'name' => 'existing-login',
+      'mail' => $configuration['users'][0]['email'],
+      'status' => 1,
+      'pass' => 'existing-password-not-changed',
+      'timezone' => 'Europe/Paris',
+      'field_first_name' => 'Existing first name',
+    ]);
+    $user->save();
+    $uid = $user->id();
+    $password = $user->getPassword();
+    $this->assertSame([], GroupMembership::loadByUser($user));
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $user = $this->loadUser($configuration['users'][0]['email']);
+    $this->assertSame($uid, $user->id());
+    $this->assertSame('existing-login', $user->getAccountName());
+    $this->assertSame($password, $user->getPassword());
+    $this->assertSame('Europe/Paris', $user->getTimeZone());
+    $this->assertSame('Existing first name', $user->get('field_first_name')->getString());
+    $this->assertSame('Moderation', $user->get('field_last_name')->getString());
+    $this->assertSame(['authenticated', 'contractor'], $user->getRoles());
+    $this->assertCount(2, GroupMembership::loadByUser($user));
+    $this->assertSame(['jur-org_member'], $this->storedMembershipRoles($this->jurisdiction, $user));
+    $this->assertSame([], $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+  }
+
+  /**
+   * Supplies one explicitly scoped organisation moderator.
+   */
+  private function orgModeratorConfiguration(): array {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [[
+      'email' => 'org-moderator@example.invalid',
+      'first_name' => 'Example',
+      'last_name' => 'Moderation',
+      'role' => 'org_moderator',
+      'organisation_code' => 'SWE',
+    ]];
+    return $configuration;
   }
 
   /**
