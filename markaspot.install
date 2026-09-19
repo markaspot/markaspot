@@ -4949,7 +4949,7 @@ function markaspot_update_11936(): string {
 }
 
 /**
- * Rebuilds the shared management Search API tracker and seeds its index.
+ * Rebuilds the shared management Search API tracker and queues its index.
  */
 function markaspot_update_11937(): string {
   $storage = \Drupal::entityTypeManager()->getStorage('search_api_index');
@@ -4962,27 +4962,28 @@ function markaspot_update_11937(): string {
   $translation_updated = _markaspot_ensure_management_view_translations();
   $index->rebuildTracker();
   \Drupal::service('search_api.index_task_manager')->addItemsAll($index);
-  $total = $index->getTrackerInstance()->getRemainingItemsCount();
-  $indexed = $index->indexItems(1000);
+  $total = $index->getTrackerInstance()->getTotalItemsCount();
   $remaining = $index->getTrackerInstance()->getRemainingItemsCount();
   $translation = $translation_updated
     ? ' Updated the shared German management labels.'
     : '';
-  return "Rebuilt the service_requests tracker ($total items), indexed $indexed, and queued $remaining for cron.$translation";
+  return "Rebuilt the service_requests tracker and queued $remaining of $total items for separate indexing. Run drush search-api:index after maintenance.$translation";
 }
 
 /**
- * Completes tracker tasks that cannot run as a nested Search API batch.
+ * Keeps the compatibility update lightweight after tracker preparation.
  */
 function markaspot_update_11938(array &$sandbox): string {
-  return _markaspot_complete_management_index($sandbox);
+  $sandbox['#finished'] = 1;
+  return _markaspot_management_index_deferred_message();
 }
 
 /**
- * Finishes Search API index convergence after earlier partial repair runs.
+ * Keeps the compatibility update lightweight after tracker preparation.
  */
 function markaspot_update_11939(array &$sandbox): string {
-  return _markaspot_complete_management_index($sandbox);
+  $sandbox['#finished'] = 1;
+  return _markaspot_management_index_deferred_message();
 }
 
 /**
@@ -5004,54 +5005,27 @@ function markaspot_update_11940(): string {
 }
 
 /**
- * Completes the shared management Search API index in bounded batches.
- *
- * @param array<string, mixed> $sandbox
- *   Drupal update batch state.
+ * Reports the management index work deliberately left for after maintenance.
  */
-function _markaspot_complete_management_index(array &$sandbox): string {
+function _markaspot_management_index_deferred_message(): string {
   $storage = \Drupal::entityTypeManager()->getStorage('search_api_index');
   $storage->resetCache(['service_requests']);
   $index = $storage->load('service_requests');
   if (!$index) {
-    $sandbox['#finished'] = 1;
     return 'The service_requests Search API index is not installed.';
   }
 
   $tracker = $index->getTrackerInstance();
+  // A previous interrupted 11937 run can have left only Search API tracking
+  // tasks. Resolve those tasks now, but deliberately do not index their items.
   if ($tracker->getTotalItemsCount() === 0) {
     $index->rebuildTracker();
     \Drupal::service('search_api.index_task_manager')->addItemsAll($index);
+    $tracker = $index->getTrackerInstance();
   }
-  $before = $tracker->getRemainingItemsCount();
-  $sandbox['initial_remaining'] ??= max(1, $before);
-  $total = $index->getTrackerInstance()->getTotalItemsCount();
-  $lock = \Drupal::lock();
-  if (!$lock->lockMayBeAvailable($index->getLockId())) {
-    $lock->wait($index->getLockId(), 1);
-  }
-  if (!$lock->lockMayBeAvailable($index->getLockId())) {
-    $initial = (int) $sandbox['initial_remaining'];
-    $sandbox['#finished'] = min(0.99, max(0.01, ($initial - $before) / $initial));
-    return "Waiting for the service_requests index lock; $before of $total remain.";
-  }
-  $indexed = $index->indexItems(1000);
-  $remaining = $index->getTrackerInstance()->getRemainingItemsCount();
-  if ($remaining === 0) {
-    $sandbox['#finished'] = 1;
-    return "Completed the service_requests index ($total items); no items remain queued.";
-  }
-
-  $sandbox['stalled'] = $remaining < $before
-    ? 0
-    : ((int) ($sandbox['stalled'] ?? 0) + 1);
-  if ($sandbox['stalled'] >= 3) {
-    throw new UpdateException("The service_requests index stalled with $remaining items remaining.");
-  }
-
-  $initial = (int) $sandbox['initial_remaining'];
-  $sandbox['#finished'] = min(0.99, max(0.01, ($initial - $remaining) / $initial));
-  return "Indexed $indexed service requests; $remaining of $total remain.";
+  $remaining = $tracker->getRemainingItemsCount();
+  $total = $tracker->getTotalItemsCount();
+  return "The service_requests index has $remaining of $total items queued. Run drush search-api:index after maintenance.";
 }
 
 /**
