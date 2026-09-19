@@ -1,5 +1,20 @@
 # Changelog
 
+## [11.9.197](https://github.com/markaspot/markaspot/compare/11.9.196...11.9.197) (2026-09-19)
+
+### Features
+
+* preserve approved workspace claims and contextual image analysis ([021707b](https://github.com/markaspot/markaspot/commit/021707bf04e34bf279694fe46e8bc7450aaa9069))
+
+### Bug Fixes
+
+* defer access-aware search indexing after updates ([9ecd3c3](https://github.com/markaspot/markaspot/commit/9ecd3c356c298dcf612a67629884f9aa9cc94aad))
+* migrate localized default mail texts ([99676cb](https://github.com/markaspot/markaspot/commit/99676cb1f571d487c18fc6ef0cbef94f533d43ec))
+
+### Refactoring
+
+* make AI clients model-agnostic and add provider self-test ([e140570](https://github.com/markaspot/markaspot/commit/e140570ceada2f289a45fe72dc403d9643836df1))
+
 ## [11.9.196](https://github.com/markaspot/markaspot/compare/11.9.195...11.9.196) (2026-09-19)
 
 ### Bug Fixes
