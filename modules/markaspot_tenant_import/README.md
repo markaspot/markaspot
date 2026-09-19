@@ -211,7 +211,9 @@ Runtime input supported by both bootstrap and subsequent imports:
 containment, and a valid PNG no larger than 500 KiB or 4096 pixels per side.
 Content-addressed files make repeat imports idempotent. Failed writes remove only
 newly created logo bytes; existing logo files are preserved. SVG and font upload
-are not supported by this command.
+are not supported by this command. The single supplied logo is used for both
+light and dark themes. A separately configured dark logo is preserved on repeat
+imports; a dark logo that follows the previous light logo follows its replacement.
 
 Unspecified runtime keys are preserved. Informational workbook values, including
 legal/privacy URLs, font descriptions, SMTP data and map addresses, are reported

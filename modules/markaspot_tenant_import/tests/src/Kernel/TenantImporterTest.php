@@ -582,6 +582,26 @@ final class TenantImporterTest extends KernelTestBase {
       $second = $service->bootstrap($configuration, $directory, TRUE);
       $this->assertSame($first['jurisdiction_id'], $second['jurisdiction_id']);
       $this->assertCount(1, $this->container->get('entity_type.manager')->getStorage('file')->loadMultiple());
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertFalse($group->get('field_logo_light')->isEmpty());
+      $this->assertSame($group->get('field_logo_light')->target_id, $group->get('field_logo_dark')->target_id);
+      $originalLogoId = $group->get('field_logo_light')->target_id;
+      // A new PNG byte snapshot must update both previously linked variants.
+      file_put_contents($directory . '/logo.png', "\n", FILE_APPEND);
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertNotSame($originalLogoId, $group->get('field_logo_light')->target_id);
+      $this->assertSame($group->get('field_logo_light')->target_id, $group->get('field_logo_dark')->target_id);
+
+      $customDark = $this->container->get('entity_type.manager')->getStorage('file')->create([
+        'uri' => 'public://custom-dark-logo.png',
+        'status' => 1,
+      ]);
+      $customDark->save();
+      $group->set('field_logo_dark', ['target_id' => $customDark->id()])->save();
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertSame((string) $customDark->id(), (string) $group->get('field_logo_dark')->target_id);
     }
     finally {
       unlink($directory . '/logo.png');
@@ -1809,6 +1829,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->createField('group', 'jur', 'field_slug', 'string');
     $this->createField('group', 'jur', 'field_nuxt_config', 'text_long');
     $this->createField('group', 'jur', 'field_logo_light', 'file', ['uri_scheme' => 'public']);
+    $this->createField('group', 'jur', 'field_logo_dark', 'file', ['uri_scheme' => 'public']);
     $this->createField('group', 'jur', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'org', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'jur', 'field_service_statuses', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);

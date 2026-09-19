@@ -98,7 +98,7 @@ final class TenantBootstrapper {
       }
       $requiredFields = [
         'field_slug', 'field_nuxt_config', 'field_service_categories', 'field_service_statuses',
-        ...($asset === NULL ? [] : ['field_logo_light']),
+        ...($asset === NULL ? [] : ['field_logo_light', 'field_logo_dark']),
       ];
       foreach ($requiredFields as $field) {
         if (!$group->hasField($field)) {
@@ -168,7 +168,14 @@ final class TenantBootstrapper {
         }
         $file->setPermanent();
         $file->save();
+        // One supplied logo serves both themes until a separate dark variant
+        // is configured. Keep that explicit variant on subsequent imports.
+        $darkFollowsLight = $group->get('field_logo_dark')->isEmpty()
+          || $group->get('field_logo_dark')->target_id === $group->get('field_logo_light')->target_id;
         $group->set('field_logo_light', ['target_id' => $file->id()]);
+        if ($darkFollowsLight) {
+          $group->set('field_logo_dark', ['target_id' => $file->id()]);
+        }
         $group->save();
       }
       $this->keyValue->get('markaspot_tenant_import.bootstrap')->set('root', [
