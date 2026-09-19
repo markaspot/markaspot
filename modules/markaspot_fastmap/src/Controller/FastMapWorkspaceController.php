@@ -17,6 +17,7 @@ use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
+use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
@@ -239,6 +240,7 @@ class FastMapWorkspaceController extends ControllerBase {
     }
     try {
       $categories = CategoryTranslations::normalize($categories, $data['language'] ?? '', self::ALLOWED_LANGS);
+      $clientClaim = WorkspaceClaim::normalize($data['client_claim'] ?? NULL, array_keys($categories));
     }
     catch (\RuntimeException $e) {
       return new JsonResponse(['error' => $e->getMessage()], 400);
@@ -399,6 +401,7 @@ class FastMapWorkspaceController extends ControllerBase {
         'start_page_translations' => $startPageTranslations ?: NULL,
         'demo' => !empty($data['demo']),
         'selected_tier' => $selectedTier,
+        'client_claim' => $clientClaim,
         'ai_system_prompt' => isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt'])
           ? mb_substr(trim($data['ai_system_prompt']), 0, 2000)
           : '',

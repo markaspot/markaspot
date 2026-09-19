@@ -19,6 +19,7 @@ use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
+use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\language\Entity\ConfigurableLanguage;
@@ -369,7 +370,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $wording = is_string($wordingCandidate) && CitizenWordingResolver::isSupportedPreset($wordingCandidate)
       ? $wordingCandidate
       : NULL;
-    $aiSystemPrompt = isset($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
+    $aiSystemPrompt = isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
     $startPageContent = $data['start_page'] ?? NULL;
     $startPageTranslations = $data['start_page_translations'] ?? [];
 
@@ -398,6 +399,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       ? $requestedLang
       : array_key_first($multilingualCategories);
     $defaultCategories = $this->getDefaultCategories($multilingualCategories, $defaultLang);
+    $clientClaim = WorkspaceClaim::normalize($data['client_claim'] ?? NULL, array_keys($multilingualCategories));
 
     if (count($defaultCategories) > self::MAX_CATEGORIES) {
       throw new \RuntimeException('Maximum ' . self::MAX_CATEGORIES . ' categories allowed');
@@ -429,6 +431,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
         // 1. Create Group entity.
         $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
+        // Claims belong to the header, not the separate metadata tagline.
+        if ($clientClaim !== []) {
+          $nuxtConfig['client']['claim'] = $clientClaim;
+        }
         // 'report' is the default wording preset: leave field_nuxt_config
         // lean and only persist the choice when it deviates from it.
         if ($wording !== NULL && $wording !== 'report') {

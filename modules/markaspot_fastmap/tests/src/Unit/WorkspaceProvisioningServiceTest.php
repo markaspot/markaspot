@@ -662,6 +662,43 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Approved multilingual claims and project context survive provisioning.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testApprovedProjectContextAndClaimsAreProvisioned(): void {
+    $created = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $created);
+    $claims = ['de' => 'Bäume vor Ort erfassen.', 'fr' => 'Observer les arbres du quartier'];
+    $prompt = 'Inventory healthy trees. State uncertainty about species.';
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['de' => ['Gesunder Baum'], 'fr' => ['Arbre sain']],
+      'language' => 'de',
+      'client_claim' => $claims,
+      'ai_system_prompt' => $prompt,
+    ]));
+    $config = json_decode($created['field_nuxt_config'], TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame($claims, $config['client']['claim']);
+    $this->assertSame($prompt, $created['field_ai_system_prompt']);
+    $this->assertArrayNotHasKey('tagline', $config['client']);
+  }
+
+  /**
+   * Service callers cannot bypass translation validation or mutate a tenant.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testIncompleteClaimsFailBeforeAnyEntityCreation(): void {
+    $this->groupStorage->expects($this->never())->method('create');
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Workspace claims must cover all selected languages');
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['en' => ['Trees'], 'fr' => ['Arbres']],
+      'client_claim' => ['en' => 'Map local trees'],
+    ]));
+  }
+
+  /**
    * Tests successful workspace provisioning.
    *
    * @covers ::provisionWorkspace
@@ -683,6 +720,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE);
     $this->assertTrue($nuxtConfig['features']['passwordless']);
+    $this->assertArrayNotHasKey('claim', $nuxtConfig['client']);
+    $this->assertArrayNotHasKey('field_ai_system_prompt', $createdGroupFields);
 
     // field_tier is NEVER set in the create() payload. Stripe webhook is the
     // only path that activates a tier.
