@@ -196,16 +196,10 @@ PROMPT;
 
     $userPrompt = "Analyze the sentiment of this citizen report:\n\n" . $text;
 
-    // Get model from config.
-    // Three-tier model resolution: the explicit sentiment model wins, then
-    // the configured default provider's chat_model, then a safe fallback.
-    // The safety net must be a model that exists on every provider tenant
-    // (OpenAI + Azure); AiClientService::DEFAULT_CHAT_MODEL is the authoritative
-    // default and matches the install-config default.
+    // Resolve the explicit analysis override against the active provider.
     $config = $this->configFactory->get('markaspot_ai.settings');
     $provider = $config->get('default_provider') ?: 'openai';
-    $providerChatModel = $config->get("providers.{$provider}.chat_model") ?: AiClientService::DEFAULT_CHAT_MODEL;
-    $model = $config->get('sentiment_analysis.model') ?: $providerChatModel;
+    $model = $this->aiClient->resolveChatModel($config->get('sentiment_analysis.model'), $provider);
 
     try {
       $response = $this->aiClient->chat(
@@ -224,7 +218,7 @@ PROMPT;
       // Track token usage.
       if (isset($response['usage'])) {
         $this->tokenTracking->logUsage(
-          'openai',
+          $provider,
           $model,
           'sentiment',
           $response['usage']['prompt_tokens'] ?? 0,

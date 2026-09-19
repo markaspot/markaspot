@@ -297,6 +297,7 @@ class NodeAnalysisServiceTest extends UnitTestCase {
    */
   protected function createServiceWithConfig(array $configMap): NodeAnalysisService {
     $aiClient = $this->createMock(AiClientService::class);
+    $aiClient->method('resolveChatModel')->willReturnCallback(static fn (?string $override, ?string $provider) => $override ?: ($configMap["providers.$provider.chat_model"] ?? AiClientService::DEFAULT_CHAT_MODEL));
     $sentimentService = $this->createMock(SentimentService::class);
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $tokenTracking = $this->createMock(TokenTrackingService::class);

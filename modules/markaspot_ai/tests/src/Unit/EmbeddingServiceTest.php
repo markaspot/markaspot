@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_ai\Unit;
 
+use Drupal\Core\Database\StatementInterface;
+use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\Delete;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -56,6 +58,7 @@ class EmbeddingServiceTest extends UnitTestCase {
     parent::setUp();
 
     $this->aiClient = $this->createMock(AiClientService::class);
+    $this->aiClient->method('resolveEmbeddingModel')->willReturn('text-embedding-3-large');
     $this->database = $this->createMock(Connection::class);
     $this->logger = $this->createMock(LoggerInterface::class);
 
@@ -317,6 +320,54 @@ class EmbeddingServiceTest extends UnitTestCase {
 
     $deleted = $this->service->deleteEmbedding(42);
     $this->assertEquals(0, $deleted);
+  }
+
+  /**
+   * Every vector reader and text-hash check restricts rows to the active model.
+   */
+  public function testReadersFilterConfiguredModel(): void {
+    $query = $this->createMock(SelectInterface::class);
+    $statement = $this->createMock(StatementInterface::class);
+    $conditions = [];
+    $query->method('fields')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('condition')->willReturnCallback(function ($field, $value) use (&$conditions, $query) {
+      $conditions[] = [$field, $value];
+      return $query;
+    });
+    $query->method('execute')->willReturn($statement);
+    $statement->method('fetchAllAssoc')->willReturn([]);
+    $statement->method('fetchAll')->willReturn([]);
+    $statement->method('fetchAssoc')->willReturn(FALSE);
+    $statement->method('fetchField')->willReturn('hash');
+    $this->database->method('select')->willReturn($query);
+    $this->service->getAllEmbeddings();
+    $this->service->getEmbedding(1);
+    self::assertTrue($this->service->embeddingExists(1, 'hash'));
+    self::assertCount(3, array_filter($conditions, static fn ($condition) => $condition === [
+      'e.model',
+      'text-embedding-3-large',
+    ]));
+  }
+
+  /**
+   * Existing vectors from another model are included in the missing backfill.
+   */
+  public function testBackfillJoinsOnlyConfiguredModel(): void {
+    $query = $this->createMock(SelectInterface::class);
+    $statement = $this->createMock(StatementInterface::class);
+    foreach (['fields', 'condition', 'isNull', 'range', 'orderBy'] as $method) {
+      $query->method($method)->willReturnSelf();
+    }
+    $query->expects($this->once())->method('leftJoin')->with(
+      'markaspot_ai_embeddings', 'e',
+      $this->stringContains('e.model = :model'),
+      $this->callback(static fn ($arguments) => $arguments[':model'] === 'text-embedding-3-large'),
+    )->willReturn('e');
+    $query->method('execute')->willReturn($statement);
+    $statement->method('fetchCol')->willReturn([42]);
+    $this->database->method('select')->willReturn($query);
+    self::assertSame([42], $this->service->findMissingEmbeddings());
   }
 
 }

@@ -7,6 +7,11 @@ namespace Drupal\markaspot_ai\Service;
 use Drupal\group\Entity\GroupRelationship;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\markaspot_vision\Service\ImageProcessingService;
+use Drupal\markaspot_ai\Utility\BlurPolicy;
+use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use Drupal\Core\State\StateInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -116,8 +121,14 @@ class AttributeFillingService {
    *   The language manager.
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   Shared advisory timestamps.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The clock.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver (optional).
+   * @param \Drupal\markaspot_vision\Service\ImageProcessingService|null $imageProcessing
+   *   Optional platform blur enforcement for image-bearing chat requests.
    */
   public function __construct(
     AiClientService $ai_client,
@@ -128,7 +139,10 @@ class AttributeFillingService {
     FileSystemInterface $file_system,
     LanguageManagerInterface $language_manager,
     Connection $database,
+    protected StateInterface $state,
+    protected TimeInterface $time,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
+    protected ?ImageProcessingService $imageProcessing = NULL,
   ) {
     $this->aiClient = $ai_client;
     $this->entityTypeManager = $entity_type_manager;
@@ -273,7 +287,8 @@ class AttributeFillingService {
 
     // Get model from config.
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('attribute_filling.model') ?: AiClientService::DEFAULT_CHAT_MODEL;
+    $provider = $config->get('default_provider') ?? 'openai';
+    $model = $this->aiClient->resolveChatModel($config->get('attribute_filling.model'), $provider);
 
     try {
       $response = $this->aiClient->chat(
@@ -289,7 +304,7 @@ class AttributeFillingService {
       // Track token usage.
       if (isset($response['usage'])) {
         $this->tokenTracking->logUsage(
-          'openai',
+          $provider,
           $model,
           'attribute_filling',
           $response['usage']['prompt_tokens'] ?? 0,
@@ -318,7 +333,7 @@ class AttributeFillingService {
 
         if (isset($response['usage'])) {
           $this->tokenTracking->logUsage(
-            'openai',
+            $provider,
             $model,
             'attribute_filling',
             $response['usage']['prompt_tokens'] ?? 0,
@@ -487,7 +502,8 @@ class AttributeFillingService {
     ];
 
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('attribute_filling.model') ?: AiClientService::DEFAULT_CHAT_MODEL;
+    $provider = $config->get('default_provider') ?? 'openai';
+    $model = $this->aiClient->resolveChatModel($config->get('attribute_filling.model'), $provider);
 
     try {
       $response = $this->aiClient->chat($messages, [
@@ -498,7 +514,7 @@ class AttributeFillingService {
 
       if (isset($response['usage'])) {
         $this->tokenTracking->logUsage(
-          'openai',
+          $provider,
           $model,
           'description_generation',
           $response['usage']['prompt_tokens'] ?? 0,
@@ -554,6 +570,10 @@ class AttributeFillingService {
    */
   public function getNodeImages(NodeInterface $node, int $maxImages = 4): array {
     $images = [];
+    if (!$this->imageProcessing && BlurPolicy::isRequired($this->logger)) {
+      $this->logger->error('MARKASPOT_BLUR_REQUIRED: missing markaspot_vision module; refusing to send images.');
+      return [];
+    }
 
     if (!$node->hasField('field_request_media') || $node->get('field_request_media')->isEmpty()) {
       return $images;
@@ -596,6 +616,14 @@ class AttributeFillingService {
           ]);
           continue;
         }
+
+        if ($this->imageProcessing) {
+          $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($contents) ?: 'image/jpeg';
+          $contents = $this->imageProcessing->blurSensitiveAreas($contents, $mime)['contents'];
+        }
+
+        $blur_enabled = $this->imageProcessing && (bool) $this->configFactory->get('markaspot_vision.settings')->get('enable_blur_preprocessing');
+        BlurAdvisory::warn($this->state, $this->logger, $this->time->getCurrentTime(), BlurPolicy::mode($this->logger), $blur_enabled);
 
         $images[] = [
           'type' => 'image_url',
@@ -1267,7 +1295,8 @@ class AttributeFillingService {
 
     // --- Call LLM ---
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('attribute_filling.model') ?: AiClientService::DEFAULT_CHAT_MODEL;
+    $provider = $config->get('default_provider') ?? 'openai';
+    $model = $this->aiClient->resolveChatModel($config->get('attribute_filling.model'), $provider);
 
     try {
       $response = $this->aiClient->chat($messages, [
@@ -1279,7 +1308,7 @@ class AttributeFillingService {
 
       if (isset($response['usage'])) {
         $this->tokenTracking->logUsage(
-          'openai',
+          $provider,
           $model,
           'form_assist',
           $response['usage']['prompt_tokens'] ?? 0,

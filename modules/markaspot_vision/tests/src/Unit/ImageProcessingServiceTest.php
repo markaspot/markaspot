@@ -12,6 +12,8 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
+use Drupal\Core\State\StateInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use GuzzleHttp\ClientInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -56,6 +58,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     'OPENAI_API_KEY',
     'VISION_BLUR_URL',
     'MARKASPOT_BLUR_API_KEY',
+    'MARKASPOT_BLUR_REQUIRED',
     'MARKASPOT_BLUR_URL',
     'AI_API_KEY',
   ];
@@ -141,6 +144,8 @@ class ImageProcessingServiceTest extends UnitTestCase {
       $entityTypeManager,
       $this->fileSystem,
       $loggerFactory,
+      $this->createMock(StateInterface::class),
+      $this->createMock(TimeInterface::class),
     );
   }
 
@@ -270,9 +275,9 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests payload omits max_tokens for vision models.
+   * Tests token limits do not depend on model names.
    */
-  public function testPrepareRequestPayloadVisionModelNoMaxTokens(): void {
+  public function testPrepareRequestPayloadVisionModelMaxTokens(): void {
     $service = $this->createService([
       'max_tokens' => 300,
     ]);
@@ -282,7 +287,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
     $payload = $this->invokeMethod($service, 'prepareRequestPayload', [$messages, $apiConfig]);
 
-    $this->assertArrayNotHasKey('max_tokens', $payload);
+    $this->assertSame(300, $payload['max_tokens']);
   }
 
   /**
@@ -541,6 +546,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * Tests resolveBlurUrl: config value wins over both ENV names.
    */
   public function testResolveBlurUrlConfigTakesPrecedence(): void {
+    putenv('MARKASPOT_BLUR_REQUIRED=0');
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
     putenv('VISION_BLUR_URL=https://legacy.example/blur');
 

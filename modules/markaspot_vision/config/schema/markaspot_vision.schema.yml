@@ -44,3 +44,13 @@ markaspot_vision.settings:
     blur_service_url:
       type: string
       label: 'Blur Service URL'
+    max_tokens_param:
+      type: string
+      label: 'Token limit parameter'
+      constraints:
+        Choice: [max_tokens, max_completion_tokens, none]
+    response_format_mode:
+      type: string
+      label: 'Response format mode'
+      constraints:
+        Choice: [json_schema, json_object, none]

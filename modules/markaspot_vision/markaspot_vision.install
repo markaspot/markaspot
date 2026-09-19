@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Config\FileStorage;
+use Drupal\markaspot_ai\Utility\BlurAdvisory;
 
 /**
  * Install hazard level and category fields for media entities.
@@ -245,4 +246,38 @@ function markaspot_vision_update_11805(): string {
   \Drupal::entityTypeManager()->getStorage('image_style')->create($config_data)->save();
 
   return 'Created ai_analysis image style.';
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_vision_requirements($phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
+  $vision = \Drupal::service('markaspot_vision.image_processing');
+  $mode = $vision->getBlurMode();
+  $config = \Drupal::config('markaspot_vision.settings');
+  $severity = REQUIREMENT_OK;
+  $description = t('Images follow the configured blur preprocessing policy.');
+  if ($vision->isBlurRequired() && !$vision->hasRequiredBlurConfiguration()) {
+    $severity = REQUIREMENT_ERROR;
+    $description = BlurAdvisory::errorMessage();
+  }
+  elseif ($mode === 'off') {
+    $severity = REQUIREMENT_INFO;
+    $description = t('The operator has explicitly opted out of mandatory blurring. The site switch decides.');
+  }
+  elseif ($mode === 'auto-unprotected' && !$config->get('enable_blur_preprocessing') && ($config->get('api_url') || trim(getenv('MARKASPOT_VISION_API_URL') ?: '') !== '')) {
+    $severity = REQUIREMENT_WARNING;
+    $description = BlurAdvisory::message();
+  }
+  return [
+    'markaspot_vision_blur' => [
+      'title' => t('Image blurring before AI analysis'),
+      'value' => $mode,
+      'severity' => $severity,
+      'description' => $description,
+    ],
+  ];
 }

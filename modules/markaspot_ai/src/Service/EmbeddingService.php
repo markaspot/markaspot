@@ -48,6 +48,16 @@ class EmbeddingService {
   protected LoggerInterface $logger;
 
   /**
+   * Whether this request has already checked model visibility by entity type.
+   */
+  protected array $checkedModels = [];
+
+  /**
+   * Whether a model visibility warning has been emitted this request.
+   */
+  protected bool $modelWarningLogged = FALSE;
+
+  /**
    * Constructs a new EmbeddingService.
    *
    * @param \Drupal\markaspot_ai\Service\AiClientService $ai_client
@@ -105,7 +115,7 @@ class EmbeddingService {
 
       return [
         'vector' => $embedding,
-        'model' => $response['model'] ?? 'unknown',
+        'model' => $this->aiClient->resolveEmbeddingModel($options['model'] ?? NULL, $options['provider'] ?? NULL),
         'dimensions' => count($embedding),
         'usage' => $response['usage'] ?? [],
       ];
@@ -228,10 +238,12 @@ class EmbeddingService {
         ->condition('e.entity_type', $entityType)
         ->condition('e.entity_id', $entityId)
         ->condition('e.embedding_type', $embeddingType)
+        ->condition('e.model', $this->aiClient->resolveEmbeddingModel())
         ->execute()
         ->fetchAssoc();
 
       if (!$result) {
+        $this->warnIfModelUnavailable($entityType);
         return NULL;
       }
 
@@ -290,6 +302,7 @@ class EmbeddingService {
         ->condition('e.entity_type', $entityType)
         ->condition('e.entity_id', $entityId)
         ->condition('e.embedding_type', $embeddingType)
+        ->condition('e.model', $this->aiClient->resolveEmbeddingModel())
         ->execute()
         ->fetchField();
 
@@ -352,10 +365,11 @@ class EmbeddingService {
 
         // Left join to find nodes without embeddings.
         $entity_query->leftJoin('markaspot_ai_embeddings', 'e',
-          "n.nid = e.entity_id AND e.entity_type = :entity_type AND e.embedding_type = :embedding_type",
+          "n.nid = e.entity_id AND e.entity_type = :entity_type AND e.embedding_type = :embedding_type AND e.model = :model",
           [
             ':entity_type' => $entityType,
             ':embedding_type' => $embeddingType,
+            ':model' => $this->aiClient->resolveEmbeddingModel(),
           ]
         );
 
@@ -458,6 +472,7 @@ class EmbeddingService {
         ->fields('e', ['entity_id', 'embedding', 'model', 'dimensions'])
         ->condition('e.entity_type', $entityType)
         ->condition('e.embedding_type', $embeddingType)
+        ->condition('e.model', $this->aiClient->resolveEmbeddingModel())
         ->range(0, $limit);
 
       if ($excludeEntityId !== NULL) {
@@ -465,6 +480,9 @@ class EmbeddingService {
       }
 
       $results = $query->execute()->fetchAllAssoc('entity_id', FetchAs::Associative);
+      if ($results === []) {
+        $this->warnIfModelUnavailable($entityType);
+      }
 
       // Decode vectors.
       foreach ($results as &$row) {
@@ -480,6 +498,72 @@ class EmbeddingService {
       ]);
       return [];
     }
+  }
+
+  /**
+   * Lists persisted model identities and dimensions, without reading vectors.
+   */
+  public function getStoredModelSummary(?string $entityType = NULL): array {
+    $query = $this->database->select('markaspot_ai_embeddings', 'e')
+      ->fields('e', ['model', 'dimensions']);
+    $query->addExpression('COUNT(*)', 'count');
+    $query->groupBy('e.model');
+    $query->groupBy('e.dimensions');
+    $query->orderBy('e.model');
+    $query->orderBy('e.dimensions');
+    if ($entityType !== NULL) {
+      $query->condition('e.entity_type', $entityType);
+    }
+    return $query->execute()->fetchAll(FetchAs::Associative);
+  }
+
+  /**
+   * Warns once when stored vectors do not match the configured identity.
+   */
+  protected function warnIfModelUnavailable(string $entityType): void {
+    if ($this->modelWarningLogged || isset($this->checkedModels[$entityType])) {
+      return;
+    }
+    $this->checkedModels[$entityType] = TRUE;
+    $rows = $this->getStoredModelSummary($entityType);
+    $configured = $this->aiClient->resolveEmbeddingModel();
+    $stored = array_unique(array_column($rows, 'model'));
+    if ($stored !== [] && !in_array($configured, $stored, TRUE)) {
+      $this->modelWarningLogged = TRUE;
+      $this->logger->warning('No embeddings match configured identifier @model; stored identifiers: @stored. For an identity-only deployment rename, use markaspot:ai:embeddings-relabel --from=<stored> --to=<configured> --dry-run before relabelling.', [
+        '@model' => $configured,
+        '@stored' => implode(', ', $stored),
+      ]);
+    }
+  }
+
+  /**
+   * Explicitly relabels compatible identities without changing vector data.
+   */
+  public function relabelEmbeddings(string $from, string $to, bool $dryRun = FALSE): int {
+    if (trim($from) === '' || trim($to) === '' || $from === $to) {
+      throw new \InvalidArgumentException('Distinct nonempty --from and --to identifiers are required.');
+    }
+    if ($to !== $this->aiClient->resolveEmbeddingModel()) {
+      throw new \InvalidArgumentException('--to must equal the currently configured embedding identifier.');
+    }
+    $rows = $this->getStoredModelSummary();
+    $source = array_values(array_filter($rows, static fn ($row) => $row['model'] === $from));
+    $target = array_values(array_filter($rows, static fn ($row) => $row['model'] === $to));
+    if ($source === []) {
+      throw new \InvalidArgumentException('No embeddings match --from.');
+    }
+    $dimensions = array_unique(array_map('intval', array_column($source, 'dimensions')));
+    if (count($dimensions) !== 1 || array_filter($target, static fn ($row) => (int) $row['dimensions'] !== $dimensions[0])) {
+      throw new \InvalidArgumentException('Refusing to relabel incompatible embedding dimensions.');
+    }
+    if ($dryRun) {
+      return (int) array_sum(array_column($source, 'count'));
+    }
+    return (int) $this->database->update('markaspot_ai_embeddings')
+      ->fields(['model' => $to])
+      ->condition('model', $from)
+      ->execute();
   }
 
   /**

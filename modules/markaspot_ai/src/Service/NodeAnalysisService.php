@@ -429,8 +429,7 @@ PROMPT;
    * Order of precedence:
    *   1. sentiment_analysis.model (explicit override).
    *   2. providers.{default_provider}.chat_model (per-provider default).
-   *   3. AiClientService::DEFAULT_CHAT_MODEL (hardcoded safety net, valid on
-   *      OpenAI + Azure tenants and matches the install-config default).
+   *   3. AiClientService::DEFAULT_CHAT_MODEL (final fallback).
    *
    * @return string
    *   The resolved model identifier.
@@ -438,8 +437,7 @@ PROMPT;
   protected function resolveChatModel(): string {
     $config = $this->configFactory->get('markaspot_ai.settings');
     $provider = $config->get('default_provider') ?: 'openai';
-    $providerChatModel = $config->get("providers.{$provider}.chat_model") ?: AiClientService::DEFAULT_CHAT_MODEL;
-    return $config->get('sentiment_analysis.model') ?: $providerChatModel;
+    return $this->aiClient->resolveChatModel($config->get('sentiment_analysis.model'), $provider);
   }
 
   /**

@@ -56,7 +56,10 @@ services:
       - '@file_system'
       - '@language_manager'
       - '@database'
+      - '@state'
+      - '@datetime.time'
       - '@?markaspot_group.hierarchy_resolver'
+      - '@?markaspot_vision.image_processing'
 
   markaspot_ai.risk_score_calculator:
     class: Drupal\markaspot_ai\Service\RiskScoreCalculator

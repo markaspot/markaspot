@@ -10,6 +10,8 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\GuzzleException;
 use Psr\Log\LoggerInterface;
+use Drupal\markaspot_ai\Utility\ProviderError;
+use Drupal\markaspot_ai\Exception\ProviderRequestException;
 
 /**
  * Provider-agnostic HTTP client for AI APIs.
@@ -21,18 +23,19 @@ use Psr\Log\LoggerInterface;
 class AiClientService {
 
   /**
-   * Default chat model used as the hardcoded fallback across the module.
+   * Default chat model matching the untouched install configuration.
    *
-   * This is the authoritative source of truth for the chat-model safety net.
-   * It must be a model that exists on every provider tenant (OpenAI + Azure)
-   * and match the install-config default in markaspot_ai.settings.yml. When
-   * bumping the default model, update this constant; the YAML install configs
-   * carry a cross-reference comment because YAML cannot reference PHP
-   * constants.
+   * Providers with different model or deployment identifiers must configure
+   * their own chat_model. This constant is the final fallback only.
    *
    * @var string
    */
   public const DEFAULT_CHAT_MODEL = 'gpt-4.1-mini';
+
+  /**
+   * Default embedding model when no provider model is configured.
+   */
+  public const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-large';
 
   /**
    * The HTTP client.
@@ -122,7 +125,7 @@ class AiClientService {
     $provider = $options['provider'] ?? $config->get('default_provider') ?? 'openai';
     $provider_config = $config->get("providers.{$provider}") ?? [];
 
-    $model = $options['model'] ?? $provider_config['chat_model'] ?? self::DEFAULT_CHAT_MODEL;
+    $model = $this->resolveChatModel($options['model'] ?? NULL, $provider);
     if ($provider === 'anthropic') {
       return $this->chatAnthropic($messages, $provider_config, $model, $options);
     }
@@ -140,22 +143,120 @@ class AiClientService {
     ];
 
     // Add optional parameters if provided.
-    if (isset($options['temperature'])) {
+    if (isset($options['temperature']) && ($provider_config['send_temperature'] ?? TRUE)) {
       $payload['temperature'] = (float) $options['temperature'];
     }
-    if (isset($options['max_tokens'])) {
-      $payload['max_tokens'] = (int) $options['max_tokens'];
+    $limit_param = $provider_config['max_tokens_param'] ?? 'max_tokens';
+    if (isset($options['max_tokens']) && $limit_param !== 'none') {
+      $payload[$limit_param] = max((int) $options['max_tokens'], (int) ($provider_config['max_tokens_min'] ?? 0));
     }
-    if (isset($options['response_format'])) {
-      $payload['response_format'] = $options['response_format'];
+    $format_mode = $provider_config['response_format_mode'] ?? 'native';
+    if (isset($options['response_format']) && $format_mode !== 'none') {
+      $payload['response_format'] = $format_mode === 'json_object' && ($options['response_format']['type'] ?? '') === 'json_schema'
+        ? ['type' => 'json_object'] : $options['response_format'];
     }
     if (isset($options['top_p'])) {
       $payload['top_p'] = (float) $options['top_p'];
     }
 
-    return $this->executeWithRetry(function () use ($endpoint, $headers, $payload, $options) {
-      return $this->sendRequest('POST', $endpoint, $headers, $payload, $options);
+    return $this->sendChatRequest($endpoint, $headers, $payload, $options, $provider, $model);
+  }
+
+  /**
+   * Resolves a chat model from an override, provider config, or the default.
+   */
+  public function resolveChatModel(?string $override = NULL, ?string $provider = NULL): string {
+    $provider ??= $this->getConfig()->get('default_provider') ?? 'openai';
+    return trim($override ?? '') !== '' ? $override : (($this->getConfig()->get("providers.{$provider}")['chat_model'] ?? NULL) ?: self::DEFAULT_CHAT_MODEL);
+  }
+
+  /**
+   * Resolves the embedding model consistently for requests and stored vectors.
+   */
+  public function resolveEmbeddingModel(?string $override = NULL, ?string $provider = NULL): string {
+    $provider ??= $this->getConfig()->get('default_provider') ?? 'openai';
+    return trim($override ?? '') !== '' ? $override : (($this->getConfig()->get("providers.{$provider}")['embedding_model'] ?? NULL) ?: self::DEFAULT_EMBEDDING_MODEL);
+  }
+
+  /**
+   * Sends chat with one parameter repair, independent of transient retries.
+   */
+  protected function sendChatRequest(string $endpoint, array $headers, array $payload, array $options, string $provider, string $model): array {
+    $adapted = FALSE;
+    return $this->executeWithRetry(function () use ($endpoint, $headers, &$payload, $options, $provider, $model, &$adapted) {
+      try {
+        $response = $this->sendRequest('POST', $endpoint, $headers, $payload, $options);
+      }
+      catch (\Exception $e) {
+        if ($adapted || $e->getCode() !== 400 || !($e instanceof ProviderRequestException) || !$this->adaptRejectedParameter($payload, $e->rejectedParameters, $provider, $model)) {
+          throw $e;
+        }
+        $adapted = TRUE;
+        $response = $this->sendRequest('POST', $endpoint, $headers, $payload, $options);
+      }
+      $content = $response['choices'][0]['message']['content'] ?? '';
+      $exhausted = ($response['choices'][0]['finish_reason'] ?? '') === 'length';
+      if ($provider === 'anthropic') {
+        $content = '';
+        foreach ($response['content'] ?? [] as $block) {
+          if (($block['type'] ?? '') === 'text') {
+            $content .= $block['text'] ?? '';
+          }
+        }
+        $exhausted = ($response['stop_reason'] ?? '') === 'max_tokens';
+      }
+      if ($exhausted && (!is_string($content) || trim($content) === '')) {
+        $message = "Token budget exhausted for {$provider}/{$model}; increase providers.{$provider}.max_tokens_min.";
+        if (isset($response['usage'])) {
+          $usage = $response['usage'];
+          $this->tokenTracking->logUsage($provider, $model, $options['operation'] ?? 'chat', (int) ($usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0), (int) ($usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0));
+        }
+        $this->logger->error('@message', ['@message' => $message]);
+        throw new \RuntimeException($message);
+      }
+      return $response;
     }, max(1, min(3, (int) ($options['max_attempts'] ?? 3))));
+  }
+
+  /**
+   * Repairs a named rejected parameter, without inferring model capabilities.
+   */
+  protected function adaptRejectedParameter(array &$payload, array $rejected, string $provider, string $model): bool {
+    foreach ($rejected as $parameter) {
+      if (!array_key_exists($parameter, $payload)) {
+        continue;
+      }
+      $key = match ($parameter) {
+        'temperature' => 'send_temperature=false',
+        'top_p' => 'top_p (omit from caller options; no provider policy key)',
+        'max_tokens' => 'max_tokens_param=max_completion_tokens',
+        default => 'response_format_mode=none',
+      };
+      if ($parameter === 'max_tokens') {
+        // Anthropic requires max_tokens and cannot accept its OpenAI alias.
+        if ($provider === 'anthropic') {
+          return FALSE;
+        }
+        $payload['max_completion_tokens'] = $payload[$parameter];
+        unset($payload[$parameter]);
+      }
+      elseif ($parameter === 'response_format' && ($payload[$parameter]['type'] ?? '') === 'json_schema') {
+        $payload[$parameter] = ['type' => 'json_object'];
+        $key = 'response_format_mode=json_object';
+      }
+      else {
+        unset($payload[$parameter]);
+      }
+      $setting = $parameter === 'top_p' ? $key : "providers.{$provider}.{$key}";
+      $this->logger->warning('Provider @provider model @model rejected @parameter; retried once. Permanent setting: @setting.', [
+        '@provider' => $provider,
+        '@model' => $model,
+        '@parameter' => $parameter,
+        '@setting' => $setting,
+      ]);
+      return TRUE;
+    }
+    return FALSE;
   }
 
   /**
@@ -193,7 +294,7 @@ class AiClientService {
       );
     }
 
-    $model = $options['model'] ?? $provider_config['embedding_model'] ?? 'text-embedding-3-large';
+    $model = $this->resolveEmbeddingModel($options['model'] ?? NULL, $provider);
     $endpoint = $this->buildEndpoint($provider, $provider_config, $model, 'embeddings');
 
     $headers = $this->buildAuthHeaders(
@@ -406,7 +507,7 @@ class AiClientService {
       $response = $this->httpClient->request($method, $url, $options);
     }
     catch (GuzzleException $e) {
-      throw new \Exception('HTTP request failed: ' . $e->getMessage(), $e->getCode(), $e);
+      throw new \Exception(mb_substr('HTTP request failed: ' . $e->getMessage(), 0, 300), $e->getCode());
     }
 
     $statusCode = $response->getStatusCode();
@@ -420,7 +521,14 @@ class AiClientService {
     // Handle other error status codes.
     if ($statusCode >= 400) {
       $errorMessage = $this->parseErrorMessage($body, $statusCode);
-      throw new \Exception($errorMessage, $statusCode);
+      $decoded_error = json_decode($body, TRUE);
+      $rejected = [];
+      foreach (['temperature', 'top_p', 'max_tokens', 'response_format'] as $parameter) {
+        if (is_array($decoded_error) && ProviderError::rejects($decoded_error, $parameter, isset($headers['anthropic-version']))) {
+          $rejected[] = $parameter;
+        }
+      }
+      throw new ProviderRequestException($errorMessage, $statusCode, $rejected);
     }
 
     $decoded = json_decode($body, TRUE);
@@ -472,22 +580,20 @@ class AiClientService {
 
     $payload = [
       'model' => $model,
-      'max_tokens' => max(1, (int) ($options['max_tokens'] ?? 1024)),
+      'max_tokens' => max(1, (int) ($options['max_tokens'] ?? 1024), (int) ($providerConfig['max_tokens_min'] ?? 0)),
       'messages' => $anthropicMessages,
     ];
     if ($system !== []) {
       $payload['system'] = implode("\n\n", $system);
     }
-    if (isset($options['temperature'])) {
+    if (isset($options['temperature']) && ($providerConfig['send_temperature'] ?? TRUE)) {
       $payload['temperature'] = (float) $options['temperature'];
     }
     if (isset($options['top_p'])) {
       $payload['top_p'] = (float) $options['top_p'];
     }
 
-    $response = $this->executeWithRetry(function () use ($endpoint, $headers, $payload, $options) {
-      return $this->sendRequest('POST', $endpoint, $headers, $payload, $options);
-    }, max(1, min(3, (int) ($options['max_attempts'] ?? 3))));
+    $response = $this->sendChatRequest($endpoint, $headers, $payload, $options, 'anthropic', $model);
 
     $content = '';
     foreach ($response['content'] ?? [] as $block) {
@@ -520,6 +626,9 @@ class AiClientService {
    */
   protected function isRetryableError(\Exception $exception): bool {
     $code = $exception->getCode();
+    if ($code === 400) {
+      return FALSE;
+    }
 
     // Retryable HTTP status codes.
     $retryableCodes = [
@@ -570,15 +679,7 @@ class AiClientService {
    *   A formatted error message.
    */
   protected function parseErrorMessage(string $body, int $statusCode): string {
-    $decoded = json_decode($body, TRUE);
-
-    if (json_last_error() === JSON_ERROR_NONE && isset($decoded['error'])) {
-      $error = $decoded['error'];
-      $message = is_array($error) ? ($error['message'] ?? json_encode($error)) : $error;
-      return "API error ({$statusCode}): {$message}";
-    }
-
-    return "API returned status code {$statusCode}: " . substr($body, 0, 500);
+    return ProviderError::message($body, $statusCode);
   }
 
   /**
