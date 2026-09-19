@@ -952,6 +952,8 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       'slug' => 'test-ws',
       'email' => 'user@example.com',
       'categories' => ['Cat A'],
+      'ai_system_prompt' => 'Inventory healthy trees as valid observations.',
+      'client_claim' => ['en' => 'Map our local trees'],
     ];
 
     $record = [
@@ -2167,6 +2169,21 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
+   * Oversized approved claims fail before a pending row or email is created.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceRejectsOversizedClaim(): void {
+    $this->database->expects($this->never())->method('insert');
+    $this->mailManager->expects($this->never())->method('mail');
+    $response = $this->controller->createWorkspace($this->createJsonRequest($this->validRequestData([
+      'client_claim' => ['en' => str_repeat('a', 41)],
+    ])));
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertStringContainsString('1-40 characters', $response->getContent());
+  }
+
+  /**
    * Tests that ai_system_prompt is stored in workspace data when provided.
    *
    * @covers ::createWorkspace
@@ -2217,6 +2234,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $prompt = 'You analyze photos of trail conditions. Focus on erosion and fallen trees.';
     $request = $this->createJsonRequest($this->validRequestData([
       'ai_system_prompt' => $prompt,
+      'client_claim' => ['en' => 'Track local trails'],
     ]));
 
     $response = $controller->createWorkspace($request);
@@ -2226,6 +2244,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $stored = json_decode($insertedData['workspace_data'], TRUE);
     $this->assertArrayHasKey('ai_system_prompt', $stored);
     $this->assertEquals($prompt, $stored['ai_system_prompt']);
+    $this->assertSame(['en' => 'Track local trails'], $stored['client_claim']);
   }
 
   /**
@@ -2285,6 +2304,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $stored = json_decode($insertedData['workspace_data'], TRUE);
     $this->assertArrayHasKey('ai_system_prompt', $stored);
     $this->assertEmpty($stored['ai_system_prompt']);
+    $this->assertSame([], $stored['client_claim']);
   }
 
   /**
