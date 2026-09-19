@@ -33,6 +33,7 @@ use Drupal\taxonomy\TermInterface;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
+use Drupal\user\PermissionHandlerInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -308,6 +309,7 @@ final class TenantImporterTest extends KernelTestBase {
    */
   public function testOrgModeratorRejectsMissingOrInvalidInsiderRole(): void {
     $configuration = $this->orgModeratorConfiguration();
+    $this->mockContractorPermissionDefinitions();
     $contractor = Role::load('contractor');
     $contractor->set('is_admin', TRUE)->save();
     try {
@@ -324,6 +326,11 @@ final class TenantImporterTest extends KernelTestBase {
       'administer group',
       'administer users',
       'administer permissions',
+      'access platform admin',
+      'administer site configuration',
+      'switch users',
+      'custom restricted capability',
+      'administer unmarked custom capability',
     ] as $permission) {
       // Inject config drift even when its provider (e.g. node) is not enabled.
       $contractor->setSyncing(TRUE);
@@ -340,6 +347,27 @@ final class TenantImporterTest extends KernelTestBase {
       $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
       $contractor->revokePermission($permission)->save();
     }
+    foreach (['add dashboard status notes', 'use service request management form'] as $permission) {
+      foreach ([
+        NULL,
+        ['restrict access' => TRUE],
+        ['provider' => 'system', 'restrict access' => TRUE],
+      ] as $definition) {
+        $this->mockContractorPermissionDefinitions([$permission => $definition]);
+        $contractor->grantPermission($permission)->save();
+        try {
+          $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+          $this->fail('Missing or unexpected scoped permission provider must reject.');
+        }
+        catch (TenantImportValidationException $exception) {
+          $this->assertStringContainsString('contractor must not grant administrative access', $exception->getMessage());
+        }
+        $this->assertCount(1, Group::loadMultiple());
+        $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+        $contractor->revokePermission($permission)->save();
+      }
+    }
+    $this->mockContractorPermissionDefinitions();
     $role = GroupRole::load('org-contractor');
     $role->set('global_role', 'tenant_admin')->save();
     try {
@@ -374,6 +402,12 @@ final class TenantImporterTest extends KernelTestBase {
    */
   public function testOrgModeratorAssignsExistingUnprivilegedAccount(): void {
     $configuration = $this->orgModeratorConfiguration();
+    $this->mockContractorPermissionDefinitions();
+    // Preserve the two shipped, restricted but organisation-scoped abilities.
+    Role::load('contractor')
+      ->grantPermission('add dashboard status notes')
+      ->grantPermission('use service request management form')
+      ->save();
     $user = User::create([
       'name' => 'existing-login',
       'mail' => $configuration['users'][0]['email'],
@@ -399,6 +433,45 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertCount(2, GroupMembership::loadByUser($user));
     $this->assertSame(['jur-org_member'], $this->storedMembershipRoles($this->jurisdiction, $user));
     $this->assertSame([], $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+  }
+
+  /**
+   * Supplies permission metadata from modules outside the minimal fixture.
+   */
+  private function mockContractorPermissionDefinitions(array $overrides = []): void {
+    $definitions = $this->container->get('user.permissions')->getPermissions();
+    foreach ([
+      'bypass node access',
+      'access platform admin',
+      'switch users',
+      'custom restricted capability',
+      'add dashboard status notes',
+      'use service request management form',
+    ] as $permission) {
+      $definitions[$permission] = [
+        'title' => $permission,
+        'provider' => match ($permission) {
+          'add dashboard status notes' => 'markaspot_dashboard',
+          'use service request management form' => 'markaspot_ui',
+          default => 'system',
+        },
+        'restrict access' => TRUE,
+      ];
+    }
+    foreach ($overrides as $permission => $definition) {
+      if ($definition === NULL) {
+        unset($definitions[$permission]);
+      }
+      else {
+        $definitions[$permission] = $definition;
+      }
+    }
+    $permissionHandler = $this->createMock(PermissionHandlerInterface::class);
+    $permissionHandler->method('getPermissions')->willReturn($definitions);
+    $this->container->set('user.permissions', $permissionHandler);
+    // Recreate the importer so it receives the replacement dependency too.
+    $this->container->set('markaspot_tenant_import.tenant_importer', NULL);
+    $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
   }
 
   /**

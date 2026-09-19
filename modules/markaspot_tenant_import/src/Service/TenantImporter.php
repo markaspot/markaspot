@@ -17,6 +17,8 @@ use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\user\UserInterface;
+use Drupal\user\PermissionHandlerInterface;
+use Drupal\user\RoleInterface;
 
 /**
  * Plans and applies versioned tenant configuration imports.
@@ -45,6 +47,7 @@ class TenantImporter {
     private readonly TenantImportFieldMapper $fields,
     private readonly PasswordGeneratorInterface $passwordGenerator,
     private readonly LockBackendInterface $lock,
+    private readonly PermissionHandlerInterface $permissionHandler,
   ) {}
 
   /**
@@ -298,13 +301,7 @@ class TenantImporter {
           if (!$contractor) {
             $errors[] = 'Drupal role contractor is required for org_moderator.';
           }
-          elseif ($contractor->isAdmin() || array_intersect($contractor->getPermissions(), [
-            'administer nodes',
-            'bypass node access',
-            'administer group',
-            'administer users',
-            'administer permissions',
-          ]) !== []) {
+          elseif ($this->hasAdministrativeContractorPermissions($contractor)) {
             $errors[] = 'Drupal role contractor must not grant administrative access.';
           }
           $contractorRole = $roleStorage->load('org-contractor');
@@ -1259,6 +1256,35 @@ class TenantImporter {
       $user->getRoles(),
       ['authenticated', 'tenant_admin'],
     ) !== [];
+  }
+
+  /**
+   * Rejects platform authority without maintaining a module-specific denylist.
+   */
+  private function hasAdministrativeContractorPermissions(RoleInterface $role): bool {
+    if ($role->isAdmin()) {
+      return TRUE;
+    }
+    $definitions = $this->permissionHandler->getPermissions();
+    $scopedProviders = [
+      'add dashboard status notes' => 'markaspot_dashboard',
+      'use service request management form' => 'markaspot_ui',
+    ];
+    foreach ($role->getPermissions() as $permission) {
+      // These shipped contractor capabilities are restricted in Drupal, but
+      // their access checks enforce report/organisation scope independently.
+      if (isset($scopedProviders[$permission])) {
+        if (($definitions[$permission]['provider'] ?? NULL) !== $scopedProviders[$permission]) {
+          return TRUE;
+        }
+        continue;
+      }
+      if (str_starts_with($permission, 'administer ')
+        || !empty($definitions[$permission]['restrict access'])) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**

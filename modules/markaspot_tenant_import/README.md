@@ -59,9 +59,14 @@ out but the importer does not grant either role.
 membership and a plain membership in exactly that organisation. The installed
 `org-contractor` insider role supplies report access through that membership.
 It does not grant global moderation, editorial or tenant-administration rights.
-Preflight rejects administrative contractor roles and known global node-access
-or account/group-administration permission drift, without restoring permissions
-that an operator deliberately revoked.
+Preflight rejects administrative contractor roles, permissions marked
+`restrict access`, and permissions beginning with `administer `. The two shipped
+scoped capabilities `add dashboard status notes` and
+`use service request management form` are explicit exceptions only when their
+definitions identify `markaspot_dashboard` and `markaspot_ui` respectively as the
+provider. Missing or conflicting definitions are rejected. Permission
+definitions cover new modules and custom restricted permissions without an
+evolving denylist. Permissions that an operator revoked are never restored.
 The contractor access model prevents access to other organisations' reports,
 reporter contact data, internal remarks and responsibility reassignment.
 
