@@ -210,13 +210,31 @@ Runtime input supported by both bootstrap and subsequent imports:
 - `boilerplates`: owned plain-text templates, applied by dedicated bootstrap.
 - Existing platform name, email, address, client name and short name.
 
-`logo_file` is applied by bootstrap only. It requires `--assets-dir`, realpath
-containment, and a valid PNG no larger than 500 KiB or 4096 pixels per side.
-Content-addressed files make repeat imports idempotent. Failed writes remove only
-newly created logo bytes; existing logo files are preserved. SVG and font upload
-are not supported by this command. The single supplied logo is used for both
-light and dark themes. A separately configured dark logo is preserved on repeat
-imports; a dark logo that follows the previous light logo follows its replacement.
+`tenant.logo_file` supplies the light-theme logo. Optional
+`tenant.logo_dark_file` supplies an independent dark-theme logo. Both are applied
+by bootstrap only and require `--assets-dir`, realpath containment, and a valid
+PNG no larger than 500 KiB or 4096 pixels per side. Both assets are validated
+before any provisioning writes. SVG and font uploads are not supported.
+
+```json
+{
+  "tenant": {
+    "logo_file": "logos/municipality-light.png",
+    "logo_dark_file": "logos/municipality-dark.png"
+  }
+}
+```
+
+Without an explicit dark variant, an empty dark assignment or one following the
+previous light logo follows the light replacement. Once explicitly supplied,
+the dark logo is preserved when later inputs omit `logo_dark_file`, even when
+both variants originally had identical bytes. A dark-only input preserves light.
+The regular tenant import reports both asset keys as skipped and points to
+bootstrap instead.
+
+Content-addressed files deduplicate identical PNGs. Failed writes roll back all
+new logo files, including bytes written before a file-entity save fails. Existing
+files and conflicting unowned paths are preserved.
 
 Unspecified runtime keys are preserved. Informational workbook values, including
 legal/privacy URLs, font descriptions, SMTP data and map addresses, are reported

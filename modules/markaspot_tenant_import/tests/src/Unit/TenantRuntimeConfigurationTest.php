@@ -23,7 +23,11 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
     $tenant = ['features' => ['unifiedReporting' => $config]];
     $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
     $this->assertSame($config, TenantRuntimeConfiguration::merge([], $tenant)['features']['unifiedReporting']);
-    foreach ([TRUE, ['enabled' => TRUE], array_replace($config, ['aiMode' => 'always']), $config + ['script' => 'unsafe']] as $invalid) {
+    foreach ([
+      TRUE, ['enabled' => TRUE],
+      array_replace($config, ['aiMode' => 'always']),
+      $config + ['script' => 'unsafe'],
+    ] as $invalid) {
       $this->assertNotEmpty(TenantRuntimeConfiguration::validate(['features' => ['unifiedReporting' => $invalid]]));
     }
   }
@@ -33,6 +37,8 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
    */
   public function testValidationRejectsUnsupportedAndUnsafeValues(): void {
     foreach ([
+      ['logo_file' => ['invalid']],
+      ['logo_dark_file' => ['invalid']],
       ['font_family' => 'Arial; color:red'],
       ['font_family' => "Arial\nbody"],
       ['primary_color' => 'red'],
@@ -56,6 +62,15 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
     ] as $tenant) {
       $this->assertNotEmpty(TenantRuntimeConfiguration::validate($tenant));
     }
+  }
+
+  /**
+   * Both local PNG references are accepted and not marked informational.
+   */
+  public function testSeparateThemeLogoConfiguration(): void {
+    $tenant = ['logo_file' => 'logos/light.png', 'logo_dark_file' => 'logos/dark.png'];
+    $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
+    $this->assertSame([], TenantRuntimeConfiguration::warnings($tenant));
   }
 
   /**

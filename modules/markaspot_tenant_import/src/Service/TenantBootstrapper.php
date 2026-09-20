@@ -89,12 +89,16 @@ final class TenantBootstrapper {
     if ($missingLanguages !== []) {
       throw new \RuntimeException('Install requested Drupal languages before bootstrap: ' . implode(', ', $missingLanguages));
     }
-    $asset = TenantLogoAsset::read($tenant['logo_file'] ?? '', $assetsDirectory);
+    $assets = [
+      'light' => TenantLogoAsset::read($tenant['logo_file'] ?? '', $assetsDirectory),
+      'dark' => TenantLogoAsset::read($tenant['logo_dark_file'] ?? '', $assetsDirectory),
+    ];
+    $assets = array_filter($assets, static fn(?array $asset): bool => $asset !== NULL);
     $lockName = 'markaspot_tenant_import.bootstrap';
     if ($apply && !$this->lock->acquire($lockName, 3600.0)) {
       throw new \RuntimeException('Another dedicated bootstrap is running.');
     }
-    $newFileUri = NULL;
+    $newFileUris = [];
     $transaction = NULL;
     try {
       $storage = $this->entities->getStorage('group');
@@ -120,7 +124,7 @@ final class TenantBootstrapper {
       }
       $requiredFields = [
         'field_slug', 'field_nuxt_config', 'field_service_categories', 'field_service_statuses',
-        ...($asset === NULL ? [] : ['field_logo_light', 'field_logo_dark']),
+        ...($assets === [] ? [] : ['field_logo_light', 'field_logo_dark']),
       ];
       foreach ($requiredFields as $field) {
         if (!$group->hasField($field)) {
@@ -190,7 +194,10 @@ final class TenantBootstrapper {
       elseif (array_column($membership->get('group_roles')->getValue(), 'target_id') !== ['jur-member']) {
         $membership->set('group_roles', ['jur-member'])->save();
       }
-      if ($asset !== NULL) {
+      $darkFollowsLight = $assets !== [] && ($ownership['logo_dark_explicit'] ?? FALSE) !== TRUE
+        && ($group->get('field_logo_dark')->isEmpty()
+        || $group->get('field_logo_dark')->target_id === $group->get('field_logo_light')->target_id);
+      foreach ($assets as $theme => $asset) {
         $directory = 'public://jurisdiction/bootstrap/' . $group->uuid();
         $uri = $directory . '/' . $asset['hash'] . '.png';
         $existingFiles = $this->entities->getStorage('file')->loadByProperties(['uri' => $uri]);
@@ -199,22 +206,33 @@ final class TenantBootstrapper {
           if (!$this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS)) {
             throw new \RuntimeException('Logo directory could not be prepared.');
           }
+          // writeData writes bytes before saving the file entity. Track new
+          // paths first so an entity-save failure cannot leave orphan bytes.
+          // Never claim an existing file or dangling symlink for cleanup.
+          $resolvedDirectory = $this->fileSystem->realpath($directory);
+          $destination = $resolvedDirectory === FALSE ? $uri : $resolvedDirectory . '/' . $asset['hash'] . '.png';
+          // Local stream wrappers may hide dangling links in url_stat().
+          if (is_link($destination)) {
+            throw new \RuntimeException('Logo destination must not be a symbolic link.');
+          }
+          if (!file_exists($uri)) {
+            $newFileUris[] = $uri;
+          }
           $file = $this->files->writeData($asset['bytes'], $uri, FileExists::Error);
-          $newFileUri = $uri;
         }
         elseif (!is_file($uri) || hash_file('sha256', $uri) !== $asset['hash']) {
           throw new \RuntimeException('Stored logo asset does not match its expected content hash.');
         }
         $file->setPermanent();
         $file->save();
-        // One supplied logo serves both themes until a separate dark variant
-        // is configured. Keep that explicit variant on subsequent imports.
-        $darkFollowsLight = $group->get('field_logo_dark')->isEmpty()
-          || $group->get('field_logo_dark')->target_id === $group->get('field_logo_light')->target_id;
-        $group->set('field_logo_light', ['target_id' => $file->id()]);
-        if ($darkFollowsLight) {
+        $group->set('field_logo_' . $theme, ['target_id' => $file->id()]);
+        // Preserve the existing light-only fallback, but never replace an
+        // independent dark variant unless an explicit dark asset is supplied.
+        if ($theme === 'light' && $darkFollowsLight && !isset($assets['dark'])) {
           $group->set('field_logo_dark', ['target_id' => $file->id()]);
         }
+      }
+      if ($assets !== []) {
         $group->save();
       }
       if ($validationPlan['clear'] !== []) {
@@ -265,8 +283,10 @@ final class TenantBootstrapper {
         'uuid' => $group->uuid(),
         'slug' => $tenant['slug'],
         'validation_defaults_initialized' => TRUE,
+        'logo_dark_explicit' => isset($assets['dark']) || ($ownership['logo_dark_explicit'] ?? FALSE) === TRUE,
       ]);
-      $result['rows'] = array_values(array_filter($import['rows'], static fn(array $row): bool => !($row['entity'] === 'runtime' && $row['key'] === 'logo_file')));
+      $result['rows'] = array_values(array_filter($import['rows'], static fn(array $row): bool => !($row['entity'] === 'runtime'
+        && in_array($row['key'], ['logo_file', 'logo_dark_file'], TRUE))));
       unset($transaction);
       return $result;
     }
@@ -274,8 +294,8 @@ final class TenantBootstrapper {
       if ($transaction !== NULL) {
         $transaction->rollBack();
       }
-      if ($newFileUri !== NULL) {
-        $this->fileSystem->delete($newFileUri);
+      foreach (array_unique($newFileUris) as $uri) {
+        $this->fileSystem->delete($uri);
       }
       foreach (['group', 'taxonomy_term', 'user', 'user_role', 'group_relationship', 'file'] as $type) {
         $this->entities->getStorage($type)->resetCache();

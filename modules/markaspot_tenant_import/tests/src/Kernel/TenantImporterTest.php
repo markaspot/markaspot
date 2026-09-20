@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_tenant_import\Kernel;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\MemoryStorage;
+use Drupal\Core\Extension\Extension;
 use Drupal\paragraphs\Entity\ParagraphsType;
 use Drupal\markaspot_tenant_import\Service\TenantSetup;
 use Drupal\markaspot_tenant_import\Service\TenantSetupSchema;
@@ -687,7 +688,7 @@ final class TenantImporterTest extends KernelTestBase {
     // Register the real permission provider without unrelated HTTP services.
     $handler = $this->container->get('module_handler');
     $handler->setModuleList($handler->getModuleList() + [
-      'markaspot_dashboard' => new \Drupal\Core\Extension\Extension(DRUPAL_ROOT, 'module', 'profiles/contrib/markaspot/modules/markaspot_dashboard/markaspot_dashboard.info.yml'),
+      'markaspot_dashboard' => new Extension(DRUPAL_ROOT, 'module', 'profiles/contrib/markaspot/modules/markaspot_dashboard/markaspot_dashboard.info.yml'),
     ]);
     $this->container->set('user.permissions', NULL);
     $configuration['tenant']['features']['operationsDashboard'] = TRUE;
@@ -828,6 +829,180 @@ final class TenantImporterTest extends KernelTestBase {
     finally {
       unlink($directory . '/logo.png');
       rmdir($directory);
+    }
+  }
+
+  /**
+   * Independent theme logos validate before writes and roll back together.
+   */
+  public function testDedicatedBootstrapSeparateThemeLogos(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $directory = sys_get_temp_dir() . '/bootstrap-theme-logos-' . bin2hex(random_bytes(8));
+    mkdir($directory);
+    // Real storage is required to exercise dangling symlinks (vfs cannot).
+    mkdir($directory . '/public');
+    new Settings(['file_public_path' => $directory . '/public'] + Settings::getAll());
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2uoAAAAASUVORK5CYII=');
+    file_put_contents($directory . '/light.png', $png);
+    file_put_contents($directory . '/dark.png', $png . "\n");
+    file_put_contents($directory . '/unsafe.png', '<svg onload="alert(1)"/>');
+    $configuration['tenant']['logo_file'] = 'light.png';
+    $configuration['tenant']['logo_dark_file'] = 'dark.png';
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $files = $this->container->get('entity_type.manager')->getStorage('file');
+    try {
+      foreach (['unsafe.png', '../outside.png'] as $invalid) {
+        $bad = $configuration;
+        $bad['tenant']['logo_dark_file'] = $invalid;
+        try {
+          $service->bootstrap($bad, $directory, TRUE);
+          $this->fail('Invalid dark asset was accepted.');
+        }
+        catch (\RuntimeException) {
+          $this->assertSame([], Group::loadMultiple());
+          $this->assertSame([], $files->loadMultiple());
+        }
+      }
+      // Fail inside writeData after the second PNG is written but before its
+      // managed file entity exists. Both new byte snapshots must be removed.
+      $state = $this->container->get('state');
+      $state->set('markaspot_tenant_import_test.fail_logo_file_hash', hash('sha256', $png . "\n"));
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected file entity save failure.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('Injected logo file save failure', $exception->getMessage());
+      }
+      $this->assertTrue($state->get('markaspot_tenant_import_test.logo_file_bytes_existed'));
+      $this->assertSame([], Group::loadMultiple());
+      $this->assertSame([], $files->loadMultiple());
+      $this->assertSame([], $this->container->get('file_system')->scanDirectory('public://jurisdiction/bootstrap', '/\.png$/'));
+      $state->delete('markaspot_tenant_import_test.fail_logo_file_hash');
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', TRUE);
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected final logo save failure.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('Injected logo save failure', $exception->getMessage());
+      }
+      $this->assertSame([], Group::loadMultiple());
+      $this->assertSame([], $files->loadMultiple());
+      $this->assertSame([], $this->container->get('file_system')->scanDirectory('public://jurisdiction/bootstrap', '/\.png$/'));
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', FALSE);
+      $first = $service->bootstrap($configuration, $directory, TRUE);
+      $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertCount(2, $files->loadMultiple());
+      $group = Group::load($first['jurisdiction_id']);
+      $light_id = $group->get('field_logo_light')->target_id;
+      $dark_id = $group->get('field_logo_dark')->target_id;
+      $this->assertNotSame($light_id, $dark_id);
+      $this->assertSame(hash('sha256', $png), hash_file('sha256', $files->load($light_id)->getFileUri()));
+      $this->assertSame(hash('sha256', $png . "\n"), hash_file('sha256', $files->load($dark_id)->getFileUri()));
+      unset($configuration['tenant']['logo_dark_file']);
+      file_put_contents($directory . '/light.png', $png . "\n\n");
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertNotSame($light_id, $group->get('field_logo_light')->target_id);
+      $this->assertSame($dark_id, $group->get('field_logo_dark')->target_id);
+      $light_id = $group->get('field_logo_light')->target_id;
+      unset($configuration['tenant']['logo_file']);
+      $configuration['tenant']['logo_dark_file'] = 'dark.png';
+      file_put_contents($directory . '/dark.png', $png . "\n\n\n");
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertSame($light_id, $group->get('field_logo_light')->target_id);
+      $this->assertNotSame($dark_id, $group->get('field_logo_dark')->target_id);
+      $this->assertCount(4, $files->loadMultiple());
+
+      // An explicit same-byte dark variant is still independent of light.
+      $configuration['tenant']['logo_dark_file'] = 'light.png';
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertSame($light_id, $group->get('field_logo_dark')->target_id);
+      $configuration['tenant']['logo_file'] = 'light.png';
+      unset($configuration['tenant']['logo_dark_file']);
+      file_put_contents($directory . '/light.png', $png . "\n\n\n\n");
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertNotSame($light_id, $group->get('field_logo_light')->target_id);
+      $this->assertSame($light_id, $group->get('field_logo_dark')->target_id);
+
+      // A collision on the second PNG rolls back the new first PNG, but must
+      // not remove the pre-existing unowned file or the previous assignments.
+      $old_light = $group->get('field_logo_light')->target_id;
+      $old_dark = $group->get('field_logo_dark')->target_id;
+      $file_count = count($files->loadMultiple());
+      $configuration['tenant']['logo_dark_file'] = 'dark.png';
+      $new_light = $png . "\n\n\n\n\n";
+      $new_dark = $png . "\n\n\n\n\n\n";
+      file_put_contents($directory . '/light.png', $new_light);
+      file_put_contents($directory . '/dark.png', $new_dark);
+      $public_directory = 'public://jurisdiction/bootstrap/' . $group->uuid();
+      $collision_uri = $public_directory . '/' . hash('sha256', $new_dark) . '.png';
+      file_put_contents($collision_uri, 'unowned existing bytes');
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected existing-file collision.');
+      }
+      catch (\Exception) {
+        $this->assertSame('unowned existing bytes', file_get_contents($collision_uri));
+        $this->assertFileDoesNotExist($public_directory . '/' . hash('sha256', $new_light) . '.png');
+        $this->assertCount($file_count, $files->loadMultiple());
+        $group = Group::load($first['jurisdiction_id']);
+        $this->assertSame($old_light, $group->get('field_logo_light')->target_id);
+        $this->assertSame($old_dark, $group->get('field_logo_dark')->target_id);
+      }
+      finally {
+        unlink($collision_uri);
+      }
+      // Core may rename over a dangling symlink despite FileExists::Error.
+      // Reject it before writeData so neither the link nor its target changes.
+      $target = $directory . '/absent-target.png';
+      $link_path = $this->container->get('file_system')->realpath($public_directory) . '/' . hash('sha256', $new_dark) . '.png';
+      symlink($target, $link_path);
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected symbolic-link destination rejection.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('must not be a symbolic link', $exception->getMessage());
+        $this->assertTrue(is_link($link_path));
+        $this->assertSame($target, readlink($link_path));
+        $this->assertFileDoesNotExist($target);
+        $this->assertFileDoesNotExist($public_directory . '/' . hash('sha256', $new_light) . '.png');
+        $this->assertCount($file_count, $files->loadMultiple());
+        $this->assertSame([], $files->loadByProperties(['uri' => $collision_uri]));
+      }
+      finally {
+        unlink($collision_uri);
+      }
+
+    }
+    finally {
+      foreach (['light.png', 'dark.png', 'unsafe.png'] as $name) {
+        unlink($directory . '/' . $name);
+      }
+      $this->container->get('file_system')->deleteRecursive($directory . '/public');
+      rmdir($directory);
+    }
+  }
+
+  /**
+   * The regular import explicitly reports both theme assets as skipped.
+   */
+  public function testThemeLogoPreviewRequiresBootstrap(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['tenant']['logo_file'] = 'light.png';
+    $configuration['tenant']['logo_dark_file'] = 'dark.png';
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id());
+    $rows = array_values(array_filter($result['rows'], static fn(array $row): bool => $row['entity'] === 'runtime'
+      && in_array($row['key'], ['logo_file', 'logo_dark_file'], TRUE)));
+    $this->assertSame(['logo_file', 'logo_dark_file'], array_column($rows, 'key'));
+    $this->assertSame(['skip', 'skip'], array_column($rows, 'action'));
+    foreach ($rows as $row) {
+      $this->assertStringContainsString('mas:tenant:bootstrap', $row['reason']);
     }
   }
 

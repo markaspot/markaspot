@@ -10,6 +10,7 @@ declare(strict_types=1);
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\taxonomy\TermInterface;
+use Drupal\file\FileInterface;
 
 /**
  * Implements hook_group_relationship_insert().
@@ -45,5 +46,16 @@ function markaspot_tenant_import_test_group_presave(GroupInterface $group): void
     && $group->hasField('field_logo_light')
     && !$group->get('field_logo_light')->isEmpty()) {
     throw new RuntimeException('Injected logo save failure.');
+  }
+}
+
+/**
+ * Implements hook_file_presave().
+ */
+function markaspot_tenant_import_test_file_presave(FileInterface $file): void {
+  $hash = \Drupal::state()->get('markaspot_tenant_import_test.fail_logo_file_hash');
+  if (is_string($hash) && str_ends_with($file->getFileUri(), '/' . $hash . '.png')) {
+    \Drupal::state()->set('markaspot_tenant_import_test.logo_file_bytes_existed', is_file($file->getFileUri()));
+    throw new RuntimeException('Injected logo file save failure.');
   }
 }
