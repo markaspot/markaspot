@@ -66,6 +66,7 @@ class PasswordlessAuthController extends ControllerBase {
     'review ai duplicates' => 'review ai duplicates',
     'view ai sentiment' => 'view ai sentiment',
     'access dashboard kpis' => 'access dashboard kpis',
+    'use service request management form' => 'use service request management form',
   ];
 
   /**

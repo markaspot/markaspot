@@ -2255,4 +2255,19 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     }
   }
 
+  /**
+   * Management form capability follows the actual Drupal permission grant.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testManagementFormCapabilityFollowsGrant(): void {
+    $service = $this->controller;
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(AccountInterface::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'use service request management form');
+      $this->assertSame($granted ? ['use service request management form'] : [], $method->invoke($service, $account));
+    }
+  }
+
 }
