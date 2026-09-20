@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Drupal\markaspot_tenant_import\Drush\Commands;
 
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\markaspot_tenant_import\Service\TenantDemoContent;
+use Drupal\user\UserInterface;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -18,7 +21,11 @@ final class TenantDemoContentCommands extends DrushCommands {
   /**
    * Constructs the command.
    */
-  public function __construct(private readonly TenantDemoContent $demo) {
+  public function __construct(
+    private readonly TenantDemoContent $demo,
+    private readonly AccountSwitcherInterface $accountSwitcher,
+    private readonly EntityTypeManagerInterface $entities,
+  ) {
     parent::__construct();
   }
 
@@ -35,7 +42,8 @@ final class TenantDemoContentCommands extends DrushCommands {
       $container->get('database'),
       $container->get('file_system'),
       $container->get('markaspot_open311.processor'),
-    ));
+      $container->get('current_user'),
+    ), $container->get('account_switcher'), $container->get('entity_type.manager'));
   }
 
   /**
@@ -70,9 +78,22 @@ final class TenantDemoContentCommands extends DrushCommands {
     if (!is_array($data) || !is_string($assets) || !is_string($options['expected-site-uuid'] ?? NULL) || $jurisdiction === FALSE) {
       throw new \RuntimeException('Fixture object, expected site UUID and positive jurisdiction ID are required.');
     }
-    return new RowsOfFields([
-      $this->demo->seed($data, $assets, $options['expected-site-uuid'], $jurisdiction, !empty($options['confirm-test-data']), !empty($options['apply'])),
-    ]);
+    // Drush starts anonymously, but ordinary group reference validation uses
+    // the execution account. Use the dedicated installation's technical owner,
+    // without changing report ownership, fixture authors or stored permissions.
+    $operator = $this->entities->getStorage('user')->load(1);
+    if (!$operator instanceof UserInterface || !$operator->isActive() || !$operator->hasPermission('administer group')) {
+      throw new \RuntimeException('An active technical administrator with group administration permission is required.');
+    }
+    $this->accountSwitcher->switchTo($operator);
+    try {
+      return new RowsOfFields([
+        $this->demo->seed($data, $assets, $options['expected-site-uuid'], $jurisdiction, !empty($options['confirm-test-data']), !empty($options['apply'])),
+      ]);
+    }
+    finally {
+      $this->accountSwitcher->switchBack();
+    }
   }
 
 }

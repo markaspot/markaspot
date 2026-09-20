@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
@@ -51,6 +52,7 @@ final class TenantDemoContent {
     private readonly Connection $database,
     private readonly FileSystemInterface $fileSystem,
     private readonly GeoreportProcessorServiceInterface $processor,
+    private readonly AccountInterface $currentUser,
   ) {}
 
   /**
@@ -390,7 +392,9 @@ final class TenantDemoContent {
       'filename' => $name,
       'filemime' => $mime,
       'filesize' => filesize($path),
-      'uid' => 0,
+      // Detached private uploads are referenceable only by their uploader.
+      // The report and paragraph authors retain their explicit fixture values.
+      'uid' => (int) $this->currentUser->id(),
       'status' => 1,
     ]);
     $plan = [

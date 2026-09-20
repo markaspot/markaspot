@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_tenant_import\Kernel;
 
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -12,6 +13,7 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\markaspot_tenant_import\Service\TenantDemoContent;
+use Drupal\markaspot_tenant_import\Drush\Commands\TenantDemoContentCommands;
 use Drupal\media\Entity\MediaType;
 use Drupal\node\Entity\NodeType;
 use Drupal\paragraphs\Entity\ParagraphsType;
@@ -28,6 +30,15 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 #[TestGroup('markaspot_tenant_import')]
 #[RunTestsInSeparateProcesses]
 final class TenantDemoContentKernelTest extends KernelTestBase {
+
+  /**
+   * Registers real private storage before the test container is compiled.
+   */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+    $container->register('stream_wrapper.private', 'Drupal\Core\StreamWrapper\PrivateStream')
+      ->addTag('stream_wrapper', ['scheme' => 'private']);
+  }
 
   /**
    * {@inheritdoc}
@@ -74,16 +85,37 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
     $this->config('system.site')->set('uuid', '12345678-1234-1234-1234-123456789abc')->save();
     $this->field('user', 'user', 'field_all_groups_member', 'boolean');
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
+    GroupType::create(['id' => 'org', 'label' => 'Organisation'])->save();
+    $this->field('group', 'org', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     GroupRole::create([
       'id' => 'jur-member',
       'label' => 'Member',
       'group_type' => 'jur',
-      'scope' => 'insider',
-      'global_role' => 'authenticated',
+      'scope' => 'individual',
+      'permissions' => ['view group'],
+    ])->save();
+    foreach (['jur', 'org'] as $type) {
+      GroupRole::create([
+        'id' => $type . '-admin',
+        'label' => 'Administrator',
+        'group_type' => $type,
+        'admin' => TRUE,
+        'scope' => 'insider',
+        'global_role' => 'administrator',
+        'permissions' => [],
+      ])->save();
+    }
+    GroupRole::create([
+      'id' => 'jur-org_member',
+      'label' => 'Organisation member',
+      'group_type' => 'jur',
+      'scope' => 'individual',
       'permissions' => ['view group'],
     ])->save();
     NodeType::create(['type' => 'service_request', 'name' => 'Request'])->save();
-    $this->container->get('entity_type.manager')->getStorage('group_relationship_type')->createFromPlugin(GroupType::load('jur'), 'group_node:service_request')->save();
+    foreach (['jur', 'org'] as $type) {
+      $this->container->get('entity_type.manager')->getStorage('group_relationship_type')->createFromPlugin(GroupType::load($type), 'group_node:service_request')->save();
+    }
     foreach (['service_category', 'service_status'] as $vid) {
       Vocabulary::create(['vid' => $vid, 'name' => $vid])->save();
       $this->field('taxonomy_term', $vid, 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
@@ -92,6 +124,9 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
     $this->field('node', 'service_request', 'field_jurisdiction', 'entity_reference', [
       'target_type' => 'group',
     ], ['handler' => 'default:group', 'handler_settings' => ['target_bundles' => ['jur' => 'jur']]]);
+    $this->field('node', 'service_request', 'field_organisation', 'entity_reference', [
+      'target_type' => 'group',
+    ], ['handler' => 'default:group', 'handler_settings' => ['target_bundles' => ['org' => 'org']]], -1);
     foreach (['field_category', 'field_status'] as $field) {
       $this->field('node', 'service_request', $field, 'entity_reference', ['target_type' => 'taxonomy_term']);
     }
@@ -114,6 +149,12 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
     $this->field('node', 'service_request', 'field_attachment', 'file', [
       'target_type' => 'file',
       'uri_scheme' => 'public',
+    ], ['file_extensions' => 'txt pdf'], -1);
+    $this->setSetting('file_private_path', $this->siteDirectory . '/private');
+    $this->container->get('stream_wrapper_manager')->register();
+    $this->field('node', 'service_request', 'field_service_provider_files', 'file', [
+      'target_type' => 'file',
+      'uri_scheme' => 'private',
     ], ['file_extensions' => 'txt pdf'], -1);
     MediaType::create([
       'id' => 'request_image',
@@ -177,6 +218,7 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
       $this->container->get('database'),
       $this->container->get('file_system'),
       $processor,
+      $this->container->get('current_user'),
     );
   }
 
@@ -186,21 +228,26 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
   public function testCreatesContentAndProtectsEditedReplay(): void {
     $jur = Group::create(['type' => 'jur', 'label' => 'Synthetic jurisdiction']);
     $jur->save();
-    $jur->addMember(User::load(1));
+    $this->assertNotNull($jur->getMember(User::load(1)));
     $actor = User::create(['name' => 'synthetic-staff', 'mail' => 'staff@example.invalid', 'status' => 1]);
     $actor->save();
     $jur->addMember($actor);
+    $org = Group::create(['type' => 'org', 'label' => 'Synthetic department', 'field_jurisdiction' => $jur->id()]);
+    $org->save();
+    $this->assertNotNull($org->getMember(User::load(1)));
     foreach (['service_category' => 'Road', 'service_status' => 'Open'] as $vid => $name) {
       Term::create(['vid' => $vid, 'name' => $name, 'field_jurisdiction' => $jur->id()])->save();
     }
     $assets = sys_get_temp_dir() . '/demo-test-' . bin2hex(random_bytes(8));
     mkdir($assets);
     file_put_contents($assets . '/synthetic.txt', 'Synthetic attachment, not a real report.');
+    file_put_contents($assets . '/private.txt', 'Synthetic private attachment.');
     file_put_contents($assets . '/synthetic.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTskAAAAASUVORK5CYII='));
     $fixture = [
       'version' => 1, 'synthetic' => TRUE, 'fixture_id' => 'kernel-demo',
       'requests' => [[
         'key' => 'one', 'title' => 'Synthetic report', 'category' => 'Road', 'status' => 'Open',
+        'organisations' => ['Synthetic department'],
         'fields' => [
           'body' => 'Synthetic description',
           'field_e_mail' => 'demo@example.invalid',
@@ -212,6 +259,11 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
         ],
         'internal_remarks' => [['text' => 'Synthetic internal remark', 'author_email' => 'staff@example.invalid']],
         'files' => [
+          [
+            'field' => 'field_service_provider_files',
+            'basename' => 'private.txt',
+            'sha256' => hash_file('sha256', $assets . '/private.txt'),
+          ],
           [
             'field' => 'field_attachment',
             'basename' => 'synthetic.txt',
@@ -233,31 +285,66 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
       putenv('MARKASPOT_MAIL_MODE=mailpit');
       $service = $this->service();
       $site = (string) $this->config('system.site')->get('uuid');
-      $preview = $service->seed($fixture, $assets, $site, (int) $jur->id(), TRUE);
+      $this->container->get('current_user')->setAccount(User::load(0));
+      try {
+        $service->seed($fixture, $assets, $site, (int) $jur->id(), TRUE);
+        $this->fail('Anonymous group reference validation must remain denied.');
+      }
+      catch (\RuntimeException $error) {
+        $this->assertStringContainsString('field_jurisdiction.0.target_id', $error->getMessage());
+        $this->assertStringContainsString('field_organisation.0.target_id', $error->getMessage());
+      }
+      file_put_contents($assets . '/fixture.json', json_encode($fixture, JSON_THROW_ON_ERROR));
+      $command = TenantDemoContentCommands::create($this->container);
+      $options = [
+        'assets-dir' => $assets,
+        'expected-site-uuid' => $site,
+        'jurisdiction-id' => $jur->id(),
+        'confirm-test-data' => TRUE,
+      ];
+      $preview = $command->seed($assets . '/fixture.json', $options)->getArrayCopy()[0];
       $this->assertSame('preview', $preview['action']);
+      $this->assertSame(0, (int) $this->container->get('current_user')->id());
       $this->assertSame(0, (int) $this->container->get('entity_type.manager')->getStorage('node')->getQuery()->accessCheck(FALSE)->count()->execute());
-      $created = $service->seed($fixture, $assets, $site, (int) $jur->id(), TRUE, TRUE);
+      $options['apply'] = TRUE;
+      $created = $command->seed($assets . '/fixture.json', $options)->getArrayCopy()[0];
       $this->assertSame('created', $created['action']);
+      $this->assertSame(0, (int) $this->container->get('current_user')->id());
       $nodes = $this->container->get('entity_type.manager')->getStorage('node')->loadMultiple();
       $this->assertCount(1, $nodes);
       $node = reset($nodes);
+      $this->assertSame(0, (int) $node->getOwnerId());
+      $this->assertSame((int) $org->id(), (int) $node->get('field_organisation')->target_id);
       $this->assertSame('+49 000 000000', $node->get('field_phone')->value);
       $this->assertCount(1, $node->get('field_status_notes'));
       $this->assertSame('Synthetic status', $node->get('field_status_notes')->entity->get('field_status_note')->value);
       $this->assertSame('Synthetic internal remark', $node->get('field_internal_remark')->entity->get('field_internal_remark_text')->value);
+      $this->assertSame((int) $actor->id(), (int) $node->get('field_status_notes')->entity->get('field_author')->target_id);
+      $this->assertSame((int) $actor->id(), (int) $node->get('field_internal_remark')->entity->get('field_author')->target_id);
       $this->assertSame('Synthetic attachment, not a real report.', file_get_contents($node->get('field_attachment')->entity->getFileUri()));
+      $this->assertSame('Synthetic private attachment.', file_get_contents($node->get('field_service_provider_files')->entity->getFileUri()));
+      $this->assertSame(1, (int) $node->get('field_service_provider_files')->entity->getOwnerId());
       $this->assertNotNull($node->get('field_request_media')->entity->get('field_media_image')->entity);
-      $repeat = $service->seed($fixture, $assets, $site, (int) $jur->id(), TRUE, TRUE);
+      $repeat = $command->seed($assets . '/fixture.json', $options)->getArrayCopy()[0];
       $this->assertSame('unchanged', $repeat['action']);
       $this->assertFalse($repeat['applied']);
       $node->setTitle('Edited by an operator');
       $node->save();
       $this->expectExceptionMessage('edited or removed');
-      $service->seed($fixture, $assets, $site, (int) $jur->id(), TRUE, TRUE);
+      try {
+        $command->seed($assets . '/fixture.json', $options);
+      }
+      finally {
+        $this->assertSame(0, (int) $this->container->get('current_user')->id());
+      }
     }
     finally {
       unlink($assets . '/synthetic.txt');
+      unlink($assets . '/private.txt');
       unlink($assets . '/synthetic.png');
+      if (file_exists($assets . '/fixture.json')) {
+        unlink($assets . '/fixture.json');
+      }
       rmdir($assets);
       putenv($oldContext === FALSE ? 'MARKASPOT_DEPLOY_CONTEXT' : 'MARKASPOT_DEPLOY_CONTEXT=' . $oldContext);
       putenv($oldMail === FALSE ? 'MARKASPOT_MAIL_MODE' : 'MARKASPOT_MAIL_MODE=' . $oldMail);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_tenant_import\Unit;
 
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityConstraintViolationList;
@@ -60,6 +61,7 @@ final class TenantDemoContentTest extends UnitTestCase {
       $this->createMock(Connection::class),
       $this->createMock(FileSystemInterface::class),
       $this->createMock(GeoreportProcessorServiceInterface::class),
+      $this->createMock(AccountInterface::class),
     );
   }
 
