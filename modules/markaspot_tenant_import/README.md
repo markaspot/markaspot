@@ -224,3 +224,42 @@ that policy. Existing imports accept it as metadata with an explicit unapplied
 warning. Bootstrap also rejects child jurisdictions: this command manages exactly
 one municipality on a dedicated stack.
 No input is silently described as providing access-control guarantees.
+
+## Public setup boundary / Öffentliche Setup-Schnittstelle
+
+The module also exposes Drupal preparation independently of a hosting provider:
+
+```sh
+drush mas:tenant:setup-status --format=json
+drush mas:tenant:prepare --expected-site-uuid=<uuid> --initialize-permissions --format=json
+drush mas:tenant:prepare --expected-site-uuid=<uuid> --initialize-permissions --apply --format=json
+```
+
+These are trusted operator commands, not HTTP/chat endpoints. The operator must
+verify the target installation and exclude other writers for the entire setup
+workflow. A Drupal lock additionally serializes prepare with dedicated bootstrap.
+The Mark-a-Spot profile, shipped role configuration and enabled dashboard
+permission providers are prerequisites. No hosting provider, Excel library,
+Pro frontend or cloud repository is required by this service.
+
+Without `--apply`, prepare reports missing page configuration and the intended
+permission action without writes. The first rights initialization requires
+explicit `--initialize-permissions`; a completed marker prevents regranting even
+when that flag is supplied again. Partial/foreign markers require reviewed
+recovery. The legacy `markaspot_cloud.*` keys are deliberately retained. Status
+is read-only. JSON is a one-row list with `contract_version: 1` and the site UUID;
+callers must reject incompatible responses and confirm `applied: true` before
+recording success. This API prepares prerequisites; `mas:tenant:bootstrap` and
+`mas:tenant:import` continue to apply municipal input data.
+
+Deutsch: Das offene Modul kapselt die Drupal-Vorbereitung. Die Befehle sind für
+vertrauenswürdige Betreiber vorgesehen, keine direkte Chat- oder HTTP-API.
+Zielprüfung und Ausschluss anderer Schreiber bleiben Aufgabe des aufrufenden
+Installers; zusätzlich gilt die Drupal-Sperre des dedizierten Bootstraps.
+Mark-a-Spot-Profil, ausgelieferte Rollen und aktivierte Dashboard-Provider sind
+Voraussetzungen. Das Modul benötigt weder Cloud-Repository noch Pro-Frontend.
+Vorschau ist der Standard; erste Rechteinitialisierung braucht eine ausdrückliche
+Option. Wiederholungen erhalten spätere Rechteentzüge. Unvollständige oder fremde
+Marker stoppen den Ablauf. Die JSON-Schnittstelle liefert genau einen Datensatz
+mit Vertragsversion 1 und Site-UUID. Erst ein bestätigtes `applied: true` erlaubt
+den Erfolgsbeleg. Kommunale Daten übernehmen weiterhin Bootstrap und Importer.

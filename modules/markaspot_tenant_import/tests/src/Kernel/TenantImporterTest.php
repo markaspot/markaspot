@@ -19,6 +19,8 @@ use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_tenant_import\Exception\TenantImportValidationException;
 use Drupal\markaspot_tenant_import\Drush\Commands\TenantBootstrapCommands;
+use Drupal\markaspot_tenant_import\Drush\Commands\TenantSetupCommands;
+use Drupal\node\Entity\NodeType;
 use Drush\Attributes\DefaultTableFields;
 use Drush\Config\DrushConfig;
 use Drush\Log\DrushLoggerManager;
@@ -154,6 +156,49 @@ final class TenantImporterTest extends KernelTestBase {
     ]);
     $this->jurisdiction->save();
     $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
+  }
+
+  /**
+   * The public setup service repairs real page config and preserves repeats.
+   */
+  public function testSetupRepairsPageConfigurationWithRealInstaller(): void {
+    $this->enableModules(['node', 'gnode']);
+    $this->installEntitySchema('node');
+    NodeType::create(['type' => 'page', 'name' => 'Page'])->save();
+    FieldStorageConfig::create([
+      'entity_type' => 'node',
+      'field_name' => 'field_jurisdiction',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+    ])->save();
+    $config = $this->container->get('config.factory');
+    $config->getEditable('core.extension')->set('profile', 'markaspot')->save();
+    $uuid = $this->container->get('uuid')->generate();
+    $config->getEditable('system.site')->set('uuid', $uuid)->save();
+    $this->container->get('state')->set('markaspot_cloud.permissions_initialized', $uuid);
+    $service = $this->container->get('markaspot_tenant_import.tenant_setup');
+    $preview = $service->prepare($uuid);
+    $this->assertFalse($preview['applied']);
+    $this->assertCount(2, $preview['page_configuration_missing']);
+    $this->assertNull(FieldConfig::load('node.page.field_jurisdiction'));
+    $result = $service->prepare($uuid, FALSE, TRUE);
+    $this->assertCount(2, $result['page_configuration_created']);
+    $field = FieldConfig::load('node.page.field_jurisdiction');
+    $this->assertNotNull($field);
+    $this->assertNotNull($this->container->get('entity_type.manager')->getStorage('group_relationship_type')->load('jur-group_node-page'));
+    $field->setLabel('Locally customized')->save();
+    $repeat = $service->prepare($uuid, FALSE, TRUE);
+    $this->assertSame([], $repeat['page_configuration_created']);
+    $this->assertSame('Locally customized', FieldConfig::load('node.page.field_jurisdiction')->label());
+    $command = TenantSetupCommands::create($this->container);
+    $output = new BufferedOutput();
+    $formatter = new FormatterManager();
+    $formatter->addDefaultFormatters();
+    $formatter->write($output, 'json', $command->status(), new FormatterOptions());
+    $decoded = json_decode($output->fetch(), TRUE, flags: JSON_THROW_ON_ERROR);
+    $this->assertCount(1, $decoded);
+    $this->assertSame(1, $decoded[0]['contract_version']);
+    $this->assertSame($uuid, $decoded[0]['site_uuid']);
   }
 
   /**
