@@ -11,8 +11,10 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Session\AccountSwitcherInterface;
+use Drupal\Core\Utility\UpdateException;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -5849,10 +5851,19 @@ function markaspot_group_update_11950(array &$sandbox): string {
   $access_control_handler = \Drupal::entityTypeManager()
     ->getAccessControlHandler('node');
   $grant_storage = \Drupal::service('node.grant_storage');
-  foreach ($nodes as $node) {
-    $grants = $access_control_handler->acquireGrants($node);
-    $grant_storage->write($node, $grants);
-    $sandbox['rewritten']++;
+  if (!isset($sandbox['search_indexes_cleared'])) {
+    $sandbox['search_indexes_cleared'] = _markaspot_group_clear_content_access_indexes();
+  }
+  $indexes = _markaspot_group_start_search_api_batch_tracking();
+  try {
+    foreach ($nodes as $node) {
+      $grants = $access_control_handler->acquireGrants($node);
+      $grant_storage->write($node, $grants);
+      $sandbox['rewritten']++;
+    }
+  }
+  finally {
+    _markaspot_group_stop_search_api_batch_tracking($indexes);
   }
   $sandbox['processed'] += count($nids);
   $node_storage->resetCache($nids);
@@ -5945,11 +5956,20 @@ function markaspot_group_update_11952(array &$sandbox): string {
     /** @var \Drupal\node\NodeAccessControlHandlerInterface $access_handler */
     $access_handler = \Drupal::entityTypeManager()->getAccessControlHandler('node');
     $grant_storage = \Drupal::service('node.grant_storage');
-    foreach ($node_storage->loadMultiple($nids) as $node) {
-      // Recompute derived grants only. Saving nodes here would change content
-      // timestamps and may trigger notifications or organisation assignment.
-      $grant_storage->write($node, $access_handler->acquireGrants($node));
-      $sandbox['rewritten']++;
+    if (!isset($sandbox['search_indexes_cleared'])) {
+      $sandbox['search_indexes_cleared'] = _markaspot_group_clear_content_access_indexes();
+    }
+    $indexes = _markaspot_group_start_search_api_batch_tracking();
+    try {
+      foreach ($node_storage->loadMultiple($nids) as $node) {
+        // Recompute derived grants only. Saving nodes here would change content
+        // timestamps and may trigger notifications or organisation assignment.
+        $grant_storage->write($node, $access_handler->acquireGrants($node));
+        $sandbox['rewritten']++;
+      }
+    }
+    finally {
+      _markaspot_group_stop_search_api_batch_tracking($indexes);
     }
     $sandbox['processed'] += count($nids);
     $node_storage->resetCache($nids);
@@ -5961,4 +5981,131 @@ function markaspot_group_update_11952(array &$sandbox): string {
     'Rewrote jurisdiction read grants for %d service requests.',
     $sandbox['rewritten'],
   );
+}
+
+/**
+ * Suppresses post-request direct indexing while grant batches mark items stale.
+ *
+ * Search API's content-access hook runs from acquireGrants(). Its tracker
+ * writes must remain queued until the maintenance window has ended, otherwise
+ * the post-request destructor indexes every rebuilt report before Drush exits.
+ *
+ * @return \Drupal\search_api\IndexInterface[]
+ *   The indexes whose nested batch-tracking mode was started.
+ */
+function _markaspot_group_start_search_api_batch_tracking(): array {
+  $indexes = _markaspot_group_content_access_indexes();
+  $started = [];
+  try {
+    foreach ($indexes as $index) {
+      $index->startBatchTracking();
+      $started[] = $index;
+    }
+  }
+  catch (\Throwable $exception) {
+    _markaspot_group_stop_search_api_batch_tracking($started);
+    throw $exception;
+  }
+
+  return $started;
+}
+
+/**
+ * Clears stale access-filtered search results before grant changes take effect.
+ *
+ * @return string[]
+ *   IDs of the indexes cleared and queued for the separate index run.
+ */
+function _markaspot_group_clear_content_access_indexes(): array {
+  $cleared = [];
+  foreach (_markaspot_group_content_access_indexes() as $index) {
+    if ($index->isReadOnly()) {
+      throw new UpdateException(sprintf(
+        'Cannot clear the read-only Search API index %s before rebuilding access grants.',
+        $index->id(),
+      ));
+    }
+
+    // Do not use Index::clear(): Server::deleteAllIndexItems() catches backend
+    // errors and queues a later cleanup, leaving stale access-filtered rows
+    // readable during this update. The direct backend call must succeed now.
+    $index->reindex();
+    $server = $index->getServerInstance();
+    $server->getBackend()->deleteAllIndexItems($index);
+    Cache::invalidateTags(['search_api_list:' . $index->id()]);
+    $server_tasks = \Drupal::service('search_api.server_task_manager');
+    $server_tasks->delete($server, $index, ['deleteItems', 'deleteAllIndexItems']);
+    $pending_deletes = \Drupal::service('search_api.task_manager')
+      ->getTasksCount([
+        'server_id' => $server->id(),
+        'index_id' => $index->id(),
+        'type' => ['deleteItems', 'deleteAllIndexItems'],
+      ]);
+    if ($pending_deletes > 0) {
+      throw new UpdateException(sprintf(
+        'Search API deletion cleanup remains queued for index %s.',
+        $index->id(),
+      ));
+    }
+    $cleared[] = $index->id();
+  }
+  return $cleared;
+}
+
+/**
+ * Gets enabled Search API indexes whose entries include node-access grants.
+ *
+ * @return \Drupal\search_api\IndexInterface[]
+ *   The valid content-access indexes.
+ */
+function _markaspot_group_content_access_indexes(): array {
+  if (!\Drupal::moduleHandler()->moduleExists('search_api')) {
+    return [];
+  }
+
+  /** @var \Drupal\search_api\IndexInterface[] $indexes */
+  $indexes = \Drupal::entityTypeManager()
+    ->getStorage('search_api_index')
+    ->loadMultiple();
+
+  return _markaspot_group_filter_content_access_indexes($indexes);
+}
+
+/**
+ * Filters Search API indexes that must be cleared before grant rewrites.
+ *
+ * @param \Drupal\search_api\IndexInterface[] $indexes
+ *   Loaded Search API indexes.
+ *
+ * @return \Drupal\search_api\IndexInterface[]
+ *   Enabled indexes with valid content-access tracking.
+ */
+function _markaspot_group_filter_content_access_indexes(array $indexes): array {
+  $affected = [];
+  foreach ($indexes as $index) {
+    if (!$index->hasValidTracker()
+      || !$index->status()
+      || !$index->isValidProcessor('content_access')) {
+      continue;
+    }
+    // Search API tracks both node and comment items from this processor. Do
+    // not narrow by datasource ID: custom node datasource IDs and comment-only
+    // indexes otherwise retain stale access-filtered rows or direct-index on
+    // the grant batch shutdown.
+    $affected[] = $index;
+  }
+
+  return $affected;
+}
+
+/**
+ * Leaves batch tracking without consuming the queued Search API work.
+ *
+ * @param \Drupal\search_api\IndexInterface[] $indexes
+ *   The indexes returned by _markaspot_group_start_search_api_batch_tracking().
+ */
+function _markaspot_group_stop_search_api_batch_tracking(array $indexes): void {
+  foreach ($indexes as $index) {
+    $index->stopBatchTracking();
+  }
 }

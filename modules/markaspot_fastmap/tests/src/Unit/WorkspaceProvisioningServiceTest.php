@@ -35,6 +35,7 @@ use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 
+require_once dirname(__DIR__, 3) . '/src/Validation/CategoryTranslations.php';
 require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceProvisioningService.php';
 
 /**
@@ -375,6 +376,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    *   Receives the fields set on the group entity after creation.
    * @param array $existingFields
    *   Field names the group mock reports via hasField().
+   * @param array|null $savedCategoryTranslations
+   *   Receives category translations actually saved by provisioning.
    */
   protected function setupSuccessfulProvisioning(
     int $groupId = 42,
@@ -384,6 +387,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // Mirrors the shipped profile: field_favicon exists on no install, so the
     // default here is the configuration the code actually meets.
     array $existingFields = ['field_logo_light', 'field_logo_dark'],
+    ?array &$savedCategoryTranslations = NULL,
   ): void {
     // Group storage: slug not taken.
     $this->groupStorage->method('loadByProperties')
@@ -419,13 +423,24 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $termIdCounter = 0;
     $termsById = [];
     $this->termStorage->method('create')
-      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$termsById) {
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$termsById, &$savedCategoryTranslations) {
         $termIdCounter++;
         $currentId = $termIdCounter;
         $term = $this->createMock(TermInterface::class);
         $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
-        $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('isTranslatable')->willReturn(($values['vid'] ?? '') === 'service_category');
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
+        $term->method('addTranslation')->willReturnCallback(function (string $language, array $fields) use ($values, &$savedCategoryTranslations) {
+          $translation = $this->createMock(TermInterface::class);
+          $translation->expects($this->once())->method('save')->willReturnCallback(function () use ($values, $language, $fields, &$savedCategoryTranslations) {
+            $savedCategoryTranslations[] = ['category' => $values['name'], 'language' => $language, 'name' => $fields['name']];
+            return 1;
+          });
+          return $translation;
+        });
         $term->method('label')->willReturn($values['name'] ?? '');
         $termsById[$currentId] = $term;
         return $term;
@@ -647,6 +662,43 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Approved multilingual claims and project context survive provisioning.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testApprovedProjectContextAndClaimsAreProvisioned(): void {
+    $created = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $created);
+    $claims = ['de' => 'Bäume vor Ort erfassen.', 'fr' => 'Observer les arbres du quartier'];
+    $prompt = 'Inventory healthy trees. State uncertainty about species.';
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['de' => ['Gesunder Baum'], 'fr' => ['Arbre sain']],
+      'language' => 'de',
+      'client_claim' => $claims,
+      'ai_system_prompt' => $prompt,
+    ]));
+    $config = json_decode($created['field_nuxt_config'], TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame($claims, $config['client']['claim']);
+    $this->assertSame($prompt, $created['field_ai_system_prompt']);
+    $this->assertArrayNotHasKey('tagline', $config['client']);
+  }
+
+  /**
+   * Service callers cannot bypass translation validation or mutate a tenant.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testIncompleteClaimsFailBeforeAnyEntityCreation(): void {
+    $this->groupStorage->expects($this->never())->method('create');
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Workspace claims must cover all selected languages');
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['en' => ['Trees'], 'fr' => ['Arbres']],
+      'client_claim' => ['en' => 'Map local trees'],
+    ]));
+  }
+
+  /**
    * Tests successful workspace provisioning.
    *
    * @covers ::provisionWorkspace
@@ -668,6 +720,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE);
     $this->assertTrue($nuxtConfig['features']['passwordless']);
+    $this->assertArrayNotHasKey('claim', $nuxtConfig['client']);
+    $this->assertArrayNotHasKey('field_ai_system_prompt', $createdGroupFields);
 
     // field_tier is NEVER set in the create() payload. Stripe webhook is the
     // only path that activates a tier.
@@ -1097,7 +1151,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    */
   public function testProvisionWorkspaceRejectsEmptyStringCategories(): void {
     $this->expectException(\RuntimeException::class);
-    $this->expectExceptionMessage('categories must contain at least one non-empty string');
+    $this->expectExceptionMessage('Every category requires a non-empty translation');
 
     $this->service->provisionWorkspace($this->validData(['categories' => ['', '  ']]));
   }
@@ -1167,7 +1221,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * @covers ::provisionWorkspace
    */
   public function testProvisionWorkspaceMultilingualCategories(): void {
-    $this->setupSuccessfulProvisioning();
+    $saved = [];
+    $this->setupSuccessfulProvisioning(savedCategoryTranslations: $saved);
 
     $result = $this->service->provisionWorkspace($this->validData([
       'categories' => [
@@ -1179,6 +1234,54 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->assertEquals(2, $result['categories']);
     $this->assertEquals(42, $result['group_id']);
+    $this->assertSame([
+      ['category' => 'Road Damage', 'language' => 'de', 'name' => 'Strassenschaden'],
+      ['category' => 'Flood', 'language' => 'de', 'name' => 'Hochwasser'],
+    ], $saved);
+  }
+
+  /**
+   * Malformed translations are rejected before provisioning writes anything.
+   */
+  public function testIncompleteTranslationsDoNotStartProvisioning(): void {
+    $this->database->expects($this->never())->method('startTransaction');
+    $this->groupStorage->expects($this->never())->method('create');
+    $this->expectException(\RuntimeException::class);
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['en' => ['Road', 'Light'], 'fr' => ['Route', '']],
+      'language' => 'en',
+    ]));
+  }
+
+  /**
+   * An untranslatable category bundle must not silently drop translations.
+   */
+  public function testUntranslatableCategoryFailsBeforeTermSave(): void {
+    $term = $this->createMock(TermInterface::class);
+    $term->method('isTranslatable')->willReturn(FALSE);
+    $term->expects($this->never())->method('save');
+    $this->termStorage->method('create')->willReturn($term);
+    $method = new \ReflectionMethod($this->service, 'createCategoryTerms');
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Category translations are not enabled');
+    $method->invoke($this->service, $this->termStorage, 42, ['en' => ['Lighting'], 'fr' => ['Éclairage']], 'en');
+  }
+
+  /**
+   * Bundle translation alone cannot make an untranslatable name field work.
+   */
+  public function testUntranslatableCategoryNameFailsBeforeTermSave(): void {
+    $term = $this->createMock(TermInterface::class);
+    $term->method('isTranslatable')->willReturn(TRUE);
+    $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+    $nameDefinition->method('isTranslatable')->willReturn(FALSE);
+    $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
+    $term->expects($this->never())->method('save');
+    $this->termStorage->method('create')->willReturn($term);
+    $method = new \ReflectionMethod($this->service, 'createCategoryTerms');
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Category translations are not enabled');
+    $method->invoke($this->service, $this->termStorage, 42, ['en' => ['Lighting'], 'fr' => ['Éclairage']], 'en');
   }
 
   /**
@@ -1612,21 +1715,15 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests provisioning with invalid language falls back to first available.
+   * Tests invalid primary languages fail before provisioning.
    *
    * @covers ::provisionWorkspace
    */
-  public function testProvisionWorkspaceInvalidLanguageFallback(): void {
-    $this->setupSuccessfulProvisioning();
-
-    $result = $this->service->provisionWorkspace($this->validData([
-      'categories' => [
-        'en' => ['Road Damage'],
-      ],
-      'language' => 'xx',
-    ]));
-
-    $this->assertEquals(42, $result['group_id']);
+  public function testProvisionWorkspaceRejectsInvalidLanguage(): void {
+    $this->database->expects($this->never())->method('startTransaction');
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Unsupported category language');
+    $this->service->provisionWorkspace($this->validData(['language' => 'xx']));
   }
 
   /**
@@ -1915,7 +2012,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term = $this->createMock(TermInterface::class);
         $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
-        $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('isTranslatable')->willReturn(($values['vid'] ?? '') === 'service_category');
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
+        $translation = $this->createMock(TermInterface::class);
+        $term->method('addTranslation')->willReturn($translation);
         $term->method('label')->willReturn($values['name'] ?? '');
         $termsById[$currentId] = $term;
         return $term;
@@ -2378,6 +2480,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(TRUE);
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
 
         // Track translation calls with the term name context.
         $term->method('addTranslation')
@@ -2477,6 +2582,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(TRUE);
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
         $term->method('addTranslation')
           ->willReturnCallback(function (string $lang, array $data) use ($values, &$translationCalls) {
             $translationCalls[] = [
@@ -2570,6 +2678,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term->method('id')->willReturn($termIdCounter);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(TRUE);
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
         $term->method('addTranslation')
           ->willReturnCallback(function (string $lang, array $data) use (&$translationCalls) {
             $translationCalls[] = ['lang' => $lang, 'name' => $data['name']];
@@ -2646,11 +2757,16 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->groupStorage->method('create')->willReturn($group);
 
     $this->termStorage->method('create')
-      ->willReturnCallback(function () {
+      ->willReturnCallback(function (array $values) {
         $term = $this->createMock(TermInterface::class);
         $term->method('id')->willReturn(1);
         $term->method('save')->willReturn(1);
-        $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('isTranslatable')->willReturn(($values['vid'] ?? '') === 'service_category');
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
+        $translation = $this->createMock(TermInterface::class);
+        $term->method('addTranslation')->willReturn($translation);
         return $term;
       });
 
@@ -2743,11 +2859,16 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->groupStorage->method('create')->willReturn($group);
 
     $this->termStorage->method('create')
-      ->willReturnCallback(function () {
+      ->willReturnCallback(function (array $values) {
         $term = $this->createMock(TermInterface::class);
         $term->method('id')->willReturn(1);
         $term->method('save')->willReturn(1);
-        $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('isTranslatable')->willReturn(($values['vid'] ?? '') === 'service_category');
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
+        $translation = $this->createMock(TermInterface::class);
+        $term->method('addTranslation')->willReturn($translation);
         return $term;
       });
 
@@ -3215,6 +3336,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(TRUE);
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
         $term->method('addTranslation')
           ->willReturnCallback(function (string $lang, array $data) use ($currentId, $isStatus, $record) {
             if ($isStatus) {
@@ -3332,7 +3456,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term = $this->createMock(TermInterface::class);
         $term->method('id')->willReturn(count($captured));
         $term->method('save')->willReturn(1);
-        $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('isTranslatable')->willReturn(($values['vid'] ?? '') === 'service_category');
+        $nameDefinition = $this->createMock(\Drupal\Core\Field\FieldDefinitionInterface::class);
+        $nameDefinition->method('isTranslatable')->willReturn(TRUE);
+        $term->method('getFieldDefinition')->with('name')->willReturn($nameDefinition);
+        $translation = $this->createMock(TermInterface::class);
+        $term->method('addTranslation')->willReturn($translation);
         return $term;
       });
 

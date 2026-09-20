@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Service;
 
+use Psr\Http\Message\ResponseInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -211,7 +212,7 @@ class NlpClientService {
    *
    * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  protected function request(string $method, string $path, array $payload, int $timeout): \Psr\Http\Message\ResponseInterface {
+  protected function request(string $method, string $path, array $payload, int $timeout): ResponseInterface {
     $url = $this->getServiceUrl() . $path;
 
     $options = [

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_ai\Unit;
 
+use Drupal\media\MediaInterface;
+use Drupal\file\FileInterface;
+use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
@@ -18,9 +21,13 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_ai\Service\AttributeFillingService;
 use Drupal\markaspot_ai\Service\TokenTrackingService;
+use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\ParagraphInterface;
 use Drupal\Tests\UnitTestCase;
+use Drupal\Core\State\StateInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -84,6 +91,8 @@ class AttributeFillingServiceTest extends UnitTestCase {
       $fileSystem,
       $languageManager,
       $database,
+      $this->createMock(StateInterface::class),
+      $this->createMock(TimeInterface::class),
     );
   }
 
@@ -776,6 +785,161 @@ class AttributeFillingServiceTest extends UnitTestCase {
       ->willReturn($fieldItem);
 
     return $node;
+  }
+
+  /**
+   * Hosted attribute images are preprocessed and failed blur yields no image.
+   */
+  public function testBlurForAttributeImages(): void {
+    foreach ([FALSE, TRUE] as $fails) {
+      $service = $this->getMockBuilder(AttributeFillingService::class)
+        ->disableOriginalConstructor()
+        ->onlyMethods(['getStyledImagePath', 'parseServiceDefinition', 'getJurisdictionPrompt'])
+        ->getMock();
+      $service->method('getStyledImagePath')->willReturn('data://text/plain;base64,' . base64_encode('synthetic image'));
+      $vision = $this->createMock(ImageProcessingService::class);
+      $vision->expects($this->never())->method('isBlurRequired');
+      $blur = $vision->expects($this->exactly($fails ? 2 : 1))->method('blurSensitiveAreas')->with('synthetic image', $this->callback('is_string'));
+      if ($fails) {
+        $blur->willThrowException(new \RuntimeException('Blur unavailable.'));
+      }
+      else {
+        $blur->willReturn(['contents' => 'processed image']);
+      }
+      (new \ReflectionProperty($service, 'imageProcessing'))->setValue($service, $vision);
+      (new \ReflectionProperty($service, 'logger'))->setValue($service, $this->logger);
+      (new \ReflectionProperty($service, 'state'))->setValue($service, $this->createMock(StateInterface::class));
+      $time = $this->createMock(TimeInterface::class);
+      $time->method('getCurrentTime')->willReturn(100000);
+      (new \ReflectionProperty($service, 'time'))->setValue($service, $time);
+      $config = $this->getConfigFactoryStub(['markaspot_vision.settings' => ['enable_blur_preprocessing' => TRUE]]);
+      (new \ReflectionProperty($service, 'configFactory'))->setValue($service, $config);
+      $file = $this->createMock(FileInterface::class);
+      $file->method('getFileUri')->willReturn('synthetic.png');
+      $image_field = $this->createMock(FieldItemListInterface::class);
+      $image_field->method('isEmpty')->willReturn(FALSE);
+      $image_field->method('__get')->with('entity')->willReturn($file);
+      $media = $this->createMock(MediaInterface::class);
+      $media->method('hasField')->willReturn(TRUE);
+      $media->method('get')->willReturn($image_field);
+      $items = $this->createMock(EntityReferenceFieldItemListInterface::class);
+      $items->method('isEmpty')->willReturn(FALSE);
+      $items->method('referencedEntities')->willReturn([$media]);
+      $node = $this->createMock(NodeInterface::class);
+      $category = $this->createMock(FieldItemListInterface::class);
+      $category->method('__get')->with('entity')->willReturn($this->createMock(TermInterface::class));
+      $fields = ['field_request_media', 'field_category'];
+      $node->method('hasField')->willReturnCallback(static fn ($field) => in_array($field, $fields, TRUE));
+      $node->method('get')->willReturnMap([['field_request_media', $items], ['field_category', $category]]);
+      $node->method('getTitle')->willReturn('Synthetic report');
+      $images = $service->getNodeImages($node);
+      if ($fails) {
+        self::assertSame([], $images);
+        $service->method('parseServiceDefinition')->willReturn([
+          'colour' => ['code' => 'colour', 'datatype' => 'string'],
+        ]);
+        $service->method('getJurisdictionPrompt')->willReturn('');
+        $client = $this->createMock(AiClientService::class);
+        $client->method('resolveChatModel')->willReturn('configured');
+        $client->expects($this->once())->method('chat')->with($this->callback(static function ($messages): bool {
+          self::assertCount(1, $messages[1]['content']);
+          self::assertSame('text', $messages[1]['content'][0]['type']);
+          return TRUE;
+        }), $this->anything())->willReturn([]);
+        (new \ReflectionProperty($service, 'aiClient'))->setValue($service, $client);
+        $config = $this->getConfigFactoryStub(['markaspot_ai.settings' => []]);
+        (new \ReflectionProperty($service, 'configFactory'))->setValue($service, $config);
+        self::assertNull($service->fillAttributes($node, TRUE, 'en', FALSE));
+      }
+      else {
+        self::assertSame('data:image/jpeg;base64,' . base64_encode('processed image'), $images[0]['image_url']['url']);
+      }
+    }
+  }
+
+  /**
+   * Required blur fails closed before accessing media if Vision is unavailable.
+   */
+  #[DataProvider('requiredModes')]
+  public function testMissingVisionWithRequiredBlur(bool $auto): void {
+    $previous = getenv('MARKASPOT_BLUR_REQUIRED');
+    $url = getenv('MARKASPOT_BLUR_URL');
+    putenv($auto ? 'MARKASPOT_BLUR_REQUIRED' : 'MARKASPOT_BLUR_REQUIRED="true"');
+    putenv('MARKASPOT_BLUR_URL=https://platform.example/blur');
+    try {
+      $service = $this->createService();
+      $this->logger->expects($this->once())->method('error')->with($this->callback(static fn ($message) => str_contains($message, 'MARKASPOT_BLUR_REQUIRED') && str_contains($message, 'markaspot_vision')));
+      $node = $this->createMock(NodeInterface::class);
+      $node->expects($this->never())->method('get');
+      self::assertSame([], $service->getNodeImages($node));
+    }
+    finally {
+      putenv($previous === FALSE ? 'MARKASPOT_BLUR_REQUIRED' : 'MARKASPOT_BLUR_REQUIRED=' . $previous);
+      putenv($url === FALSE ? 'MARKASPOT_BLUR_URL' : 'MARKASPOT_BLUR_URL=' . $url);
+    }
+  }
+
+  /**
+   * Required modes fail closed even without Vision installed.
+   */
+  public static function requiredModes(): iterable {
+    yield [FALSE];
+    yield [TRUE];
+  }
+
+  /**
+   * Chat image preparation shares the persisted advisory throttle.
+   */
+  public function testUnprotectedChatAdvisory(): void {
+    $env = ['MARKASPOT_BLUR_REQUIRED', 'MARKASPOT_BLUR_URL'];
+    $saved = [];
+    foreach ($env as $name) {
+      $saved[$name] = getenv($name);
+      putenv($name);
+    }
+    try {
+      $service = $this->getMockBuilder(AttributeFillingService::class)->disableOriginalConstructor()->onlyMethods(['getStyledImagePath'])->getMock();
+      $service->method('getStyledImagePath')->willReturn('data://text/plain;base64,' . base64_encode('synthetic original'));
+      (new \ReflectionProperty($service, 'imageProcessing'))->setValue($service, NULL);
+      (new \ReflectionProperty($service, 'logger'))->setValue($service, $this->logger);
+      $this->logger->expects($this->once())->method('warning')->with(BlurAdvisory::message()->getUntranslatedString());
+      $config = $this->getConfigFactoryStub(['markaspot_vision.settings' => ['enable_blur_preprocessing' => FALSE]]);
+      (new \ReflectionProperty($service, 'configFactory'))->setValue($service, $config);
+      $time = $this->createMock(TimeInterface::class);
+      $time->method('getCurrentTime')->willReturn(100000);
+      (new \ReflectionProperty($service, 'time'))->setValue($service, $time);
+      $last = NULL;
+      $state = $this->createMock(StateInterface::class);
+      $state->method('get')->with(BlurAdvisory::STATE_KEY)->willReturnCallback(static function () use (&$last) {
+        return $last;
+      });
+      $state->expects($this->once())->method('set')->with(BlurAdvisory::STATE_KEY, 100000)->willReturnCallback(static function ($key, $value) use (&$last) {
+        $last = $value;
+      });
+      (new \ReflectionProperty($service, 'state'))->setValue($service, $state);
+      $file = $this->createMock(FileInterface::class);
+      $file->method('getFileUri')->willReturn('synthetic.png');
+      $field = $this->createMock(FieldItemListInterface::class);
+      $field->method('__get')->with('entity')->willReturn($file);
+      $media = $this->createMock(MediaInterface::class);
+      $media->method('hasField')->willReturn(TRUE);
+      $media->method('get')->willReturn($field);
+      $items = $this->createMock(EntityReferenceFieldItemListInterface::class);
+      $items->method('referencedEntities')->willReturn([$media]);
+      $node = $this->createMock(NodeInterface::class);
+      $node->method('hasField')->willReturn(TRUE);
+      $node->method('get')->willReturn($items);
+      for ($i = 0; $i < 2; $i++) {
+        $images = $service->getNodeImages($node);
+        self::assertCount(1, $images);
+        self::assertSame('data:image/jpeg;base64,' . base64_encode('synthetic original'), $images[0]['image_url']['url']);
+      }
+    }
+    finally {
+      foreach ($saved as $name => $value) {
+        putenv($value === FALSE ? $name : "$name=$value");
+      }
+    }
   }
 
 }

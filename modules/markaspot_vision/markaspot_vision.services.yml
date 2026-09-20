@@ -7,6 +7,8 @@ services:
       - '@entity_type.manager'
       - '@file_system'
       - '@logger.factory'
+      - '@state'
+      - '@datetime.time'
   markaspot_vision.media_analysis_access_guard:
     class: Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard
     arguments:

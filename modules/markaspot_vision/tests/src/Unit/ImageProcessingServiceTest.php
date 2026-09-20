@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_vision\Unit;
 
+use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Promise\FulfilledPromise;
+use Psr\Http\Message\RequestInterface;
+use GuzzleHttp\Client;
+use Drupal\taxonomy\TermInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\image\ImageStyleInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -12,6 +21,8 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
+use Drupal\Core\State\StateInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use GuzzleHttp\ClientInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -56,6 +67,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     'OPENAI_API_KEY',
     'VISION_BLUR_URL',
     'MARKASPOT_BLUR_API_KEY',
+    'MARKASPOT_BLUR_REQUIRED',
     'MARKASPOT_BLUR_URL',
     'AI_API_KEY',
   ];
@@ -94,11 +106,15 @@ class ImageProcessingServiceTest extends UnitTestCase {
    *
    * @param array $configValues
    *   Config values for markaspot_vision.settings.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface|null $entityTypeManager
+   *   Optional entity storage test double.
+   * @param \GuzzleHttp\ClientInterface|null $httpClient
+   *   Optional provider client test double.
    *
    * @return \Drupal\markaspot_vision\Service\ImageProcessingService
    *   The service instance.
    */
-  protected function createService(array $configValues = []): ImageProcessingService {
+  protected function createService(array $configValues = [], ?EntityTypeManagerInterface $entityTypeManager = NULL, ?ClientInterface $httpClient = NULL): ImageProcessingService {
     $defaults = [
       'auth_type' => 'bearer',
       'api_key' => 'test-key',
@@ -123,11 +139,10 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')
-      ->with('markaspot_vision.settings')
       ->willReturn($config);
 
-    $httpClient = $this->createMock(ClientInterface::class);
-    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $httpClient ??= $this->createMock(ClientInterface::class);
+    $entityTypeManager ??= $this->createMock(EntityTypeManagerInterface::class);
     $this->fileSystem = $this->createMock(FileSystemInterface::class);
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
@@ -135,13 +150,107 @@ class ImageProcessingServiceTest extends UnitTestCase {
       ->with('markaspot_vision')
       ->willReturn($this->logger);
 
+    $time = $this->createMock(TimeInterface::class);
+    $time->method('getCurrentTime')->willReturn(1700000000);
+
     return new ImageProcessingService(
       $httpClient,
       $configFactory,
       $entityTypeManager,
       $this->fileSystem,
       $loggerFactory,
+      $this->createMock(StateInterface::class),
+      $time,
     );
+  }
+
+  /**
+   * Provider requests carry tenant context and stable platform policy.
+   */
+  #[DataProvider('projectContexts')]
+  public function testProjectContextReachesProviderPayload(string $tenantPrompt, string $globalPrompt, string $expected): void {
+    $image = tempnam(sys_get_temp_dir(), 'vision-context-');
+    file_put_contents($image, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='));
+    try {
+      $style = $this->createMock(ImageStyleInterface::class);
+      $style->method('buildUri')->willReturn($image);
+      $imageStorage = $this->createMock(EntityStorageInterface::class);
+      $imageStorage->method('load')->with('ai_analysis')->willReturn($style);
+
+      $promptField = $this->createMock(FieldItemListInterface::class);
+      $promptField->method('isEmpty')->willReturn($tenantPrompt === '');
+      $promptField->method('__get')->with('value')->willReturn($tenantPrompt);
+      $group = $this->createMock(GroupInterface::class);
+      $group->method('bundle')->willReturn('jur');
+      $group->method('hasField')->with('field_ai_system_prompt')->willReturn(TRUE);
+      $group->method('get')->with('field_ai_system_prompt')->willReturn($promptField);
+      $groupStorage = $this->createMock(EntityStorageInterface::class);
+      $groupStorage->method('load')->with(42)->willReturn($group);
+      $group->expects($this->never())->method('set');
+      $group->expects($this->never())->method('save');
+
+      $parent = $this->createMock(FieldItemListInterface::class);
+      $parent->method('__get')->willReturn(NULL);
+      $term = $this->createMock(TermInterface::class);
+      $term->method('id')->willReturn(73);
+      $term->method('label')->willReturn('Arbre sain');
+      $term->method('getName')->willReturn('Arbre sain');
+      $term->method('get')->with('parent')->willReturn($parent);
+      $term->method('hasField')->willReturn(FALSE);
+      $term->method('hasTranslation')->with('fr')->willReturn(TRUE);
+      $term->method('getTranslation')->with('fr')->willReturnSelf();
+      $termStorage = $this->createMock(EntityStorageInterface::class);
+      $termStorage->method('loadByProperties')
+        ->with(['vid' => 'service_category', 'status' => 1, 'field_jurisdiction' => 42])
+        ->willReturn([73 => $term]);
+      $entities = $this->createMock(EntityTypeManagerInterface::class);
+      $entities->method('getStorage')->willReturnMap([
+        ['image_style', $imageStorage], ['group', $groupStorage], ['taxonomy_term', $termStorage],
+      ]);
+      $captured = NULL;
+      $handler = function (RequestInterface $request) use (&$captured) {
+        $this->assertSame('POST', $request->getMethod());
+        $captured = json_decode((string) $request->getBody(), TRUE, 512, JSON_THROW_ON_ERROR);
+        return new FulfilledPromise(new Response(200, [], json_encode(['choices' => [['message' => ['content' => json_encode([
+          'category' => 73, 'is_reportable_issue' => TRUE, 'description' => 'Arbre sain',
+          'alt_text' => ['Arbre', 'Arbre'], 'hazard_flag' => FALSE, 'hazard_issues' => [],
+          'hazard_level' => 0, 'hazard_category' => NULL, 'privacy_flag' => FALSE,
+          'privacy_issues' => [], 'privacy_image_flags' => [FALSE, FALSE], 'attributes' => [],
+        ])]]]])));
+      };
+      $http = new Client(['handler' => $handler]);
+      $service = $this->createService(['system_prompt' => $globalPrompt], $entities, $http);
+      $this->assertNotNull($service->processImages([$image, $image], 'fr', 42));
+      $system = $captured['messages'][0]['content'][0]['text'];
+      $user = $captured['messages'][1]['content'];
+      $this->assertSame('system', $captured['messages'][0]['role']);
+      $this->assertStringContainsString('Project context (JSON string): ' . json_encode($expected), $system);
+      $this->assertStringContainsString('healthy trees', $system);
+      $this->assertStringContainsString('current tenant category IDs', $system);
+      $this->assertStringContainsString('in French', $system);
+      $this->assertStringContainsString('exactly 2 booleans', $system);
+      $this->assertStringContainsString('Do not invent measurements', $system);
+      $this->assertStringContainsString('"tid":73', $user[0]['text']);
+      $this->assertStringContainsString('Arbre sain', $user[0]['text']);
+      $this->assertCount(3, $user);
+      $this->assertSame('image_url', $user[1]['type']);
+      $this->assertTrue($captured['response_format']['json_schema']['strict']);
+    }
+    finally {
+      unlink($image);
+    }
+  }
+
+  /**
+   * Tenant overrides, fallback and empty configuration retain platform rules.
+   */
+  public static function projectContexts(): array {
+    return [
+      'tenant context' => ['Inventory healthy trees.', 'Municipal defects.', 'Inventory healthy trees.'],
+      'global fallback' => ['', 'Record trail conditions.', 'Record trail conditions.'],
+      'whitespace fallback' => ['  ', 'Record trail conditions.', 'Record trail conditions.'],
+      'no configured context' => ['', '', ''],
+    ];
   }
 
   /**
@@ -270,9 +379,9 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests payload omits max_tokens for vision models.
+   * Tests token limits do not depend on model names.
    */
-  public function testPrepareRequestPayloadVisionModelNoMaxTokens(): void {
+  public function testPrepareRequestPayloadVisionModelMaxTokens(): void {
     $service = $this->createService([
       'max_tokens' => 300,
     ]);
@@ -282,7 +391,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
     $payload = $this->invokeMethod($service, 'prepareRequestPayload', [$messages, $apiConfig]);
 
-    $this->assertArrayNotHasKey('max_tokens', $payload);
+    $this->assertSame(300, $payload['max_tokens']);
   }
 
   /**
@@ -430,8 +539,10 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $instruction = $this->invokeMethod($service, 'buildReportabilityInstruction', []);
 
     $this->assertStringContainsString('is_reportable_issue', $instruction);
-    // True case: a real public-space issue.
-    $this->assertStringContainsString('reportable public-space issue', $instruction);
+    // True case: a project-relevant observation, including positive findings.
+    $this->assertStringContainsString('healthy trees', $instruction);
+    $this->assertStringContainsString('current tenant categories', $instruction);
+    $this->assertStringContainsString('indoor construction', $instruction);
     // False case: off-domain content.
     $this->assertStringContainsString('portrait or selfie', $instruction);
     // It must NOT block: best-guess category is still returned.
@@ -541,6 +652,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * Tests resolveBlurUrl: config value wins over both ENV names.
    */
   public function testResolveBlurUrlConfigTakesPrecedence(): void {
+    putenv('MARKASPOT_BLUR_REQUIRED=0');
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
     putenv('VISION_BLUR_URL=https://legacy.example/blur');
 

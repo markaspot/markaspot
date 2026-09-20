@@ -22,12 +22,14 @@ class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
    * {@inheritdoc}
    */
   public function alter(ContainerBuilder $container) {
+    $this->alterJsonApiReadLanguage($container);
+
     // Override the JSON:API entity resource controller with our cached version.
     // Guard: only when the jsonapi module is enabled (service must exist).
     // KNOWN CONFLICT (dormant): jsonapi_extras' jsonapi_defaults submodule
     // would also setClass() on this service; whichever alter runs last wins
     // silently and the loser's behavior is dropped. jsonapi_defaults is NOT
-    // enabled on this platform — if that ever changes, CachedCountEntityResource
+    // enabled on this platform. If that changes, CachedCountEntityResource
     // must extend the jsonapi_defaults resource class instead of core's.
     if ($container->has('jsonapi.entity_resource')) {
       $definition = $container->getDefinition('jsonapi.entity_resource');
@@ -64,6 +66,37 @@ class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
       $definition = $container->getDefinition('json_form.object_helper');
       $definition->setClass('Drupal\markaspot_nuxt\ExtendedObjectHelper');
     }
+  }
+
+  /**
+   * Adds API read negotiation only when the JSON:API module is available.
+   */
+  private function alterJsonApiReadLanguage(ContainerBuilder $container): void {
+    if (!$container->has('jsonapi.entity_resource')) {
+      // Reduced kernels and module-install bootstraps can enable Nuxt before
+      // JSON:API. Its base-path parameter does not exist in those containers.
+      foreach (['jsonapi_read_language', 'jsonapi_entity_repository', 'jsonapi_page_cache_request_policy'] as $suffix) {
+        $container->removeDefinition('markaspot_nuxt.' . $suffix);
+      }
+      return;
+    }
+
+    // Only the Internal Page Cache middleware needs a URL-cache bypass.
+    // Decorating the shared policy would also disable normal HTTP caching.
+    if ($container->hasDefinition('http_middleware.page_cache')) {
+      $container->getDefinition('http_middleware.page_cache')
+        ->replaceArgument(1, new Reference('markaspot_nuxt.jsonapi_page_cache_request_policy'));
+    }
+
+    // All JSON:API resource reads (including collections and includes) select
+    // their translation before access checks in this service. The converter
+    // also needs it for the initial access check on individual resource routes.
+    foreach (['jsonapi.entity_access_checker' => 3, 'paramconverter.jsonapi.entity_uuid' => 1] as $service => $argument) {
+      if ($container->hasDefinition($service)) {
+        $container->getDefinition($service)->replaceArgument($argument, new Reference('markaspot_nuxt.jsonapi_entity_repository'));
+      }
+    }
+
   }
 
 }

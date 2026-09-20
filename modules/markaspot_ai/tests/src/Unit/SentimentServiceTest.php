@@ -84,6 +84,7 @@ class SentimentServiceTest extends UnitTestCase {
     parent::setUp();
 
     $this->aiClient = $this->createMock(AiClientService::class);
+    $this->aiClient->method('resolveChatModel')->willReturn('gpt-4o-mini');
     $this->database = $this->createMock(Connection::class);
     $this->tokenTracking = $this->createMock(TokenTrackingService::class);
     $this->logger = $this->createMock(LoggerInterface::class);

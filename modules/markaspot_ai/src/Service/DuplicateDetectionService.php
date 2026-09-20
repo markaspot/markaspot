@@ -205,6 +205,8 @@ class DuplicateDetectionService {
       $query->join('markaspot_ai_embeddings', 'e',
         "n.nid = e.entity_id AND e.entity_type = 'node' AND e.embedding_type = 'content'"
       );
+      $query->condition('e.model', $sourceEmbedding['model']);
+      $query->condition('e.dimensions', $sourceEmbedding['dimensions']);
       $query->addField('e', 'embedding');
 
       $candidates = $query->execute()->fetchAll(FetchAs::Associative);

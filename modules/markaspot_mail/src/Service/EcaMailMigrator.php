@@ -101,11 +101,15 @@ final class EcaMailMigrator {
   private const OPEN_KEYWORDS = ['offen', 'open', 'bearbeitung', 'progress', 'update'];
 
   /**
-   * Lazily-loaded, cached decode of config/install/markaspot_mail.texts.yml.
+   * Lazily-loaded shipped mail defaults, indexed by language code.
    *
-   * @var array<string, array<string, mixed>>|null
+   * The base install config is indexed by an empty string. Localized install
+   * defaults are used only when that exact language is active in the live
+   * texts config.
+   *
+   * @var array<string, array<string, mixed>>
    */
-  private ?array $shippedDefaultsCache = NULL;
+  private array $shippedDefaultsCache = [];
 
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -314,9 +318,15 @@ final class EcaMailMigrator {
   private function reconcileTextsForKey(Config $textsConfig, string $key, array $finding): array {
     $wouldWrite = $this->buildTextsPayload($finding);
     $current = $this->normalizeSlots((array) $textsConfig->get($key));
-    $shippedDefault = $this->normalizeSlots($this->getShippedDefaultSlots($key));
+    $shippedDefaults = [
+      $this->normalizeSlots($this->getShippedDefaultSlots($key)),
+    ];
+    $localizedDefault = $this->getShippedDefaultSlots($key, (string) $textsConfig->get('langcode'));
+    if ($localizedDefault !== []) {
+      $shippedDefaults[] = $this->normalizeSlots($localizedDefault);
+    }
 
-    if ($current === $shippedDefault) {
+    if (in_array($current, $shippedDefaults, TRUE)) {
       // Tier 1: still the neutral shipped boilerplate, safe to replace
       // with the tenant's own wording.
       $textsConfig->set($key, $wouldWrite);
@@ -577,7 +587,7 @@ final class EcaMailMigrator {
   }
 
   /**
-   * Reads one notification_key's slots from the shipped install default.
+   * Reads one notification_key's slots from a shipped install default.
    *
    * Reads config/install/markaspot_mail.texts.yml directly off disk
    * (never the active config store — that is what apply() is about to
@@ -585,19 +595,31 @@ final class EcaMailMigrator {
    * admin form is recognized as "still neutral, safe to replace", while
    * a tenant that edited even one slot after installing is not.
    *
+   * @param string $key
+   *   Notification key to load.
+   * @param string $langcode
+   *   The live config language whose localized default should be read. An
+   *   empty language code reads the base install default.
+   *
    * @return array<string, mixed>
    *   The shipped slots for $key, or an empty array if the key or file is
    *   missing (fails safe towards tier 3 "preserve", never towards
    *   tier 1 "overwrite").
    */
-  private function getShippedDefaultSlots(string $key): array {
-    if ($this->shippedDefaultsCache === NULL) {
-      $path = $this->moduleExtensionList->getPath('markaspot_mail') . '/' . self::SHIPPED_TEXTS_FILE;
+  private function getShippedDefaultSlots(string $key, string $langcode = ''): array {
+    if ($langcode !== '' && preg_match('/^[a-z][a-z0-9-]*$/', $langcode) !== 1) {
+      return [];
+    }
+    if (!isset($this->shippedDefaultsCache[$langcode])) {
+      $file = $langcode === ''
+        ? self::SHIPPED_TEXTS_FILE
+        : 'config/install/language/' . $langcode . '/markaspot_mail.texts.yml';
+      $path = $this->moduleExtensionList->getPath('markaspot_mail') . '/' . $file;
       $contents = @file_get_contents($path);
       $decoded = $contents !== FALSE ? Yaml::decode($contents) : NULL;
-      $this->shippedDefaultsCache = is_array($decoded) ? $decoded : [];
+      $this->shippedDefaultsCache[$langcode] = is_array($decoded) ? $decoded : [];
     }
-    $slots = $this->shippedDefaultsCache[$key] ?? [];
+    $slots = $this->shippedDefaultsCache[$langcode][$key] ?? [];
     return is_array($slots) ? $slots : [];
   }
 

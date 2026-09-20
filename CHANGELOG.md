@@ -1,5 +1,33 @@
 # Changelog
 
+## [11.9.197](https://github.com/markaspot/markaspot/compare/11.9.196...11.9.197) (2026-09-19)
+
+### Features
+
+* preserve approved workspace claims and contextual image analysis ([021707b](https://github.com/markaspot/markaspot/commit/021707bf04e34bf279694fe46e8bc7450aaa9069))
+
+### Bug Fixes
+
+* defer access-aware search indexing after updates ([9ecd3c3](https://github.com/markaspot/markaspot/commit/9ecd3c356c298dcf612a67629884f9aa9cc94aad))
+* migrate localized default mail texts ([99676cb](https://github.com/markaspot/markaspot/commit/99676cb1f571d487c18fc6ef0cbef94f533d43ec))
+
+### Refactoring
+
+* make AI clients model-agnostic and add provider self-test ([e140570](https://github.com/markaspot/markaspot/commit/e140570ceada2f289a45fe72dc403d9643836df1))
+
+## [11.9.196](https://github.com/markaspot/markaspot/compare/11.9.195...11.9.196) (2026-09-19)
+
+### Bug Fixes
+
+* honor API language headers without changing site negotiation ([68377a3](https://github.com/markaspot/markaspot/commit/68377a3b01ec6ca05b24eab6558028d4cb3cd3d2))
+* keep JSON API language services optional ([dcf53a5](https://github.com/markaspot/markaspot/commit/dcf53a522e900ed34aa1ae632331a7bf1c6b5690))
+
+## [11.9.195](https://github.com/markaspot/markaspot/compare/11.9.194...11.9.195) (2026-09-18)
+
+### Bug Fixes
+
+* preserve category translation alignment during onboarding ([dfce950](https://github.com/markaspot/markaspot/commit/dfce950ef574af71bf4cbfa126eac0c0c0ee5a65))
+
 ## [11.9.194](https://github.com/markaspot/markaspot/compare/11.9.193...11.9.194) (2026-09-17)
 
 ### Bug Fixes

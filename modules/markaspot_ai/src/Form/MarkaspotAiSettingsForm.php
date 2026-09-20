@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Drupal\markaspot_ai\Form;
 
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Url;
+use Drupal\markaspot_ai\Utility\BlurPolicy;
+use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use Psr\Log\LoggerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
@@ -31,6 +36,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     protected NlpClientService $nlpClient,
     protected TokenTrackingService $tokenTracking,
     protected CacheTagsInvalidatorInterface $cacheTagsInvalidator,
+    protected LoggerInterface $blurLogger,
+    protected ModuleHandlerInterface $moduleHandler,
   ) {
     parent::__construct($config_factory, $typed_config_manager);
   }
@@ -45,6 +52,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $container->get('markaspot_ai.nlp_client'),
       $container->get('markaspot_ai.token_tracking'),
       $container->get('cache_tags.invalidator'),
+      $container->get('logger.factory')->get('markaspot_ai'),
+      $container->get('module_handler'),
     );
   }
 
@@ -67,6 +76,30 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('markaspot_ai.settings');
+    $mode = BlurPolicy::mode($this->blurLogger);
+    $form['blur_mode'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Image blurring before AI analysis'),
+      '#plain_text' => $mode,
+    ];
+    $vision = $this->configFactory()->get('markaspot_vision.settings');
+    $blur_enabled = $this->moduleHandler->moduleExists('markaspot_vision') && (bool) $vision->get('enable_blur_preprocessing');
+    $provider = $config->get('default_provider') ?? 'openai';
+    $configured = $config->get("providers.$provider.api_url") || $config->get("providers.$provider.api_key")
+      || $vision->get('api_url') || getenv('MARKASPOT_AI_API_URL') || getenv('MARKASPOT_VISION_API_URL') || getenv('OPENAI_API_KEY') || getenv('ANTHROPIC_API_KEY');
+    if (BlurPolicy::isRequired($this->blurLogger) && !BlurPolicy::hasEnvironmentCredentials()) {
+      $this->messenger()->addError(BlurAdvisory::errorMessage(), FALSE);
+    }
+    elseif ($mode === 'auto-unprotected' && !$blur_enabled && $configured) {
+      $message = BlurAdvisory::message();
+      if ($this->moduleHandler->moduleExists('markaspot_vision')) {
+        $message = $this->t('@advisory <a href=":url">Vision settings</a>.', [
+          '@advisory' => $message,
+          ':url' => Url::fromRoute('markaspot_vision.settings')->toString(),
+        ]);
+      }
+      $this->messenger()->addWarning($message, FALSE);
+    }
 
     // Provider Configuration section.
     $form['provider'] = [
@@ -165,7 +198,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Embedding Model'),
       '#description' => $this->t('Model to use for generating embeddings (e.g., text-embedding-3-large, text-embedding-3-small).'),
-      '#default_value' => $config->get('providers.openai.embedding_model') ?? 'text-embedding-3-large',
+      '#default_value' => $config->get('providers.openai.embedding_model') ?? AiClientService::DEFAULT_EMBEDDING_MODEL,
       '#required' => TRUE,
     ];
 
@@ -246,7 +279,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Embedding Deployment Name'),
       '#description' => $this->t('The deployment name for embeddings (e.g., text-embedding-3-large).'),
-      '#default_value' => $config->get('providers.azure.embedding_model') ?? 'text-embedding-3-large',
+      '#default_value' => $config->get('providers.azure.embedding_model') ?? AiClientService::DEFAULT_EMBEDDING_MODEL,
       '#required' => TRUE,
     ];
 
@@ -322,7 +355,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Chat Model'),
       '#description' => $this->t('Model to use for the Messages API.'),
-      '#default_value' => $config->get('providers.anthropic.chat_model') ?? 'claude-sonnet-4-20250514',
+      '#default_value' => $config->get('providers.anthropic.chat_model') ?? 'claude-sonnet-4-6',
       '#required' => TRUE,
     ];
 
@@ -859,7 +892,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     );
     $config->set(
       'providers.anthropic.chat_model',
-      $form_state->getValue('anthropic_chat_model') ?? 'claude-sonnet-4-20250514'
+      $form_state->getValue('anthropic_chat_model') ?? 'claude-sonnet-4-6'
     );
     $config->set('providers.anthropic.auth_type', 'x_api_key');
 

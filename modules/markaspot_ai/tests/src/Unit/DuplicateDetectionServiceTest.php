@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_ai\Unit;
 
+use Drupal\node\NodeInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Query\Condition;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -459,6 +460,38 @@ class DuplicateDetectionServiceTest extends UnitTestCase {
     $this->assertEquals(0, $counts['confirmed']);
     $this->assertEquals(0, $counts['rejected']);
     $this->assertEquals(0, $counts['total']);
+  }
+
+  /**
+   * Duplicate candidates must match the source model and dimensions.
+   */
+  public function testCandidateModelAndDimensions(): void {
+    $this->embeddingService->method('getEmbedding')->willReturn([
+      'model' => 'active-vectors',
+      'dimensions' => 3,
+      'vector' => [
+        1,
+        0,
+        0,
+      ],
+    ]);
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn(1);
+    $node->method('hasField')->willReturn(FALSE);
+    $query = $this->createMock(Select::class);
+    $statement = $this->createMock(StatementInterface::class);
+    $query->method('fields')->willReturnSelf();
+    $conditions = [];
+    $query->method('condition')->willReturnCallback(function ($field, $value) use (&$conditions, $query) {
+      $conditions[$field] = $value;
+      return $query;
+    });
+    $query->method('execute')->willReturn($statement);
+    $statement->method('fetchAll')->willReturn([]);
+    $this->database->method('select')->willReturn($query);
+    self::assertSame([], $this->service->findDuplicates($node));
+    self::assertSame('active-vectors', $conditions['e.model']);
+    self::assertSame(3, $conditions['e.dimensions']);
   }
 
 }

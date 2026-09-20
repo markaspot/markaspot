@@ -9,5 +9,11 @@ services:
       - '@markaspot_ai.sentiment'
       - '@database'
       - '@?markaspot_ai.spam_risk_scanner'
+      - '@markaspot_ai.client'
+      - '@markaspot_ai.token_tracking'
+      - '@config.factory'
+      - '@module_handler'
+      - '@?markaspot_vision.image_processing'
+      - '@logger.channel.markaspot_ai'
     tags:
       - { name: drush.command }

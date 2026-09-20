@@ -32,6 +32,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
+require_once dirname(__DIR__, 3) . '/src/Validation/CategoryTranslations.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/FastMapWorkspaceController.php';
 require_once dirname(__DIR__, 3) . '/markaspot_fastmap.module';
 
 /**
@@ -617,6 +619,34 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
+   * Incomplete translations never create pending data or send verification.
+   *
+   * @dataProvider invalidCategoryTranslations
+   */
+  public function testInvalidTranslationsDoNotSendVerification(array $categories): void {
+    $this->database->expects($this->never())->method('insert');
+    $this->mailManager->expects($this->never())->method('mail');
+    $request = $this->createJsonRequest($this->validRequestData([
+      'categories' => $categories,
+      'language' => 'en',
+    ]));
+    $response = $this->controller->createWorkspace($request);
+    $this->assertSame(400, $response->getStatusCode());
+  }
+
+  /**
+   * Provides malformed translation payloads at the HTTP entry point.
+   */
+  public static function invalidCategoryTranslations(): array {
+    return [
+      'blank middle' => [['en' => ['Road', 'Graffiti', 'Light'], 'fr' => ['Route', '', 'Éclairage']]],
+      'short secondary' => [['en' => ['Road', 'Light'], 'fr' => ['Route']]],
+      'missing primary' => [['fr' => ['Route']]],
+      'sparse secondary' => [['en' => ['Road', 'Light'], 'fr' => [0 => 'Route', 2 => 'Éclairage']]],
+    ];
+  }
+
+  /**
    * Tests that duplicate slug returns 409.
    *
    * @covers ::createWorkspace
@@ -922,6 +952,8 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       'slug' => 'test-ws',
       'email' => 'user@example.com',
       'categories' => ['Cat A'],
+      'ai_system_prompt' => 'Inventory healthy trees as valid observations.',
+      'client_claim' => ['en' => 'Map our local trees'],
     ];
 
     $record = [
@@ -2137,6 +2169,21 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
+   * Oversized approved claims fail before a pending row or email is created.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceRejectsOversizedClaim(): void {
+    $this->database->expects($this->never())->method('insert');
+    $this->mailManager->expects($this->never())->method('mail');
+    $response = $this->controller->createWorkspace($this->createJsonRequest($this->validRequestData([
+      'client_claim' => ['en' => str_repeat('a', 41)],
+    ])));
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertStringContainsString('1-40 characters', $response->getContent());
+  }
+
+  /**
    * Tests that ai_system_prompt is stored in workspace data when provided.
    *
    * @covers ::createWorkspace
@@ -2187,6 +2234,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $prompt = 'You analyze photos of trail conditions. Focus on erosion and fallen trees.';
     $request = $this->createJsonRequest($this->validRequestData([
       'ai_system_prompt' => $prompt,
+      'client_claim' => ['en' => 'Track local trails'],
     ]));
 
     $response = $controller->createWorkspace($request);
@@ -2196,6 +2244,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $stored = json_decode($insertedData['workspace_data'], TRUE);
     $this->assertArrayHasKey('ai_system_prompt', $stored);
     $this->assertEquals($prompt, $stored['ai_system_prompt']);
+    $this->assertSame(['en' => 'Track local trails'], $stored['client_claim']);
   }
 
   /**
@@ -2255,6 +2304,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $stored = json_decode($insertedData['workspace_data'], TRUE);
     $this->assertArrayHasKey('ai_system_prompt', $stored);
     $this->assertEmpty($stored['ai_system_prompt']);
+    $this->assertSame([], $stored['client_claim']);
   }
 
   /**

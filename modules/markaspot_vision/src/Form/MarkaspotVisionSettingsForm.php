@@ -3,6 +3,9 @@
 namespace Drupal\markaspot_vision\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
+use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use Drupal\markaspot_vision\Service\ImageProcessingService;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Form\FormStateInterface;
 
 /**
@@ -12,6 +15,20 @@ use Drupal\Core\Form\FormStateInterface;
  * supporting any OpenAI-compatible API (OpenAI, Azure, Qwen, Ollama, etc.).
  */
 class MarkaspotVisionSettingsForm extends ConfigFormBase {
+
+  /**
+   * The image processing service.
+   */
+  protected ImageProcessingService $imageProcessing;
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    $instance = parent::create($container);
+    $instance->imageProcessing = $container->get('markaspot_vision.image_processing');
+    return $instance;
+  }
 
   /**
    * {@inheritdoc}
@@ -32,6 +49,18 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_vision.settings');
+    $mode = $this->imageProcessing->getBlurMode();
+    $form['blur_mode'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Image blurring before AI analysis'),
+      '#plain_text' => $mode,
+    ];
+    if ($this->imageProcessing->isBlurRequired() && !$this->imageProcessing->hasRequiredBlurConfiguration()) {
+      $this->messenger()->addError(BlurAdvisory::errorMessage(), FALSE);
+    }
+    elseif ($mode === 'auto-unprotected' && !$config->get('enable_blur_preprocessing') && (trim(getenv('MARKASPOT_VISION_API_URL') ?: '') !== '' || $config->get('api_url'))) {
+      $this->messenger()->addWarning(BlurAdvisory::message(), FALSE);
+    }
 
     $form['file_upload'] = [
       '#type' => 'fieldset',
@@ -80,6 +109,12 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('enable_blur_preprocessing') ?? FALSE,
     ];
 
+    if ($this->imageProcessing->isBlurRequired()) {
+      $form['blur']['enable_blur_preprocessing']['#default_value'] = TRUE;
+      $form['blur']['enable_blur_preprocessing']['#disabled'] = TRUE;
+      $form['blur']['enable_blur_preprocessing']['#description'] = $this->t('Enforced by the hosting platform (@mode).', ['@mode' => $mode]);
+    }
+
     $default_blur_url = getenv('VISION_BLUR_URL') ?: 'http://markaspot-vision:8200/blur';
     $form['blur']['blur_service_url'] = [
       '#type' => 'textfield',
@@ -92,6 +127,12 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
         ],
       ],
     ];
+
+    if ($this->imageProcessing->isBlurRequired()) {
+      $form['blur']['blur_service_url']['#default_value'] = $this->t('Set by the hosting platform');
+      $form['blur']['blur_service_url']['#disabled'] = TRUE;
+      $form['blur']['blur_service_url']['#description'] = $this->t('Enforced by the hosting platform (MARKASPOT_BLUR_URL).');
+    }
 
     $form['service'] = [
       '#type' => 'fieldset',
@@ -121,8 +162,8 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       $form['service']['api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-        $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
-        '</div>',
+          $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
+          '</div>',
         '#weight' => -1,
         '#states' => [
           'invisible' => [
@@ -161,8 +202,8 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
         $form['service']['api_key_status'] = [
           '#type' => 'item',
           '#markup' => '<div class="messages messages--warning">' .
-          $this->t('API key stored in config database. Consider using environment variable for better security.') .
-          '</div>',
+            $this->t('API key stored in config database. Consider using environment variable for better security.') .
+            '</div>',
           '#weight' => -1,
           '#states' => [
             'invisible' => [
@@ -188,8 +229,8 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
     $form['service']['ai_model'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Model Name'),
-      '#default_value' => $config->get('ai_model') ?? 'gpt-4o',
-      '#description' => $this->t('The model identifier (e.g., gpt-4o, gpt-4-vision-preview, qwen-vl-max, llava).'),
+      '#default_value' => $config->get('ai_model') ?? 'gpt-4.1-mini',
+      '#description' => $this->t('The model or deployment identifier configured at your vision provider.'),
       '#required' => TRUE,
     ];
 
@@ -289,13 +330,16 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       ->set('multiple_uploads', $form_state->getValue('multiple_uploads'))
       ->set('rate_limit_max', max(0, (int) $form_state->getValue('rate_limit_max')))
       ->set('require_ai_screening', $form_state->getValue('require_ai_screening'))
-      ->set('enable_blur_preprocessing', (bool) $form_state->getValue('enable_blur_preprocessing'))
-      ->set('blur_service_url', $form_state->getValue('blur_service_url'))
       ->set('auth_type', $form_state->getValue('auth_type'))
       ->set('api_url', $form_state->getValue('api_url'))
       ->set('ai_model', $form_state->getValue('ai_model'))
       ->set('system_prompt', $form_state->getValue('system_prompt'))
       ->set('image_prompt', $form_state->getValue('image_prompt'));
+
+    if (!$this->imageProcessing->isBlurRequired()) {
+      $config->set('enable_blur_preprocessing', (bool) $form_state->getValue('enable_blur_preprocessing'));
+      $config->set('blur_service_url', $form_state->getValue('blur_service_url'));
+    }
 
     // Only persist the API key when no ENV override is active.
     // When an ENV var is set, the form shows a masked value that

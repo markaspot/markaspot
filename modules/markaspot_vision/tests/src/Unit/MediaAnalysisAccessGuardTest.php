@@ -99,6 +99,7 @@ class MediaAnalysisAccessGuardTest extends UnitTestCase {
   }
 
   /**
+   * Shared API keys alone do not authorize image analysis.
    */
   public function testApiKeyUpdateAccessWithoutUploadFingerprintIsDenied(): void {
     $store = $this->createMock(KeyValueStoreExpirableInterface::class);
@@ -112,6 +113,7 @@ class MediaAnalysisAccessGuardTest extends UnitTestCase {
   }
 
   /**
+   * Matching upload fingerprints authorize image analysis.
    */
   public function testMatchingUploadFingerprintAllowsAnalysis(): void {
     $store = $this->createMemoryStore();
@@ -124,6 +126,7 @@ class MediaAnalysisAccessGuardTest extends UnitTestCase {
   }
 
   /**
+   * Mismatched upload fingerprints deny image analysis.
    */
   public function testMismatchedUploadFingerprintDeniesAnalysis(): void {
     $store = $this->createMock(KeyValueStoreExpirableInterface::class);
@@ -157,6 +160,7 @@ class MediaAnalysisAccessGuardTest extends UnitTestCase {
   }
 
   /**
+   * Authenticated sessions may analyze media with update access.
    */
   public function testAuthenticatedSessionUpdateAccessAllowsAnalysis(): void {
     $store = $this->createMock(KeyValueStoreExpirableInterface::class);

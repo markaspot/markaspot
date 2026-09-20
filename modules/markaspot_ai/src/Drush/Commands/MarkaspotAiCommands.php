@@ -6,6 +6,14 @@ namespace Drupal\markaspot_ai\Drush\Commands;
 
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Database\Connection;
+use Drupal\markaspot_ai\Utility\BlurPolicy;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\markaspot_ai\Service\AiClientService;
+use Drupal\markaspot_ai\Service\TokenTrackingService;
+use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerManagerInterface;
@@ -31,8 +39,164 @@ class MarkaspotAiCommands extends DrushCommands {
     protected SentimentService $sentimentService,
     protected Connection $database,
     protected ?SpamRiskScannerService $spamRiskScanner = NULL,
+    protected ?AiClientService $aiClient = NULL,
+    protected ?TokenTrackingService $tokenTracking = NULL,
+    protected ?ConfigFactoryInterface $configFactory = NULL,
+    protected ?ModuleHandlerInterface $moduleHandler = NULL,
+    protected ?ImageProcessingService $vision = NULL,
+    protected ?LoggerInterface $blurLogger = NULL,
   ) {
     parent::__construct();
+  }
+
+  /**
+   * Tests provider compatibility using synthetic data only.
+   */
+  #[CLI\Command(name: 'markaspot:ai:selftest')]
+  #[CLI\Option(name: 'provider', description: 'Provider to test; defaults to default_provider.')]
+  #[CLI\Option(name: 'skip-vision', description: 'Skip the synthetic vision check.')]
+  public function selftest(array $options = ['provider' => NULL, 'skip-vision' => FALSE]): int {
+    if (!$this->aiClient || !$this->tokenTracking || !$this->configFactory || !$this->moduleHandler) {
+      throw new \RuntimeException('AI self-test services are unavailable.');
+    }
+    $config = $this->configFactory->get('markaspot_ai.settings');
+    $provider = ($options['provider'] ?? NULL) ?: ($config->get('default_provider') ?? 'openai');
+    $provider_config = $config->get("providers.{$provider}");
+    if (!is_array($provider_config)) {
+      $this->output()->writeln('provider: http 0: unknown provider');
+      return 1;
+    }
+    $model = $this->aiClient->resolveChatModel(NULL, $provider);
+    $url = getenv('MARKASPOT_AI_API_URL') ?: ($provider_config['api_url'] ?? ($provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'));
+    $this->output()->writeln(sprintf('provider=%s model=%s host=%s', $provider, $model, parse_url($url, PHP_URL_HOST) ?: 'unknown'));
+    $blur_mode = $this->vision ? $this->vision->getBlurMode() : BlurPolicy::mode($this->blurLogger ?? new NullLogger());
+    $this->output()->writeln('blur mode=' . $blur_mode);
+    if ($blur_mode === 'auto-unprotected') {
+      $this->output()->writeln('Notice: blur is not enforced; the site switch decides. Set MARKASPOT_BLUR_URL to enforce preprocessing or MARKASPOT_BLUR_REQUIRED=0 to acknowledge unprotected operation.');
+    }
+    $checks = [
+      'chat JSON' => fn() => $this->aiClient->chat([['role' => 'user', 'content' => 'Return JSON: {"ok":true}']], [
+        'provider' => $provider,
+        'operation' => 'selftest',
+        'response_format' => ['type' => 'json_object'],
+        'max_tokens' => 150,
+      ]),
+      'chat text' => fn() => $this->aiClient->chat([['role' => 'user', 'content' => 'Reply with OK.']], [
+        'provider' => $provider,
+        'operation' => 'selftest',
+        'max_tokens' => 150,
+      ]),
+      'embedding' => fn() => $this->aiClient->embed('Synthetic compatibility test.', ['provider' => $provider]),
+    ];
+    if (empty($options['skip-vision']) && $this->moduleHandler->moduleExists('markaspot_vision') && $this->vision) {
+      $vision_config = $this->configFactory->get('markaspot_vision.settings');
+      $vision_url = getenv('MARKASPOT_VISION_API_URL') ?: $vision_config->get('api_url');
+      if ($vision_url && $vision_config->get('ai_model')) {
+        $this->output()->writeln(sprintf('vision model=%s host=%s', $vision_config->get('ai_model'), parse_url($vision_url, PHP_URL_HOST) ?: 'unknown'));
+        $checks['vision'] = fn() => $this->vision->selfTest();
+      }
+    }
+    $failed = FALSE;
+    foreach ($checks as $name => $check) {
+      try {
+        $embedding_matches = TRUE;
+        if ($name === 'embedding') {
+          $configured = $this->aiClient->resolveEmbeddingModel(NULL, $provider);
+          $rows = $this->embeddingService->getStoredModelSummary();
+          $this->printEmbeddingModels($rows);
+          foreach ($rows as $row) {
+            if ($row['model'] !== $configured) {
+              $embedding_matches = FALSE;
+              $failed = TRUE;
+              $this->output()->writeln('embedding identity mismatch: configured=' . $configured . '; use markaspot:ai:embeddings-relabel only for an identity-only rename.');
+              break;
+            }
+          }
+        }
+        $result = $check();
+        $response = $name === 'vision' ? $result['response'] : $result;
+        $used_model = $response['model'] ?? ($name === 'embedding' ? $this->aiClient->resolveEmbeddingModel(NULL, $provider) : $model);
+        $usage = $response['usage'] ?? [];
+        $this->tokenTracking->logUsage(
+          $name === 'vision' ? 'vision' : $provider,
+          $used_model,
+          'selftest',
+          (int) ($usage['prompt_tokens'] ?? $usage['total_tokens'] ?? 0),
+          (int) ($usage['completion_tokens'] ?? 0),
+        );
+        $content = $response['choices'][0]['message']['content'] ?? '';
+        $valid = is_string($content) && trim($content) !== '';
+        if ($name === 'chat JSON') {
+          $valid = $valid && (json_decode($content, TRUE)['ok'] ?? NULL) === TRUE;
+        }
+        elseif ($name === 'embedding') {
+          $vector = $response['data'][0]['embedding'] ?? [];
+          $valid = is_array($vector) && $vector !== [];
+          $this->output()->writeln(sprintf('embedding model=%s dimensions=%d', $used_model, count($vector)));
+          $valid = $valid && $embedding_matches;
+        }
+        elseif ($name === 'vision') {
+          $valid = $valid && is_array(json_decode($content, TRUE));
+          $this->output()->writeln(sprintf('blur processed=%s applied=%s', $result['blur_processed'] ? 'yes' : 'no', $result['blur_applied'] ? 'yes' : 'no'));
+          $valid = $valid && (!$this->vision->isBlurRequired() || $result['blur_processed']);
+        }
+        $this->output()->writeln($name . ': ' . ($valid ? 'ok' : 'empty'));
+        $failed = $failed || !$valid;
+      }
+      catch (\Throwable $e) {
+        // Provider bodies can contain secrets. Report only safe reasons.
+        $code = 0;
+        for ($cause = $e; $cause !== NULL; $cause = $cause->getPrevious()) {
+          if ($cause->getCode() >= 400 && $cause->getCode() <= 599) {
+            $code = (int) $cause->getCode();
+            break;
+          }
+        }
+        $reason = match (TRUE) {
+          $code === 400 => 'request rejected',
+          $code === 401 || $code === 403 => 'authentication or permission denied',
+          $code === 429 => 'rate limited',
+          $code >= 500 => 'provider unavailable',
+          default => 'request failed',
+        };
+        $this->output()->writeln($name . ': ' . (str_contains(strtolower($e->getMessage()), 'token budget exhausted') ? 'empty' : "http {$code}: {$reason}"));
+        if ($name === 'vision') {
+          $this->output()->writeln('blur processed=unconfirmed applied=unconfirmed');
+        }
+        $failed = TRUE;
+      }
+    }
+    return $failed ? 1 : 0;
+  }
+
+  /**
+   * Relabels persisted vectors after an operator-confirmed deployment rename.
+   */
+  #[CLI\Command(name: 'markaspot:ai:embeddings-relabel')]
+  #[CLI\Option(name: 'from', description: 'Exact stored identifier to relabel (required).')]
+  #[CLI\Option(name: 'to', description: 'Configured embedding identifier (required).')]
+  #[CLI\Option(name: 'dry-run', description: 'Report matching rows without changing them.')]
+  public function embeddingsRelabel(array $options = ['from' => NULL, 'to' => NULL, 'dry-run' => FALSE]): int {
+    $this->printEmbeddingModels($this->embeddingService->getStoredModelSummary());
+    try {
+      $count = $this->embeddingService->relabelEmbeddings((string) ($options['from'] ?? ''), (string) ($options['to'] ?? ''), !empty($options['dry-run']));
+      $this->output()->writeln(sprintf('%s rows: %d', empty($options['dry-run']) ? 'Affected' : 'Would relabel', $count));
+      return 0;
+    }
+    catch (\InvalidArgumentException $e) {
+      $this->output()->writeln($e->getMessage());
+      return 1;
+    }
+  }
+
+  /**
+   * Prints stored model identities without vectors or provider requests.
+   */
+  protected function printEmbeddingModels(array $rows): void {
+    $this->output()->writeln('Stored embeddings (model, dimensions, count):');
+    foreach ($rows as $row) {
+      $this->output()->writeln(sprintf('%s, %d, %d', $row['model'], $row['dimensions'], $row['count']));
+    }
   }
 
   /**
