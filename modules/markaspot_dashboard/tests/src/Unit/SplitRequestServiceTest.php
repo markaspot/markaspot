@@ -17,6 +17,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_dashboard\Service\RequestLinkServiceInterface;
 use Drupal\markaspot_dashboard\Service\SplitRequestService;
+use Drupal\markaspot_dashboard\Service\SplitRequestContext;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
@@ -116,6 +117,7 @@ class SplitRequestServiceTest extends UnitTestCase {
       $this->logger,
       $this->configFactory,
       $this->database,
+      new SplitRequestContext(),
       $this->hierarchyResolver,
     );
   }

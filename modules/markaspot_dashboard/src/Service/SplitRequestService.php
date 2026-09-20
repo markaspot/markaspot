@@ -58,6 +58,7 @@ final class SplitRequestService implements SplitRequestServiceInterface {
     private readonly LoggerInterface $logger,
     protected readonly ConfigFactoryInterface $configFactory,
     private readonly Connection $database,
+    private readonly SplitRequestContext $splitContext,
     private readonly ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
@@ -195,7 +196,7 @@ final class SplitRequestService implements SplitRequestServiceInterface {
         ]);
       }
 
-      $child->save();
+      $this->splitContext->saveChild($child);
 
       // Append a provenance note to the original. The term is the CURRENT
       // status (no status change), so this does not trigger a citizen mail

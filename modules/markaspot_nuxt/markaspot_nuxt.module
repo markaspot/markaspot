@@ -167,6 +167,16 @@ function markaspot_nuxt_node_presave(NodeInterface $node): void {
     }
   }
 
+  // A server-created split child continues processing an existing report.
+  // Preserve the copied consent (including FALSE), or leave it empty when
+  // contact data is omitted. Never assert new citizen consent on their behalf.
+  // The context is scoped to the exact child object and cleared after save;
+  // ordinary creates and the anonymous image-privacy gate above stay enforced.
+  if (\Drupal::hasService('markaspot_dashboard.split_context')
+    && \Drupal::service('markaspot_dashboard.split_context')->isSavingChild($node)) {
+    return;
+  }
+
   if (!$node->hasField('field_gdpr')) {
     return;
   }
