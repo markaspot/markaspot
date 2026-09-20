@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_tenant_import\Unit;
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Config\ConfigFactory;
 use Drupal\Core\Config\ConfigInstallerInterface;
+use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Config\StorageInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\DrupalKernelInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -22,6 +27,7 @@ use Drupal\Tests\UnitTestCase;
 use Drupal\user\PermissionHandlerInterface;
 use Drupal\user\RoleInterface;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -106,6 +112,11 @@ final class TenantSetupTest extends UnitTestCase {
   private array $extraPermissions = [];
 
   /**
+   * Model a real config cache surviving the profile helper's container rebuild.
+   */
+  private bool $rebuildContainer = FALSE;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -141,6 +152,21 @@ final class TenantSetupTest extends UnitTestCase {
    * Wires stateful doubles around the real source selection and role checks.
    */
   private function service(): TenantSetup {
+    $configData = [
+      'system.site' => ['uuid' => 'owned'],
+      'core.extension' => ['profile' => $this->profile, 'module' => $this->enabledModules],
+    ];
+    $configFactory = $this->getConfigFactoryStub($configData);
+    $sharedConfig = new MemoryStorage();
+    if ($this->rebuildContainer) {
+      foreach ($configData as $name => $data) {
+        $sharedConfig->write($name, $data);
+      }
+      foreach (['tenant_admin', 'moderator', 'contractor', 'anonymous', 'authenticated'] as $id) {
+        $sharedConfig->write('user.role.' . $id, ['permissions' => []]);
+      }
+      $configFactory = new ConfigFactory($sharedConfig, new EventDispatcher(), $this->createMock(TypedConfigManagerInterface::class));
+    }
     $state = $this->createMock(StateInterface::class);
     $state->method('get')->willReturnCallback(fn($key) => $this->markers[$key] ?? NULL);
     $state->method('set')->willReturnCallback(function ($key, $value): void {
@@ -150,9 +176,16 @@ final class TenantSetupTest extends UnitTestCase {
       unset($this->markers[$key]);
     });
     $roles = $this->createMock(EntityStorageInterface::class);
-    $roles->method('load')->willReturnCallback(function ($id) {
+    $roles->method('load')->willReturnCallback(function ($id) use ($configFactory) {
       $role = $this->createMock(RoleInterface::class);
-      $role->method('hasPermission')->willReturnCallback(fn($permission) => !empty($this->granted[$id][$permission]));
+      if ($this->rebuildContainer) {
+        // Loading a role warms the old factory, exactly as real preflight does.
+        $permissions = $configFactory->get('user.role.' . $id)->get('permissions');
+        $role->method('hasPermission')->willReturnCallback(fn($permission) => in_array($permission, $permissions, TRUE));
+      }
+      else {
+        $role->method('hasPermission')->willReturnCallback(fn($permission) => !empty($this->granted[$id][$permission]));
+      }
       return $role;
     });
     $entities = $this->createMock(EntityTypeManagerInterface::class);
@@ -200,14 +233,14 @@ final class TenantSetupTest extends UnitTestCase {
       }
       return $definitions;
     });
+    $kernel = $this->createMock(DrupalKernelInterface::class);
+    $kernel->method('getContainer')->willReturnCallback(fn() => \Drupal::getContainer());
+    $constructorArgs = [
+      $configFactory, $state, $entities, $fields, $lock, $modules, $profiles,
+      $installer, $storage, $permissions, $this->fixtureRoot, $kernel,
+    ];
     $service = $this->getMockBuilder(TenantSetup::class)
-      ->setConstructorArgs([
-        $this->getConfigFactoryStub([
-          'system.site' => ['uuid' => 'owned'],
-          'core.extension' => ['profile' => $this->profile, 'module' => $this->enabledModules],
-        ]),
-        $state, $entities, $fields, $lock, $modules, $profiles, $installer, $storage, $permissions, $this->fixtureRoot,
-      ])
+      ->setConstructorArgs($constructorArgs)
       ->onlyMethods(['repairRolePermissions', 'schema'])
       ->getMock();
     $schema = $this->createMock(TenantSetupSchema::class);
@@ -219,7 +252,7 @@ final class TenantSetupTest extends UnitTestCase {
       'unavailable_optional' => [],
     ]);
     $service->method('schema')->willReturn($schema);
-    $service->method('repairRolePermissions')->willReturnCallback(function (): void {
+    $service->method('repairRolePermissions')->willReturnCallback(function () use ($sharedConfig, $constructorArgs): void {
       $this->repairCalls++;
       $this->assertSame('owned', $this->markers['markaspot_cloud.permissions_initialization_started']);
       foreach (['tenant_admin', 'moderator', 'contractor'] as $role) {
@@ -236,8 +269,65 @@ final class TenantSetupTest extends UnitTestCase {
           $this->granted[$role]['create field_address'] = TRUE;
         }
       }
+      if ($this->rebuildContainer) {
+        // The new container persists repairs without invalidating the old
+        // factory's already loaded immutable role configuration objects.
+        foreach ($this->granted as $id => $grants) {
+          $sharedConfig->write('user.role.' . $id, ['permissions' => array_keys(array_filter($grants))]);
+        }
+        $freshFactory = new ConfigFactory($sharedConfig, new EventDispatcher(), $this->createMock(TypedConfigManagerInterface::class));
+        $freshRoles = $this->createMock(EntityStorageInterface::class);
+        $freshRoles->method('load')->willReturnCallback(function ($id) use ($freshFactory) {
+          $role = $this->createMock(RoleInterface::class);
+          $permissions = $freshFactory->get('user.role.' . $id)->get('permissions');
+          $role->method('hasPermission')->willReturnCallback(fn($permission) => in_array($permission, $permissions, TRUE));
+          return $role;
+        });
+        $freshEntities = $this->createMock(EntityTypeManagerInterface::class);
+        $freshEntities->method('getStorage')->with('user_role')->willReturn($freshRoles);
+        $constructorArgs[0] = $freshFactory;
+        $constructorArgs[2] = $freshEntities;
+        $container = new ContainerBuilder();
+        $container->set('markaspot_tenant_import.tenant_setup', new TenantSetup(...$constructorArgs));
+        \Drupal::setContainer($container);
+      }
     });
+    $container = new ContainerBuilder();
+    $container->set('markaspot_tenant_import.tenant_setup', $service);
+    \Drupal::setContainer($container);
     return $service;
+  }
+
+  /**
+   * Postconditions use repaired storage after a real config-factory handoff.
+   */
+  public function testPermissionVerificationAfterContainerRebuild(): void {
+    $this->rebuildContainer = TRUE;
+    $result = $this->service()->prepare('owned', TRUE, TRUE);
+    $this->assertTrue($result['permissions_initialized']);
+    $this->assertSame('owned', $this->markers['markaspot_cloud.permissions_initialized']);
+    $this->assertArrayNotHasKey('markaspot_cloud.permissions_initialization_started', $this->markers);
+    $this->assertSame(1, $this->repairCalls);
+    $this->assertSame(1, $this->releases);
+  }
+
+  /**
+   * A real missing permission still leaves the failure marker after a rebuild.
+   */
+  public function testContainerRebuildDoesNotHideMissingPermission(): void {
+    $this->rebuildContainer = TRUE;
+    $this->repairSucceeds = FALSE;
+    try {
+      $this->service()->prepare('owned', TRUE, TRUE);
+      $this->fail('Missing contractor permission must fail setup.');
+    }
+    catch (\RuntimeException $error) {
+      $this->assertStringContainsString('postcondition failed for role contractor', $error->getMessage());
+    }
+    $this->assertSame('owned', $this->markers['markaspot_cloud.permissions_initialization_started']);
+    $this->assertArrayNotHasKey('markaspot_cloud.permissions_initialized', $this->markers);
+    $this->assertSame(1, $this->repairCalls);
+    $this->assertSame(1, $this->releases);
   }
 
   /**

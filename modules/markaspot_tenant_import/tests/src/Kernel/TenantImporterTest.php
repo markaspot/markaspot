@@ -214,6 +214,7 @@ final class TenantImporterTest extends KernelTestBase {
         $this->container->get('config.storage'),
         $this->container->get('user.permissions'),
         $this->container->getParameter('app.root'),
+        $this->container->get('kernel'),
       ])
       ->onlyMethods(['schema'])
       ->getMock();

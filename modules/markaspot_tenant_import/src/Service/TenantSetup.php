@@ -9,6 +9,7 @@ use Drupal\Core\Config\ConfigInstallerInterface;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Config\StorageInterface;
+use Drupal\Core\DrupalKernelInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
@@ -49,6 +50,7 @@ class TenantSetup {
     private readonly StorageInterface $activeStorage,
     private readonly PermissionHandlerInterface $permissions,
     private readonly string $appRoot,
+    private readonly DrupalKernelInterface $kernel,
   ) {}
 
   /**
@@ -123,7 +125,12 @@ class TenantSetup {
         // A retry must not silently repeat a partially applied rights repair.
         $this->state->set(self::STARTED, $expectedSiteUuid);
         $this->repairRolePermissions();
-        $this->verifyRolePermissions($result['permission_exceptions']);
+        // The canonical repair rebuilds Drupal's container. This instance's
+        // config/entity/permission services still cache the pre-repair roles.
+        // Verify through the current container without repeating any mutation;
+        // retain this invocation's lock and failure marker until it succeeds.
+        $current = $this->kernel->getContainer()->get('markaspot_tenant_import.tenant_setup');
+        $current->verifyRolePermissions($result['permission_exceptions']);
         $this->state->set(self::COMPLETED, $expectedSiteUuid);
         $this->state->delete(self::STARTED);
         $result['permission_action'] = 'initialized';
