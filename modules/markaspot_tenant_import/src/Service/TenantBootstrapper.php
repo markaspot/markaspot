@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_tenant_import\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -110,13 +111,25 @@ final class TenantBootstrapper {
       }
       $apiOwner = $this->apiOwner();
       $new = $group->isNew();
+      $validationConfig = $this->configFactory->get('markaspot_validation.settings');
+      $validationSource = new FileStorage(DRUPAL_ROOT . '/' . $this->modules->getModule('markaspot_validation')->getPath() . '/config/install');
+      $validationPlan = TenantValidationDefaults::plan(
+        $validationConfig->getRawData(),
+        $validationSource->read('markaspot_validation.settings') ?: [],
+        (bool) $this->entities->getStorage('node')->getQuery()->accessCheck(FALSE)->count()->execute(),
+        ($ownership['validation_defaults_initialized'] ?? FALSE) === TRUE,
+      );
       $result = [
         'jurisdiction_id' => $new ? NULL : (int) $group->id(),
         'action' => $new ? 'create' : 'resume',
         'applied' => $apply,
         'warnings' => TenantRuntimeConfiguration::warnings($tenant),
         'rows' => [],
+        'validation_defaults' => $validationPlan,
       ];
+      if ($validationPlan['clear'] !== [] && (!$group->hasField('field_boundary') || $group->get('field_boundary')->isEmpty())) {
+        $result['warnings'][] = 'Packaged example geography will be removed. Without a jurisdiction boundary, report locations are not geographically restricted.';
+      }
       if (!$apply) {
         if (!$new) {
           $result['rows'] = $this->importer->import($configuration, (int) $group->id())['rows'];
@@ -178,9 +191,18 @@ final class TenantBootstrapper {
         }
         $group->save();
       }
+      if ($validationPlan['clear'] !== []) {
+        // This is a dedicated, empty, owned installation. Never inherit the
+        // distribution's example city as the new municipality's boundary.
+        $this->configFactory->getEditable('markaspot_validation.settings')
+          ->set('wkt', '')
+          ->set('locality', [])
+          ->save();
+      }
       $this->keyValue->get('markaspot_tenant_import.bootstrap')->set('root', [
         'uuid' => $group->uuid(),
         'slug' => $tenant['slug'],
+        'validation_defaults_initialized' => TRUE,
       ]);
       $result['rows'] = array_values(array_filter($import['rows'], static fn(array $row): bool => !($row['entity'] === 'runtime' && $row['key'] === 'logo_file')));
       unset($transaction);
@@ -196,6 +218,7 @@ final class TenantBootstrapper {
       foreach (['group', 'taxonomy_term', 'user', 'group_relationship', 'file'] as $type) {
         $this->entities->getStorage($type)->resetCache();
       }
+      $this->configFactory->reset('markaspot_validation.settings');
       throw $exception;
     }
     finally {

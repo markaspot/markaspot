@@ -94,26 +94,36 @@ class TenantSetup {
         'page_configuration_missing' => $missing,
         'page_configuration_created' => [],
         'permissions_initialized' => $completed === $expectedSiteUuid,
+        'schema' => $this->schema()->prepare(),
+        'permission_exceptions' => [],
         'permission_action' => $completed === $expectedSiteUuid ? 'already_initialized' : 'initialize',
       ];
       if (!$apply) {
         // Preview validates the shipped prerequisites without granting rights.
         $this->pageSource($missing);
         if ($completed === NULL) {
-          $this->roleBaseline();
+          $this->roleBaseline($result['permission_exceptions']);
         }
         return $result;
       }
       if ($completed === NULL) {
-        $this->roleBaseline();
+        $this->roleBaseline($result['permission_exceptions']);
       }
       $this->ensurePageConfiguration($missing);
+      $result['schema'] = $this->schema()->prepare(TRUE);
+      $this->entityFieldManager->clearCachedFieldDefinitions();
+      foreach ($result['schema']['applicable'] as $name) {
+        [, , $entityType, $bundle, $field] = explode('.', $name, 5);
+        if (!isset($this->entityFieldManager->getFieldDefinitions($entityType, $bundle)[$field])) {
+          throw new \RuntimeException('Reporting field definition is unavailable: ' . $name);
+        }
+      }
       if ($completed === NULL) {
         // A failed helper or postcondition leaves the marker deliberately set.
         // A retry must not silently repeat a partially applied rights repair.
         $this->state->set(self::STARTED, $expectedSiteUuid);
         $this->repairRolePermissions();
-        $this->verifyRolePermissions();
+        $this->verifyRolePermissions($result['permission_exceptions']);
         $this->state->set(self::COMPLETED, $expectedSiteUuid);
         $this->state->delete(self::STARTED);
         $result['permission_action'] = 'initialized';
@@ -168,6 +178,53 @@ class TenantSetup {
   }
 
   /**
+   * Builds schema sources without enabling optional products.
+   */
+  protected function schema(): TenantSetupSchema {
+    $profilePath = $this->appRoot . '/' . $this->profiles->getPath('markaspot');
+    $enabled = array_keys($this->configFactory->get('core.extension')->get('module') ?? []);
+    $sources = [
+      ['storage' => new FileStorage($profilePath . '/config/install'), 'required' => TRUE],
+    ];
+    foreach ($enabled as $module) {
+      // Retired privacy configuration is never part of the supported schema.
+      if ($module === 'markaspot_privacy') {
+        continue;
+      }
+      $path = $this->appRoot . '/' . $this->modules->getPath($module);
+      foreach (['install', 'optional'] as $directory) {
+        $sources[] = [
+          'storage' => new FileStorage($path . '/config/' . $directory),
+          'required' => $directory === 'install',
+          'required_names' => $module === 'markaspot_group' && $directory === 'optional' ? [
+            'field.field.node.service_request.field_jurisdiction',
+            'field.field.node.service_request.field_organisation',
+            'field.field.node.service_request.field_assignee',
+            'field.field.node.service_request.field_assigned_team',
+          ] : [],
+        ];
+      }
+    }
+    // Reuse the neutral shipped paragraph schema without enabling escalation
+    // routing, Fastmap, or any other product merely to obtain its fields.
+    $sources[] = [
+      'storage' => new FileStorage($profilePath . '/modules/markaspot_status_paragraph/config/install'),
+      'required' => TRUE,
+      'required_names' => [
+        'field.field.paragraph.status.field_author',
+        'field.field.paragraph.internal_remark.field_author',
+        'field.field.paragraph.internal_remark.field_internal_remark_text',
+      ],
+    ];
+    $sources[] = [
+      'storage' => new FileStorage($profilePath . '/config/optional'),
+      'required' => FALSE,
+      'required_names' => ['field.field.node.service_request.field_internal_remark'],
+    ];
+    return new TenantSetupSchema($this->activeStorage, $this->configInstaller, $sources, $enabled);
+  }
+
+  /**
    * Uses the canonical profile helper, never a second permission baseline.
    */
   protected function repairRolePermissions(): void {
@@ -182,11 +239,11 @@ class TenantSetup {
   /**
    * Checks dashboard and citizen capabilities against shipped role config.
    */
-  private function verifyRolePermissions(): void {
+  private function verifyRolePermissions(array &$exceptions): void {
     $roles = $this->entityTypeManager->getStorage('user_role');
     $roles->resetCache();
     $definitions = $this->permissions->getPermissions();
-    foreach ($this->roleBaseline() as $roleId => $requiredPermissions) {
+    foreach ($this->roleBaseline($exceptions) as $roleId => $requiredPermissions) {
       $role = $roles->load($roleId);
       foreach ($requiredPermissions as $permission) {
         if (!isset($definitions[$permission]) || !$role instanceof RoleInterface || !$role->hasPermission($permission)) {
@@ -199,7 +256,8 @@ class TenantSetup {
   /**
    * Validates required roles and enabled providers before starting a repair.
    */
-  private function roleBaseline(): array {
+  private function roleBaseline(array &$exceptions = []): array {
+    $exceptions = [];
     $definitions = $this->permissions->getPermissions();
     $roles = $this->entityTypeManager->getStorage('user_role');
     $baseline = [];
@@ -223,7 +281,16 @@ class TenantSetup {
         if ($shipped['permissions'] === []) {
           throw new \RuntimeException('Shipped citizen permission baseline is unavailable.');
         }
-        $baseline[$roleId] = $shipped['permissions'];
+        $baseline[$roleId] = [];
+        foreach ($shipped['permissions'] as $permission) {
+          $exception = $this->permissionException($permission);
+          if ($exception !== NULL) {
+            $exceptions[$roleId][$permission] = $exception;
+          }
+          else {
+            $baseline[$roleId][] = $permission;
+          }
+        }
         continue;
       }
       $dashboardPermissions = array_filter($shipped['permissions'], static fn($permission) => ($definitions[$permission]['provider'] ?? NULL) === 'markaspot_dashboard');
@@ -233,6 +300,39 @@ class TenantSetup {
       $baseline[$roleId] = $dashboardPermissions;
     }
     return $baseline;
+  }
+
+  /**
+   * Explains exact legacy, optional-provider, and canonical public-field cases.
+   *
+   * Unregistered permissions outside these cases remain fatal postconditions.
+   * In particular, existing custom/private field policies are never relaxed.
+   */
+  private function permissionException(string $permission): ?string {
+    if (preg_match('/^(create|edit|view)( own)? field_gdpr$/', $permission)) {
+      return 'Deprecated field_gdpr is excluded from required postconditions; existing legacy fields retain the canonical role initialization policy.';
+    }
+    foreach (['field_approved' => 'markaspot_confirm', 'field_phone' => 'telephone'] as $field => $provider) {
+      if (preg_match('/^(create|edit|view)( own)? ' . $field . '$/', $permission)
+        && !$this->activeStorage->exists('field.storage.node.' . $field)
+        && !array_key_exists($provider, $this->configFactory->get('core.extension')->get('module') ?? [])) {
+        return 'Optional field ' . $field . ' is absent and provider ' . $provider . ' is disabled.';
+      }
+    }
+    if (in_array($permission, ['view field_status_note', 'view own field_status_note'], TRUE)) {
+      $name = 'field.storage.paragraph.field_status_note';
+      $active = $this->activeStorage->read($name);
+      $source = new FileStorage($this->appRoot . '/' . $this->modules->getPath('service_request') . '/config/install');
+      $shipped = $source->read($name);
+      if (($active['third_party_settings']['field_permissions']['permission_type'] ?? NULL) === 'private') {
+        throw new \RuntimeException('Private status-note visibility requires an explicit policy decision before setup.');
+      }
+      if (($active['third_party_settings']['field_permissions']['permission_type'] ?? NULL) === 'public'
+        && ($shipped['third_party_settings']['field_permissions']['permission_type'] ?? NULL) === 'public') {
+        return 'Canonical public status-note field; custom view permission is not generated.';
+      }
+    }
+    return NULL;
   }
 
 }

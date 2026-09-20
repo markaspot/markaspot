@@ -69,6 +69,8 @@ final class TenantImporterTest extends KernelTestBase {
     'markaspot_group',
     'markaspot_tenant_import',
     'markaspot_tenant_import_test',
+    'node',
+    'markaspot_validation',
   ];
 
   /**
@@ -176,7 +178,34 @@ final class TenantImporterTest extends KernelTestBase {
     $uuid = $this->container->get('uuid')->generate();
     $config->getEditable('system.site')->set('uuid', $uuid)->save();
     $this->container->get('state')->set('markaspot_cloud.permissions_initialized', $uuid);
-    $service = $this->container->get('markaspot_tenant_import.tenant_setup');
+    // This fixture deliberately installs only page prerequisites. Keep its
+    // real ConfigInstaller proof separate from the complete reporting schema.
+    $schema = $this->createMock(\Drupal\markaspot_tenant_import\Service\TenantSetupSchema::class);
+    $schema->method('prepare')->willReturn([
+      'required' => [],
+      'applicable' => [],
+      'missing' => [],
+      'created' => [],
+      'unavailable_optional' => [],
+    ]);
+    $service = $this->getMockBuilder(\Drupal\markaspot_tenant_import\Service\TenantSetup::class)
+      ->setConstructorArgs([
+        $config,
+        $this->container->get('state'),
+        $this->container->get('entity_type.manager'),
+        $this->container->get('entity_field.manager'),
+        $this->container->get('lock'),
+        $this->container->get('extension.list.module'),
+        $this->container->get('extension.list.profile'),
+        $this->container->get('config.installer'),
+        $this->container->get('config.storage'),
+        $this->container->get('user.permissions'),
+        $this->container->getParameter('app.root'),
+      ])
+      ->onlyMethods(['schema'])
+      ->getMock();
+    $service->method('schema')->willReturn($schema);
+    $this->container->set('markaspot_tenant_import.tenant_setup', $service);
     $preview = $service->prepare($uuid);
     $this->assertFalse($preview['applied']);
     $this->assertCount(2, $preview['page_configuration_missing']);
@@ -199,6 +228,54 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertCount(1, $decoded);
     $this->assertSame(1, $decoded[0]['contract_version']);
     $this->assertSame($uuid, $decoded[0]['site_uuid']);
+  }
+
+  /**
+   * Canonical remark schema installs with no escalation or SaaS module enabled.
+   */
+  public function testSetupRepairsCanonicalRemarkSchemaWithRealInstaller(): void {
+    $this->enableModules(['node', 'entity_reference_revisions', 'paragraphs', 'field_permissions']);
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('paragraph');
+    NodeType::create(['type' => 'service_request', 'name' => 'Request'])->save();
+    \Drupal\paragraphs\Entity\ParagraphsType::create(['id' => 'status', 'label' => 'Status'])->save();
+    $profile = $this->container->getParameter('app.root') . '/' . $this->container->get('extension.list.profile')->getPath('markaspot');
+    $source = new \Drupal\Core\Config\MemoryStorage();
+    foreach ([
+      'config/install' => 'field.storage.node.field_internal_remark',
+      'config/optional' => 'field.field.node.service_request.field_internal_remark',
+    ] as $directory => $name) {
+      $data = (new \Drupal\Core\Config\FileStorage($profile . '/' . $directory))->read($name);
+      $this->assertIsArray($data);
+      $source->write($name, $data);
+    }
+    $schema = new \Drupal\markaspot_tenant_import\Service\TenantSetupSchema(
+      $this->container->get('config.storage'),
+      $this->container->get('config.installer'),
+      [
+        [
+          'storage' => new \Drupal\Core\Config\FileStorage($profile . '/modules/markaspot_status_paragraph/config/install'),
+          'required' => TRUE,
+        ],
+        ['storage' => $source, 'required' => TRUE],
+      ],
+      array_keys($this->container->get('module_handler')->getModuleList()),
+    );
+    $this->assertNotEmpty($schema->prepare()['missing']);
+    $this->assertNull(FieldConfig::load('node.service_request.field_internal_remark'));
+    $this->assertNotEmpty($schema->prepare(TRUE)['created']);
+    $this->assertNotNull(FieldConfig::load('node.service_request.field_internal_remark'));
+    $this->assertNotNull(FieldConfig::load('paragraph.status.field_author'));
+    $remark = \Drupal\paragraphs\Entity\Paragraph::create([
+      'type' => 'internal_remark',
+      'field_internal_remark_text' => ['value' => 'Synthetic internal remark', 'format' => 'plain_text'],
+      'field_author' => 1,
+    ]);
+    $remark->save();
+    $this->assertSame('Synthetic internal remark', $remark->get('field_internal_remark_text')->value);
+    $this->assertSame([], $schema->prepare(TRUE)['created']);
+    $this->assertFalse($this->container->get('module_handler')->moduleExists('markaspot_escalation'));
+    $this->assertFalse($this->container->get('module_handler')->moduleExists('markaspot_fastmap'));
   }
 
   /**
@@ -539,15 +616,26 @@ final class TenantImporterTest extends KernelTestBase {
    */
   public function testDedicatedBootstrapIsReadOnlyThenIdempotent(): void {
     $configuration = $this->prepareDedicatedBootstrap();
+    $validation = $this->container->get('config.factory');
+    $originalValidation = $validation->get('markaspot_validation.settings')->getRawData();
     $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
-    $this->assertNull($service->bootstrap($configuration)['jurisdiction_id']);
+    $preview = $service->bootstrap($configuration);
+    $this->assertNull($preview['jurisdiction_id']);
+    $this->assertSame('clear_packaged_example', $preview['validation_defaults']['action']);
+    $this->assertSame($originalValidation, $validation->get('markaspot_validation.settings')->getRawData());
     $this->assertSame([], Group::loadMultiple());
     $this->assertSame([], Term::loadMultiple());
     $this->assertNull($this->container->get('keyvalue')->get('markaspot_tenant_import.bootstrap')->get('root'));
     $first = $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertSame('', $validation->get('markaspot_validation.settings')->get('wkt'));
+    $this->assertSame([], $validation->get('markaspot_validation.settings')->get('locality'));
+    // A later operator choice must survive reruns, even if it is the example.
+    $validation->getEditable('markaspot_validation.settings')->setData($originalValidation)->save();
     $initialGroup = Group::load($first['jurisdiction_id']);
     GroupMembership::loadSingle($initialGroup, User::load(2))->set('group_roles', [])->save();
     $second = $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertSame('preserve_initialized', $second['validation_defaults']['action']);
+    $this->assertSame($originalValidation, $validation->get('markaspot_validation.settings')->getRawData());
     $this->assertSame($first['jurisdiction_id'], $second['jurisdiction_id']);
     $this->assertSame('resume', $second['action']);
     $this->assertNotContains('create', array_column($second['rows'], 'action'));
@@ -576,6 +664,7 @@ final class TenantImporterTest extends KernelTestBase {
    */
   public function testDedicatedBootstrapRollsBackImportFailure(): void {
     $configuration = $this->prepareDedicatedBootstrap();
+    $validationBefore = $this->container->get('config.factory')->get('markaspot_validation.settings')->getRawData();
     $this->container->get('state')->set('markaspot_tenant_import_test.fail_status', $configuration['statuses'][0]['name']);
     try {
       $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
@@ -587,6 +676,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertSame([], Group::loadMultiple());
     $this->assertSame([], Term::loadMultiple());
     $this->assertNull($this->container->get('keyvalue')->get('markaspot_tenant_import.bootstrap')->get('root'));
+    $this->assertSame($validationBefore, $this->container->get('config.factory')->get('markaspot_validation.settings')->getRawData());
   }
 
   /**
@@ -705,6 +795,13 @@ final class TenantImporterTest extends KernelTestBase {
    * Models dedicated profile prerequisites without touching live data.
    */
   private function prepareDedicatedBootstrap(): array {
+    $this->installEntitySchema('node');
+    $validationSource = new \Drupal\Core\Config\FileStorage(DRUPAL_ROOT . '/' . $this->container->get('module_handler')->getModule('markaspot_validation')->getPath() . '/config/install');
+    $validationDefaults = $validationSource->read('markaspot_validation.settings');
+    // The legacy default is numeric while its existing schema expects string.
+    // Preserve its value without expanding this test's geography-only scope.
+    $validationDefaults['radius'] = (string) $validationDefaults['radius'];
+    $this->container->get('config.factory')->getEditable('markaspot_validation.settings')->setData($validationDefaults)->save();
     $this->jurisdiction->delete();
     new Settings(['markaspot_operating_mode' => 'self_hosted'] + Settings::getAll());
     ConfigurableLanguage::createFromLangcode('de')->save();

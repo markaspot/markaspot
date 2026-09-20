@@ -252,6 +252,22 @@ callers must reject incompatible responses and confirm `applied: true` before
 recording success. This API prepares prerequisites; `mas:tenant:bootstrap` and
 `mas:tenant:import` continue to apply municipal input data.
 
+Prepare also reports `schema.required`, `applicable`, `missing`, `created`, and
+`unavailable_optional`. Missing report, status, internal remark, author, and media
+field configuration is restored from shipped definitions for enabled features.
+Existing configuration is preserved; optional products are never enabled merely
+to obtain fields. `permission_exceptions` distinguishes retired GDPR checks,
+absent optional approval/telephone providers, and canonical public status-note
+visibility from required custom permissions. Existing custom policies remain
+strictly checked. Initializing roles still follows the canonical profile policy,
+including any existing legacy fields.
+
+Dedicated bootstrap removes the untouched packaged example WKT/locality only
+on an empty installation, recording that one-time decision with root ownership.
+Custom settings and later choices are preserved. Without a jurisdiction boundary,
+removing this example leaves locations geographically unrestricted; bootstrap
+reports that warning explicitly.
+
 Deutsch: Das offene Modul kapselt die Drupal-Vorbereitung. Die Befehle sind für
 vertrauenswürdige Betreiber vorgesehen, keine direkte Chat- oder HTTP-API.
 Zielprüfung und Ausschluss anderer Schreiber bleiben Aufgabe des aufrufenden
@@ -263,3 +279,22 @@ Option. Wiederholungen erhalten spätere Rechteentzüge. Unvollständige oder fr
 Marker stoppen den Ablauf. Die JSON-Schnittstelle liefert genau einen Datensatz
 mit Vertragsversion 1 und Site-UUID. Erst ein bestätigtes `applied: true` erlaubt
 den Erfolgsbeleg. Kommunale Daten übernehmen weiterhin Bootstrap und Importer.
+
+`schema` weist erforderliche, anwendbare, fehlende, ergänzte und nicht verfügbare
+optionale Felddefinitionen aus. Fehlende Meldungs-, Status-, Remarks-, Autoren-
+und Medienfelder kommen aus den ausgelieferten Definitionen aktivierter
+Funktionen. Bestehende Konfiguration bleibt erhalten; zusätzliche Produkte
+werden dafür nicht aktiviert. `permission_exceptions` erklärt alte GDPR-Prüfungen,
+fehlende optionale Freigabe-/Telefonmodule und öffentliche Statusnotizen.
+Bestehende individuelle Feldrechte werden weiterhin streng geprüft. Die
+Rolleninitialisierung folgt der kanonischen Profilregel, auch bei vorhandenen
+Legacy-Feldern.
+
+Der dedizierte Bootstrap entfernt unveränderte Beispielgeografie einmalig auf
+einer leeren Installation. Eigene Einstellungen und spätere Entscheidungen
+bleiben erhalten. Ohne kommunale Grenze sind Orte danach geografisch nicht
+eingeschränkt; die Befehlsausgabe weist ausdrücklich darauf hin.
+
+Synthetic test content is a separate, explicit operation:
+[English contract](docs/demo-content.md),
+[deutscher Vertrag](docs/demo-content.de.md).

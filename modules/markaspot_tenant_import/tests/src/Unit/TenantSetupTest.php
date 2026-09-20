@@ -17,6 +17,7 @@ use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\markaspot_tenant_import\Drush\Commands\TenantSetupCommands;
 use Drupal\markaspot_tenant_import\Service\TenantSetup;
+use Drupal\markaspot_tenant_import\Service\TenantSetupSchema;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\PermissionHandlerInterface;
 use Drupal\user\RoleInterface;
@@ -95,6 +96,16 @@ final class TenantSetupTest extends UnitTestCase {
   private string $profile = 'markaspot';
 
   /**
+   * Explicitly enabled optional providers.
+   */
+  private array $enabledModules = [];
+
+  /**
+   * Additional defined and granted permissions for custom-policy fixtures.
+   */
+  private array $extraPermissions = [];
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -105,7 +116,7 @@ final class TenantSetupTest extends UnitTestCase {
       foreach (['tenant_admin', 'moderator', 'contractor', 'anonymous', 'authenticated'] as $role) {
         $permissions = $directory === 'optional' ? ['dashboard capability'] : ['obsolete permission'];
         if ($directory === 'optional' && in_array($role, ['anonymous', 'authenticated'], TRUE)) {
-          $permissions = ['create field_address', 'create service_request content'];
+          $permissions = ['create field_address', 'create service_request content', 'create field_gdpr'];
         }
         file_put_contents($this->fixtureRoot . '/profile/config/' . $directory . '/user.role.' . $role . '.yml', Yaml::encode(['permissions' => $permissions]));
       }
@@ -157,7 +168,10 @@ final class TenantSetupTest extends UnitTestCase {
       $this->releases++;
     });
     $modules = $this->createMock(ModuleExtensionList::class);
-    $modules->method('getPath')->with('markaspot_group')->willReturn('group');
+    $modules->method('getPath')->willReturnMap([
+      ['markaspot_group', 'group'],
+      ['service_request', 'profile/modules/service_request'],
+    ]);
     $profiles = $this->createMock(ProfileExtensionList::class);
     $profiles->method('getPath')->with('markaspot')->willReturn('profile');
     $installer = $this->createMock(ConfigInstallerInterface::class);
@@ -170,6 +184,7 @@ final class TenantSetupTest extends UnitTestCase {
     });
     $storage = $this->createMock(StorageInterface::class);
     $storage->method('exists')->willReturnCallback(fn($name) => isset($this->active[$name]));
+    $storage->method('read')->willReturnCallback(fn($name) => $this->active[$name] ?? FALSE);
     $permissions = $this->createMock(PermissionHandlerInterface::class);
     $permissions->method('getPermissions')->willReturnCallback(function (): array {
       $definitions = [
@@ -180,18 +195,30 @@ final class TenantSetupTest extends UnitTestCase {
       if ($this->citizenPermissionDefined && $this->repairCalls > 0) {
         $definitions['create field_address'] = ['provider' => 'field_permissions'];
       }
+      foreach ($this->extraPermissions as $permission) {
+        $definitions[$permission] = ['provider' => 'field_permissions'];
+      }
       return $definitions;
     });
     $service = $this->getMockBuilder(TenantSetup::class)
       ->setConstructorArgs([
         $this->getConfigFactoryStub([
           'system.site' => ['uuid' => 'owned'],
-          'core.extension' => ['profile' => $this->profile],
+          'core.extension' => ['profile' => $this->profile, 'module' => $this->enabledModules],
         ]),
         $state, $entities, $fields, $lock, $modules, $profiles, $installer, $storage, $permissions, $this->fixtureRoot,
       ])
-      ->onlyMethods(['repairRolePermissions'])
+      ->onlyMethods(['repairRolePermissions', 'schema'])
       ->getMock();
+    $schema = $this->createMock(TenantSetupSchema::class);
+    $schema->method('prepare')->willReturn([
+      'required' => [],
+      'applicable' => [],
+      'missing' => [],
+      'created' => [],
+      'unavailable_optional' => [],
+    ]);
+    $service->method('schema')->willReturn($schema);
     $service->method('repairRolePermissions')->willReturnCallback(function (): void {
       $this->repairCalls++;
       $this->assertSame('owned', $this->markers['markaspot_cloud.permissions_initialization_started']);
@@ -202,6 +229,9 @@ final class TenantSetupTest extends UnitTestCase {
       }
       foreach (['anonymous', 'authenticated'] as $role) {
         $this->granted[$role]['create service_request content'] = TRUE;
+        foreach ($this->extraPermissions as $permission) {
+          $this->granted[$role][$permission] = TRUE;
+        }
         if ($this->citizenPermissionDefined && ($this->citizenPermissionGranted || $role !== 'anonymous')) {
           $this->granted[$role]['create field_address'] = TRUE;
         }
@@ -324,6 +354,123 @@ final class TenantSetupTest extends UnitTestCase {
     $this->assertSame(1, $this->releases);
     $this->expectExceptionMessage('explicit recovery');
     $service->prepare('owned', TRUE, TRUE);
+  }
+
+  /**
+   * Adds role expectations without duplicating the production permission list.
+   */
+  private function addCitizenPermissions(array $permissions): void {
+    foreach (['anonymous', 'authenticated'] as $role) {
+      $path = $this->fixtureRoot . '/profile/config/optional/user.role.' . $role . '.yml';
+      $data = Yaml::decode(file_get_contents($path));
+      $data['permissions'] = array_merge($data['permissions'], $permissions);
+      file_put_contents($path, Yaml::encode($data));
+    }
+  }
+
+  /**
+   * Retired and disabled feature permissions are reported in preview and apply.
+   */
+  public function testDisabledAbsentOptionalFieldsAreExplicitExceptions(): void {
+    $this->addCitizenPermissions([
+      'create field_approved', 'edit field_approved',
+      'edit own field_approved', 'create field_phone',
+    ]);
+    $service = $this->service();
+    $preview = $service->prepare('owned', TRUE);
+    $exceptions = $preview['permission_exceptions']['anonymous'];
+    $this->assertStringContainsString('markaspot_confirm is disabled', $exceptions['create field_approved']);
+    $this->assertStringContainsString('telephone is disabled', $exceptions['create field_phone']);
+    $this->assertArrayHasKey('create field_gdpr', $exceptions);
+    $result = $service->prepare('owned', TRUE, TRUE);
+    $this->assertSame($preview['permission_exceptions'], $result['permission_exceptions']);
+    $this->assertTrue($result['permissions_initialized']);
+  }
+
+  /**
+   * An enabled provider cannot hide a broken or missing field as optional.
+   */
+  public function testEnabledProviderMissingFieldRemainsRequired(): void {
+    $this->enabledModules = ['telephone' => 0];
+    $this->addCitizenPermissions(['create field_phone']);
+    try {
+      $this->service()->prepare('owned', TRUE, TRUE);
+      $this->fail('Enabled telephone with missing field must fail.');
+    }
+    catch (\RuntimeException $error) {
+      $this->assertStringContainsString('postcondition failed for role anonymous: create field_phone', $error->getMessage());
+      $this->assertArrayNotHasKey('markaspot_cloud.permissions_initialized', $this->markers);
+    }
+  }
+
+  /**
+   * Existing fields remain required even when their old provider is disabled.
+   */
+  public function testExistingOptionalFieldPermissionsRemainRequired(): void {
+    $this->active['field.storage.node.field_approved'] = ['id' => 'node.field_approved'];
+    $this->addCitizenPermissions(['create field_approved']);
+    $this->expectExceptionMessage('postcondition failed for role anonymous: create field_approved');
+    $this->service()->prepare('owned', TRUE, TRUE);
+  }
+
+  /**
+   * Loads the real shipped status-note metadata into the isolated fixture.
+   */
+  private function statusNotePolicy(string $policy): array {
+    $relative = '/modules/service_request/config/install';
+    $name = 'field.storage.paragraph.field_status_note.yml';
+    $contents = file_get_contents(dirname(__DIR__, 5) . $relative . '/' . $name);
+    $this->assertNotFalse($contents);
+    mkdir($this->fixtureRoot . '/profile' . $relative, 0700, TRUE);
+    file_put_contents($this->fixtureRoot . '/profile' . $relative . '/' . $name, $contents);
+    $data = Yaml::decode($contents);
+    $this->assertSame('public', $data['third_party_settings']['field_permissions']['permission_type']);
+    $data['third_party_settings']['field_permissions']['permission_type'] = $policy;
+    $this->active['field.storage.paragraph.field_status_note'] = $data;
+    $this->addCitizenPermissions(['view field_status_note', 'view own field_status_note']);
+    return $data;
+  }
+
+  /**
+   * Canonical public visibility needs no custom field permission definitions.
+   */
+  public function testCanonicalPublicStatusNotePolicyIsRecognized(): void {
+    $original = $this->statusNotePolicy('public');
+    $service = $this->service();
+    $preview = $service->prepare('owned', TRUE);
+    $this->assertStringContainsString('Canonical public', $preview['permission_exceptions']['anonymous']['view field_status_note']);
+    $result = $service->prepare('owned', TRUE, TRUE);
+    $this->assertTrue($result['permissions_initialized']);
+    $this->assertSame($original, $this->active['field.storage.paragraph.field_status_note']);
+  }
+
+  /**
+   * Custom visibility remains permission-checked and is preserved unchanged.
+   */
+  public function testCustomStatusNotePolicyUsesRealPermissions(): void {
+    $original = $this->statusNotePolicy('custom');
+    $this->extraPermissions = ['view field_status_note', 'view own field_status_note'];
+    $result = $this->service()->prepare('owned', TRUE, TRUE);
+    $this->assertArrayNotHasKey('view field_status_note', $result['permission_exceptions']['anonymous']);
+    $this->assertSame($original, $this->active['field.storage.paragraph.field_status_note']);
+  }
+
+  /**
+   * Private visibility is not silently replaced with the shipped public policy.
+   */
+  public function testPrivateStatusNotePolicyFailsWithoutWidening(): void {
+    $original = $this->statusNotePolicy('private');
+    try {
+      $this->service()->prepare('owned', TRUE, TRUE);
+      $this->fail('Private status notes require an explicit policy decision.');
+    }
+    catch (\RuntimeException $error) {
+      $this->assertStringContainsString('Private status-note visibility requires an explicit policy decision', $error->getMessage());
+      $this->assertSame($original, $this->active['field.storage.paragraph.field_status_note']);
+      $this->assertSame([], $this->markers);
+      $this->assertSame([], $this->installed);
+      $this->assertSame(0, $this->repairCalls);
+    }
   }
 
   /**
