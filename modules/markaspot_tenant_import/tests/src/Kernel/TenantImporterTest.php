@@ -1168,7 +1168,7 @@ final class TenantImporterTest extends KernelTestBase {
     $editorial = $this->loadUser('presse@erfurt.de');
     $orgMember = $this->loadUser('lampen@stadtwerke-erfurt.de');
     $this->assertSame(
-      ['jur-member', 'jur-tenant_admin'],
+      ['jur-member', 'jur-org_member', 'jur-tenant_admin'],
       $this->storedMembershipRoles($jurisdiction, $tenantAdmin),
     );
     $this->assertSame(['jur-moderator'], $this->storedMembershipRoles($jurisdiction, $moderator));
@@ -2308,6 +2308,76 @@ final class TenantImporterTest extends KernelTestBase {
       'bundle' => $bundle,
       'label' => $fieldName,
     ])->save();
+  }
+
+  /**
+   * Imports jurisdiction admin memberships without widening moderation.
+   */
+  public function testTenantAdminOrganisationMemberships(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [
+      $configuration['users'][0],
+      [
+        'email' => 'scope@example.invalid',
+        'role' => 'org_moderator',
+        'organisation_code' => 'SWE',
+        'first_name' => '',
+        'last_name' => '',
+      ],
+    ];
+    $own = Group::create([
+      'type' => 'org',
+      'label' => 'Existing own organisation',
+      'field_jurisdiction' => $this->jurisdiction->id(),
+    ]);
+    $own->save();
+    $foreignJur = Group::create(['type' => 'jur', 'label' => 'Foreign jurisdiction']);
+    $foreignJur->save();
+    $foreign = Group::create([
+      'type' => 'org',
+      'label' => 'Foreign organisation',
+      'field_jurisdiction' => $foreignJur->id(),
+    ]);
+    $foreign->save();
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $admin = $this->loadUser($configuration['users'][0]['email']);
+    $moderator = $this->loadUser('scope@example.invalid');
+    foreach ([$own, $this->loadOrganisation('TBA'), $this->loadOrganisation('SWE')] as $organisation) {
+      $membership = GroupMembership::loadSingle($organisation, $admin);
+      $this->assertInstanceOf(GroupMembership::class, $membership);
+      $this->assertSame([], $membership->get('group_roles')->getValue());
+      $this->assertArrayHasKey('org-member', $membership->getRoles());
+      $this->assertArrayNotHasKey('org-insider', $membership->getRoles());
+    }
+    $this->assertFalse(GroupMembership::loadSingle($foreign, $admin));
+    $this->assertFalse(GroupMembership::loadSingle($own, $moderator));
+    $this->assertFalse(GroupMembership::loadSingle($this->loadOrganisation('TBA'), $moderator));
+    $this->assertInstanceOf(GroupMembership::class, GroupMembership::loadSingle($this->loadOrganisation('SWE'), $moderator));
+
+    // A later organisation outside this source must be included on replay.
+    $later = Group::create([
+      'type' => 'org',
+      'label' => 'Later own organisation',
+      'field_jurisdiction' => $this->jurisdiction->id(),
+    ]);
+    $later->save();
+    $preview = $this->importer->import($configuration, (int) $this->jurisdiction->id());
+    $this->assertStringContainsString('organisation memberships within jurisdiction', json_encode($preview['rows'], JSON_THROW_ON_ERROR));
+    $this->assertFalse(GroupMembership::loadSingle($later, $admin));
+    $replay = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $replay['errors']);
+    $this->assertInstanceOf(GroupMembership::class, GroupMembership::loadSingle($later, $admin));
+    $this->assertFalse(GroupMembership::loadSingle($later, $moderator));
+    $stable = $this->importer->import($configuration, (int) $this->jurisdiction->id());
+    $this->assertNotContains('update', array_column($stable['rows'], 'action'));
+    $configuration['users'] = [$configuration['users'][0]];
+    $configuration['organisations'][] = ['code' => 'SKIPPED', 'name' => 'Not created'];
+    foreach ([FALSE, TRUE] as $apply) {
+      $skipped = $this->importer->import($configuration, (int) $this->jurisdiction->id(), ['organisations'], $apply);
+      $this->assertSame([], $skipped['errors']);
+      $this->assertNotContains('update', array_column($skipped['rows'], 'action'));
+    }
   }
 
   /**

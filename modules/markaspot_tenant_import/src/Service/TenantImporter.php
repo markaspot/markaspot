@@ -288,6 +288,7 @@ class TenantImporter {
         $requiredRoles[] = TenantConfigValidator::ROLES[$sourceRole];
         if ($sourceRole === 'tenant_admin') {
           $requiredRoles[] = 'jur-member';
+          $requiredRoles[] = 'org-member';
           if (!$this->entityTypeManager->getStorage('user_role')->load('tenant_admin')) {
             $errors[] = 'Drupal role tenant_admin is required by the existing membership sync hook.';
           }
@@ -679,6 +680,7 @@ class TenantImporter {
         $jurisdiction,
         $existingOrganisations,
         $context['profile_protected'][mb_strtolower($email)],
+        !in_array('organisations', $skip, TRUE),
       );
       $reason = $changes === []
         ? 'User profile and required memberships already match.'
@@ -1021,6 +1023,12 @@ class TenantImporter {
             $sourceRole === 'tenant_admin' && !$user->hasRole('tenant_admin'),
           );
 
+          if ($sourceRole === 'tenant_admin') {
+            foreach ($this->jurisdictionOrganisations($jurisdiction) as $organisation) {
+              $this->ensurePlainMembership($organisation, $user);
+            }
+          }
+
           if (in_array($sourceRole, ['org_member', 'org_moderator'], TRUE)) {
             $organisationCode = mb_strtolower(trim((string) $userRow['organisation_code']));
             $organisation = $organisationEntities[$organisationCode] ?? NULL;
@@ -1166,6 +1174,7 @@ class TenantImporter {
     GroupInterface $jurisdiction,
     array $organisations,
     bool $profileProtected,
+    bool $createsOrganisations,
   ): array {
     $changes = [];
     if ($this->userProfileUpdates($user, $row, $profileProtected) !== []) {
@@ -1180,6 +1189,15 @@ class TenantImporter {
     }
     if ($sourceRole === 'tenant_admin' && !$user->hasRole('tenant_admin')) {
       $changes[] = 'Drupal tenant_admin role sync';
+    }
+    if ($sourceRole === 'tenant_admin') {
+      foreach ([...$this->jurisdictionOrganisations($jurisdiction), ...array_values($organisations)] as $organisation) {
+        if (($organisation instanceof GroupInterface && !$organisation->getMember($user))
+          || ($organisation === NULL && $createsOrganisations)) {
+          $changes[] = 'organisation memberships within jurisdiction';
+          break;
+        }
+      }
     }
     if ($sourceRole === 'org_moderator' && !$user->hasRole('contractor')) {
       $changes[] = 'Drupal contractor role';
@@ -1354,6 +1372,22 @@ class TenantImporter {
     elseif ($forceRoleSync) {
       $membership->save();
     }
+  }
+
+  /**
+   * Loads organisations belonging to exactly the imported jurisdiction.
+   *
+   * @return \Drupal\group\Entity\GroupInterface[]
+   *   Existing organisations, including those omitted from a partial import.
+   */
+  private function jurisdictionOrganisations(GroupInterface $jurisdiction): array {
+    $storage = $this->entityTypeManager->getStorage('group');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'org')
+      ->condition('field_jurisdiction', $jurisdiction->id())
+      ->execute();
+    return $storage->loadMultiple($ids);
   }
 
   /**

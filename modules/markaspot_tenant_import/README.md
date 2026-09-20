@@ -38,7 +38,13 @@ The importer uses category codes, organisation codes, status names, and user
 email addresses as case-insensitive identity keys. Memberships and roles are
 only added, never removed. Existing passwords are preserved; new accounts get
 random passwords that are never printed. The existing Group membership hooks
-synchronize the Drupal `tenant_admin` role and derived organisation memberships.
+synchronize the Drupal `tenant_admin` role and derived jurisdiction memberships.
+Imported tenant administrators receive plain membership in every organisation
+belonging to exactly their jurisdiction, including existing organisations omitted
+from a partial import. No individual organisation administrator role or global
+all-groups flag is granted. Organisations created later outside the importer
+require a subsequent import to establish these memberships. Organisation-scoped
+moderation remains limited to its explicitly assigned organisation.
 Only new accounts use the email as their login name and start active. Existing
 login names, email spelling, passwords and account status are preserved. Blocked
 accounts are reported as `blocked, membership skipped` and are not modified.
