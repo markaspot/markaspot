@@ -12,4 +12,6 @@ Template readers require staff capabilities and jurisdiction membership. Organis
 
 Status colours are explicit `statuses[].hex` values. The workbook converter accepts six-digit hexadecimal values from the status sheet; a missing colour retains its previous default. Existing municipal labels require a source or confirmation and must not be inferred from a colour.
 
+Dashboard metrics classify statuses by their Open311 mapping. Each `status_distribution` row exposes `open311` as `open` or `closed`; display names and colours do not determine this meaning. The shared StatusClassifier also honours legacy Open311 configuration, so metric responses carry its configuration cache tag. Older frontends ignore the additive field; the current frontend retains the previous label fallback only for responses without that field.
+
 German field descriptions are shipped as Drupal language configuration overrides. The canonical English definitions remain available to other interface languages.

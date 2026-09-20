@@ -12,4 +12,6 @@ Lesende benötigen Mitarbeitendenrechte und die Mitgliedschaft in der Jurisdikti
 
 Statusfarben stehen ausdrücklich in `statuses[].hex`. Der Excel-Konverter übernimmt sechsstellige Hex-Werte aus dem Statusblatt. Ohne Farbangabe bleibt der bisherige Standardwert erhalten. Bestehende kommunale Bezeichnungen benötigen eine Quelle oder Bestätigung und dürfen nicht aus einer Farbe abgeleitet werden.
 
+Die Statistik klassifiziert Status über deren Open311-Zuordnung. Jede Zeile in `status_distribution` liefert dafür `open311` mit `open` oder `closed`. Anzeigenamen und Farben bestimmen diese Bedeutung nicht. Der gemeinsame StatusClassifier berücksichtigt auch die ältere Open311-Konfiguration; deren Cache-Tag gehört deshalb zu den Statistikantworten. Ein älteres Frontend ignoriert das zusätzliche Feld, das aktuelle Frontend verwendet die frühere Namenszuordnung nur für Antworten ohne dieses Feld.
+
 Deutsche Feldbeschreibungen werden als Drupal-Sprachkonfiguration ausgeliefert. Die englischen Ausgangsdefinitionen bleiben für andere Oberflächensprachen erhalten.
