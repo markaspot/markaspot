@@ -7,6 +7,11 @@ access ai insights:
   title: 'Access AI Insights'
   description: 'View AI analysis results such as embeddings and similarity scores.'
 
+use markaspot ai assist:
+  title: 'Use AI form assistance'
+  description: 'Request AI suggestions for editable service requests without managing AI providers or queues.'
+  restrict access: true
+
 review ai duplicates:
   title: 'Review AI Duplicates'
   description: 'Review and manage duplicate detection matches.'

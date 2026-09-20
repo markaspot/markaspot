@@ -60,6 +60,11 @@ class PasswordlessAuthController extends ControllerBase {
     'administer markaspot mail texts' => 'administer markaspot mail texts',
     'assign service requests' => 'assign service requests',
     'switch users' => 'switch users',
+    'use markaspot ai assist' => 'use markaspot ai assist',
+    'administer markaspot ai' => 'administer markaspot ai',
+    'access ai insights' => 'access ai insights',
+    'review ai duplicates' => 'review ai duplicates',
+    'view ai sentiment' => 'view ai sentiment',
   ];
 
   /**

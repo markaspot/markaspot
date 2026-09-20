@@ -49,6 +49,11 @@ class OtpService {
     'administer site configuration' => 'administer site configuration',
     'triage inbound mail' => 'triage inbound mail',
     'delete requests' => 'delete any service_request content',
+    'use markaspot ai assist' => 'use markaspot ai assist',
+    'administer markaspot ai' => 'administer markaspot ai',
+    'access ai insights' => 'access ai insights',
+    'review ai duplicates' => 'review ai duplicates',
+    'view ai sentiment' => 'view ai sentiment',
   ];
 
   /**

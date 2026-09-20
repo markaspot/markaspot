@@ -1514,6 +1514,17 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * AI capabilities use actual grants rather than inferred global roles.
+   */
+  public function testFrontendAiPermissionsFollowAccountGrants(): void {
+    $permissions = ['use markaspot ai assist', 'access ai insights', 'review ai duplicates', 'view ai sentiment'];
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => in_array($permission, $permissions, TRUE));
+    $method = new \ReflectionMethod($this->controller, 'getFrontendPermissions');
+    $this->assertSame($permissions, $method->invoke($this->controller, $account));
+  }
+
+  /**
    * Tests anonymous session handoff starts at Drupal login.
    *
    * @covers ::startSessionHandoff

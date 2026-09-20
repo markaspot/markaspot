@@ -212,7 +212,7 @@ markaspot_ai.attributes.assist:
     _title: 'AI Form Assistant'
   methods: [POST]
   requirements:
-    _permission: 'administer markaspot ai'
+    _permission: 'use markaspot ai assist'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'

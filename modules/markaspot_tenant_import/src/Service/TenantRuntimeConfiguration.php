@@ -11,7 +11,8 @@ final class TenantRuntimeConfiguration {
 
   public const FEATURES = [
     'aiAnalysis', 'aiProcessing', 'operationsDashboard', 'statistics', 'photoReporting',
-    'classicReporting', 'dashboard', 'feedback',
+    'classicReporting', 'dashboard', 'feedback', 'aiDuplicates',
+    'piiRedaction', 'privacyBlockOnFlag', 'moderation',
   ];
 
   public const LANGUAGES = [
@@ -69,6 +70,32 @@ final class TenantRuntimeConfiguration {
         }
       }
     }
+    if (array_key_exists('ai', $tenant)) {
+      if (!is_array($tenant['ai']) || array_is_list($tenant['ai'])) {
+        $errors[] = 'tenant.ai must be an object of boolean analysis options.';
+      }
+      else {
+        foreach ($tenant['ai'] as $name => $value) {
+          $providers = ['azure', 'openai', 'ionos', 'local_nlp'];
+          if ($name === 'pii_provider' && is_string($value) && in_array($value, $providers, TRUE)) {
+            continue;
+          }
+          if (!in_array($name, ['sentiment_analysis', 'detect_names'], TRUE) || !is_bool($value)) {
+            $errors[] = "tenant.ai.$name is unsupported or is not boolean.";
+          }
+        }
+      }
+    }
+    $features = is_array($tenant['features'] ?? NULL) ? $tenant['features'] : [];
+    $ai = is_array($tenant['ai'] ?? NULL) ? $tenant['ai'] : [];
+    if (($features['aiDuplicates'] ?? FALSE) === TRUE || (($ai['sentiment_analysis'] ?? FALSE) === TRUE)) {
+      if (($features['aiProcessing'] ?? FALSE) !== TRUE) {
+        $errors[] = 'Duplicate and sentiment analysis require explicit aiProcessing=true.';
+      }
+    }
+    if (($ai['detect_names'] ?? FALSE) === TRUE && ($features['piiRedaction'] ?? FALSE) !== TRUE) {
+      $errors[] = 'Name detection requires explicit piiRedaction=true.';
+    }
     $urlSchemes = ['http', 'https'];
     foreach (['legal_notice_url', 'privacy_policy_url'] as $key) {
       if (isset($tenant[$key]) && $tenant[$key] !== '' && (!is_string($tenant[$key]) || !filter_var($tenant[$key], FILTER_VALIDATE_URL) || !in_array(parse_url($tenant[$key], PHP_URL_SCHEME), $urlSchemes, TRUE))) {
@@ -79,6 +106,35 @@ final class TenantRuntimeConfiguration {
       $errors[] = 'tenant.logo_file must be a relative file name.';
     }
     return $errors;
+  }
+
+  /**
+   * Plans global options for an owned, single-jurisdiction dedicated stack.
+   *
+   * Generic multi-tenant imports must never apply these platform settings.
+   * Providers and credentials stay in the deployment's secret store.
+   */
+  public static function dedicatedSettings(array $tenant): array {
+    $settings = [];
+    foreach (['piiRedaction', 'privacyBlockOnFlag'] as $feature) {
+      if (isset($tenant['features'][$feature])) {
+        $settings['markaspot_nuxt.settings']['platform_features.' . $feature] = $tenant['features'][$feature];
+      }
+    }
+    foreach (['aiDuplicates' => 'duplicate_detection.enabled', 'piiRedaction' => 'pii_redaction.enabled'] as $feature => $key) {
+      if (isset($tenant['features'][$feature])) {
+        $settings['markaspot_ai.settings'][$key] = $tenant['features'][$feature];
+      }
+    }
+    foreach (['sentiment_analysis' => 'sentiment_analysis.enabled', 'detect_names' => 'pii_redaction.detect_names'] as $option => $key) {
+      if (isset($tenant['ai'][$option])) {
+        $settings['markaspot_ai.settings'][$key] = $tenant['ai'][$option];
+      }
+    }
+    if (isset($tenant['ai']['pii_provider'])) {
+      $settings['markaspot_ai.settings']['pii_redaction.provider'] = $tenant['ai']['pii_provider'];
+    }
+    return $settings;
   }
 
   /**

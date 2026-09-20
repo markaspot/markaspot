@@ -29,6 +29,15 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
       ['map_zoom' => '12'],
       ['map_zoom' => 0],
       ['features' => ['invented' => TRUE]],
+      ['ai' => NULL],
+      ['ai' => 'azure'],
+      ['ai' => ['sentiment_analysis']],
+      ['ai' => ['sentiment_analysis' => 'true']],
+      ['ai' => ['api_key' => 'not-allowed']],
+      ['ai' => ['pii_provider' => 'invented']],
+      ['ai' => ['detect_names' => TRUE]],
+      ['ai' => ['sentiment_analysis' => TRUE]],
+      ['features' => ['aiDuplicates' => TRUE]],
       ['languages' => ['xx']],
       ['legal_notice_url' => 'javascript:alert(1)'],
     ] as $tenant) {
@@ -74,6 +83,37 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
     $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
     $this->assertSame([], TenantRuntimeConfiguration::merge([], $tenant));
     $this->assertStringContainsString('not applied', TenantRuntimeConfiguration::warnings($tenant)[0]);
+  }
+
+  /**
+   * Dedicated feature policy preserves explicit false and provider separation.
+   */
+  public function testDedicatedAnalysisSettings(): void {
+    $tenant = [
+      'features' => [
+        'aiProcessing' => TRUE,
+        'aiDuplicates' => TRUE,
+        'piiRedaction' => TRUE,
+        'privacyBlockOnFlag' => FALSE,
+      ],
+      'ai' => ['sentiment_analysis' => TRUE, 'detect_names' => FALSE, 'pii_provider' => 'azure'],
+    ];
+    $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
+    $settings = TenantRuntimeConfiguration::dedicatedSettings($tenant);
+    $this->assertSame([
+      'duplicate_detection.enabled' => TRUE,
+      'pii_redaction.enabled' => TRUE,
+      'sentiment_analysis.enabled' => TRUE,
+      'pii_redaction.detect_names' => FALSE,
+      'pii_redaction.provider' => 'azure',
+    ], $settings['markaspot_ai.settings']);
+    $this->assertFalse($settings['markaspot_nuxt.settings']['platform_features.privacyBlockOnFlag']);
+    $this->assertSame([], TenantRuntimeConfiguration::dedicatedSettings([]));
+    $tenant['features']['aiDuplicates'] = FALSE;
+    $tenant['ai']['sentiment_analysis'] = FALSE;
+    $settings = TenantRuntimeConfiguration::dedicatedSettings($tenant);
+    $this->assertFalse($settings['markaspot_ai.settings']['duplicate_detection.enabled']);
+    $this->assertFalse($settings['markaspot_ai.settings']['sentiment_analysis.enabled']);
   }
 
   /**

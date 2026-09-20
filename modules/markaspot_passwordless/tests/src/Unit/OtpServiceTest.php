@@ -404,11 +404,14 @@ class OtpServiceTest extends UnitTestCase {
   public function testGetFrontendPermissionsReturnsDashboardCapabilities(): void {
     $user = $this->createMock(User::class);
     $user->method('hasPermission')
-      ->willReturnMap([
-        ['administer site configuration', FALSE],
-        ['triage inbound mail', TRUE],
-        ['delete any service_request content', TRUE],
-      ]);
+      ->willReturnCallback(static fn(string $permission): bool => in_array($permission, [
+        'triage inbound mail',
+        'delete any service_request content',
+        'use markaspot ai assist',
+        'access ai insights',
+        'review ai duplicates',
+        'view ai sentiment',
+      ], TRUE));
 
     $service = $this->buildService($this->createMock(Connection::class));
     $method = new \ReflectionMethod($service, 'getFrontendPermissions');
@@ -417,6 +420,10 @@ class OtpServiceTest extends UnitTestCase {
     $this->assertSame([
       'triage inbound mail',
       'delete requests',
+      'use markaspot ai assist',
+      'access ai insights',
+      'review ai duplicates',
+      'view ai sentiment',
     ], $method->invoke($service, $user));
   }
 

@@ -269,6 +269,11 @@ final class AttributeController extends ControllerBase {
    *   JSON with suggestions for the requested fields.
    */
   public function assist(Request $request): JsonResponse {
+    // This assistant includes process history. Organisation-scoped accounts
+    // need a separate field-aware contract before this route can serve them.
+    if (!$this->currentUser()->hasPermission('administer markaspot ai') && !in_array('tenant_admin', $this->currentUser()->getRoles(), TRUE)) {
+      return new JsonResponse(['success' => FALSE, 'message' => 'Access denied.'], 403);
+    }
     $content = json_decode($request->getContent(), TRUE) ?? [];
     $nid = (int) ($content['nid'] ?? 0);
 
