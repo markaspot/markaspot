@@ -38,6 +38,7 @@ label: 'Tenant Admin'
 weight: 4
 is_admin: false
 permissions:
+  - 'assign service requests'
   - 'access administration pages'
   - 'access ai insights'
   - 'access content'

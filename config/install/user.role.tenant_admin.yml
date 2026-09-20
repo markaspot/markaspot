@@ -2,6 +2,7 @@ langcode: en
 status: true
 dependencies:
   module:
+    - markaspot_group
     - field_permissions
     - node
     - system
@@ -11,6 +12,7 @@ label: 'Tenant Admin'
 weight: 4
 is_admin: false
 permissions:
+  - 'assign service requests'
   - 'access administration pages'
   - 'access content'
   - 'access open311 advanced properties'
