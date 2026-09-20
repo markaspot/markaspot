@@ -236,8 +236,19 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
     $org->save();
     $this->assertNotNull($org->getMember(User::load(1)));
     foreach (['service_category' => 'Road', 'service_status' => 'Open'] as $vid => $name) {
-      Term::create(['vid' => $vid, 'name' => $name, 'field_jurisdiction' => $jur->id()])->save();
+      $values = ['vid' => $vid, 'name' => $name, 'field_jurisdiction' => $jur->id()];
+      if ($vid === 'service_status') {
+        $values['field_open311_mapping'] = 'initial';
+      }
+      Term::create($values)->save();
     }
+    $closed = Term::create([
+      'vid' => 'service_status',
+      'name' => 'Closed',
+      'field_jurisdiction' => $jur->id(),
+      'field_open311_mapping' => 'closed',
+    ]);
+    $closed->save();
     $assets = sys_get_temp_dir() . '/demo-test-' . bin2hex(random_bytes(8));
     mkdir($assets);
     file_put_contents($assets . '/synthetic.txt', 'Synthetic attachment, not a real report.');
@@ -246,7 +257,7 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
     $fixture = [
       'version' => 1, 'synthetic' => TRUE, 'fixture_id' => 'kernel-demo',
       'requests' => [[
-        'key' => 'one', 'title' => 'Synthetic report', 'category' => 'Road', 'status' => 'Open',
+        'key' => 'one', 'title' => 'Synthetic report', 'category' => 'Road', 'status' => 'Closed',
         'organisations' => ['Synthetic department'],
         'fields' => [
           'body' => 'Synthetic description',
@@ -255,7 +266,7 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
           'field_notification' => FALSE,
         ],
         'status_history' => [
-          ['status' => 'Open', 'note' => 'Synthetic status', 'author_email' => 'staff@example.invalid'],
+          ['status' => 'Closed', 'note' => 'Synthetic status', 'author_email' => 'staff@example.invalid'],
         ],
         'internal_remarks' => [['text' => 'Synthetic internal remark', 'author_email' => 'staff@example.invalid']],
         'files' => [
@@ -314,6 +325,8 @@ final class TenantDemoContentKernelTest extends KernelTestBase {
       $this->assertCount(1, $nodes);
       $node = reset($nodes);
       $this->assertSame(0, (int) $node->getOwnerId());
+      $this->assertSame((int) $closed->id(), (int) $node->get('field_status')->target_id);
+      $this->assertSame((int) $closed->id(), (int) $node->get('field_status_notes')->entity->get('field_status_term')->target_id);
       $this->assertSame((int) $org->id(), (int) $node->get('field_organisation')->target_id);
       $this->assertSame('+49 000 000000', $node->get('field_phone')->value);
       $this->assertCount(1, $node->get('field_status_notes'));

@@ -201,8 +201,15 @@ final class TenantDemoContent {
         unset($transaction);
       }
       catch (\Throwable $error) {
-        $transaction->rollBack();
-        throw new \RuntimeException('Demo creation failed; partial fixture state requires explicit recovery. No retry or overwrite was attempted.', 0, $error);
+        try {
+          $transaction->rollBack();
+        }
+        catch (\Throwable) {
+          // Entity hooks can implicitly commit DDL. Keep the original failure
+          // visible and the started marker intact rather than masking it.
+          throw new \RuntimeException('Demo creation failed and rollback was unavailable; explicit recovery is required. Cause: ' . $error->getMessage(), 0, $error);
+        }
+        throw new \RuntimeException('Demo creation failed; partial fixture state requires explicit recovery. No retry or overwrite was attempted. Cause: ' . $error->getMessage(), 0, $error);
       }
       $evidence = [];
       foreach ($created as $entity) {
@@ -516,6 +523,24 @@ final class TenantDemoContent {
     }
     $node->save();
     $saved = $this->entities->getStorage('node')->loadUnchanged($node->id());
+    // Ordinary creation assigns the jurisdiction's initial status. Restore the
+    // explicitly requested historical status through an ordinary update, after
+    // checking that no other scoped reference was changed by creation hooks.
+    foreach ($expectedReferences as $field => $ids) {
+      if ($field !== 'field_status' && array_map('strval', array_column($saved->get($field)->getValue(), 'target_id')) !== $ids) {
+        throw new \RuntimeException('A normal entity hook changed requested scoped references; fixture creation stopped.');
+      }
+    }
+    if (array_map('strval', array_column($saved->get('field_status')->getValue(), 'target_id')) !== $expectedReferences['field_status']) {
+      $initial = $this->processor->getInitialStatusTid((int) $saved->get('field_jurisdiction')->target_id);
+      if ($initial === NULL || (int) $saved->get('field_status')->target_id !== $initial) {
+        throw new \RuntimeException('An unexpected status hook changed the fixture; creation stopped.');
+      }
+      $saved->set('field_status', array_map(static fn(string $id): array => ['target_id' => $id], $expectedReferences['field_status']));
+      $this->validate($saved);
+      $saved->save();
+      $saved = $this->entities->getStorage('node')->loadUnchanged($saved->id());
+    }
     foreach ($expectedReferences as $field => $ids) {
       if (array_map('strval', array_column($saved->get($field)->getValue(), 'target_id')) !== $ids) {
         throw new \RuntimeException('A normal entity hook changed requested scoped references; fixture creation stopped.');
