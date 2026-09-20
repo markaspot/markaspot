@@ -13,6 +13,7 @@ services:
       - '@config.factory'
       - '@logger.factory'
       - '@markaspot_group.status_term_scope'
+      - '@markaspot_open311.status_classifier'
       - '@?markaspot_group.hierarchy_resolver'
 
   markaspot_dashboard.request_link:

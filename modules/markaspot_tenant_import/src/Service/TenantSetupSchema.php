@@ -131,7 +131,8 @@ class TenantSetupSchema {
    * Limits automatic roots to report and associated paragraph field schemas.
    */
   private function isReportingField(string $name): bool {
-    return str_starts_with($name, 'field.field.node.service_request.')
+    return str_starts_with($name, 'field.field.node.boilerplate.')
+      || str_starts_with($name, 'field.field.node.service_request.')
       || str_starts_with($name, 'field.field.media.request_image.')
       || str_starts_with($name, 'field.field.paragraph.status.')
       || str_starts_with($name, 'field.field.paragraph.internal_remark.');

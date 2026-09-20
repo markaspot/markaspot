@@ -495,3 +495,64 @@ function markaspot_boilerplate_update_11004(): void {
 function markaspot_boilerplate_update_11005(): string {
   return 'Cardinality bump relocated to markaspot_group_update_11919.';
 }
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_boilerplate_install(bool $is_syncing = FALSE): void {
+  if (!$is_syncing) {
+    _markaspot_boilerplate_initialize_manager_permissions();
+  }
+}
+
+/**
+ * Adds scoped template management rights when the optional provider is enabled.
+ */
+function _markaspot_boilerplate_initialize_manager_permissions(): void {
+  if (!\Drupal::moduleHandler()->moduleExists('markaspot_boilerplate')
+    || !\Drupal::moduleHandler()->moduleExists('gnode')) {
+    return;
+  }
+  $jurisdiction_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+  $role = \Drupal::entityTypeManager()->getStorage('group_role')->load($jurisdiction_type . '-tenant_admin');
+  if (!$role instanceof \Drupal\group\Entity\GroupRoleInterface) {
+    return;
+  }
+  $changed = FALSE;
+  foreach ([
+    'create group_node:boilerplate entity',
+    'create group_node:boilerplate relationship',
+    'delete any group_node:boilerplate entity',
+    'update any group_node:boilerplate entity',
+    'view group_node:boilerplate entity',
+    'view group_node:boilerplate relationship',
+    'view unpublished group_node:boilerplate entity',
+  ] as $permission) {
+    if (!$role->hasPermission($permission)) {
+      $role->grantPermission($permission);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $role->save();
+  }
+}
+
+/**
+ * Adds optional template management and inactive visibility to scoped managers.
+ */
+function markaspot_boilerplate_update_11006(): string {
+  _markaspot_boilerplate_initialize_manager_permissions();
+  return 'Initialized scoped template manager permissions for the enabled module.';
+}
+
+/**
+ * Implements hook_update_dependencies().
+ */
+function markaspot_boilerplate_update_dependencies(): array {
+  if (!\Drupal::moduleHandler()->moduleExists('markaspot_group')) {
+    return [];
+  }
+  // Run after the older role normalizer, which has a narrower permission list.
+  return ['markaspot_boilerplate' => [11006 => ['markaspot_group' => 11921]]];
+}

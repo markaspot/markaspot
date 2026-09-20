@@ -54,6 +54,7 @@ class OtpService {
     'access ai insights' => 'access ai insights',
     'review ai duplicates' => 'review ai duplicates',
     'view ai sentiment' => 'view ai sentiment',
+    'access dashboard kpis' => 'access dashboard kpis',
   ];
 
   /**

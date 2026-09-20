@@ -16,6 +16,19 @@ use PHPUnit\Framework\Attributes\Group;
 final class TenantRuntimeConfigurationTest extends UnitTestCase {
 
   /**
+   * Unified reporting keeps explicit photo and AI consent choices.
+   */
+  public function testUnifiedReportingContract(): void {
+    $config = ['enabled' => TRUE, 'aiMode' => 'opt_in', 'photoPolicy' => 'optional'];
+    $tenant = ['features' => ['unifiedReporting' => $config]];
+    $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
+    $this->assertSame($config, TenantRuntimeConfiguration::merge([], $tenant)['features']['unifiedReporting']);
+    foreach ([TRUE, ['enabled' => TRUE], array_replace($config, ['aiMode' => 'always']), $config + ['script' => 'unsafe']] as $invalid) {
+      $this->assertNotEmpty(TenantRuntimeConfiguration::validate(['features' => ['unifiedReporting' => $invalid]]));
+    }
+  }
+
+  /**
    * Rejects unsafe CSS, coordinates and unknown switches.
    */
   public function testValidationRejectsUnsupportedAndUnsafeValues(): void {

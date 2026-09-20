@@ -32,6 +32,41 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 final class TenantDemoContentKernelTest extends KernelTestBase {
 
   /**
+   * Creates scoped templates and refuses ownership crossing jurisdictions.
+   */
+  public function testBoilerplateOwnership(): void {
+    NodeType::create(['type' => 'boilerplate', 'name' => 'Template'])->save();
+    $this->container->get('entity_type.manager')->getStorage('group_relationship_type')->createFromPlugin(GroupType::load('jur'), 'group_node:boilerplate')->save();
+    $this->field('node', 'boilerplate', 'body', 'text_long');
+    $this->field('node', 'boilerplate', 'field_boilerplate_type', 'string');
+    $this->field('node', 'boilerplate', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
+    $this->field('node', 'boilerplate', 'field_organisation', 'entity_reference', ['target_type' => 'group'], [], -1);
+    $jur = Group::create(['type' => 'jur', 'label' => 'Template jurisdiction']);
+    $jur->save();
+    $foreign = Group::create(['type' => 'jur', 'label' => 'Foreign jurisdiction']);
+    $foreign->save();
+    $entities = $this->container->get('entity_type.manager');
+    $owned = $this->container->get('keyvalue')->get('template-test');
+    $rows = [['key' => 'received', 'title' => 'Received', 'text' => 'Your report has been received.', 'type' => 'status_notes', 'active' => TRUE]];
+    $created = \Drupal\markaspot_tenant_import\Service\TenantBoilerplates::apply($rows, $jur, $entities, $owned, 'en');
+    $this->assertSame('create', $created[0]['action']);
+    $nodes = $entities->getStorage('node')->loadByProperties(['uuid' => $created[0]['uuid']]);
+    $node = reset($nodes);
+    $this->assertSame('plain_text', $node->get('body')->format);
+    $this->assertCount(1, $jur->getRelationshipsByEntity($node, 'group_node:boilerplate'));
+    $this->assertSame((int) $jur->id(), (int) $node->get('field_jurisdiction')->target_id);
+    $rows[0]['active'] = FALSE;
+    $updated = \Drupal\markaspot_tenant_import\Service\TenantBoilerplates::apply($rows, $jur, $entities, $owned, 'en');
+    $this->assertSame($created[0]['uuid'], $updated[0]['uuid']);
+    $this->assertFalse($node->isPublished());
+    $this->assertSame(1, (int) $entities->getStorage('node')->getQuery()->accessCheck(FALSE)->condition('type', 'boilerplate')->count()->execute());
+    $node->set('field_jurisdiction', $foreign->id())->save();
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('outside its jurisdiction');
+    \Drupal\markaspot_tenant_import\Service\TenantBoilerplates::apply($rows, $jur, $entities, $owned, 'en');
+  }
+
+  /**
    * Registers real private storage before the test container is compiled.
    */
   public function register(ContainerBuilder $container): void {

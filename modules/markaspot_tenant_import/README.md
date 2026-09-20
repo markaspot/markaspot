@@ -203,8 +203,11 @@ Runtime input supported by both bootstrap and subsequent imports:
   mandatory for bootstrap. Address geocoding is deliberately not implicit.
 - `languages`: supported UI locale codes, first entry is default; lists replace.
 - `features`: boolean `aiAnalysis`, `aiProcessing`, `operationsDashboard`,
-  `statistics`, `photoReporting`, `classicReporting`, `dashboard`, `feedback`.
+  `statistics`, `photoReporting`, `classicReporting`, `dashboard`, `feedback`,
+  `aiDuplicates`, `piiRedaction`, `privacyBlockOnFlag`, `moderation`.
+  `unifiedReporting` is an object with `enabled`, `aiMode` and `photoPolicy`.
   Platform flags such as `passwordless` are configured by stack orchestration.
+- `boilerplates`: owned plain-text templates, applied by dedicated bootstrap.
 - Existing platform name, email, address, client name and short name.
 
 `logo_file` is applied by bootstrap only. It requires `--assets-dir`, realpath
@@ -298,3 +301,6 @@ eingeschränkt; die Befehlsausgabe weist ausdrücklich darauf hin.
 Synthetic test content is a separate, explicit operation:
 [English contract](docs/demo-content.md),
 [deutscher Vertrag](docs/demo-content.de.md).
+
+Initial templates, unified reporting and dashboard capabilities are documented in
+[English](docs/initial-content.md) and [German](docs/initial-content.de.md).

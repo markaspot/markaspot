@@ -131,6 +131,7 @@ class TenantSetup {
         // retain this invocation's lock and failure marker until it succeeds.
         $current = $this->kernel->getContainer()->get('markaspot_tenant_import.tenant_setup');
         $current->verifyRolePermissions($result['permission_exceptions']);
+        $current->initializeOptionalGroupPermissions();
         $this->state->set(self::COMPLETED, $expectedSiteUuid);
         $this->state->delete(self::STARTED);
         $result['permission_action'] = 'initialized';
@@ -143,6 +144,33 @@ class TenantSetup {
     finally {
       if ($apply) {
         $this->lock->release($lockName);
+      }
+    }
+  }
+
+  /**
+   * Initializes optional manager rights once after fresh config import.
+   */
+  private function initializeOptionalGroupPermissions(): void {
+    $enabled = $this->configFactory->get('core.extension')->get('module') ?? [];
+    if (!array_key_exists('markaspot_boilerplate', $enabled)) {
+      return;
+    }
+    require_once $this->appRoot . '/' . $this->modules->getPath('markaspot_boilerplate') . '/markaspot_boilerplate.install';
+    _markaspot_boilerplate_initialize_manager_permissions();
+    $jurisdictionType = $this->configFactory->get('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+    $role = $this->entityTypeManager->getStorage('group_role')->load($jurisdictionType . '-tenant_admin');
+    foreach ([
+      'create group_node:boilerplate entity',
+      'create group_node:boilerplate relationship',
+      'delete any group_node:boilerplate entity',
+      'update any group_node:boilerplate entity',
+      'view group_node:boilerplate entity',
+      'view group_node:boilerplate relationship',
+      'view unpublished group_node:boilerplate entity',
+    ] as $permission) {
+      if (!$role || !$role->hasPermission($permission)) {
+        throw new \RuntimeException('Template manager permission initialization failed: ' . $permission);
       }
     }
   }
@@ -211,6 +239,18 @@ class TenantSetup {
           ] : [],
         ];
       }
+    }
+    if (in_array('markaspot_boilerplate', $enabled, TRUE)) {
+      $sources[] = [
+        'storage' => new FileStorage($profilePath . '/modules/markaspot_boilerplate/config/optional'),
+        'required' => FALSE,
+        'required_names' => [
+          'field.field.node.boilerplate.body',
+          'field.field.node.boilerplate.field_boilerplate_type',
+          'field.field.node.boilerplate.field_jurisdiction',
+          'field.field.node.boilerplate.field_organisation',
+        ],
+      ];
     }
     // Reuse the neutral shipped paragraph schema without enabling escalation
     // routing, Fastmap, or any other product merely to obtain its fields.

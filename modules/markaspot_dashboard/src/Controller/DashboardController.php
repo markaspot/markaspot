@@ -126,6 +126,7 @@ class DashboardController extends ControllerBase {
     $cache_metadata->addCacheTags([
       'node_list:service_request',
       'taxonomy_term_list:service_status',
+      'config:markaspot_open311.settings',
       'taxonomy_term_list:service_category',
       'group_list',
     ]);
@@ -303,6 +304,7 @@ class DashboardController extends ControllerBase {
     $cache_metadata->addCacheTags([
       'node_list:service_request',
       'taxonomy_term_list:service_status',
+      'config:markaspot_open311.settings',
       'taxonomy_term_list:service_category',
     ]);
 

@@ -54,15 +54,21 @@ final class TenantBootstrapper {
     }
     $tenant = $configuration['tenant'];
     $dedicatedSettings = TenantRuntimeConfiguration::dedicatedSettings($tenant);
-    $aiPermissions = [];
+    $fachadminPermissions = [];
     if (isset($tenant['features']['aiProcessing'])) {
-      $aiPermissions['use markaspot ai assist'] = $tenant['features']['aiProcessing'];
+      $fachadminPermissions['use markaspot ai assist'] = $tenant['features']['aiProcessing'];
     }
     if (isset($tenant['ai']['sentiment_analysis'])) {
-      $aiPermissions['view ai sentiment'] = $tenant['ai']['sentiment_analysis'];
+      $fachadminPermissions['view ai sentiment'] = $tenant['ai']['sentiment_analysis'];
     }
-    if ((isset($dedicatedSettings['markaspot_ai.settings']) || in_array(TRUE, $aiPermissions, TRUE)) && !$this->modules->moduleExists('markaspot_ai')) {
+    if ((isset($dedicatedSettings['markaspot_ai.settings']) || in_array(TRUE, $fachadminPermissions, TRUE)) && !$this->modules->moduleExists('markaspot_ai')) {
       throw new \RuntimeException('Install markaspot_ai before configuring dedicated AI analysis.');
+    }
+    if (isset($tenant['features']['operationsDashboard'])) {
+      if ($tenant['features']['operationsDashboard'] && !$this->modules->moduleExists('markaspot_dashboard')) {
+        throw new \RuntimeException('Install markaspot_dashboard before enabling dashboard analytics.');
+      }
+      $fachadminPermissions['access dashboard kpis'] = $tenant['features']['operationsDashboard'];
     }
     if (($tenant['ai']['pii_provider'] ?? NULL) === 'local_nlp' && ($tenant['ai']['detect_names'] ?? FALSE) === TRUE && !$this->configFactory->get('markaspot_ai.settings')->get('nlp_service.enabled')) {
       throw new \RuntimeException('Local name detection requires an enabled NLP service in the deployment configuration.');
@@ -142,11 +148,11 @@ final class TenantBootstrapper {
         'rows' => [],
         'validation_defaults' => $validationPlan,
         'dedicated_settings' => $dedicatedSettings,
-        'fachadmin_ai_permissions' => $aiPermissions,
+        'fachadmin_permissions' => $fachadminPermissions,
       ];
       // These options are applied below only after single-root ownership has
       // been verified. Generic imports report them as informational instead.
-      $result['warnings'] = array_values(array_filter($result['warnings'], static fn(string $warning): bool => !str_starts_with($warning, 'tenant.ai ')));
+      $result['warnings'] = array_values(array_filter($result['warnings'], static fn(string $warning): bool => !str_starts_with($warning, 'tenant.ai ') && !str_starts_with($warning, 'tenant.boilerplates ')));
       if ($validationPlan['clear'] !== [] && (!$group->hasField('field_boundary') || $group->get('field_boundary')->isEmpty())) {
         $result['warnings'][] = 'Packaged example geography will be removed. Without a jurisdiction boundary, report locations are not geographically restricted.';
       }
@@ -226,12 +232,12 @@ final class TenantBootstrapper {
         }
         $config->save();
       }
-      if ($aiPermissions !== []) {
+      if ($fachadminPermissions !== []) {
         $role = $this->entities->getStorage('user_role')->load('tenant_admin');
         if (!$role instanceof RoleInterface) {
-          throw new \RuntimeException('Dedicated AI configuration requires the canonical tenant_admin role.');
+          throw new \RuntimeException('Dedicated permission configuration requires the canonical tenant_admin role.');
         }
-        foreach ($aiPermissions as $permission => $enabled) {
+        foreach ($fachadminPermissions as $permission => $enabled) {
           if ($enabled) {
             $role->grantPermission($permission);
           }
@@ -240,6 +246,20 @@ final class TenantBootstrapper {
           }
         }
         $role->save();
+        foreach ($fachadminPermissions as $permission => $enabled) {
+          if ($role->hasPermission($permission) !== $enabled) {
+            throw new \RuntimeException('Fachadmin permission configuration did not persist: ' . $permission);
+          }
+        }
+      }
+      if (isset($tenant['boilerplates']) || $this->keyValue->get('markaspot_tenant_import.bootstrap')->get('boilerplates:' . $group->uuid(), []) !== []) {
+        $result['boilerplates'] = TenantBoilerplates::apply(
+          $tenant['boilerplates'] ?? [],
+          $group,
+          $this->entities,
+          $this->keyValue->get('markaspot_tenant_import.bootstrap'),
+          $tenant['languages'][0] ?? 'en',
+        );
       }
       $this->keyValue->get('markaspot_tenant_import.bootstrap')->set('root', [
         'uuid' => $group->uuid(),

@@ -680,6 +680,44 @@ final class TenantImporterTest extends KernelTestBase {
   }
 
   /**
+   * Initial configuration controls Fachadmin analytics without an AI module.
+   */
+  public function testDedicatedAnalyticsPermissionFromConfiguration(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    // Register the real permission provider without unrelated HTTP services.
+    $handler = $this->container->get('module_handler');
+    $handler->setModuleList($handler->getModuleList() + [
+      'markaspot_dashboard' => new \Drupal\Core\Extension\Extension(DRUPAL_ROOT, 'module', 'profiles/contrib/markaspot/modules/markaspot_dashboard/markaspot_dashboard.info.yml'),
+    ]);
+    $this->container->set('user.permissions', NULL);
+    $configuration['tenant']['features']['operationsDashboard'] = TRUE;
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $service->bootstrap($configuration);
+    $this->assertFalse(Role::load('tenant_admin')->hasPermission('access dashboard kpis'));
+    $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertTrue(Role::load('tenant_admin')->hasPermission('access dashboard kpis'));
+    $configuration['tenant']['features']['operationsDashboard'] = FALSE;
+    $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertFalse(Role::load('tenant_admin')->hasPermission('access dashboard kpis'));
+  }
+
+  /**
+   * Missing analytics provider fails before creating the jurisdiction.
+   */
+  public function testDedicatedAnalyticsRequiresProvider(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $configuration['tenant']['features']['operationsDashboard'] = TRUE;
+    try {
+      $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+      $this->fail('Missing analytics provider was accepted.');
+    }
+    catch (\RuntimeException $exception) {
+      $this->assertStringContainsString('Install markaspot_dashboard', $exception->getMessage());
+    }
+    $this->assertSame([], Group::loadMultiple());
+  }
+
+  /**
    * Dedicated platform policy is read-only in preview and converges on repeat.
    */
   public function testDedicatedPlatformPolicyPreviewAndRepeat(): void {
@@ -812,7 +850,7 @@ final class TenantImporterTest extends KernelTestBase {
       $fields = $reflection->getAttributes(DefaultTableFields::class)[0]->newInstance()->fields;
       foreach (['table', 'json'] as $format) {
         $output = new BufferedOutput();
-        $command = new TenantBootstrapCommands($this->importer, $service);
+        $command = new TenantBootstrapCommands($this->importer, $service, $this->container->get('account_switcher'), $this->container->get('entity_type.manager'));
         $config = $this->createMock(DrushConfig::class);
         $config->method('cwd')->willReturn('/tmp');
         $command->setConfig($config);

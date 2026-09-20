@@ -678,4 +678,19 @@ class OtpServiceTest extends UnitTestCase {
     $this->assertSame(5, $selectConditions['jurisdiction_id']);
   }
 
+  /**
+   * Dashboard analytics follows the actual Drupal grant in auth responses.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testDashboardAnalyticsCapabilityFollowsGrant(): void {
+    $service = $this->buildService($this->createMock(Connection::class));
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(User::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'access dashboard kpis');
+      $this->assertSame($granted ? ['access dashboard kpis'] : [], $method->invoke($service, $account));
+    }
+  }
+
 }

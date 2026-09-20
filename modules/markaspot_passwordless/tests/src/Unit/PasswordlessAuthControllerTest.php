@@ -2240,4 +2240,19 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals('alice@example.com', $data['user']['email']);
   }
 
+  /**
+   * Dashboard analytics follows the actual Drupal grant in auth responses.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testDashboardAnalyticsCapabilityFollowsGrant(): void {
+    $service = $this->controller;
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(AccountInterface::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'access dashboard kpis');
+      $this->assertSame($granted ? ['access dashboard kpis'] : [], $method->invoke($service, $account));
+    }
+  }
+
 }

@@ -25,6 +25,9 @@ final class TenantRuntimeConfiguration {
    */
   public static function validate(array $tenant): array {
     $errors = [];
+    if (array_key_exists('boilerplates', $tenant)) {
+      $errors = array_merge($errors, TenantBoilerplates::validate($tenant['boilerplates']));
+    }
     if (isset($tenant['short_name']) && (!is_string($tenant['short_name']) || mb_strlen($tenant['short_name']) > 255)) {
       $errors[] = 'tenant.short_name must be a string no longer than 255 characters.';
     }
@@ -64,6 +67,15 @@ final class TenantRuntimeConfiguration {
       }
       else {
         foreach ($tenant['features'] as $name => $value) {
+          if ($name === 'unifiedReporting') {
+            if (!is_array($value) || array_diff(array_keys($value), ['enabled', 'aiMode', 'photoPolicy']) !== []
+              || !is_bool($value['enabled'] ?? NULL)
+              || !in_array($value['aiMode'] ?? NULL, ['disabled', 'opt_in', 'opt_out'], TRUE)
+              || !in_array($value['photoPolicy'] ?? NULL, ['optional', 'required', 'required_by_category'], TRUE)) {
+              $errors[] = 'tenant.features.unifiedReporting requires enabled, aiMode and photoPolicy.';
+            }
+            continue;
+          }
           if (!in_array($name, [...self::FEATURES, 'publicReports'], TRUE) || !is_bool($value)) {
             $errors[] = "tenant.features.$name is unsupported or is not boolean.";
           }
@@ -165,6 +177,9 @@ final class TenantRuntimeConfiguration {
       if (isset($tenant['features'][$feature])) {
         $patch['features'][$feature] = $tenant['features'][$feature];
       }
+    }
+    if (isset($tenant['features']['unifiedReporting'])) {
+      $patch['features']['unifiedReporting'] = $tenant['features']['unifiedReporting'];
     }
     foreach (['label' => 'name', 'short_name' => 'shortName'] as $key => $target) {
       if (!empty($tenant[$key])) {
