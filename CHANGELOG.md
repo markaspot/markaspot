@@ -1,5 +1,40 @@
 # Changelog
 
+## [11.9.198](https://github.com/markaspot/markaspot/compare/11.9.197...11.9.198) (2026-09-21)
+
+### Features
+
+* import separate light and dark tenant logos ([fc9a65c](https://github.com/markaspot/markaspot/commit/fc9a65c209b74eef15ca48a501a1feeead6b3eb1))
+* initialize tenant content and classify dashboard statuses semantically ([c536d1b](https://github.com/markaspot/markaspot/commit/c536d1bfd6f89134229e803c0b529cfccfa6f7c9))
+* provision scoped AI capabilities for dedicated tenants ([eaa736f](https://github.com/markaspot/markaspot/commit/eaa736fd477eefc23baae55dbb82fb91cc51228a))
+* prepare reporting schema and repeatable demo content ([90bf0c0](https://github.com/markaspot/markaspot/commit/90bf0c073dda59b69367fdc78bb39952839455da))
+* import organisation-scoped moderators with strict access guards ([e416e78](https://github.com/markaspot/markaspot/commit/e416e78e5aa29b8119305f5d243bc103fdc424de))
+* bootstrap dedicated tenants from validated configuration ([580ebad](https://github.com/markaspot/markaspot/commit/580ebad5c52370d5e70b41cd2c53b66226c5af31))
+
+### Bug Fixes
+
+* harden tenant JSON API defaults ([b9b55f1](https://github.com/markaspot/markaspot/commit/b9b55f1f2f507103cc450b9213901065fc19e3ec))
+* preserve entity identity in scoped contractor counts ([0a31ec8](https://github.com/markaspot/markaspot/commit/0a31ec8c9fdfd144f23e94b11bdf8954005247f1))
+* expose management form capability in auth responses ([4f4240e](https://github.com/markaspot/markaspot/commit/4f4240e8639467e3f07ae3b22e9d5f5a739c24d3))
+* provision tenant admin organisation memberships ([6ef66fa](https://github.com/markaspot/markaspot/commit/6ef66fa7a98a0b6ba2d78548eede0a00c1830b79))
+* include assignment permission in tenant admin defaults ([b65258e](https://github.com/markaspot/markaspot/commit/b65258ecc7f3873797ffffab2a6cbf3d72e57af2))
+* preserve explicit status in synthetic imports ([1134f82](https://github.com/markaspot/markaspot/commit/1134f8294f198ce0160c763003db8306a47b2ae5))
+* preserve operator context for synthetic content imports ([f879a9a](https://github.com/markaspot/markaspot/commit/f879a9add5afafd8e4258083584492c31bbe79e0))
+* verify setup permissions after container rebuild ([4f4e634](https://github.com/markaspot/markaspot/commit/4f4e634b3816163055818889e025dd3e4fa8fcb6))
+* preserve consent state when splitting existing reports ([0e1caab](https://github.com/markaspot/markaspot/commit/0e1caab065e2179c97ff79c1f343c8012f0a55b3))
+* apply imported tenant logos to both color modes ([cda8585](https://github.com/markaspot/markaspot/commit/cda85853545de148420d152738da67074c1045d5))
+* reject privileged permission drift before moderator import ([af26fa1](https://github.com/markaspot/markaspot/commit/af26fa1123bc1a0c8a6c5a0ea888fed74feca837))
+* use canonical Lucide icon for initial workspace status ([91585b3](https://github.com/markaspot/markaspot/commit/91585b38a1a38115fd40c38079401cb25c1ffb28))
+* align health checks with platform feature scopes ([4834fc8](https://github.com/markaspot/markaspot/commit/4834fc8f9ba52109275a00dd3c14e732b7696ae9))
+
+### Refactoring
+
+* expose guarded tenant setup commands ([c37f0d1](https://github.com/markaspot/markaspot/commit/c37f0d19c8661da6fb1d2180931fdbd5d60b706f))
+
+### Documentation
+
+* explain semantic status metrics for tenant configuration ([9cdbecf](https://github.com/markaspot/markaspot/commit/9cdbecfeaf613d7a449ef31e3e235fc2317602c8))
+
 ## [11.9.197](https://github.com/markaspot/markaspot/compare/11.9.196...11.9.197) (2026-09-19)
 
 ### Features
