@@ -3,7 +3,10 @@
 geolocation-mapbox-widget:
   version: VERSION
   js:
-    geolocation_mapbox.widget.js: { }
+    geolocation_mapbox.maplibre.js:
+      attributes:
+        type: module
+      preprocess: false
   css:
     theme:
       geolocation_mapbox.css: { }
@@ -20,9 +23,6 @@ leaflet:
 mapbox:
   dependencies:
     - core/leaflet
-  js:
-    /libraries/maplibre-gl/dist/maplibre-gl.js: { }
-    /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
   css:
     component:
       /libraries/maplibre-gl/dist/maplibre-gl.css: { }

@@ -3,7 +3,10 @@
 geolocation-nominatim-widget:
   version: VERSION
   js:
-    geolocation_nominatim.widget.js: {}
+    geolocation_nominatim.maplibre.js:
+      attributes:
+        type: module
+      preprocess: false
   css:
     theme:
       geolocation_nominatim.css: {}
@@ -17,9 +20,6 @@ leaflet:
       /libraries/leaflet/dist/leaflet.css: {}
 
 maplibre:
-  js:
-    /libraries/maplibre-gl/dist/maplibre-gl.js: { weight: -1, preprocess: false}
-    /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: {}
   css:
     component:
       /libraries/maplibre-gl/dist/maplibre-gl.css: {}
