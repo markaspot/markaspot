@@ -9,3 +9,11 @@ globalThis.maplibregl = maplibregl;
 
 await import('/libraries/maplibre--maplibre-gl-leaflet/dist/leaflet-maplibre-gl.js');
 await import('./geolocation_nominatim.widget.js');
+
+// Module scripts run after Drupal's initial behavior attachment. Initialize the
+// newly registered widget behavior once for the current document; later AJAX
+// attachments continue to use Drupal's normal behavior lifecycle.
+globalThis.Drupal?.behaviors?.geolocationNominatimWidget?.attach(
+  document,
+  globalThis.drupalSettings,
+);

@@ -10,6 +10,7 @@
       return;
     }
     let geosearchMarker; // store the GeoSearch marker
+    let marker;
 
     Drupal.geolocationNominatimWidget.map = L.map(mapSettings.id, {
       dragging: mapSettings.dragging,
@@ -221,7 +222,7 @@
         map.removeLayer(geosearchMarker);
       }
 
-      $val = parseResult(result, mapSettings);
+      const $val = parseResult(result, mapSettings);
       const $input = $('.leaflet-control-geosearch form input');
       $input.val($val);
       // return $val
@@ -441,6 +442,18 @@
       attach: function (context, settings) {
         if (settings.geolocationNominatim.widgetMaps) {
           $.each(settings.geolocationNominatim.widgetMaps, function (index, mapSettings) {
+            const mapElement = document.getElementById(mapSettings.id);
+            if (
+              !mapElement ||
+              (
+                context !== document &&
+                context !== mapElement &&
+                !context.contains?.(mapElement)
+              )
+            ) {
+              return;
+            }
+
             Drupal.geolocationNominatimWidget(mapSettings, context, function (marker, map, result) {
               $('.geolocation-widget-lat.for--' + mapSettings.id, context).val(marker.getLatLng().lat).trigger('change');
               $('.geolocation-widget-lng.for--' + mapSettings.id, context).val(marker.getLatLng().lng).trigger('change');

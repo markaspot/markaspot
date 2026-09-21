@@ -11,6 +11,7 @@
       return;
     }
     let geosearchMarker; // store the GeoSearch marker
+    let marker;
 
 
     Drupal.geolocationMapboxWidget.map = L.map(mapSettings.id, {
@@ -287,7 +288,7 @@
 
             // Wait for the text input fields to be loaded via AJAX.
             waitForAddressFields(() => {
-              const $addressNew = $form.find('.field--type-address').first();
+              const $addressNew = $('[data-drupal-selector="edit-field-address-0"]').first();
               Drupal.geolocationMapboxSetAddressDetails($addressNew, address);
             });
           };
@@ -402,6 +403,18 @@
     attach: function (context, settings) {
       if (settings.geolocationMapbox.widgetMaps) {
         $.each(settings.geolocationMapbox.widgetMaps, function (index, mapSettings) {
+          const mapElement = document.getElementById(mapSettings.id);
+          if (
+            !mapElement ||
+            (
+              context !== document &&
+              context !== mapElement &&
+              !context.contains?.(mapElement)
+            )
+          ) {
+            return;
+          }
+
           Drupal.geolocationMapboxWidget(mapSettings, context, function (marker, map, result) {
             $('.geolocation-widget-lat.for--' + mapSettings.id, context).val(marker.getLatLng().lat).trigger('change');
             $('.geolocation-widget-lng.for--' + mapSettings.id, context).val(marker.getLatLng().lng).trigger('change');
