@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.199](https://github.com/markaspot/markaspot/compare/11.9.198...11.9.199) (2026-09-21)
+
+### Bug Fixes
+
+* update maplibre for sanitizer security ([d6b1823](https://github.com/markaspot/markaspot/commit/d6b18233f5d97f03c9a969a6e4229afec5381ebc))
+
 ## [11.9.198](https://github.com/markaspot/markaspot/compare/11.9.197...11.9.198) (2026-09-21)
 
 ### Features
