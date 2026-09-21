@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Service;
 
+use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationship;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
@@ -1141,7 +1142,8 @@ class AttributeFillingService {
     $statusHistory = $this->buildStatusHistory($node, $langcode);
 
     // Internal remarks (without author - GDPR).
-    $remarks = $this->buildInternalRemarks($node);
+    $remarks = $node->hasField('field_internal_remark') && $node->get('field_internal_remark')->access('view')
+      ? $this->buildInternalRemarks($node) : '';
 
     // GDPR: field_service_provider_notes and field_service_provider_feedback
     // are excluded from LLM context (may contain unstructured PII).
@@ -1401,9 +1403,8 @@ class AttributeFillingService {
     // Organisation (Group entity type 'org', not taxonomy).
     if (in_array('organisation', $requestedFields, TRUE) && !empty($parsed['organisation'])) {
       $orgId = (string) $parsed['organisation'];
-      $groupStorage = $this->entityTypeManager->getStorage('group');
-      $groups = $groupStorage->loadByProperties(['uuid' => $orgId, 'type' => 'org']);
-      if (!empty($groups)) {
+      $allowed = array_map(static fn($group): string => $group->uuid(), $this->loadOrganisationOptions($node));
+      if (in_array($orgId, $allowed, TRUE)) {
         $suggestions['organisation'] = $orgId;
       }
       else {
@@ -1420,9 +1421,8 @@ class AttributeFillingService {
       // Optional status term ID.
       if (!empty($parsed['status_term_id'])) {
         $statusId = (string) $parsed['status_term_id'];
-        $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
-        $term = $termStorage->loadByProperties(['uuid' => $statusId, 'vid' => 'service_status']);
-        if (!empty($term)) {
+        $allowed = array_map(static fn($term): string => $term->uuid(), $this->loadStatusOptions($node));
+        if (in_array($statusId, $allowed, TRUE)) {
           $suggestions['status_term_id'] = $statusId;
         }
       }
@@ -1546,70 +1546,27 @@ class AttributeFillingService {
    *   Formatted organisation list, or empty string.
    */
   protected function buildOrganisationOptions(NodeInterface $node, string $langcode): string {
-    $groupStorage = $this->entityTypeManager->getStorage('group');
-
-    // Resolve the node's jurisdiction to scope organisations.
-    $jurisdictionId = NULL;
-    try {
-      $groupRelationships = GroupRelationship::loadByEntity($node);
-      foreach ($groupRelationships as $relationship) {
-        $group = $relationship->getGroup();
-        if ($this->isJurisdictionGroup($group)) {
-          $jurisdictionId = (int) $group->id();
-          break;
-        }
-      }
-    }
-    catch (\Exception $e) {
-      // Fall through to global load.
-    }
-
-    // Load org groups. If we have a jurisdiction,
-    // filter by subgroup relationship.
-    if ($jurisdictionId) {
-      // Load orgs that are subgroups of this jurisdiction.
-      $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
-      $relationshipIds = $relationshipStorage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('gid', $jurisdictionId)
-        ->condition('plugin_id', 'subgroup:org')
-        ->execute();
-
-      if (empty($relationshipIds)) {
-        // Fallback: try loading all org groups.
-        $orgs = $groupStorage->loadByProperties(['type' => 'org', 'status' => 1]);
-      }
-      else {
-        $relationships = $relationshipStorage->loadMultiple($relationshipIds);
-        $orgIds = [];
-        foreach ($relationships as $rel) {
-          $orgIds[] = (int) $rel->get('entity_id')->target_id;
-        }
-        $orgs = $orgIds ? $groupStorage->loadMultiple($orgIds) : [];
-      }
-    }
-    else {
-      $orgs = $groupStorage->loadByProperties(['type' => 'org', 'status' => 1]);
-    }
-
-    if (empty($orgs)) {
-      return '';
-    }
-
     $lines = [];
-    foreach ($orgs as $org) {
-      if (!$org->isPublished()) {
-        continue;
-      }
+    foreach ($this->loadOrganisationOptions($node) as $org) {
       if ($org->hasTranslation($langcode)) {
         $org = $org->getTranslation($langcode);
       }
-      $uuid = $org->uuid();
-      $label = $org->label();
-      $lines[] = "- \"{$uuid}\": {$label}";
+      $lines[] = '- "' . $org->uuid() . '": ' . $org->label();
     }
-
     return implode("\n", $lines);
+  }
+
+  /**
+   * Loads the same scoped options for prompts and response validation.
+   */
+  protected function loadOrganisationOptions(NodeInterface $node): array {
+    $jurisdictionId = $this->resolveAssistRootId($node);
+    if ($jurisdictionId === NULL) {
+      return [];
+    }
+    return $this->entityTypeManager->getStorage('group')->loadByProperties([
+      'type' => 'org', 'status' => 1, 'field_jurisdiction' => $jurisdictionId,
+    ]);
   }
 
   /**
@@ -1627,61 +1584,50 @@ class AttributeFillingService {
    *   Formatted status list, or empty string.
    */
   protected function buildStatusOptions(NodeInterface $node, string $langcode): string {
-    $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
-
-    // Resolve jurisdiction to scope status terms like the frontend does.
-    // Child jurisdictions inherit their root's status terms, so walk up the
-    // parent chain to find the root jurisdiction ID.
-    $jurisdictionId = NULL;
-    try {
-      $groupRelationships = GroupRelationship::loadByEntity($node);
-      foreach ($groupRelationships as $relationship) {
-        $group = $relationship->getGroup();
-        if ($this->isJurisdictionGroup($group)) {
-          $directId = (int) $group->id();
-          // Resolve to root jurisdiction (status terms live on the root).
-          $jurisdictionId = $this->hierarchyResolver
-            ? $this->hierarchyResolver->getRootJurisdictionId($directId)
-            : $directId;
-          if ($jurisdictionId === NULL) {
-            return '';
-          }
-          break;
-        }
-      }
-    }
-    catch (\Exception $e) {
-      // Fall through to unfiltered load.
-    }
-
-    $properties = ['vid' => 'service_status', 'status' => 1];
-    if ($jurisdictionId) {
-      $properties['field_jurisdiction'] = $jurisdictionId;
-    }
-    $terms = $termStorage->loadByProperties($properties);
-
-    // Fallback: if jurisdiction filter yielded nothing (e.g. terms lack
-    // field_jurisdiction values), try without jurisdiction filter.
-    if (empty($terms) && $jurisdictionId) {
-      unset($properties['field_jurisdiction']);
-      $terms = $termStorage->loadByProperties($properties);
-    }
-
-    if (empty($terms)) {
-      return '';
-    }
-
     $lines = [];
-    foreach ($terms as $term) {
+    foreach ($this->loadStatusOptions($node) as $term) {
       if ($term->hasTranslation($langcode)) {
         $term = $term->getTranslation($langcode);
       }
-      $uuid = $term->uuid();
-      $label = $term->label();
-      $lines[] = "- \"{$uuid}\": {$label}";
+      $lines[] = '- "' . $term->uuid() . '": ' . $term->label();
     }
-
     return implode("\n", $lines);
+  }
+
+  /**
+   * Loads published status terms only from the resolved jurisdiction root.
+   */
+  protected function loadStatusOptions(NodeInterface $node): array {
+    $jurisdictionId = $this->resolveAssistRootId($node);
+    if ($jurisdictionId === NULL) {
+      return [];
+    }
+    return $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties([
+      'vid' => 'service_status', 'status' => 1, 'field_jurisdiction' => $jurisdictionId,
+    ]);
+  }
+
+  /**
+   * Resolves the canonical node scope; missing or invalid scope stays closed.
+   */
+  protected function resolveAssistRootId(NodeInterface $node): ?int {
+    try {
+      $id = _markaspot_ai_get_jurisdiction_id_for_node($node);
+      if ($id === NULL || $this->hierarchyResolver === NULL) {
+        return NULL;
+      }
+      $storage = $this->entityTypeManager->getStorage('group');
+      $group = $storage->load($id);
+      if (!$group instanceof GroupInterface || !$this->isJurisdictionGroup($group) || !$group->isPublished()) {
+        return NULL;
+      }
+      $rootId = $this->hierarchyResolver->getRootJurisdictionId($id);
+      $root = $rootId === NULL ? NULL : $storage->load($rootId);
+      return $root instanceof GroupInterface && $this->isJurisdictionGroup($root) && $root->isPublished() ? $rootId : NULL;
+    }
+    catch (\Exception $e) {
+      return NULL;
+    }
   }
 
   /**

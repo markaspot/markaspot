@@ -1,0 +1,4 @@
+name: Boilerplate access test
+package: Testing
+type: module
+core_version_requirement: ^11

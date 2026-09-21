@@ -505,6 +505,22 @@ final class ContractorAccessKernelTest extends KernelTestBase {
   }
 
   /**
+   * Count queries preserve entity identity while enforcing organisation scope.
+   */
+  public function testContractorCountMatchesScopedCollection(): void {
+    for ($i = 0; $i < 3; $i++) {
+      $this->createRequest('Additional own request ' . $i, $this->organisationA, 'synthetic@example.test', TRUE);
+    }
+    $this->container->get('current_user')->setAccount($this->contractor);
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    $query = $storage->getQuery()->accessCheck(TRUE)->condition('type', 'service_request');
+    $this->assertCount(4, (clone $query)->execute());
+    $this->assertSame(4, (int) (clone $query)->count()->execute());
+    $foreignOrganisation = $this->organisationBRequest->get('field_organisation')->target_id;
+    $this->assertSame(0, (int) (clone $query)->condition('field_organisation', $foreignOrganisation)->count()->execute());
+  }
+
+  /**
    * Organisation grants cannot override Core's mandatory base permission.
    */
   public function testJsonApiRequiresAccessContent(): void {

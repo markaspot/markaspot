@@ -1854,6 +1854,18 @@ function markaspot_group_query_entity_query_alter(AlterableInterface $query): vo
       $base_alias,
       $restriction,
     );
+    // Core removes selected entity fields when preparing a count subquery,
+    // leaving only a constant 1. DISTINCT must still compare node identities,
+    // otherwise every nonempty scoped count collapses to one result.
+    if ($query->getFields() === []) {
+      $expressions = $query->getExpressions();
+      foreach ($expressions as $expression) {
+        if (trim($expression['expression']) === '1') {
+          $query->addField($base_alias, 'nid', 'contractor_count_nid');
+          break;
+        }
+      }
+    }
     $query->distinct();
   }
 }

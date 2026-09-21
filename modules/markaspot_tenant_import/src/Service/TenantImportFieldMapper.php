@@ -64,8 +64,18 @@ final class TenantImportFieldMapper {
   /**
    * Builds Jurisdiction fields from filled tenant values only.
    */
-  public function jurisdictionFieldValues(array $tenant): array {
+  public function jurisdictionFieldValues(array $tenant, ?FieldableEntityInterface $jurisdiction = NULL): array {
     $values = [];
+    if ($jurisdiction?->hasField('field_nuxt_config')) {
+      $stored = $jurisdiction->get('field_nuxt_config')->getString();
+      $existing = $stored === '' ? [] : json_decode($stored, TRUE, 512, JSON_THROW_ON_ERROR);
+      if (!is_array($existing) || ($existing !== [] && array_is_list($existing))) {
+        throw new \RuntimeException('Stored field_nuxt_config must be a JSON object.');
+      }
+      $runtimeField = $jurisdiction->get('field_nuxt_config')->getValue();
+      $runtimeField[0]['value'] = json_encode(TenantRuntimeConfiguration::merge($existing, $tenant), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+      $values['field_nuxt_config'] = $runtimeField;
+    }
     $mapping = [
       'platform_name' => 'field_platform_name',
       'email' => 'field_jurisdiction_e_mail',

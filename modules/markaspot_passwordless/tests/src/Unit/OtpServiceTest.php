@@ -404,11 +404,14 @@ class OtpServiceTest extends UnitTestCase {
   public function testGetFrontendPermissionsReturnsDashboardCapabilities(): void {
     $user = $this->createMock(User::class);
     $user->method('hasPermission')
-      ->willReturnMap([
-        ['administer site configuration', FALSE],
-        ['triage inbound mail', TRUE],
-        ['delete any service_request content', TRUE],
-      ]);
+      ->willReturnCallback(static fn(string $permission): bool => in_array($permission, [
+        'triage inbound mail',
+        'delete any service_request content',
+        'use markaspot ai assist',
+        'access ai insights',
+        'review ai duplicates',
+        'view ai sentiment',
+      ], TRUE));
 
     $service = $this->buildService($this->createMock(Connection::class));
     $method = new \ReflectionMethod($service, 'getFrontendPermissions');
@@ -417,6 +420,10 @@ class OtpServiceTest extends UnitTestCase {
     $this->assertSame([
       'triage inbound mail',
       'delete requests',
+      'use markaspot ai assist',
+      'access ai insights',
+      'review ai duplicates',
+      'view ai sentiment',
     ], $method->invoke($service, $user));
   }
 
@@ -669,6 +676,36 @@ class OtpServiceTest extends UnitTestCase {
     $this->assertFalse($result['success']);
     $this->assertSame('Invalid verification code', $result['error']);
     $this->assertSame(5, $selectConditions['jurisdiction_id']);
+  }
+
+  /**
+   * Dashboard analytics follows the actual Drupal grant in auth responses.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testDashboardAnalyticsCapabilityFollowsGrant(): void {
+    $service = $this->buildService($this->createMock(Connection::class));
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(User::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'access dashboard kpis');
+      $this->assertSame($granted ? ['access dashboard kpis'] : [], $method->invoke($service, $account));
+    }
+  }
+
+  /**
+   * Management form capability follows the actual Drupal permission grant.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testManagementFormCapabilityFollowsGrant(): void {
+    $service = $this->buildService($this->createMock(Connection::class));
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(User::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'use service request management form');
+      $this->assertSame($granted ? ['use service request management form'] : [], $method->invoke($service, $account));
+    }
   }
 
 }

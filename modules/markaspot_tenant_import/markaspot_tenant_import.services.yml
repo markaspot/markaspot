@@ -1,9 +1,15 @@
 services:
+  markaspot_tenant_import.tenant_setup:
+    class: Drupal\markaspot_tenant_import\Service\TenantSetup
+    arguments: ['@config.factory', '@state', '@entity_type.manager', '@entity_field.manager', '@lock', '@extension.list.module', '@extension.list.profile', '@config.installer', '@config.storage', '@user.permissions', '%app.root%', '@kernel']
   markaspot_tenant_import.tenant_importer:
     class: Drupal\markaspot_tenant_import\Service\TenantImporter
-    arguments: ['@entity_type.manager', '@entity_field.manager', '@markaspot_group.hierarchy_resolver', '@database', '@markaspot_tenant_import.tenant_config_validator', '@markaspot_tenant_import.tenant_import_field_mapper', '@password_generator', '@lock']
+    arguments: ['@entity_type.manager', '@entity_field.manager', '@markaspot_group.hierarchy_resolver', '@database', '@markaspot_tenant_import.tenant_config_validator', '@markaspot_tenant_import.tenant_import_field_mapper', '@password_generator', '@lock', '@user.permissions']
   markaspot_tenant_import.tenant_config_validator:
     class: Drupal\markaspot_tenant_import\Service\TenantConfigValidator
     arguments: ['@email.validator']
   markaspot_tenant_import.tenant_import_field_mapper:
     class: Drupal\markaspot_tenant_import\Service\TenantImportFieldMapper
+  markaspot_tenant_import.tenant_bootstrapper:
+    class: Drupal\markaspot_tenant_import\Service\TenantBootstrapper
+    arguments: ['@markaspot_tenant_import.tenant_importer', '@entity_type.manager', '@database', '@keyvalue', '@lock', '@config.factory', '@module_handler', '@file.repository', '@file_system', '@language_manager']

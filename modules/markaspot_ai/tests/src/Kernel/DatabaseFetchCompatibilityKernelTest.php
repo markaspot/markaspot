@@ -137,6 +137,7 @@ final class DatabaseFetchCompatibilityKernelTest extends KernelTestBase {
   public function testEmbeddingAndDuplicateQueriesReturnAssociativeRows(): void {
     $client = $this->createMock(AiClientService::class);
     $client->expects($this->never())->method('embed');
+    $client->method('resolveEmbeddingModel')->willReturn('local-test');
     $entityManager = $this->createMock(EntityTypeManagerInterface::class);
     $embedding = new EmbeddingService($client, $this->database, $entityManager, $this->container->get('logger.factory'));
     $now = $this->container->get('datetime.time')->getRequestTime();

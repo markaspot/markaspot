@@ -1514,6 +1514,17 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * AI capabilities use actual grants rather than inferred global roles.
+   */
+  public function testFrontendAiPermissionsFollowAccountGrants(): void {
+    $permissions = ['use markaspot ai assist', 'access ai insights', 'review ai duplicates', 'view ai sentiment'];
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => in_array($permission, $permissions, TRUE));
+    $method = new \ReflectionMethod($this->controller, 'getFrontendPermissions');
+    $this->assertSame($permissions, $method->invoke($this->controller, $account));
+  }
+
+  /**
    * Tests anonymous session handoff starts at Drupal login.
    *
    * @covers ::startSessionHandoff
@@ -2227,6 +2238,36 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertTrue($data['authenticated']);
     $this->assertEquals('de', $data['user']['preferred_langcode']);
     $this->assertEquals('alice@example.com', $data['user']['email']);
+  }
+
+  /**
+   * Dashboard analytics follows the actual Drupal grant in auth responses.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testDashboardAnalyticsCapabilityFollowsGrant(): void {
+    $service = $this->controller;
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(AccountInterface::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'access dashboard kpis');
+      $this->assertSame($granted ? ['access dashboard kpis'] : [], $method->invoke($service, $account));
+    }
+  }
+
+  /**
+   * Management form capability follows the actual Drupal permission grant.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testManagementFormCapabilityFollowsGrant(): void {
+    $service = $this->controller;
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    foreach ([TRUE, FALSE] as $granted) {
+      $account = $this->createMock(AccountInterface::class);
+      $account->method('hasPermission')->willReturnCallback(static fn(string $permission): bool => $granted && $permission === 'use service request management form');
+      $this->assertSame($granted ? ['use service request management form'] : [], $method->invoke($service, $account));
+    }
   }
 
 }

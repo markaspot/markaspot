@@ -5,24 +5,20 @@ declare(strict_types=1);
 namespace Drupal\markaspot_health\Plugin\HealthCheck;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\markaspot_health\HealthCheckPluginBase;
 use Drupal\markaspot_health\HealthCheckResult;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Detects jurisdiction groups missing the passwordless feature flag.
- *
- * TenantSettingsController reads $features['passwordless'] ?? FALSE from
- * group.field_nuxt_config. When the JSON key is absent, the Pro layer
- * redirects /auth/login back to / with no error visible to the user.
+ * Validates the central passwordless setting without requiring a login mode.
  *
  * @HealthCheck(
  *   id = "passwordless_feature_missing",
- *   label = @Translation("Passwordless feature flag missing"),
+ *   label = @Translation("Passwordless platform configuration"),
  *   severity = "error",
- *   description = @Translation("Verifies every jurisdiction group has features.passwordless set in field_nuxt_config; missing flag breaks /auth/login."),
- *   fix_hint = @Translation("Run the tenant setup.sh fallback or patch features.passwordless into the affected group's field_nuxt_config."),
+ *   description = @Translation("Validates the central passwordless setting. Enabled, disabled and automatic defaults are supported; tenant flags are not required."),
+ *   fix_hint = @Translation("Set markaspot_nuxt.settings platform_features.passwordless to a boolean or null for the operating-mode default."),
  * )
  */
 class PasswordlessFeatureMissingCheck extends HealthCheckPluginBase {
@@ -34,8 +30,8 @@ class PasswordlessFeatureMissingCheck extends HealthCheckPluginBase {
     array $configuration,
     string $plugin_id,
     $plugin_definition,
-    protected EntityTypeManagerInterface $entityTypeManager,
-    protected ?ConfigFactoryInterface $configFactory = NULL,
+    protected ConfigFactoryInterface $configFactory,
+    protected ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -48,8 +44,10 @@ class PasswordlessFeatureMissingCheck extends HealthCheckPluginBase {
       $configuration,
       $plugin_id,
       $plugin_definition,
-      $container->get('entity_type.manager'),
       $container->get('config.factory'),
+      $container->has('markaspot_nuxt.feature_scope_resolver')
+        ? $container->get('markaspot_nuxt.feature_scope_resolver')
+        : NULL,
     );
   }
 
@@ -57,55 +55,24 @@ class PasswordlessFeatureMissingCheck extends HealthCheckPluginBase {
    * {@inheritdoc}
    */
   public function run(array $context = []): HealthCheckResult {
-    if (!$this->entityTypeManager->hasDefinition('group')) {
-      return $this->pass('Group module not enabled; check skipped.');
+    if ($this->featureScopeResolver === NULL) {
+      return $this->pass('Nuxt feature resolver not available; check skipped.');
     }
-    $storage = $this->entityTypeManager->getStorage('group');
-    $query = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('type', $this->jurisdictionGroupType());
-    if (isset($context['jurisdiction'])) {
-      $query->condition('id', (int) $context['jurisdiction']);
+    $features = $this->configFactory->get('markaspot_nuxt.settings')->get('platform_features');
+    if ($features !== NULL && (!is_array($features) || ($features !== [] && array_is_list($features)))) {
+      return $this->fail(1, 'platform_features must be a configuration mapping.');
     }
-    $ids = $query->execute();
-    if (empty($ids)) {
-      return $this->pass('No jurisdiction groups found.');
+    $value = $features['passwordless'] ?? NULL;
+    if ($value !== NULL && !is_bool($value)) {
+      return $this->fail(1, 'platform_features.passwordless must be boolean or null.');
     }
 
-    $offenders = [];
-    foreach ($storage->loadMultiple($ids) as $group) {
-      if (!$group->hasField('field_nuxt_config')) {
-        $offenders[] = (string) $group->id();
-        continue;
-      }
-      $raw = $group->get('field_nuxt_config')->value;
-      if ($raw === NULL || $raw === '') {
-        $offenders[] = (string) $group->id();
-        continue;
-      }
-      $config = json_decode((string) $raw, TRUE);
-      if (!is_array($config) || !array_key_exists('features', $config) || !is_array($config['features']) || !array_key_exists('passwordless', $config['features'])) {
-        $offenders[] = (string) $group->id();
-      }
-    }
-
-    if ($offenders === []) {
-      return $this->pass('All jurisdiction groups have features.passwordless set.');
-    }
-    return $this->fail(
-      count($offenders),
-      sprintf('%d jurisdiction(s) missing features.passwordless: %s.', count($offenders), implode(', ', $offenders)),
-    );
-  }
-
-  /**
-   * Returns the configured jurisdiction group bundle.
-   */
-  private function jurisdictionGroupType(): string {
-    $config = $this->configFactory?->get('markaspot_open311.settings');
-    $configured = $config ? $config->get('jurisdiction_group_type') : NULL;
-
-    return is_string($configured) && $configured !== '' ? $configured : 'jur';
+    $enabled = $this->featureScopeResolver->isPlatformFeatureEnabled('passwordless');
+    return $this->pass(sprintf(
+      'Passwordless platform configuration is valid; effective mode is %s%s.',
+      $enabled ? 'enabled' : 'disabled',
+      $value === NULL ? ' (automatic default)' : '',
+    ));
   }
 
 }

@@ -4,7 +4,18 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_tenant_import\Kernel;
 
+use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\Core\Config\FileStorage;
+use Drupal\Core\Config\MemoryStorage;
+use Drupal\Core\Extension\Extension;
+use Drupal\paragraphs\Entity\ParagraphsType;
+use Drupal\markaspot_tenant_import\Service\TenantSetup;
+use Drupal\markaspot_tenant_import\Service\TenantSetupSchema;
+use Consolidation\OutputFormatters\FormatterManager;
+use Consolidation\OutputFormatters\Options\FormatterOptions;
 use Drupal\Core\Lock\DatabaseLockBackend;
+use Drupal\Core\Site\Settings;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -14,6 +25,15 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_tenant_import\Exception\TenantImportValidationException;
+use Drupal\markaspot_tenant_import\Drush\Commands\TenantBootstrapCommands;
+use Drupal\markaspot_tenant_import\Drush\Commands\TenantSetupCommands;
+use Drupal\node\Entity\NodeType;
+use Drush\Attributes\DefaultTableFields;
+use Drush\Config\DrushConfig;
+use Drush\Log\DrushLoggerManager;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Style\SymfonyStyle;
 use Drupal\markaspot_tenant_import\Service\TenantImportFieldMapper;
 use Drupal\markaspot_tenant_import\Service\TenantImporter;
 use Drupal\taxonomy\Entity\Term;
@@ -22,7 +42,9 @@ use Drupal\taxonomy\TermInterface;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
+use Drupal\user\PermissionHandlerInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests tenant configuration planning, application, and validation.
@@ -33,12 +55,22 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 final class TenantImporterTest extends KernelTestBase {
 
   /**
+   * Nuxt is omitted from this fixture with its JSON:API service dependencies.
+   *
+   * @var string[]
+   */
+  protected static $configSchemaCheckerExclusions = ['markaspot_nuxt.settings'];
+
+  /**
    * {@inheritdoc}
    */
   protected static $modules = [
     'system',
     'user',
     'field',
+    'file',
+    'language',
+    'services_api_key_auth',
     'filter',
     'text',
     'options',
@@ -51,6 +83,8 @@ final class TenantImporterTest extends KernelTestBase {
     'markaspot_group',
     'markaspot_tenant_import',
     'markaspot_tenant_import_test',
+    'node',
+    'markaspot_validation',
   ];
 
   /**
@@ -70,6 +104,8 @@ final class TenantImporterTest extends KernelTestBase {
     parent::setUp();
 
     $this->installEntitySchema('user');
+    $this->installEntitySchema('file');
+    $this->installSchema('file', ['file_usage']);
     $this->installEntitySchema('taxonomy_term');
     $this->installEntitySchema('group');
     $this->installEntitySchema('group_relationship');
@@ -92,6 +128,7 @@ final class TenantImporterTest extends KernelTestBase {
       'id' => 'tenant_admin',
       'label' => 'Tenant administrator',
     ])->save();
+    Role::create(['id' => 'contractor', 'label' => 'Contractor'])->save();
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
     GroupType::create(['id' => 'org', 'label' => 'Organisation'])->save();
@@ -102,6 +139,7 @@ final class TenantImporterTest extends KernelTestBase {
       'jur-editorial' => ['jur', 'individual', NULL],
       'jur-org_member' => ['jur', 'individual', NULL],
       'org-member' => ['org', 'insider', 'authenticated'],
+      'org-contractor' => ['org', 'insider', 'contractor'],
     ] as $id => [$groupType, $scope, $globalRole]) {
       GroupRole::create([
         'id' => $id,
@@ -134,6 +172,910 @@ final class TenantImporterTest extends KernelTestBase {
     ]);
     $this->jurisdiction->save();
     $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
+  }
+
+  /**
+   * The public setup service repairs real page config and preserves repeats.
+   */
+  public function testSetupRepairsPageConfigurationWithRealInstaller(): void {
+    $this->enableModules(['node', 'gnode']);
+    $this->installEntitySchema('node');
+    NodeType::create(['type' => 'page', 'name' => 'Page'])->save();
+    FieldStorageConfig::create([
+      'entity_type' => 'node',
+      'field_name' => 'field_jurisdiction',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+    ])->save();
+    $config = $this->container->get('config.factory');
+    $config->getEditable('core.extension')->set('profile', 'markaspot')->save();
+    $uuid = $this->container->get('uuid')->generate();
+    $config->getEditable('system.site')->set('uuid', $uuid)->save();
+    $this->container->get('state')->set('markaspot_cloud.permissions_initialized', $uuid);
+    // This fixture deliberately installs only page prerequisites. Keep its
+    // real ConfigInstaller proof separate from the complete reporting schema.
+    $schema = $this->createMock(TenantSetupSchema::class);
+    $schema->method('prepare')->willReturn([
+      'required' => [],
+      'applicable' => [],
+      'missing' => [],
+      'created' => [],
+      'unavailable_optional' => [],
+    ]);
+    $service = $this->getMockBuilder(TenantSetup::class)
+      ->setConstructorArgs([
+        $config,
+        $this->container->get('state'),
+        $this->container->get('entity_type.manager'),
+        $this->container->get('entity_field.manager'),
+        $this->container->get('lock'),
+        $this->container->get('extension.list.module'),
+        $this->container->get('extension.list.profile'),
+        $this->container->get('config.installer'),
+        $this->container->get('config.storage'),
+        $this->container->get('user.permissions'),
+        $this->container->getParameter('app.root'),
+        $this->container->get('kernel'),
+      ])
+      ->onlyMethods(['schema'])
+      ->getMock();
+    $service->method('schema')->willReturn($schema);
+    $this->container->set('markaspot_tenant_import.tenant_setup', $service);
+    $preview = $service->prepare($uuid);
+    $this->assertFalse($preview['applied']);
+    $this->assertCount(2, $preview['page_configuration_missing']);
+    $this->assertNull(FieldConfig::load('node.page.field_jurisdiction'));
+    $result = $service->prepare($uuid, FALSE, TRUE);
+    $this->assertCount(2, $result['page_configuration_created']);
+    $field = FieldConfig::load('node.page.field_jurisdiction');
+    $this->assertNotNull($field);
+    $this->assertNotNull($this->container->get('entity_type.manager')->getStorage('group_relationship_type')->load('jur-group_node-page'));
+    $field->setLabel('Locally customized')->save();
+    $repeat = $service->prepare($uuid, FALSE, TRUE);
+    $this->assertSame([], $repeat['page_configuration_created']);
+    $this->assertSame('Locally customized', FieldConfig::load('node.page.field_jurisdiction')->label());
+    $command = TenantSetupCommands::create($this->container);
+    $output = new BufferedOutput();
+    $formatter = new FormatterManager();
+    $formatter->addDefaultFormatters();
+    $formatter->write($output, 'json', $command->status(), new FormatterOptions());
+    $decoded = json_decode($output->fetch(), TRUE, flags: JSON_THROW_ON_ERROR);
+    $this->assertCount(1, $decoded);
+    $this->assertSame(1, $decoded[0]['contract_version']);
+    $this->assertSame($uuid, $decoded[0]['site_uuid']);
+  }
+
+  /**
+   * Canonical remark schema installs with no escalation or SaaS module enabled.
+   */
+  public function testSetupRepairsCanonicalRemarkSchemaWithRealInstaller(): void {
+    $this->enableModules(['node', 'entity_reference_revisions', 'paragraphs', 'field_permissions']);
+    $this->installEntitySchema('node');
+    $this->installEntitySchema('paragraph');
+    NodeType::create(['type' => 'service_request', 'name' => 'Request'])->save();
+    ParagraphsType::create(['id' => 'status', 'label' => 'Status'])->save();
+    $profile = $this->container->getParameter('app.root') . '/' . $this->container->get('extension.list.profile')->getPath('markaspot');
+    $source = new MemoryStorage();
+    foreach ([
+      'config/install' => 'field.storage.node.field_internal_remark',
+      'config/optional' => 'field.field.node.service_request.field_internal_remark',
+    ] as $directory => $name) {
+      $data = (new FileStorage($profile . '/' . $directory))->read($name);
+      $this->assertIsArray($data);
+      $source->write($name, $data);
+    }
+    $schema = new TenantSetupSchema(
+      $this->container->get('config.storage'),
+      $this->container->get('config.installer'),
+      [
+        [
+          'storage' => new FileStorage($profile . '/modules/markaspot_status_paragraph/config/install'),
+          'required' => TRUE,
+        ],
+        ['storage' => $source, 'required' => TRUE],
+      ],
+      array_keys($this->container->get('module_handler')->getModuleList()),
+    );
+    $this->assertNotEmpty($schema->prepare()['missing']);
+    $this->assertNull(FieldConfig::load('node.service_request.field_internal_remark'));
+    $this->assertNotEmpty($schema->prepare(TRUE)['created']);
+    $this->assertNotNull(FieldConfig::load('node.service_request.field_internal_remark'));
+    $this->assertNotNull(FieldConfig::load('paragraph.status.field_author'));
+    $remark = Paragraph::create([
+      'type' => 'internal_remark',
+      'field_internal_remark_text' => ['value' => 'Synthetic internal remark', 'format' => 'plain_text'],
+      'field_author' => 1,
+    ]);
+    $remark->save();
+    $this->assertSame('Synthetic internal remark', $remark->get('field_internal_remark_text')->value);
+    $this->assertSame([], $schema->prepare(TRUE)['created']);
+    $this->assertFalse($this->container->get('module_handler')->moduleExists('markaspot_escalation'));
+    $this->assertFalse($this->container->get('module_handler')->moduleExists('markaspot_fastmap'));
+  }
+
+  /**
+   * Organisation moderation grants only contractor and the declared scope.
+   */
+  public function testOrgModeratorImportIsScopedAndIdempotent(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $first = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $first['errors']);
+    $user = user_load_by_mail($configuration['users'][0]['email']);
+    $this->assertInstanceOf(UserInterface::class, $user);
+    $this->assertSame(['authenticated', 'contractor'], $user->getRoles());
+    $this->assertSame(['jur-org_member'], $this->storedMembershipRoles($this->jurisdiction, $user));
+    $memberships = GroupMembership::loadByUser($user);
+    $this->assertCount(2, $memberships);
+    $organisation = NULL;
+    foreach ($memberships as $membership) {
+      if ($membership->getGroup()->bundle() === 'org') {
+        $organisation = $membership->getGroup();
+      }
+    }
+    $this->assertInstanceOf(GroupInterface::class, $organisation);
+    $this->assertSame('SWE', $organisation->get('field_org_code')->getString());
+    $this->assertSame([], $this->storedMembershipRoles($organisation, $user));
+    $this->assertArrayHasKey('org-contractor', $organisation->getMember($user)->getRoles());
+    $password = $user->getPassword();
+    $second = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $second['errors']);
+    $this->assertNotContains('create', array_column($second['rows'], 'action'));
+    $this->assertNotContains('update', array_column($second['rows'], 'action'));
+    $this->assertSame($password, User::load($user->id())->getPassword());
+    $this->assertCount(2, GroupMembership::loadByUser($user));
+  }
+
+  /**
+   * Missing organisation and dependencies are rejected before any writes.
+   */
+  public function testOrgModeratorRequiresOrganisationAndRoles(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $configuration['users'][0]['organisation_code'] = NULL;
+    $this->assertContains('users[0].organisation_code is required for role org_moderator.', $this->importer->validate($configuration));
+    $configuration = $this->orgModeratorConfiguration();
+    Role::load('contractor')->delete();
+    // Deleting the global role also deletes the dependent insider role.
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Missing contractor model must reject the import.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('Drupal role contractor is required', $exception->getMessage());
+    }
+    $this->assertCount(1, Group::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+  }
+
+  /**
+   * Overrides never reuse broader accounts or silently remove their authority.
+   */
+  #[DataProvider('orgModeratorAuthorityProvider')]
+  public function testOrgModeratorRejectsExistingAuthority(string $authority): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $user = user_load_by_mail($configuration['users'][0]['email']);
+    $this->assertInstanceOf(UserInterface::class, $user);
+    if (str_starts_with($authority, 'global:')) {
+      $roleId = substr($authority, 7);
+      if (!Role::load($roleId)) {
+        Role::create(['id' => $roleId, 'label' => $roleId])->save();
+      }
+      $user->addRole($roleId)->save();
+    }
+    elseif ($authority === 'uid1') {
+      $user = User::load(1);
+      $user->setEmail($configuration['users'][0]['email'])->save();
+      // Keep email lookup unambiguous so the authority check is exercised.
+      $oldUser = User::load(2);
+      $oldUser->setEmail('replaced@example.invalid')->save();
+    }
+    elseif ($authority === 'all_groups') {
+      $user->set('field_all_groups_member', TRUE)->save();
+    }
+    elseif ($authority === 'org_member') {
+      $user->removeRole('contractor')->save();
+    }
+    elseif ($authority === 'org_elevated') {
+      GroupRole::create([
+        'id' => 'org-manager', 'label' => 'Manager',
+        'group_type' => 'org', 'scope' => 'individual',
+      ])->save();
+      $membership = GroupMembership::loadSingle($this->loadOrganisation('SWE'), $user);
+      $membership->set('group_roles', ['org-manager'])->save();
+    }
+    elseif ($authority === 'other_org' || $authority === 'other_root') {
+      $group = Group::create([
+        'type' => $authority === 'other_org' ? 'org' : 'jur',
+        'label' => 'Outside declared scope',
+      ]);
+      if ($authority === 'other_org') {
+        $group->set('field_jurisdiction', $this->jurisdiction->id());
+      }
+      $group->save();
+      $group->addMember($user);
+    }
+    else {
+      $membership = GroupMembership::loadSingle($this->jurisdiction, $user);
+      $membership->set('group_roles', ['jur-org_member', $authority])->save();
+    }
+    $rolesBefore = $user->getRoles();
+    $membershipsBefore = array_map(static fn ($membership) => $membership->toArray(), GroupMembership::loadByUser($user));
+    $groupCount = count(Group::loadMultiple());
+    $configuration['organisations'][] = ['code' => 'NEW', 'name' => 'Must not be created'];
+    foreach ([FALSE, TRUE] as $override) {
+      try {
+        $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE, FALSE, $override);
+        $this->fail('Existing broader authority must reject org_moderator.');
+      }
+      catch (TenantImportValidationException $exception) {
+        $this->assertStringContainsString('cannot be imported as org_moderator', $exception->getMessage());
+      }
+    }
+    $this->assertCount($groupCount, Group::loadMultiple());
+    $this->assertSame($rolesBefore, User::load($user->id())->getRoles());
+    $this->assertSame($membershipsBefore, array_map(static fn ($membership) => $membership->toArray(), GroupMembership::loadByUser($user)));
+  }
+
+  /**
+   * Existing authority that must never be folded into organisation moderation.
+   */
+  public static function orgModeratorAuthorityProvider(): array {
+    return array_map(static fn ($value) => [$value], [
+      'global:administrator', 'global:tenant_admin', 'global:moderator',
+      'global:editorial_board', 'uid1', 'all_groups', 'other_org', 'other_root',
+      'jur-tenant_admin', 'jur-moderator', 'jur-editorial', 'org_member', 'org_elevated',
+    ]);
+  }
+
+  /**
+   * Creating scoped accounts remains part of the whole-import transaction.
+   */
+  public function testOrgModeratorImportRollsBack(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $this->container->get('state')->set('markaspot_tenant_import_test.fail_status', $configuration['statuses'][0]['name']);
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertNotEmpty($result['errors']);
+    $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+    $this->assertCount(1, Group::loadMultiple());
+    $this->assertSame([], GroupMembership::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+  }
+
+  /**
+   * Missing or wrongly mapped contractor insider roles cannot widen authority.
+   */
+  public function testOrgModeratorRejectsMissingOrInvalidInsiderRole(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $this->mockContractorPermissionDefinitions();
+    $contractor = Role::load('contractor');
+    $contractor->set('is_admin', TRUE)->save();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Administrative Drupal contractor role must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('contractor must not grant administrative access', $exception->getMessage());
+    }
+    $contractor->set('is_admin', FALSE)->save();
+    foreach ([
+      'administer nodes',
+      'bypass node access',
+      'administer group',
+      'administer users',
+      'administer permissions',
+      'access platform admin',
+      'administer site configuration',
+      'switch users',
+      'custom restricted capability',
+      'administer unmarked custom capability',
+    ] as $permission) {
+      // Inject config drift even when its provider (e.g. node) is not enabled.
+      $contractor->setSyncing(TRUE);
+      $contractor->grantPermission($permission)->save();
+      $this->assertContains($permission, Role::load('contractor')->getPermissions());
+      try {
+        $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+        $this->fail('Elevated contractor permissions must be rejected.');
+      }
+      catch (TenantImportValidationException $exception) {
+        $this->assertStringContainsString('contractor must not grant administrative access', $exception->getMessage());
+      }
+      $this->assertCount(1, Group::loadMultiple());
+      $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+      $contractor->revokePermission($permission)->save();
+    }
+    foreach (['add dashboard status notes', 'use service request management form'] as $permission) {
+      foreach ([
+        NULL,
+        ['restrict access' => TRUE],
+        ['provider' => 'system', 'restrict access' => TRUE],
+      ] as $definition) {
+        $this->mockContractorPermissionDefinitions([$permission => $definition]);
+        $contractor->grantPermission($permission)->save();
+        try {
+          $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+          $this->fail('Missing or unexpected scoped permission provider must reject.');
+        }
+        catch (TenantImportValidationException $exception) {
+          $this->assertStringContainsString('contractor must not grant administrative access', $exception->getMessage());
+        }
+        $this->assertCount(1, Group::loadMultiple());
+        $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+        $contractor->revokePermission($permission)->save();
+      }
+    }
+    $this->mockContractorPermissionDefinitions();
+    $role = GroupRole::load('org-contractor');
+    $role->set('global_role', 'tenant_admin')->save();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Incorrect insider mapping must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('org-contractor must map', $exception->getMessage());
+    }
+    $role->set('global_role', 'contractor')->set('admin', TRUE)->save();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Administrative insider role must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('without administrative group access', $exception->getMessage());
+    }
+    $role->delete();
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Missing insider role must be rejected.');
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString('Required group role org-contractor does not exist', $exception->getMessage());
+    }
+    $this->assertCount(1, Group::loadMultiple());
+    $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+  }
+
+  /**
+   * An existing account gains only the declared scope and keeps its identity.
+   */
+  public function testOrgModeratorAssignsExistingUnprivilegedAccount(): void {
+    $configuration = $this->orgModeratorConfiguration();
+    $this->mockContractorPermissionDefinitions();
+    // Preserve the two shipped, restricted but organisation-scoped abilities.
+    Role::load('contractor')
+      ->grantPermission('add dashboard status notes')
+      ->grantPermission('use service request management form')
+      ->save();
+    $user = User::create([
+      'name' => 'existing-login',
+      'mail' => $configuration['users'][0]['email'],
+      'status' => 1,
+      'pass' => 'existing-password-not-changed',
+      'timezone' => 'Europe/Paris',
+      'field_first_name' => 'Existing first name',
+    ]);
+    $user->save();
+    $uid = $user->id();
+    $password = $user->getPassword();
+    $this->assertSame([], GroupMembership::loadByUser($user));
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $user = $this->loadUser($configuration['users'][0]['email']);
+    $this->assertSame($uid, $user->id());
+    $this->assertSame('existing-login', $user->getAccountName());
+    $this->assertSame($password, $user->getPassword());
+    $this->assertSame('Europe/Paris', $user->getTimeZone());
+    $this->assertSame('Existing first name', $user->get('field_first_name')->getString());
+    $this->assertSame('Moderation', $user->get('field_last_name')->getString());
+    $this->assertSame(['authenticated', 'contractor'], $user->getRoles());
+    $this->assertCount(2, GroupMembership::loadByUser($user));
+    $this->assertSame(['jur-org_member'], $this->storedMembershipRoles($this->jurisdiction, $user));
+    $this->assertSame([], $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+  }
+
+  /**
+   * Supplies permission metadata from modules outside the minimal fixture.
+   */
+  private function mockContractorPermissionDefinitions(array $overrides = []): void {
+    $definitions = $this->container->get('user.permissions')->getPermissions();
+    foreach ([
+      'bypass node access',
+      'access platform admin',
+      'switch users',
+      'custom restricted capability',
+      'add dashboard status notes',
+      'use service request management form',
+    ] as $permission) {
+      $definitions[$permission] = [
+        'title' => $permission,
+        'provider' => match ($permission) {
+          'add dashboard status notes' => 'markaspot_dashboard',
+          'use service request management form' => 'markaspot_ui',
+          default => 'system',
+        },
+        'restrict access' => TRUE,
+      ];
+    }
+    foreach ($overrides as $permission => $definition) {
+      if ($definition === NULL) {
+        unset($definitions[$permission]);
+      }
+      else {
+        $definitions[$permission] = $definition;
+      }
+    }
+    $permissionHandler = $this->createMock(PermissionHandlerInterface::class);
+    $permissionHandler->method('getPermissions')->willReturn($definitions);
+    $this->container->set('user.permissions', $permissionHandler);
+    // Recreate the importer so it receives the replacement dependency too.
+    $this->container->set('markaspot_tenant_import.tenant_importer', NULL);
+    $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
+  }
+
+  /**
+   * Supplies one explicitly scoped organisation moderator.
+   */
+  private function orgModeratorConfiguration(): array {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [[
+      'email' => 'org-moderator@example.invalid',
+      'first_name' => 'Example',
+      'last_name' => 'Moderation',
+      'role' => 'org_moderator',
+      'organisation_code' => 'SWE',
+    ]];
+    return $configuration;
+  }
+
+  /**
+   * A new root has no writes in preview and converges on repeated apply.
+   */
+  public function testDedicatedBootstrapIsReadOnlyThenIdempotent(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $validation = $this->container->get('config.factory');
+    $originalValidation = $validation->get('markaspot_validation.settings')->getRawData();
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $preview = $service->bootstrap($configuration);
+    $this->assertNull($preview['jurisdiction_id']);
+    $this->assertSame('clear_packaged_example', $preview['validation_defaults']['action']);
+    $this->assertSame($originalValidation, $validation->get('markaspot_validation.settings')->getRawData());
+    $this->assertSame([], Group::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+    $this->assertNull($this->container->get('keyvalue')->get('markaspot_tenant_import.bootstrap')->get('root'));
+    $first = $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertSame('', $validation->get('markaspot_validation.settings')->get('wkt'));
+    $this->assertSame([], $validation->get('markaspot_validation.settings')->get('locality'));
+    // A later operator choice must survive reruns, even if it is the example.
+    $validation->getEditable('markaspot_validation.settings')->setData($originalValidation)->save();
+    $initialGroup = Group::load($first['jurisdiction_id']);
+    GroupMembership::loadSingle($initialGroup, User::load(2))->set('group_roles', [])->save();
+    $second = $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertSame('preserve_initialized', $second['validation_defaults']['action']);
+    $this->assertSame($originalValidation, $validation->get('markaspot_validation.settings')->getRawData());
+    $this->assertSame($first['jurisdiction_id'], $second['jurisdiction_id']);
+    $this->assertSame('resume', $second['action']);
+    $this->assertNotContains('create', array_column($second['rows'], 'action'));
+    $group = Group::load($first['jurisdiction_id']);
+    $membership = GroupMembership::loadSingle($group, User::load(2));
+    $this->assertNotNull($membership);
+    $this->assertSame(['jur-member'], array_column($membership->get('group_roles')->getValue(), 'target_id'));
+    $runtime = json_decode($group->get('field_nuxt_config')->getString(), TRUE);
+    $this->assertSame([11, 50], $runtime['map']['center']);
+    $this->assertSame('#1F3E5D', $runtime['theme']['primary']);
+  }
+
+  /**
+   * AI assistance cannot grant permissions without its provider module.
+   */
+  public function testDedicatedAiRequiresInstalledModuleBeforeWrites(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $configuration['tenant']['features']['aiProcessing'] = TRUE;
+    try {
+      $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+      $this->fail('Missing AI module was accepted.');
+    }
+    catch (\RuntimeException $exception) {
+      $this->assertStringContainsString('Install markaspot_ai', $exception->getMessage());
+    }
+    $this->assertSame([], Group::loadMultiple());
+    $this->assertFalse(Role::load('tenant_admin')->hasPermission('use markaspot ai assist'));
+  }
+
+  /**
+   * Initial configuration controls Fachadmin analytics without an AI module.
+   */
+  public function testDedicatedAnalyticsPermissionFromConfiguration(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    // Register the real permission provider without unrelated HTTP services.
+    $handler = $this->container->get('module_handler');
+    $handler->setModuleList($handler->getModuleList() + [
+      'markaspot_dashboard' => new Extension(DRUPAL_ROOT, 'module', 'profiles/contrib/markaspot/modules/markaspot_dashboard/markaspot_dashboard.info.yml'),
+    ]);
+    $this->container->set('user.permissions', NULL);
+    $configuration['tenant']['features']['operationsDashboard'] = TRUE;
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $service->bootstrap($configuration);
+    $this->assertFalse(Role::load('tenant_admin')->hasPermission('access dashboard kpis'));
+    $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertTrue(Role::load('tenant_admin')->hasPermission('access dashboard kpis'));
+    $configuration['tenant']['features']['operationsDashboard'] = FALSE;
+    $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertFalse(Role::load('tenant_admin')->hasPermission('access dashboard kpis'));
+  }
+
+  /**
+   * Missing analytics provider fails before creating the jurisdiction.
+   */
+  public function testDedicatedAnalyticsRequiresProvider(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $configuration['tenant']['features']['operationsDashboard'] = TRUE;
+    try {
+      $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+      $this->fail('Missing analytics provider was accepted.');
+    }
+    catch (\RuntimeException $exception) {
+      $this->assertStringContainsString('Install markaspot_dashboard', $exception->getMessage());
+    }
+    $this->assertSame([], Group::loadMultiple());
+  }
+
+  /**
+   * Dedicated platform policy is read-only in preview and converges on repeat.
+   */
+  public function testDedicatedPlatformPolicyPreviewAndRepeat(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $configuration['tenant']['features']['privacyBlockOnFlag'] = TRUE;
+    $factory = $this->container->get('config.factory');
+    $before = $factory->get('markaspot_nuxt.settings')->getRawData();
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $service->bootstrap($configuration);
+    $this->assertSame($before, $factory->get('markaspot_nuxt.settings')->getRawData());
+    $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertTrue($factory->get('markaspot_nuxt.settings')->get('platform_features.privacyBlockOnFlag'));
+    $configuration['tenant']['features']['privacyBlockOnFlag'] = FALSE;
+    $service->bootstrap($configuration, NULL, TRUE);
+    $this->assertFalse($factory->get('markaspot_nuxt.settings')->get('platform_features.privacyBlockOnFlag'));
+  }
+
+  /**
+   * Existing roots may never be silently adopted.
+   */
+  public function testDedicatedBootstrapRejectsUnownedRoot(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    Group::create(['type' => 'jur', 'label' => 'Existing', 'field_slug' => 'erfurt'])->save();
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Refusing adoption');
+    $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+  }
+
+  /**
+   * Import failure rolls back the root, memberships and all child entities.
+   */
+  public function testDedicatedBootstrapRollsBackImportFailure(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $validationBefore = $this->container->get('config.factory')->get('markaspot_validation.settings')->getRawData();
+    $this->container->get('state')->set('markaspot_tenant_import_test.fail_status', $configuration['statuses'][0]['name']);
+    try {
+      $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+      $this->fail('Expected injected import failure.');
+    }
+    catch (\RuntimeException $exception) {
+      $this->assertStringContainsString('Tenant import failed', $exception->getMessage());
+    }
+    $this->assertSame([], Group::loadMultiple());
+    $this->assertSame([], Term::loadMultiple());
+    $this->assertNull($this->container->get('keyvalue')->get('markaspot_tenant_import.bootstrap')->get('root'));
+    $this->assertSame($validationBefore, $this->container->get('config.factory')->get('markaspot_validation.settings')->getRawData());
+  }
+
+  /**
+   * New dedicated stacks must not misrepresent an unsupported private policy.
+   */
+  public function testDedicatedBootstrapRejectsUnsupportedPrivatePolicy(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $configuration['tenant']['features']['publicReports'] = FALSE;
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('publicReports=false cannot bootstrap');
+    $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
+  }
+
+  /**
+   * Asset imports converge and failed final saves remove new logo bytes.
+   */
+  public function testDedicatedBootstrapLogoIdempotenceAndRollback(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $directory = sys_get_temp_dir() . '/bootstrap-logo-' . bin2hex(random_bytes(8));
+    mkdir($directory);
+    file_put_contents($directory . '/logo.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2uoAAAAASUVORK5CYII='));
+    $configuration['tenant']['logo_file'] = 'logo.png';
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    try {
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', TRUE);
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected final logo save failure.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('Injected logo save failure', $exception->getMessage());
+      }
+      $this->assertSame([], Group::loadMultiple());
+      $this->assertSame([], $this->container->get('entity_type.manager')->getStorage('file')->loadMultiple());
+      $this->assertSame([], $this->container->get('file_system')->scanDirectory('public://jurisdiction/bootstrap', '/\.png$/'));
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', FALSE);
+      $first = $service->bootstrap($configuration, $directory, TRUE);
+      $second = $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertSame($first['jurisdiction_id'], $second['jurisdiction_id']);
+      $this->assertCount(1, $this->container->get('entity_type.manager')->getStorage('file')->loadMultiple());
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertFalse($group->get('field_logo_light')->isEmpty());
+      $this->assertSame($group->get('field_logo_light')->target_id, $group->get('field_logo_dark')->target_id);
+      $originalLogoId = $group->get('field_logo_light')->target_id;
+      // A new PNG byte snapshot must update both previously linked variants.
+      file_put_contents($directory . '/logo.png', "\n", FILE_APPEND);
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertNotSame($originalLogoId, $group->get('field_logo_light')->target_id);
+      $this->assertSame($group->get('field_logo_light')->target_id, $group->get('field_logo_dark')->target_id);
+
+      $customDark = $this->container->get('entity_type.manager')->getStorage('file')->create([
+        'uri' => 'public://custom-dark-logo.png',
+        'status' => 1,
+      ]);
+      $customDark->save();
+      $group->set('field_logo_dark', ['target_id' => $customDark->id()])->save();
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertSame((string) $customDark->id(), (string) $group->get('field_logo_dark')->target_id);
+    }
+    finally {
+      unlink($directory . '/logo.png');
+      rmdir($directory);
+    }
+  }
+
+  /**
+   * Independent theme logos validate before writes and roll back together.
+   */
+  public function testDedicatedBootstrapSeparateThemeLogos(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $directory = sys_get_temp_dir() . '/bootstrap-theme-logos-' . bin2hex(random_bytes(8));
+    mkdir($directory);
+    // Real storage is required to exercise dangling symlinks (vfs cannot).
+    mkdir($directory . '/public');
+    new Settings(['file_public_path' => $directory . '/public'] + Settings::getAll());
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2uoAAAAASUVORK5CYII=');
+    file_put_contents($directory . '/light.png', $png);
+    file_put_contents($directory . '/dark.png', $png . "\n");
+    file_put_contents($directory . '/unsafe.png', '<svg onload="alert(1)"/>');
+    $configuration['tenant']['logo_file'] = 'light.png';
+    $configuration['tenant']['logo_dark_file'] = 'dark.png';
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $files = $this->container->get('entity_type.manager')->getStorage('file');
+    try {
+      foreach (['unsafe.png', '../outside.png'] as $invalid) {
+        $bad = $configuration;
+        $bad['tenant']['logo_dark_file'] = $invalid;
+        try {
+          $service->bootstrap($bad, $directory, TRUE);
+          $this->fail('Invalid dark asset was accepted.');
+        }
+        catch (\RuntimeException) {
+          $this->assertSame([], Group::loadMultiple());
+          $this->assertSame([], $files->loadMultiple());
+        }
+      }
+      // Fail inside writeData after the second PNG is written but before its
+      // managed file entity exists. Both new byte snapshots must be removed.
+      $state = $this->container->get('state');
+      $state->set('markaspot_tenant_import_test.fail_logo_file_hash', hash('sha256', $png . "\n"));
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected file entity save failure.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('Injected logo file save failure', $exception->getMessage());
+      }
+      $this->assertTrue($state->get('markaspot_tenant_import_test.logo_file_bytes_existed'));
+      $this->assertSame([], Group::loadMultiple());
+      $this->assertSame([], $files->loadMultiple());
+      $this->assertSame([], $this->container->get('file_system')->scanDirectory('public://jurisdiction/bootstrap', '/\.png$/'));
+      $state->delete('markaspot_tenant_import_test.fail_logo_file_hash');
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', TRUE);
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected final logo save failure.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('Injected logo save failure', $exception->getMessage());
+      }
+      $this->assertSame([], Group::loadMultiple());
+      $this->assertSame([], $files->loadMultiple());
+      $this->assertSame([], $this->container->get('file_system')->scanDirectory('public://jurisdiction/bootstrap', '/\.png$/'));
+      $this->container->get('state')->set('markaspot_tenant_import_test.fail_logo', FALSE);
+      $first = $service->bootstrap($configuration, $directory, TRUE);
+      $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertCount(2, $files->loadMultiple());
+      $group = Group::load($first['jurisdiction_id']);
+      $light_id = $group->get('field_logo_light')->target_id;
+      $dark_id = $group->get('field_logo_dark')->target_id;
+      $this->assertNotSame($light_id, $dark_id);
+      $this->assertSame(hash('sha256', $png), hash_file('sha256', $files->load($light_id)->getFileUri()));
+      $this->assertSame(hash('sha256', $png . "\n"), hash_file('sha256', $files->load($dark_id)->getFileUri()));
+      unset($configuration['tenant']['logo_dark_file']);
+      file_put_contents($directory . '/light.png', $png . "\n\n");
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertNotSame($light_id, $group->get('field_logo_light')->target_id);
+      $this->assertSame($dark_id, $group->get('field_logo_dark')->target_id);
+      $light_id = $group->get('field_logo_light')->target_id;
+      unset($configuration['tenant']['logo_file']);
+      $configuration['tenant']['logo_dark_file'] = 'dark.png';
+      file_put_contents($directory . '/dark.png', $png . "\n\n\n");
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertSame($light_id, $group->get('field_logo_light')->target_id);
+      $this->assertNotSame($dark_id, $group->get('field_logo_dark')->target_id);
+      $this->assertCount(4, $files->loadMultiple());
+
+      // An explicit same-byte dark variant is still independent of light.
+      $configuration['tenant']['logo_dark_file'] = 'light.png';
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertSame($light_id, $group->get('field_logo_dark')->target_id);
+      $configuration['tenant']['logo_file'] = 'light.png';
+      unset($configuration['tenant']['logo_dark_file']);
+      file_put_contents($directory . '/light.png', $png . "\n\n\n\n");
+      $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $this->assertNotSame($light_id, $group->get('field_logo_light')->target_id);
+      $this->assertSame($light_id, $group->get('field_logo_dark')->target_id);
+
+      // A collision on the second PNG rolls back the new first PNG, but must
+      // not remove the pre-existing unowned file or the previous assignments.
+      $old_light = $group->get('field_logo_light')->target_id;
+      $old_dark = $group->get('field_logo_dark')->target_id;
+      $file_count = count($files->loadMultiple());
+      $configuration['tenant']['logo_dark_file'] = 'dark.png';
+      $new_light = $png . "\n\n\n\n\n";
+      $new_dark = $png . "\n\n\n\n\n\n";
+      file_put_contents($directory . '/light.png', $new_light);
+      file_put_contents($directory . '/dark.png', $new_dark);
+      $public_directory = 'public://jurisdiction/bootstrap/' . $group->uuid();
+      $collision_uri = $public_directory . '/' . hash('sha256', $new_dark) . '.png';
+      file_put_contents($collision_uri, 'unowned existing bytes');
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected existing-file collision.');
+      }
+      catch (\Exception) {
+        $this->assertSame('unowned existing bytes', file_get_contents($collision_uri));
+        $this->assertFileDoesNotExist($public_directory . '/' . hash('sha256', $new_light) . '.png');
+        $this->assertCount($file_count, $files->loadMultiple());
+        $group = Group::load($first['jurisdiction_id']);
+        $this->assertSame($old_light, $group->get('field_logo_light')->target_id);
+        $this->assertSame($old_dark, $group->get('field_logo_dark')->target_id);
+      }
+      finally {
+        unlink($collision_uri);
+      }
+      // Core may rename over a dangling symlink despite FileExists::Error.
+      // Reject it before writeData so neither the link nor its target changes.
+      $target = $directory . '/absent-target.png';
+      $link_path = $this->container->get('file_system')->realpath($public_directory) . '/' . hash('sha256', $new_dark) . '.png';
+      symlink($target, $link_path);
+      try {
+        $service->bootstrap($configuration, $directory, TRUE);
+        $this->fail('Expected symbolic-link destination rejection.');
+      }
+      catch (\Exception $exception) {
+        $this->assertStringContainsString('must not be a symbolic link', $exception->getMessage());
+        $this->assertTrue(is_link($link_path));
+        $this->assertSame($target, readlink($link_path));
+        $this->assertFileDoesNotExist($target);
+        $this->assertFileDoesNotExist($public_directory . '/' . hash('sha256', $new_light) . '.png');
+        $this->assertCount($file_count, $files->loadMultiple());
+        $this->assertSame([], $files->loadByProperties(['uri' => $collision_uri]));
+      }
+      finally {
+        unlink($collision_uri);
+      }
+
+    }
+    finally {
+      foreach (['light.png', 'dark.png', 'unsafe.png'] as $name) {
+        unlink($directory . '/' . $name);
+      }
+      $this->container->get('file_system')->deleteRecursive($directory . '/public');
+      rmdir($directory);
+    }
+  }
+
+  /**
+   * The regular import explicitly reports both theme assets as skipped.
+   */
+  public function testThemeLogoPreviewRequiresBootstrap(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['tenant']['logo_file'] = 'light.png';
+    $configuration['tenant']['logo_dark_file'] = 'dark.png';
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id());
+    $rows = array_values(array_filter($result['rows'], static fn(array $row): bool => $row['entity'] === 'runtime'
+      && in_array($row['key'], ['logo_file', 'logo_dark_file'], TRUE)));
+    $this->assertSame(['logo_file', 'logo_dark_file'], array_column($rows, 'key'));
+    $this->assertSame(['skip', 'skip'], array_column($rows, 'action'));
+    foreach ($rows as $row) {
+      $this->assertStringContainsString('mas:tenant:bootstrap', $row['reason']);
+    }
+  }
+
+  /**
+   * The real command renders readable tables and preserves structured JSON.
+   */
+  public function testDedicatedBootstrapCommandFormats(): void {
+    if (!class_exists('Drush\\Style\\DrushStyle')) {
+      class_alias(SymfonyStyle::class, 'Drush\\Style\\DrushStyle');
+    }
+    $configuration = $this->prepareDedicatedBootstrap();
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    $service->bootstrap($configuration, NULL, TRUE);
+    $path = tempnam(sys_get_temp_dir(), 'bootstrap-input-');
+    file_put_contents($path, json_encode($configuration, JSON_THROW_ON_ERROR));
+    try {
+      $formatter = new FormatterManager();
+      $formatter->addDefaultFormatters();
+      $reflection = new \ReflectionMethod(TenantBootstrapCommands::class, 'bootstrap');
+      $fields = $reflection->getAttributes(DefaultTableFields::class)[0]->newInstance()->fields;
+      foreach (['table', 'json'] as $format) {
+        $output = new BufferedOutput();
+        $command = new TenantBootstrapCommands($this->importer, $service, $this->container->get('account_switcher'), $this->container->get('entity_type.manager'));
+        $config = $this->createMock(DrushConfig::class);
+        $config->method('cwd')->willReturn('/tmp');
+        $command->setConfig($config);
+        $command->setInput(new ArrayInput([]));
+        $command->setOutput($output);
+        $command->setLogger($this->createMock(DrushLoggerManager::class));
+        $result = $command->bootstrap($path, ['format' => $format]);
+        $formatter->write($output, $format, $result, new FormatterOptions(['default-table-fields' => $fields]));
+        $rendered = $output->fetch();
+        if ($format === 'json') {
+          $decoded = json_decode($rendered, TRUE, 512, JSON_THROW_ON_ERROR);
+          $this->assertIsArray($decoded[0]['warnings']);
+          $this->assertIsArray($decoded[0]['rows']);
+          $this->assertFalse($decoded[0]['applied']);
+        }
+        else {
+          $this->assertStringContainsString('Entity', $rendered);
+          $this->assertStringContainsString('resume', $rendered);
+          $this->assertStringNotContainsString('Array', $rendered);
+        }
+      }
+    }
+    finally {
+      unlink($path);
+    }
+  }
+
+  /**
+   * Models dedicated profile prerequisites without touching live data.
+   */
+  private function prepareDedicatedBootstrap(): array {
+    $this->installEntitySchema('node');
+    $validationSource = new FileStorage(DRUPAL_ROOT . '/' . $this->container->get('module_handler')->getModule('markaspot_validation')->getPath() . '/config/install');
+    $validationDefaults = $validationSource->read('markaspot_validation.settings');
+    // The legacy default is numeric while its existing schema expects string.
+    // Preserve its value without expanding this test's geography-only scope.
+    $validationDefaults['radius'] = (string) $validationDefaults['radius'];
+    $this->container->get('config.factory')->getEditable('markaspot_validation.settings')->setData($validationDefaults)->save();
+    $this->jurisdiction->delete();
+    new Settings(['markaspot_operating_mode' => 'self_hosted'] + Settings::getAll());
+    ConfigurableLanguage::createFromLangcode('de')->save();
+    Role::create(['id' => 'api_user', 'label' => 'API user'])->save();
+    $apiUser = User::create(['uid' => 2, 'name' => 'api_user', 'status' => 1, 'roles' => ['api_user']]);
+    $apiUser->save();
+    $this->container->get('config.factory')->getEditable('services_api_key_auth.api_key.nuxt')->set('user_uuid', $apiUser->uuid())->set('key', str_repeat('a', 64))->save();
+    $configuration = $this->exampleConfiguration();
+    unset($configuration['tenant']['logo_file']);
+    $configuration['tenant']['map_center'] = [11.0, 50.0];
+    $configuration['tenant']['map_zoom'] = 12;
+    return $configuration;
   }
 
   /**
@@ -226,7 +1168,7 @@ final class TenantImporterTest extends KernelTestBase {
     $editorial = $this->loadUser('presse@erfurt.de');
     $orgMember = $this->loadUser('lampen@stadtwerke-erfurt.de');
     $this->assertSame(
-      ['jur-member', 'jur-tenant_admin'],
+      ['jur-member', 'jur-org_member', 'jur-tenant_admin'],
       $this->storedMembershipRoles($jurisdiction, $tenantAdmin),
     );
     $this->assertSame(['jur-moderator'], $this->storedMembershipRoles($jurisdiction, $moderator));
@@ -1289,6 +2231,9 @@ final class TenantImporterTest extends KernelTestBase {
 
     $this->createField('group', 'jur', 'field_parent_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     $this->createField('group', 'jur', 'field_slug', 'string');
+    $this->createField('group', 'jur', 'field_nuxt_config', 'text_long');
+    $this->createField('group', 'jur', 'field_logo_light', 'file', ['uri_scheme' => 'public']);
+    $this->createField('group', 'jur', 'field_logo_dark', 'file', ['uri_scheme' => 'public']);
     $this->createField('group', 'jur', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'org', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'jur', 'field_service_statuses', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
@@ -1363,6 +2308,76 @@ final class TenantImporterTest extends KernelTestBase {
       'bundle' => $bundle,
       'label' => $fieldName,
     ])->save();
+  }
+
+  /**
+   * Imports jurisdiction admin memberships without widening moderation.
+   */
+  public function testTenantAdminOrganisationMemberships(): void {
+    $configuration = $this->exampleConfiguration();
+    $configuration['users'] = [
+      $configuration['users'][0],
+      [
+        'email' => 'scope@example.invalid',
+        'role' => 'org_moderator',
+        'organisation_code' => 'SWE',
+        'first_name' => '',
+        'last_name' => '',
+      ],
+    ];
+    $own = Group::create([
+      'type' => 'org',
+      'label' => 'Existing own organisation',
+      'field_jurisdiction' => $this->jurisdiction->id(),
+    ]);
+    $own->save();
+    $foreignJur = Group::create(['type' => 'jur', 'label' => 'Foreign jurisdiction']);
+    $foreignJur->save();
+    $foreign = Group::create([
+      'type' => 'org',
+      'label' => 'Foreign organisation',
+      'field_jurisdiction' => $foreignJur->id(),
+    ]);
+    $foreign->save();
+    $result = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $admin = $this->loadUser($configuration['users'][0]['email']);
+    $moderator = $this->loadUser('scope@example.invalid');
+    foreach ([$own, $this->loadOrganisation('TBA'), $this->loadOrganisation('SWE')] as $organisation) {
+      $membership = GroupMembership::loadSingle($organisation, $admin);
+      $this->assertInstanceOf(GroupMembership::class, $membership);
+      $this->assertSame([], $membership->get('group_roles')->getValue());
+      $this->assertArrayHasKey('org-member', $membership->getRoles());
+      $this->assertArrayNotHasKey('org-insider', $membership->getRoles());
+    }
+    $this->assertFalse(GroupMembership::loadSingle($foreign, $admin));
+    $this->assertFalse(GroupMembership::loadSingle($own, $moderator));
+    $this->assertFalse(GroupMembership::loadSingle($this->loadOrganisation('TBA'), $moderator));
+    $this->assertInstanceOf(GroupMembership::class, GroupMembership::loadSingle($this->loadOrganisation('SWE'), $moderator));
+
+    // A later organisation outside this source must be included on replay.
+    $later = Group::create([
+      'type' => 'org',
+      'label' => 'Later own organisation',
+      'field_jurisdiction' => $this->jurisdiction->id(),
+    ]);
+    $later->save();
+    $preview = $this->importer->import($configuration, (int) $this->jurisdiction->id());
+    $this->assertStringContainsString('organisation memberships within jurisdiction', json_encode($preview['rows'], JSON_THROW_ON_ERROR));
+    $this->assertFalse(GroupMembership::loadSingle($later, $admin));
+    $replay = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $replay['errors']);
+    $this->assertInstanceOf(GroupMembership::class, GroupMembership::loadSingle($later, $admin));
+    $this->assertFalse(GroupMembership::loadSingle($later, $moderator));
+    $stable = $this->importer->import($configuration, (int) $this->jurisdiction->id());
+    $this->assertNotContains('update', array_column($stable['rows'], 'action'));
+    $configuration['users'] = [$configuration['users'][0]];
+    $configuration['organisations'][] = ['code' => 'SKIPPED', 'name' => 'Not created'];
+    foreach ([FALSE, TRUE] as $apply) {
+      $skipped = $this->importer->import($configuration, (int) $this->jurisdiction->id(), ['organisations'], $apply);
+      $this->assertSame([], $skipped['errors']);
+      $this->assertNotContains('update', array_column($skipped['rows'], 'action'));
+    }
   }
 
   /**

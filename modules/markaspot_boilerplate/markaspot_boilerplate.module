@@ -44,3 +44,79 @@ function markaspot_boilerplate_form_alter(&$form, FormStateInterface $form_state
   return $form;
 
 }
+
+/**
+ * Implements hook_node_access().
+ */
+function markaspot_boilerplate_node_access(\Drupal\node\NodeInterface $node, $operation, \Drupal\Core\Session\AccountInterface $account) {
+  if ($node->bundle() === 'boilerplate' && in_array($operation, ['view', 'view revision', 'view all revisions'], TRUE)) {
+    return \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::view($node, $account);
+  }
+  if ($node->bundle() === 'boilerplate' && in_array($operation, ['update', 'delete', 'revert revision', 'delete revision'], TRUE)) {
+    return \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::write($node, $account);
+  }
+  return \Drupal\Core\Access\AccessResult::neutral();
+}
+
+/**
+ * Implements hook_query_TAG_alter() for node_access.
+ */
+function markaspot_boilerplate_query_node_access_alter(\Drupal\Core\Database\Query\AlterableInterface $query): void {
+  if ($query instanceof \Drupal\Core\Database\Query\SelectInterface) {
+    \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::alterQuery($query);
+  }
+}
+
+/**
+ * Implements hook_entity_type_alter().
+ */
+function markaspot_boilerplate_entity_type_alter(array &$entity_types): void {
+  if (isset($entity_types['node'])) {
+    $entity_types['node']->addConstraint('BoilerplateScope');
+  }
+}
+
+/**
+ * Implements hook_node_presave().
+ */
+function markaspot_boilerplate_node_presave(\Drupal\node\NodeInterface $node): void {
+  $errors = \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::writeErrors($node, \Drupal::currentUser());
+  if ($errors !== []) {
+    throw new \Drupal\Core\Entity\EntityStorageException(implode(' ', $errors));
+  }
+}
+
+/**
+ * Implements hook_node_predelete().
+ */
+function markaspot_boilerplate_node_predelete(\Drupal\node\NodeInterface $node): void {
+  markaspot_boilerplate_node_presave($node);
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function markaspot_boilerplate_node_insert(\Drupal\node\NodeInterface $node): void {
+  \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::syncRelationship($node);
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function markaspot_boilerplate_node_update(\Drupal\node\NodeInterface $node): void {
+  \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::syncRelationship($node);
+}
+
+/**
+ * Implements hook_modules_installed().
+ */
+function markaspot_boilerplate_modules_installed(array $modules): void {
+  if (array_intersect($modules, ['markaspot_boilerplate', 'markaspot_group', 'gnode']) === []
+    || \Drupal::service('config.installer')->isSyncing()) {
+    return;
+  }
+  // A profile batch may install the optional provider before the Group role.
+  // This runs after that batch, once both providers and their config exist.
+  \Drupal::moduleHandler()->loadInclude('markaspot_boilerplate', 'install');
+  _markaspot_boilerplate_initialize_manager_permissions();
+}

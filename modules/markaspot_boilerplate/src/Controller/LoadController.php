@@ -5,7 +5,11 @@ namespace Drupal\markaspot_boilerplate\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
+use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\markaspot_boilerplate\Access\BoilerplateAccess;
+use Drupal\node\NodeInterface;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Class LoadController.
@@ -47,10 +51,21 @@ class LoadController extends ControllerBase {
    *   Return body.
    */
   public function load($nid) {
-    // Query for some entities with the entity query service.
     $node = $this->nodeStorage->load($nid);
-    // $node = \Drupal::entityTypeManager()->getStorage('node')->load($nid);
-    return new JsonResponse($node->body->value);
+    if (!$node instanceof NodeInterface || $node->bundle() !== 'boilerplate') {
+      throw new NotFoundHttpException();
+    }
+    if (!$node->isPublished()) {
+      throw new AccessDeniedHttpException();
+    }
+    $access = BoilerplateAccess::view($node, $this->currentUser())
+      ->andIf($node->access('view', $this->currentUser(), TRUE));
+    if (!$access->isAllowed()) {
+      throw new AccessDeniedHttpException();
+    }
+    $response = new CacheableJsonResponse($node->get('body')->value);
+    $response->addCacheableDependency($access);
+    return $response;
   }
 
 }

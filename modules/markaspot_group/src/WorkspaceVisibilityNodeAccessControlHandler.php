@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_group;
 
 use Drupal\Core\Access\AccessResult;
+use Drupal\markaspot_boilerplate\Access\BoilerplateAccess;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -64,6 +65,18 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
    */
   public function access(EntityInterface $entity, $operation, ?AccountInterface $account = NULL, $return_as_object = FALSE) {
     $account = $this->prepareUser($account);
+    if ($entity instanceof NodeInterface && $entity->bundle() === 'boilerplate'
+      && in_array($operation, [
+        'view', 'view revision', 'view all revisions', 'update', 'delete',
+        'revert revision', 'delete revision',
+      ], TRUE)
+      && class_exists(BoilerplateAccess::class)) {
+      $template_access = in_array($operation, ['view', 'view revision', 'view all revisions'], TRUE)
+        ? BoilerplateAccess::view($entity, $account) : BoilerplateAccess::write($entity, $account);
+      if ($template_access->isForbidden()) {
+        return $return_as_object ? $template_access : FALSE;
+      }
+    }
     $workspace_access = AccessResult::neutral();
 
     if ($entity instanceof NodeInterface) {
@@ -133,6 +146,9 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
     /** @var \Drupal\Core\Access\AccessResultInterface $result */
     $result = parent::access($entity, $operation, $account, TRUE);
     $result->addCacheableDependency($workspace_access);
+    if (isset($template_access)) {
+      $result->addCacheableDependency($template_access);
+    }
     return $return_as_object ? $result : $result->isAllowed();
   }
 

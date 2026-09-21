@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\StatusTermScope;
+use Drupal\markaspot_open311\Service\StatusClassifier;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -71,6 +72,8 @@ class MetricsCalculatorService {
    *   The logger factory.
    * @param \Drupal\markaspot_group\Service\StatusTermScope $status_term_scope
    *   The graceful jurisdiction scope for service status terms.
+   * @param \Drupal\markaspot_open311\Service\StatusClassifier $statusClassifier
+   *   The canonical Open311 status classifier.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver (optional).
    */
@@ -80,6 +83,7 @@ class MetricsCalculatorService {
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
     StatusTermScope $status_term_scope,
+    protected readonly StatusClassifier $statusClassifier,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->database = $database;
@@ -547,7 +551,7 @@ class MetricsCalculatorService {
    *   status list. Multiple IDs contribute the union of their effective sets.
    *
    * @return array
-   *   Array of status counts with colors.
+   *   Array of status counts with colors and canonical open/closed semantics.
    */
   public function getStatusDistribution(array $node_ids, array $jurisdiction_ids = []): array {
     $jurisdiction_ids = array_values(array_unique(array_filter(
@@ -629,6 +633,7 @@ class MetricsCalculatorService {
         $output[] = [
           'tid' => (int) $row->tid,
           'status' => $row->status,
+          'open311' => $this->statusClassifier->isClosed((int) $row->tid) ? 'closed' : 'open',
           'count' => 0,
           'color' => $row->color,
         ];
@@ -692,6 +697,7 @@ class MetricsCalculatorService {
       $output[] = [
         'tid' => (int) $row->tid,
         'status' => $row->status,
+        'open311' => $this->statusClassifier->isClosed((int) $row->tid) ? 'closed' : 'open',
         'count' => (int) $row->count,
         'color' => $row->color,
       ];
@@ -779,23 +785,13 @@ class MetricsCalculatorService {
   }
 
   /**
-   * Get the taxonomy term IDs for "Closed" status from Open311 configuration.
+   * Gets closed term IDs from term mappings and legacy Open311 configuration.
    *
    * @return array
    *   Array of closed status term IDs.
    */
   protected function getClosedStatusTids(): array {
-    $config = $this->configFactory->get('markaspot_open311.settings');
-    $closed_status = $config->get('status_closed');
-
-    if (empty($closed_status)) {
-      $this->logger->warning('No closed status configured in markaspot_open311.settings');
-      return [];
-    }
-
-    // Handle both array and single value configurations.
-    // Use array_values() to ensure numeric keys for consistent array access.
-    return is_array($closed_status) ? array_values(array_map('intval', $closed_status)) : [(int) $closed_status];
+    return $this->statusClassifier->closedTids();
   }
 
   /**
