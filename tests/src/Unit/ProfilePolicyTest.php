@@ -18,6 +18,41 @@ use Symfony\Component\Yaml\Yaml;
 class ProfilePolicyTest extends TestCase {
 
   /**
+   * JSON:API Extras must precede Nuxt so its optional allowlist is installed.
+   */
+  public function testJsonApiExtrasPrecedesNuxtAndIsItsDependency(): void {
+    $profile_root = dirname(__DIR__, 3);
+    $profile = Yaml::parseFile($profile_root . '/markaspot.info.yml');
+    $modules = $profile['dependencies'] ?? [];
+    $extras = array_search('jsonapi_extras', $modules, TRUE);
+    $nuxt = array_search('markaspot_nuxt', $modules, TRUE);
+    $this->assertIsInt($extras);
+    $this->assertIsInt($nuxt);
+    $this->assertLessThan($nuxt, $extras);
+
+    $nuxt_info = Yaml::parseFile($profile_root . '/modules/markaspot_nuxt/markaspot_nuxt.info.yml');
+    $this->assertContains('jsonapi_extras:jsonapi_extras', $nuxt_info['dependencies'] ?? []);
+  }
+
+  /**
+   * Fresh installs and updates both enforce the fleet JSON:API boundary.
+   */
+  public function testJsonApiDenyByDefaultHasFreshAndUpdatePaths(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot.install');
+    $this->assertIsString($source);
+    $this->assertStringContainsString('_markaspot_harden_jsonapi_extras_settings();', $source);
+    $this->assertStringContainsString('_markaspot_assert_nuxt_jsonapi_allowlist();', $source);
+    $this->assertStringContainsString('_markaspot_assert_jsonapi_provider(FALSE);', $source);
+    $this->assertStringContainsString("moduleExists('jsonapi_defaults')", $source);
+    $this->assertStringContainsString("['dependencies']['module']", $source);
+    $this->assertStringContainsString("['dependencies']['config']", $source);
+    $this->assertStringContainsString('function markaspot_update_11941()', $source);
+    $this->assertStringContainsString('throw new UpdateException', $source);
+    $this->assertStringContainsString("'default_disabled' => TRUE", $source);
+    $this->assertStringContainsString("'validate_configuration_integrity' => FALSE", $source);
+  }
+
+  /**
    * Modules that exist inside the profile but must stay opt-in.
    *
    * @return array

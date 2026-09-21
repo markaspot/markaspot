@@ -1301,6 +1301,9 @@ function _markaspot_ensure_api_user_link(): void {
  * and ensures required config (text formats) is present.
  */
 function markaspot_install() {
+  _markaspot_assert_jsonapi_provider();
+  _markaspot_harden_jsonapi_extras_settings();
+  _markaspot_assert_nuxt_jsonapi_allowlist();
   _markaspot_repair_all_role_permissions();
   _markaspot_ensure_contractor_roles();
   _markaspot_ensure_gin_user_switch_block();
@@ -1314,6 +1317,93 @@ function markaspot_install() {
   _markaspot_ensure_management_request_media();
   _markaspot_ensure_management_view_translations();
   _markaspot_import_shipped_module_translations();
+}
+
+/**
+ * Rejects conflicting JSON:API providers before any settings mutation.
+ */
+function _markaspot_assert_jsonapi_provider(bool $require_extras = TRUE): void {
+  $modules = \Drupal::moduleHandler();
+  if ($modules->moduleExists('jsonapi_defaults')) {
+    throw new UpdateException('jsonapi_defaults conflicts with the Mark-a-Spot JSON:API Extras contract.');
+  }
+  if ($require_extras && !$modules->moduleExists('jsonapi_extras')) {
+    throw new UpdateException('jsonapi_extras is required by the Mark-a-Spot JSON:API contract.');
+  }
+}
+
+/**
+ * Ensures every shipped Nuxt JSON:API resource remains explicitly enabled.
+ */
+function _markaspot_assert_nuxt_jsonapi_allowlist(): int {
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
+  $source = new FileStorage(DRUPAL_ROOT . '/' . $module_path . '/config/optional');
+  $prefix = 'jsonapi_extras.jsonapi_resource_config.';
+  $active = \Drupal::service('config.storage');
+  $module_handler = \Drupal::moduleHandler();
+  $expected = array_values(array_filter(
+    $source->listAll($prefix),
+    static function (string $name) use ($active, $module_handler, $source): bool {
+      $data = $source->read($name);
+      if ($data === FALSE) {
+        return FALSE;
+      }
+      foreach ($data['dependencies']['module'] ?? [] as $module) {
+        if (!$module_handler->moduleExists($module)) {
+          return FALSE;
+        }
+      }
+      foreach ($data['dependencies']['config'] ?? [] as $config_name) {
+        if ($active->read($config_name) === FALSE) {
+          return FALSE;
+        }
+      }
+      return TRUE;
+    },
+  ));
+  $unavailable = array_values(array_filter(
+    $expected,
+    static function (string $name) use ($active): bool {
+      $data = $active->read($name);
+      return $data === FALSE || ($data['disabled'] ?? TRUE) !== FALSE;
+    },
+  ));
+
+  if ($expected === [] || $unavailable !== []) {
+    throw new UpdateException(sprintf(
+      'Nuxt JSON:API allowlist is incomplete: %s',
+      $unavailable === [] ? 'no shipped resource configs found' : implode(', ', $unavailable),
+    ));
+  }
+
+  return count($expected);
+}
+
+/**
+ * Applies the fleet JSON:API deny-by-default and count settings.
+ */
+function _markaspot_harden_jsonapi_extras_settings(): bool {
+  if (!\Drupal::moduleHandler()->moduleExists('jsonapi_extras')) {
+    return FALSE;
+  }
+
+  $config = \Drupal::configFactory()->getEditable('jsonapi_extras.settings');
+  $expected = [
+    'include_count' => TRUE,
+    'default_disabled' => TRUE,
+    'validate_configuration_integrity' => FALSE,
+  ];
+  $changed = FALSE;
+  foreach ($expected as $key => $value) {
+    if ($config->get($key) !== $value) {
+      $config->set($key, $value);
+      $changed = TRUE;
+    }
+  }
+  if ($changed) {
+    $config->save();
+  }
+  return $changed;
 }
 
 /**
@@ -5002,6 +5092,34 @@ function markaspot_update_11940(): string {
 
   \Drupal::service('module_installer')->install($missing_modules);
   return sprintf('Enabled required Iconify modules: %s.', implode(', ', $missing_modules));
+}
+
+/**
+ * Backfills the Nuxt JSON:API allowlist before enforcing deny-by-default.
+ */
+function markaspot_update_11941(): string {
+  _markaspot_assert_jsonapi_provider(FALSE);
+  if (!\Drupal::moduleHandler()->moduleExists('jsonapi_extras')) {
+    \Drupal::service('module_installer')->install(['jsonapi_extras']);
+  }
+  _markaspot_assert_jsonapi_provider();
+  $settings_changed = _markaspot_harden_jsonapi_extras_settings();
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
+  $source = new FileStorage(DRUPAL_ROOT . '/' . $module_path . '/config/optional');
+  $active = \Drupal::service('config.storage');
+  $before = $active->listAll('jsonapi_extras.jsonapi_resource_config.');
+  \Drupal::service('config.installer')->installOptionalConfig($source);
+  $after = $active->listAll('jsonapi_extras.jsonapi_resource_config.');
+  $created = count(array_diff($after, $before));
+  $verified = _markaspot_assert_nuxt_jsonapi_allowlist();
+
+  return sprintf(
+    'JSON:API allowlist ready: %d resource config(s) verified, %d backfilled; settings %s.',
+    $verified,
+    $created,
+    $settings_changed ? 'hardened' : 'already hardened',
+  );
 }
 
 /**
