@@ -16,6 +16,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Controller for AI attribute filling from the dashboard.
@@ -274,7 +275,17 @@ final class AttributeController extends ControllerBase {
     if (!$this->currentUser()->hasPermission('administer markaspot ai') && !in_array('tenant_admin', $this->currentUser()->getRoles(), TRUE)) {
       return new JsonResponse(['success' => FALSE, 'message' => 'Access denied.'], 403);
     }
-    $content = json_decode($request->getContent(), TRUE) ?? [];
+    if (strlen($request->getContent()) > 65536) {
+      return new JsonResponse(['success' => FALSE, 'message' => 'Request is too large.'], 400);
+    }
+    $decoded = json_decode($request->getContent());
+    if (!$decoded instanceof \stdClass) {
+      return new JsonResponse(['success' => FALSE, 'message' => 'Expected a JSON object.'], 400);
+    }
+    $content = (array) $decoded;
+    if (!isset($content['nid']) || (!is_int($content['nid']) && !(is_string($content['nid']) && ctype_digit($content['nid'])))) {
+      return new JsonResponse(['success' => FALSE, 'message' => 'Invalid nid parameter.'], 400);
+    }
     $nid = (int) ($content['nid'] ?? 0);
 
     if (!$nid) {
@@ -307,6 +318,9 @@ final class AttributeController extends ControllerBase {
     }
 
     $langcode = $content['langcode'] ?? NULL;
+    if ($langcode !== NULL && (!is_string($langcode) || !preg_match('/^[a-zA-Z-]{2,12}$/', $langcode))) {
+      return new JsonResponse(['success' => FALSE, 'message' => 'Invalid language code.'], 400);
+    }
 
     // Validate requested fields against allowed set.
     if (empty($content['fields']) || !is_array($content['fields'])) {
@@ -316,6 +330,9 @@ final class AttributeController extends ControllerBase {
       ], 400);
     }
 
+    if (count($content['fields']) > 5 || count(array_filter($content['fields'], 'is_string')) !== count($content['fields'])) {
+      return new JsonResponse(['success' => FALSE, 'message' => 'Invalid requested fields.'], 400);
+    }
     $allowedFields = ['body', 'attributes', 'organisation', 'status_note', 'priority'];
     $requestedFields = array_values(array_intersect(
       $content['fields'],
@@ -330,7 +347,18 @@ final class AttributeController extends ControllerBase {
     }
 
     try {
-      $result = $this->attributeFillingService->assistForm($node, $requestedFields, $langcode);
+      $hasDraft = array_key_exists('draft', $content);
+      $instruction = $content['instruction'] ?? NULL;
+      if ($instruction !== NULL && (!is_string($instruction) || mb_strlen($instruction) > 1000 || !$hasDraft || $requestedFields !== ['status_note'])) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'message' => 'Instruction requires a targeted status-note draft request (maximum 1000 characters).',
+        ], 400);
+      }
+      if ($hasDraft) {
+        $node = $this->attributeFillingService->prepareAssistDraft($node, $content['draft'], $requestedFields, $this->currentUser());
+      }
+      $result = $this->attributeFillingService->assistForm($node, $requestedFields, $langcode, $hasDraft, $instruction, $hasDraft ? ($content['draft']->status_note ?? NULL) : NULL);
 
       if ($result === NULL) {
         return new JsonResponse([
@@ -344,6 +372,9 @@ final class AttributeController extends ControllerBase {
         'suggestions' => $result['suggestions'],
         'model' => $result['model'],
       ]);
+    }
+    catch (HttpExceptionInterface $e) {
+      return new JsonResponse(['success' => FALSE, 'message' => $e->getMessage()], $e->getStatusCode());
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_ai')->error('AI assist failed for node @nid: @message', [

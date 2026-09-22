@@ -213,6 +213,7 @@ markaspot_ai.attributes.assist:
   methods: [POST]
   requirements:
     _permission: 'use markaspot ai assist'
+    _csrf_request_header_token: 'TRUE'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'
