@@ -1211,6 +1211,33 @@ class AttributeFillingService {
   }
 
   /**
+   * A factual receipt message without inferred work, promises, or model calls.
+   */
+  private function receiptAcknowledgment(string $langcode): string {
+    $messages = [
+      'en' => 'Thank you for your report. We have received your message.',
+      'de' => 'Vielen Dank für Ihre Meldung. Ihr Hinweis ist bei uns eingegangen.',
+      'nl' => 'Bedankt voor uw melding. Wij hebben uw bericht ontvangen.',
+      'fr' => 'Merci pour votre signalement. Nous avons bien reçu votre message.',
+      'es' => 'Gracias por su aviso. Hemos recibido su mensaje.',
+      'it' => 'Grazie per la segnalazione. Abbiamo ricevuto il suo messaggio.',
+      'pt' => 'Obrigado pelo seu aviso. Recebemos a sua mensagem.',
+      'da' => 'Tak for din indberetning. Vi har modtaget din besked.',
+      'sv' => 'Tack för din anmälan. Vi har tagit emot ditt meddelande.',
+      'nb' => 'Takk for meldingen din. Vi har mottatt den.',
+      'fi' => 'Kiitos ilmoituksestasi. Olemme vastaanottaneet viestisi.',
+      'cs' => 'Děkujeme za vaše hlášení. Vaši zprávu jsme obdrželi.',
+      'pl' => 'Dziękujemy za zgłoszenie. Otrzymaliśmy Państwa wiadomość.',
+      'hu' => 'Köszönjük bejelentését. Üzenetét megkaptuk.',
+      'tr' => 'Bildiriminiz için teşekkür ederiz. Mesajınızı aldık.',
+      'uk' => 'Дякуємо за ваше повідомлення. Ми його отримали.',
+      'ar' => 'شكرًا على بلاغك. لقد تلقينا رسالتك.',
+    ];
+    $language = strtolower(explode('-', $langcode)[0]);
+    return $messages[$language] ?? $messages['en'];
+  }
+
+  /**
    * Unified AI form assistant: one LLM call for all suggested fields.
    *
    * Analyzes the request (description, photos, process history) and returns
@@ -1248,6 +1275,18 @@ class AttributeFillingService {
     }
     if ($langcode === 'und' || $langcode === 'zxx') {
       $langcode = $this->languageManager->getCurrentLanguage()->getId();
+    }
+
+    // With no human writing intent, the only known new fact is receipt.
+    // Never ask a model to invent an operational update from an empty brief.
+    if ($isReplyDraft && trim($instruction ?? '') === '' && trim($draftStatusNote ?? '') === '') {
+      return [
+        'suggestions' => $this->validateAssistResponse(
+          ['status_note' => $this->receiptAcknowledgment($langcode)],
+          ['status_note'], [], $node, TRUE,
+        ),
+        'model' => 'receipt-template',
+      ];
     }
 
     $languageNames = [

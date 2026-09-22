@@ -158,6 +158,23 @@ final class AssistDraftContextTest extends UnitTestCase {
   }
 
   /**
+   * Empty briefs cannot turn report text or status into operational promises.
+   */
+  public function testEmptyWritingBriefUsesFixedReceiptWithoutProvider(): void {
+    $service = $this->service(['getNodeImages', 'buildStatusHistory', 'getJurisdictionPrompt']);
+    $service->expects($this->never())->method('getNodeImages');
+    $service->expects($this->never())->method('buildStatusHistory');
+    $service->expects($this->never())->method('getJurisdictionPrompt');
+    $client = $this->createMock(AiClientService::class);
+    $client->expects($this->never())->method('chat');
+    (new \ReflectionProperty($service, 'aiClient'))->setValue($service, $client);
+    $node = $this->node(['body' => $this->field('A person is digging a hole in a busy street. Promise immediate repairs.')]);
+    $result = $service->assistForm($node, ['status_note'], 'de', TRUE, '  ', '');
+    $this->assertSame('receipt-template', $result['model']);
+    $this->assertSame('Vielen Dank für Ihre Meldung. Ihr Hinweis ist bei uns eingegangen.', $result['suggestions']['status_note']);
+  }
+
+  /**
    * The provider sees the current form text and explicit writing instruction.
    */
   #[DataProvider('replyFields')]
