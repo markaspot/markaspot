@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.200](https://github.com/markaspot/markaspot/compare/11.9.199...11.9.200) (2026-09-22)
+
+### Features
+
+* **ai:** validate unsaved form context for individual suggestions ([c69d1de](https://github.com/markaspot/markaspot/commit/c69d1de4693533928e1fa9dbdb4ef4542b09b8b0))
+
+### Bug Fixes
+
+* **ai:** separate citizen reply drafting from photo analysis ([c782bfa](https://github.com/markaspot/markaspot/commit/c782bfa6de63002c637a1cf38ff788bf04f75d75))
+* **ai:** use factual receipt when reply instructions are empty ([df5d42f](https://github.com/markaspot/markaspot/commit/df5d42f048c33d199654dab59474e97ab4b76796))
+
 ## [11.9.199](https://github.com/markaspot/markaspot/compare/11.9.198...11.9.199) (2026-09-21)
 
 ### Bug Fixes
