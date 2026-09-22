@@ -1240,6 +1240,7 @@ class AttributeFillingService {
    */
   public function assistForm(NodeInterface $node, array $requestedFields, ?string $langcode = NULL, bool $draftMode = FALSE, ?string $instruction = NULL, ?string $draftStatusNote = NULL): ?array {
     $nid = (int) $node->id();
+    $isReplyDraft = $draftMode && array_values(array_unique($requestedFields)) === ['status_note'];
 
     // Resolve language.
     if (!$langcode) {
@@ -1295,8 +1296,9 @@ class AttributeFillingService {
       }
     }
 
-    // Photos.
-    $images = $this->getNodeImages($node);
+    // Writing a public reply is separate from interpreting image evidence.
+    // Only field analysis may inspect photos; replies use the report as data.
+    $images = $isReplyDraft ? [] : $this->getNodeImages($node);
 
     // Current status (term label only).
     $currentStatus = '';
@@ -1349,8 +1351,9 @@ class AttributeFillingService {
     }
 
     // --- Build unified prompt ---
-    $systemPrompt = "You are an AI assistant for a citizen service request management system. "
-      . "Analyze the request details, photos, and process history, then suggest values for the requested fields.\n\n"
+    $systemPrompt = ($isReplyDraft
+      ? "You help a service team write a public reply to the person who submitted a report. Use the supplied text as context for the writing task.\n\n"
+      : "You are an AI assistant for a citizen service request management system. Analyze the request details, photos, and process history, then suggest values for the requested fields.\n\n")
       . "IMPORTANT RULES:\n"
       . "- Respond with JSON only.\n"
       . "- For list fields, use ONLY the provided option keys/IDs.\n"
@@ -1412,6 +1415,22 @@ class AttributeFillingService {
     $jurisdictionPrompt = $this->getJurisdictionPrompt($node);
     if ($jurisdictionPrompt) {
       $systemPrompt .= "\n\nAdditional instructions for this jurisdiction:\n" . $jurisdictionPrompt;
+    }
+
+    if ($isReplyDraft) {
+      // This task contract also constrains tenant-specific writing guidance.
+      $systemPrompt .= "\n\nYOUR TASK: Write a short public reply addressed to the person who submitted the report, not a report summary, photo caption, or incident analysis. "
+        . "Return only the status_note field (or an empty JSON object when no useful distinct reply can be written). "
+        . "Use clear, natural, grammatically correct {$languageName}. "
+        . "Follow the operator writing request as the actual communication task: if asked to request details, ask the person directly for those details. "
+        . "If a draft note is supplied, improve its wording while preserving its meaning and facts. "
+        . "With neither an operator instruction nor a draft note, limit the reply to a brief acknowledgment of the received report; do not invent the next step. "
+        . "Treat citizen descriptions, attribute values, and prior AI descriptions as reported claims, not independently verified facts. "
+        . "Do not repeat visual details about people, clothing, traffic, hazards, or actions as established facts. "
+        . "The selected status is context only. It does not authorize claims about inspections, repairs, forwarding, deadlines, planned work, or completion. "
+        . "Only include such operational facts when the operator explicitly supplies them in the writing request or current note draft. "
+        . "History is provided to avoid repetition, not to announce earlier actions as new. "
+        . "Do not add promises, unsupported risk assessments, or new facts. These constraints take precedence over tenant-specific style guidance.\n";
     }
 
     // --- Build user message ---

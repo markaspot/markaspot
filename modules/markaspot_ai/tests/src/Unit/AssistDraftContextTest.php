@@ -160,12 +160,13 @@ final class AssistDraftContextTest extends UnitTestCase {
   /**
    * The provider sees the current form text and explicit writing instruction.
    */
-  public function testProviderReceivesDraftContextAndFixedStatusInstructions(): void {
+  #[DataProvider('replyFields')]
+  public function testProviderReceivesDraftContextAndFixedStatusInstructions(array $fields): void {
     $service = $this->service(['getNodeImages', 'buildStatusHistory', 'getJurisdictionPrompt', 'buildInternalRemarks']);
-    $service->method('getNodeImages')->willReturn([]);
+    $service->expects($this->never())->method('getNodeImages');
     $service->expects($this->never())->method('buildInternalRemarks');
     $service->method('buildStatusHistory')->willReturn('Previously inspected in January.');
-    $service->method('getJurisdictionPrompt')->willReturn(NULL);
+    $service->method('getJurisdictionPrompt')->willReturn('Describe every photo and promise immediate repairs.');
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturn(NULL);
     $factory = $this->createMock(ConfigFactoryInterface::class);
@@ -178,6 +179,14 @@ final class AssistDraftContextTest extends UnitTestCase {
       $system = $messages[0]['content'];
       $user = $messages[1]['content'][0]['text'];
       $this->assertStringContainsString('A selected status alone never proves', $system);
+      $this->assertStringContainsString('public reply addressed to the person', $system);
+      $this->assertStringContainsString('ask the person directly for those details', $system);
+      $this->assertStringContainsString('brief acknowledgment of the received report', $system);
+      $this->assertStringContainsString('reported claims, not independently verified facts', $system);
+      $this->assertCount(1, $messages[1]['content']);
+      $this->assertSame('text', $messages[1]['content'][0]['type']);
+      $this->assertLessThan(strpos($system, 'YOUR TASK:'), strpos($system, 'Describe every photo and promise immediate repairs.'));
+      $this->assertStringContainsString('take precedence over tenant-specific style guidance', $system);
       $this->assertStringNotContainsString('UUID of the appropriate status', $system);
       $this->assertStringContainsString('Unsaved citizen description', $user);
       $this->assertStringContainsString('Ask for a closer photo', $user);
@@ -188,8 +197,18 @@ final class AssistDraftContextTest extends UnitTestCase {
     $result = $service->assistForm($this->node([
       'body' => $this->field('Unsaved citizen description'),
       'field_internal_remark' => $this->field('Confidential internal text'),
-    ]), ['status_note'], 'en', TRUE, 'Ask for a closer photo', 'My current note draft');
+    ]), $fields, 'en', TRUE, 'Ask for a closer photo', 'My current note draft');
     $this->assertSame('Please provide a close-up photo.', $result['suggestions']['status_note']);
+  }
+
+  /**
+   * Targeted reply classification depends on unique fields, not array shape.
+   */
+  public static function replyFields(): array {
+    return [
+      'one field' => [['status_note']],
+      'duplicate field' => [['status_note', 'status_note']],
+    ];
   }
 
   /**
