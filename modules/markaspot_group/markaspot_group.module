@@ -5759,7 +5759,11 @@ function _markaspot_group_case_assignment_enabled_for_jurisdiction(?GroupInterfa
     $mode = Settings::get('markaspot_operating_mode');
     $self_service = $mode === 'saas'
       || ($mode !== 'self_hosted' && \Drupal::moduleHandler()->moduleExists('markaspot_fastmap'));
-    return !$self_service;
+    // Mirrors FeatureScopeResolver::allowsEnterpriseFeatures(): an operated
+    // enterprise showcase (exact value 'enabled') grants it to tierless
+    // jurisdictions despite the saas mode.
+    $showcase = \Drupal::config('markaspot_nuxt.settings')->get('enterprise_showcase') === 'enabled';
+    return !$self_service || $showcase;
   }
 
   return in_array(

@@ -594,7 +594,9 @@ class MarkASpotSettingsController extends ControllerBase {
       $tier = $group->get('field_tier')->value;
     }
     if ($group instanceof GroupInterface
-      && !$this->featureScopeResolver->isSelfServicePlatform()) {
+      && ($tier === NULL
+        ? $this->featureScopeResolver->allowsEnterpriseFeatures()
+        : !$this->featureScopeResolver->isSelfServicePlatform())) {
       $settings['features']['customWmsLayers'] = $has_configured_wms_layers;
     }
     else {

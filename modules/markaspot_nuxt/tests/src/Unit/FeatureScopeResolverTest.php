@@ -508,6 +508,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
 
     $showcase = $this->createResolver($root, [], TRUE, [], [], 'enabled');
     $this->assertTrue($showcase->isEnterpriseShowcase());
+    $this->assertTrue($showcase->allowsEnterpriseFeatures());
     $features = $showcase->resolveEffectiveFeatures($child);
     $this->assertTrue($features['organisations']);
     $this->assertTrue($features['facilities']);
@@ -538,6 +539,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     // Without the flag the shared platform gate is unchanged.
     $platform = $this->createResolver($root, [], TRUE);
     $this->assertFalse($platform->isEnterpriseShowcase());
+    $this->assertFalse($platform->allowsEnterpriseFeatures());
     $features = $platform->resolveEffectiveFeatures($child);
     $this->assertFalse($features['organisations']);
     $this->assertFalse($features['facilities']);

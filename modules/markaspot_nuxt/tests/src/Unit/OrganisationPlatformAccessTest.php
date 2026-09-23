@@ -63,11 +63,28 @@ final class OrganisationPlatformAccessTest extends UnitTestCase {
   }
 
   /**
+   * An operated enterprise showcase manages organisations.
+   *
+   * It behaves like a dedicated installation although it runs in saas mode.
+   */
+  public function testEnterpriseShowcaseAllowsOrganisationWrites(): void {
+    $this->setPlatform(TRUE, TRUE);
+    $account = $this->createMock(AccountInterface::class);
+    $org = $this->createMock(EntityInterface::class);
+    $org->method('bundle')->willReturn('org');
+    $this->assertTrue(markaspot_nuxt_entity_create_access($account, ['entity_type_id' => 'group'], 'org')->isNeutral());
+    foreach (['update', 'delete'] as $operation) {
+      $this->assertTrue(markaspot_nuxt_group_access($org, $operation, $account)->isNeutral());
+    }
+  }
+
+  /**
    * Sets the server-side platform detection service.
    */
-  private function setPlatform(bool $selfService): void {
+  private function setPlatform(bool $selfService, bool $showcase = FALSE): void {
     $resolver = $this->createMock(FeatureScopeResolver::class);
     $resolver->method('isSelfServicePlatform')->willReturn($selfService);
+    $resolver->method('allowsEnterpriseFeatures')->willReturn(!$selfService || $showcase);
     $container = new ContainerBuilder();
     $container->set('markaspot_nuxt.feature_scope_resolver', $resolver);
     \Drupal::setContainer($container);

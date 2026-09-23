@@ -20,9 +20,10 @@ class EnterpriseFeatureGateTest extends UnitTestCase {
   /**
    * Creates a gate for the requested platform type.
    */
-  private function createGate(bool $selfService): EnterpriseFeatureGate {
+  private function createGate(bool $selfService, bool $showcase = FALSE): EnterpriseFeatureGate {
     $resolver = $this->createMock(FeatureScopeResolver::class);
     $resolver->method('isSelfServicePlatform')->willReturn($selfService);
+    $resolver->method('isEnterpriseShowcase')->willReturn($showcase);
     return new EnterpriseFeatureGate($resolver);
   }
 
@@ -115,6 +116,23 @@ class EnterpriseFeatureGateTest extends UnitTestCase {
     $this->assertFalse(
       $this->createGate(TRUE)
         ->isEnterpriseFeatureAllowed($group, 'mail_text_editor'),
+    );
+  }
+
+  /**
+   * An operated enterprise showcase grants tierless jurisdictions.
+   *
+   * @covers ::isEnterpriseFeatureAllowed
+   */
+  public function testShowcaseWithEmptyTierFieldIsAllowed(): void {
+    $this->assertTrue(
+      $this->createGate(TRUE, TRUE)
+        ->isEnterpriseFeatureAllowed($this->mockGroup(TRUE, NULL), 'mail_text_editor'),
+    );
+    // A recorded tier still decides on a showcase stack.
+    $this->assertFalse(
+      $this->createGate(TRUE, TRUE)
+        ->isEnterpriseFeatureAllowed($this->mockGroup(TRUE, 'free'), 'mail_text_editor'),
     );
   }
 

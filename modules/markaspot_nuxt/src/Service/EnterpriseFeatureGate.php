@@ -68,7 +68,8 @@ class EnterpriseFeatureGate {
 
     if (!$jurisdiction->hasField('field_tier')
       || $jurisdiction->get('field_tier')->isEmpty()) {
-      return FALSE;
+      // Tierless jurisdictions only on an operated enterprise showcase.
+      return $this->featureScopeResolver->isEnterpriseShowcase();
     }
 
     $tier = (string) $jurisdiction->get('field_tier')->value;

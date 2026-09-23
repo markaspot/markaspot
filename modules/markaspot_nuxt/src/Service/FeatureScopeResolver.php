@@ -377,13 +377,22 @@ class FeatureScopeResolver {
   }
 
   /**
-   * Whether SELF_SERVICE_EXCLUDED features are forced off on this stack.
+   * Whether this stack grants enterprise-only features.
    *
-   * Only the enterprise-only exclusions consult the showcase flag; other
-   * self-service rules such as the platform moderation default do not.
+   * TRUE on enterprise/self-hosted stacks and on an operated enterprise
+   * showcase. Only enterprise feature gates consult it; tenant isolation,
+   * privacy filters and the platform moderation default keep using
+   * isSelfServicePlatform() and stay strict on a showcase.
+   */
+  public function allowsEnterpriseFeatures(): bool {
+    return !$this->isSelfServicePlatform() || $this->isEnterpriseShowcase();
+  }
+
+  /**
+   * Whether SELF_SERVICE_EXCLUDED features are forced off on this stack.
    */
   private function excludesEnterpriseFeatures(): bool {
-    return $this->isSelfServicePlatform() && !$this->isEnterpriseShowcase();
+    return !$this->allowsEnterpriseFeatures();
   }
 
   /**

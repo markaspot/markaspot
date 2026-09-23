@@ -677,7 +677,7 @@ final class TenantSettingsController extends ControllerBase {
     $tier_group = $this->effectiveCaseAssignmentTierGroup($group);
     if (!$tier_group->hasField('field_tier')
       || $tier_group->get('field_tier')->isEmpty()) {
-      return !$this->featureScopeResolver->isSelfServicePlatform();
+      return $this->featureScopeResolver->allowsEnterpriseFeatures();
     }
 
     return in_array(
