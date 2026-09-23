@@ -12,6 +12,7 @@ use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\Utility\UpdateException;
 use Drupal\block\BlockInterface;
 use Drupal\field\Entity\FieldConfig;
@@ -4395,32 +4396,10 @@ function markaspot_update_11930(): string {
     $changes[] = 'enabled ' . implode(', ', $install);
   }
 
-  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
-  $source = new FileStorage($profile_path . '/config/optional');
-  $updated_config = [];
-  foreach (['search_api.index.service_requests', 'views.view.management'] as $config_name) {
-    $shipped = $source->read($config_name);
-    if (!is_array($shipped)) {
-      throw new \RuntimeException("Could not read $config_name from profile config/optional.");
-    }
-
-    $config = \Drupal::configFactory()->getEditable($config_name);
-    $active = $config->getRawData();
-    foreach (['uuid', '_core'] as $preserved_key) {
-      if (isset($active[$preserved_key]) && !isset($shipped[$preserved_key])) {
-        $shipped[$preserved_key] = $active[$preserved_key];
-      }
-    }
-    $shipped = ProfileConfigGuardSubscriber::mergeManagementPackageExtensions(
-      $config_name,
-      $shipped,
-      $active,
-    );
-    if ($active !== $shipped) {
-      $config->setData($shipped)->save(TRUE);
-      $updated_config[] = $config_name;
-    }
-  }
+  $updated_config = _markaspot_sync_management_package_config([
+    'search_api.index.service_requests',
+    'views.view.management',
+  ]);
   if ($updated_config !== []) {
     $changes[] = 'updated ' . implode(', ', $updated_config);
   }
@@ -4461,6 +4440,49 @@ function markaspot_update_11930(): string {
   return $changes
     ? implode('; ', $changes) . '.'
     : 'Management View package already enabled and configured.';
+}
+
+/**
+ * Writes the shipped management package definitions into active config.
+ *
+ * Tenant-added handlers and Search API fields are kept as extensions of the
+ * shipped baseline, and active UUID metadata is preserved.
+ *
+ * @param list<string> $config_names
+ *   Management package config names shipped in the profile's config/optional.
+ *
+ * @return list<string>
+ *   The config names whose active data changed.
+ */
+function _markaspot_sync_management_package_config(array $config_names): array {
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $source = new FileStorage($profile_path . '/config/optional');
+  $updated_config = [];
+  foreach ($config_names as $config_name) {
+    $shipped = $source->read($config_name);
+    if (!is_array($shipped)) {
+      throw new \RuntimeException("Could not read $config_name from profile config/optional.");
+    }
+
+    $config = \Drupal::configFactory()->getEditable($config_name);
+    $active = $config->getRawData();
+    foreach (['uuid', '_core'] as $preserved_key) {
+      if (isset($active[$preserved_key]) && !isset($shipped[$preserved_key])) {
+        $shipped[$preserved_key] = $active[$preserved_key];
+      }
+    }
+    $shipped = ProfileConfigGuardSubscriber::mergeManagementPackageExtensions(
+      $config_name,
+      $shipped,
+      $active,
+    );
+    if ($active !== $shipped) {
+      $config->setData($shipped)->save(TRUE);
+      $updated_config[] = $config_name;
+    }
+  }
+
+  return $updated_config;
 }
 
 /**
@@ -5123,6 +5145,39 @@ function markaspot_update_11941(): string {
 }
 
 /**
+ * Re-syncs the management View and prunes orphan translated handlers.
+ *
+ * Sites that ran 11930 before the View gained its publication state handlers
+ * kept the older base View, while 11937 later installed German labels for
+ * those handlers. Such a label without its base handler renders as a broken
+ * handler and takes the whole management page down.
+ */
+function markaspot_update_11942(): string {
+  $view_name = 'views.view.management';
+  if (\Drupal::configFactory()->get($view_name)->isNew()) {
+    return 'The management View is not installed.';
+  }
+
+  $changes = [];
+  if (Settings::get('markaspot_manage_management_view', TRUE)
+    && _markaspot_sync_management_package_config([$view_name]) !== []) {
+    \Drupal::service('router.builder')->rebuild();
+    $changes[] = 're-synced the management View with the profile definition';
+  }
+  if (_markaspot_ensure_management_view_translations()) {
+    $changes[] = 'updated the shared German management labels';
+  }
+  $pruned = _markaspot_prune_management_view_override_orphans();
+  if ($pruned > 0) {
+    $changes[] = sprintf('removed %d orphan translated handler(s)', $pruned);
+  }
+
+  return $changes
+    ? ucfirst(implode('; ', $changes)) . '.'
+    : 'The management View and its translations are consistent.';
+}
+
+/**
  * Reports the management index work deliberately left for after maintenance.
  */
 function _markaspot_management_index_deferred_message(): string {
@@ -5148,6 +5203,9 @@ function _markaspot_management_index_deferred_message(): string {
 
 /**
  * Installs complete German labels for the shared management View handlers.
+ *
+ * Labels are only kept for handlers the installed base View has, so a shipped
+ * label for a handler the site does not (yet) have cannot break the View.
  */
 function _markaspot_ensure_management_view_translations(): bool {
   $language_manager = \Drupal::languageManager();
@@ -5170,12 +5228,60 @@ function _markaspot_ensure_management_view_translations(): bool {
   $override = $language_manager->getLanguageConfigOverride('de', 'views.view.management');
   $active = $override->isNew() ? [] : (array) $override->get();
   $merged = array_replace_recursive($active, $shipped);
+  // Without an installed base View there is nothing to validate against; the
+  // shipped labels then match the shipped View once optional config installs.
+  $base = \Drupal::service('config.storage')->read('views.view.management');
+  if (is_array($base)) {
+    $merged = ProfileConfigGuardSubscriber::pruneOrphanViewOverrideHandlers($merged, $base);
+  }
   if ($active === $merged) {
     return FALSE;
   }
 
   $override->setData($merged)->save();
   return TRUE;
+}
+
+/**
+ * Removes translated management View handlers missing from the base View.
+ *
+ * @return int
+ *   The number of removed override entries across all language collections.
+ */
+function _markaspot_prune_management_view_override_orphans(): int {
+  $view_name = 'views.view.management';
+  $language_manager = \Drupal::languageManager();
+  $storage = \Drupal::service('config.storage');
+  $base = $storage->read($view_name);
+  if (!is_array($base) || !method_exists($language_manager, 'getLanguageConfigOverride')) {
+    return 0;
+  }
+
+  $removed_total = 0;
+  foreach ($storage->getAllCollectionNames() as $collection) {
+    if (!str_starts_with($collection, 'language.')) {
+      continue;
+    }
+    $data = $storage->createCollection($collection)->read($view_name);
+    if (!is_array($data)) {
+      continue;
+    }
+    $pruned = ProfileConfigGuardSubscriber::pruneOrphanViewOverrideHandlers($data, $base, $removed);
+    if ($removed === []) {
+      continue;
+    }
+
+    $override = $language_manager->getLanguageConfigOverride(substr($collection, strlen('language.')), $view_name);
+    if ($pruned === []) {
+      $override->delete();
+    }
+    else {
+      $override->setData($pruned)->save();
+    }
+    $removed_total += count($removed);
+  }
+
+  return $removed_total;
 }
 
 /**

@@ -204,6 +204,20 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   ];
 
   /**
+   * View handler types a language override can translate per display.
+   */
+  private const VIEW_HANDLER_TYPES = [
+    'fields',
+    'filters',
+    'sorts',
+    'arguments',
+    'relationships',
+    'header',
+    'footer',
+    'empty',
+  ];
+
+  /**
    * Runtime opt-in for API-key entity preservation.
    */
   private const PRESERVE_RUNTIME_API_KEYS_SETTING = 'markaspot_preserve_runtime_api_keys';
@@ -885,7 +899,8 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
    * The update hook writes the active override before `cim`; merge the shipped
    * labels into the transformed German collection as well so stale tenant sync
    * cannot immediately remove them. Tenant-only translated handlers from both
-   * active and sync remain intact.
+   * active and sync remain intact as long as the imported base View still has
+   * them; labels without a base handler would render as broken handlers.
    *
    * @param \Drupal\Core\Config\StorageInterface $importStorage
    *   The mutable root import storage.
@@ -915,6 +930,15 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     $importData = is_array($importData) ? $importData : [];
 
     $merged = array_replace_recursive($activeData, $importData, $shippedData);
+    // Runs after protectManagementPackageConfig(), so the import copy is the
+    // base View this override is applied to once the import completes.
+    $baseData = $importStorage->read('views.view.management');
+    if (!is_array($baseData)) {
+      $baseData = $this->activeStorage->read('views.view.management');
+    }
+    if (is_array($baseData)) {
+      $merged = self::pruneOrphanViewOverrideHandlers($merged, $baseData);
+    }
     $importCollection->write(
       'views.view.management',
       self::orderConfigKeysLike($merged, $activeData),
@@ -1011,6 +1035,86 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     }
 
     return $shippedData;
+  }
+
+  /**
+   * Removes translated View handlers that have no handler in the base View.
+   *
+   * Language overrides are merged into a View by config path. A translated
+   * handler without a handler at the same display/type/ID path in the base
+   * config becomes a definition without plugin, table or field; Views then
+   * instantiates a broken handler, which fatals while rendering the display.
+   * The match is therefore path-exact: a display that inherits a handler type
+   * from the default display owns no handlers of that type, so a label below
+   * it has no base counterpart either. A translated display that is missing
+   * from the base View is removed entirely for the same reason.
+   *
+   * @param array<string, mixed> $override
+   *   The language override data of a View.
+   * @param array<string, mixed> $base
+   *   The base (untranslated) View config.
+   * @param list<string>|null $removed
+   *   Receives the config paths of the removed override entries.
+   *
+   * @return array<string, mixed>
+   *   The override without orphan handlers.
+   */
+  public static function pruneOrphanViewOverrideHandlers(array $override, array $base, ?array &$removed = NULL): array {
+    $removed = [];
+    if (!isset($override['display']) || !is_array($override['display'])) {
+      return $override;
+    }
+
+    foreach ($override['display'] as $displayId => $display) {
+      $baseDisplay = $base['display'][$displayId] ?? NULL;
+      if (!is_array($baseDisplay)) {
+        unset($override['display'][$displayId]);
+        $removed[] = "display.$displayId";
+        continue;
+      }
+      if (!is_array($display) || !isset($display['display_options']) || !is_array($display['display_options'])) {
+        continue;
+      }
+
+      $options = $display['display_options'];
+      foreach (self::VIEW_HANDLER_TYPES as $type) {
+        if (!isset($options[$type]) || !is_array($options[$type])) {
+          continue;
+        }
+        $baseHandlers = $baseDisplay['display_options'][$type] ?? [];
+        $baseHandlers = is_array($baseHandlers) ? $baseHandlers : [];
+        $orphans = array_diff_key($options[$type], $baseHandlers);
+        if ($orphans === []) {
+          continue;
+        }
+        foreach (array_keys($orphans) as $handlerId) {
+          $removed[] = "display.$displayId.display_options.$type.$handlerId";
+        }
+        $options[$type] = array_diff_key($options[$type], $orphans);
+        if ($options[$type] === []) {
+          unset($options[$type]);
+        }
+      }
+
+      if ($options === $display['display_options']) {
+        continue;
+      }
+      if ($options === []) {
+        unset($override['display'][$displayId]['display_options']);
+      }
+      else {
+        $override['display'][$displayId]['display_options'] = $options;
+      }
+      if ($override['display'][$displayId] === []) {
+        unset($override['display'][$displayId]);
+      }
+    }
+
+    if ($removed !== [] && $override['display'] === []) {
+      unset($override['display']);
+    }
+
+    return $override;
   }
 
   /**
