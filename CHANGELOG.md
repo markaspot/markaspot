@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.201](https://github.com/markaspot/markaspot/compare/11.9.200...11.9.201) (2026-09-23)
+
+### Features
+
+* **nuxt:** keep enterprise-only features on an operator-run showcase stack ([f39d9ba](https://github.com/markaspot/markaspot/commit/f39d9ba01d2a2a9e6a7b84387bea3d19b6fb4ee6))
+
+### Bug Fixes
+
+* **nuxt:** honour the enterprise showcase in organisation writes and enterprise gates ([8d73469](https://github.com/markaspot/markaspot/commit/8d73469c5716067f7f2d6cff0f34cefb6594d472))
+* **views:** prune orphan management view translation handlers ([5314384](https://github.com/markaspot/markaspot/commit/5314384bf2d1c2fc69406e3d40d1c9372cd688b9))
+
 ## [11.9.200](https://github.com/markaspot/markaspot/compare/11.9.199...11.9.200) (2026-09-22)
 
 ### Features
