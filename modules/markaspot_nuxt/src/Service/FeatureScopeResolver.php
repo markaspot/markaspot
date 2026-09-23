@@ -212,7 +212,7 @@ class FeatureScopeResolver {
 
     // Hard platform gate, applied last so no stored root or child opt-in can
     // resurrect an enterprise-only feature on the shared platform.
-    if ($this->isSelfServicePlatform()) {
+    if ($this->excludesEnterpriseFeatures()) {
       foreach (self::SELF_SERVICE_EXCLUDED as $key) {
         $this->writeFeatureValue($features, $key, FALSE);
       }
@@ -236,7 +236,7 @@ class FeatureScopeResolver {
     // shared platform: a settings PATCH could store the flag, but the hard
     // gate in resolveEffectiveFeatures() would ignore it, which is exactly
     // the silent-drop contract violation we refuse to ship.
-    if ($this->isSelfServicePlatform()
+    if ($this->excludesEnterpriseFeatures()
       && in_array($key, self::SELF_SERVICE_EXCLUDED, TRUE)) {
       return FALSE;
     }
@@ -279,7 +279,7 @@ class FeatureScopeResolver {
     // Hard platform gate: enterprise-only features stay off on the shared
     // platform even when a stored opt-in exists (see SELF_SERVICE_EXCLUDED).
     if (in_array($scope_key, self::SELF_SERVICE_EXCLUDED, TRUE)
-      && $this->isSelfServicePlatform()) {
+      && $this->excludesEnterpriseFeatures()) {
       return FALSE;
     }
     return $value;
@@ -311,6 +311,11 @@ class FeatureScopeResolver {
     }
     return $default ?? $this->featureDefault($key, self::DEFAULTS[$key] ?? FALSE);
   }
+
+  /**
+   * Value of markaspot_nuxt.settings:enterprise_showcase that engages it.
+   */
+  public const ENTERPRISE_SHOWCASE_ENABLED = 'enabled';
 
   /**
    * Features excluded from the self-service platform altogether.
@@ -350,6 +355,38 @@ class FeatureScopeResolver {
   }
 
   /**
+   * Detects an operator-run stack that showcases the enterprise edition.
+   *
+   * The demo.mark-a-spot.com stack runs in saas mode for tenant isolation,
+   * yet it is sold as the enterprise demo and must show organisations,
+   * facilities and the tier-gated tools. The flag lives in stack
+   * configuration that only platform operators can write (drush or site
+   * config), never in the per-jurisdiction features.* values that tenant
+   * admins edit. It is off unless set, so a forgotten flag keeps the
+   * stricter self-service gate.
+   *
+   * The value is the exact string 'enabled', not a boolean: drush config:set
+   * casts the string 'false' to TRUE for boolean schema keys, which would
+   * switch the showcase on while an operator tries to switch it off. Any
+   * other value, including 'false', '0' or TRUE, keeps it off.
+   */
+  public function isEnterpriseShowcase(): bool {
+    return $this->configFactory
+      ->get('markaspot_nuxt.settings')
+      ->get('enterprise_showcase') === self::ENTERPRISE_SHOWCASE_ENABLED;
+  }
+
+  /**
+   * Whether SELF_SERVICE_EXCLUDED features are forced off on this stack.
+   *
+   * Only the enterprise-only exclusions consult the showcase flag; other
+   * self-service rules such as the platform moderation default do not.
+   */
+  private function excludesEnterpriseFeatures(): bool {
+    return $this->isSelfServicePlatform() && !$this->isEnterpriseShowcase();
+  }
+
+  /**
    * Resolves the effective default for a feature key.
    *
    * Most keys use the DEFAULTS constant as-is. The SELF_SERVICE_EXCLUDED
@@ -359,7 +396,7 @@ class FeatureScopeResolver {
    */
   private function featureDefault(string $key, bool $default): bool {
     if (in_array($key, self::SELF_SERVICE_EXCLUDED, TRUE)) {
-      return !$this->isSelfServicePlatform();
+      return !$this->excludesEnterpriseFeatures();
     }
     return $default;
   }
@@ -421,7 +458,12 @@ class FeatureScopeResolver {
     // full feature set. The fastmap module marks the workspace-SaaS platform
     // even when the operating-mode environment variable is missing, so a
     // misconfigured SaaS container cannot fall back to "everything allowed"
-    // (tierless demo workspaces must stay on the free gate).
+    // (tierless demo workspaces must stay on the free gate). An operated
+    // enterprise showcase is the one deliberate exception; a workspace with a
+    // recorded tier never reaches this branch.
+    if ($this->isEnterpriseShowcase()) {
+      return TRUE;
+    }
     if (Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
       return FALSE;
     }

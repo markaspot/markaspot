@@ -494,6 +494,58 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
+   * An operated enterprise showcase keeps enterprise features on saas.
+   *
+   * @covers ::isEnterpriseShowcase
+   * @covers ::resolveEffectiveFeatures
+   * @covers ::isEditable
+   * @covers ::isTierFeatureAllowed
+   */
+  public function testEnterpriseShowcaseOnSaasStack(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+    $root = $this->createGroup(1, ['field_nuxt_config' => '{}']);
+    $child = $this->createGroup(2, ['field_nuxt_config' => '{}']);
+
+    $showcase = $this->createResolver($root, [], TRUE, [], [], 'enabled');
+    $this->assertTrue($showcase->isEnterpriseShowcase());
+    $features = $showcase->resolveEffectiveFeatures($child);
+    $this->assertTrue($features['organisations']);
+    $this->assertTrue($features['facilities']);
+    $this->assertTrue($showcase->isEnabledEffective('features.organisations', $child));
+    $this->assertTrue($showcase->isEditable('organisations', $root));
+    // Self-service platform rules outside the enterprise exclusions remain.
+    $this->assertTrue($showcase->isSelfServicePlatform());
+    $this->assertTrue($showcase->isEnabledEffective('moderation', $root));
+    // Tierless showcase jurisdictions get the tier-gated tools.
+    $this->assertTrue($showcase->isTierFeatureAllowed('operationsDashboard', $root));
+
+    // A workspace with a recorded tier stays on its tier.
+    $tiered = $this->createGroup(1, ['field_nuxt_config' => '{}', 'field_tier' => 'free']);
+    $this->assertFalse(
+      $this->createResolver($tiered, [], TRUE, [], [], 'enabled')
+        ->isTierFeatureAllowed('operationsDashboard', $tiered)
+    );
+
+    // Only the exact string engages it: boolean or 'false' values, which
+    // drush config:set may produce, keep the self-service gate.
+    foreach ([TRUE, 'false', '0', 'true', 1] as $value) {
+      $this->assertFalse(
+        $this->createResolver($root, [], TRUE, [], [], $value)->isEnterpriseShowcase(),
+        var_export($value, TRUE),
+      );
+    }
+
+    // Without the flag the shared platform gate is unchanged.
+    $platform = $this->createResolver($root, [], TRUE);
+    $this->assertFalse($platform->isEnterpriseShowcase());
+    $features = $platform->resolveEffectiveFeatures($child);
+    $this->assertFalse($features['organisations']);
+    $this->assertFalse($features['facilities']);
+    $this->assertFalse($platform->isEditable('organisations', $root));
+    $this->assertFalse($platform->isTierFeatureAllowed('operationsDashboard', $root));
+  }
+
+  /**
    * Creates a resolver whose root lookup returns the supplied group.
    */
   private function createResolver(
@@ -502,6 +554,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     ?bool $fastmapInstalled = NULL,
     array $orgGroupIds = [],
     array $jurisdictions = [],
+    mixed $enterpriseShowcase = NULL,
   ): FeatureScopeResolver {
     $query = $this->createMock(QueryInterface::class);
     $query->method('condition')->willReturnSelf();
@@ -517,7 +570,13 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')->with('group')->willReturn($storage);
     $config = $this->createMock(ImmutableConfig::class);
-    $config->method('get')->with('platform_features')->willReturn($platformFeatures);
+    $config->method('get')->willReturnCallback(
+      static fn(string $key): mixed => match ($key) {
+        'platform_features' => $platformFeatures,
+        'enterprise_showcase' => $enterpriseShowcase,
+        default => NULL,
+      },
+    );
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')->with('markaspot_nuxt.settings')->willReturn($config);
     $hierarchy = $this->createMock(JurisdictionHierarchyResolverInterface::class);

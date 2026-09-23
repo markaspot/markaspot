@@ -7,6 +7,9 @@ markaspot_nuxt.settings:
     pro_enabled:
       type: boolean
       label: 'Pro Features Enabled'
+    enterprise_showcase:
+      type: string
+      label: "Operator-run enterprise showcase: exactly 'enabled' keeps enterprise-only features on a saas stack"
     frontend_base_url:
       type: string
       label: 'Frontend Base URL'
