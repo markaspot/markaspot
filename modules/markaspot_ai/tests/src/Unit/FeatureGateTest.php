@@ -213,9 +213,9 @@ final class FeatureGateTest extends UnitTestCase {
         : NULL,
     );
     $nuxtConfig = $this->createMock(ImmutableConfig::class);
-    $nuxtConfig->method('get')
-      ->with('platform_features')
-      ->willReturn($platformFeatures);
+    $nuxtConfig->method('get')->willReturnCallback(
+      static fn(string $key): mixed => $key === 'platform_features' ? $platformFeatures : NULL,
+    );
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')->willReturnCallback(
       static fn(string $name): ImmutableConfig => $name === 'markaspot_nuxt.settings'
