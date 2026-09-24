@@ -208,6 +208,7 @@ class IconMigrationService {
       'fa-desktop' => 'i-lucide-monitor',
       'fa-television' => 'i-lucide-tv',
       'fa-couch' => 'i-lucide-sofa',
+      'fa-chair' => 'i-lucide-armchair',
       'fa-smoking' => 'i-lucide-cigarette',
       'fa-skull-crossbones' => 'i-lucide-skull',
       'fa-tachometer' => 'i-lucide-gauge',

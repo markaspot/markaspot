@@ -175,6 +175,9 @@ class IconMigrationServiceTest extends UnitTestCase {
       'fab stack-overflow' => ['fab fa-stack-overflow', 'i-lucide-archive', 'fontawesome', 'mapping'],
       'fal walking' => ['fal fa-walking', 'i-lucide-footprints', 'fontawesome', 'mapping'],
       'fal car-side' => ['fal fa-car-side', 'i-lucide-car', 'fontawesome', 'mapping'],
+      // Bonn category icons.
+      'fas chair' => ['fas fa-chair', 'i-lucide-armchair', 'fontawesome', 'mapping'],
+      'fas water' => ['fas fa-water', 'i-lucide-waves', 'fontawesome', 'mapping'],
       // FontAwesome 4 and FontAwesome 6 variants.
       'fa check' => ['fa-check', 'i-lucide-check', 'fontawesome', 'mapping'],
       'fa with modifiers' => ['fa fa-home fa-fw fa-2x', 'i-lucide-house', 'fontawesome', 'mapping'],
