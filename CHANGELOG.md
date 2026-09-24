@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.202](https://github.com/markaspot/markaspot/compare/11.9.201...11.9.202) (2026-09-24)
+
+### Bug Fixes
+
+* exempt trusted system contexts from presave scope guards ([aa3be40](https://github.com/markaspot/markaspot/commit/aa3be40cdd78c2519367c218d517b3b37dfc0d05))
+* **icons:** map font awesome chair to lucide ([dc011a6](https://github.com/markaspot/markaspot/commit/dc011a6ded3dfdbb61d197bea38faf4797dbecb2))
+* **icons:** migrate page icons and legacy icon notations to lucide ([1579b55](https://github.com/markaspot/markaspot/commit/1579b55b8df2efe545268de979c392cea3590b3a))
+
 ## [11.9.201](https://github.com/markaspot/markaspot/compare/11.9.200...11.9.201) (2026-09-23)
 
 ### Features
