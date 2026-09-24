@@ -228,46 +228,59 @@ function markaspot_icons_update_10002(): string {
  * Runs icon repair for sites that recorded the former no-op update 10002.
  */
 function markaspot_icons_update_10003(): string {
-  return _markaspot_icons_repair_taxonomy_icons();
+  return _markaspot_icons_repair_icons();
 }
 
 /**
- * Applies and reports the shared taxonomy icon repair.
+ * Applies and reports the shared icon repair on all icon fields.
+ *
+ * Also called from markaspot_icons_post_update_normalize_legacy_icons().
  */
-function _markaspot_icons_repair_taxonomy_icons(): string {
+function _markaspot_icons_repair_icons(): string {
   $container = \Drupal::getContainer();
   /** @var \Drupal\iconify_field\Service\IconResolverInterface|null $resolver */
   $resolver = $container->has('iconify_field.icon_resolver')
     ? $container->get('iconify_field.icon_resolver')
     : NULL;
-  /** @var \Drupal\Core\Render\RendererInterface|null $renderer */
-  $renderer = $container->has('renderer')
-    ? $container->get('renderer')
-    : NULL;
-  /** @var \Drupal\Core\Cache\CacheBackendInterface|null $renderCache */
-  $renderCache = $container->has('cache.render')
-    ? $container->get('cache.render')
-    : NULL;
+  $entityTypeManager = $container->get('entity_type.manager');
   $migration = new IconMigrationService(
     Database::getConnection(),
-    $container->get('entity_type.manager'),
+    $entityTypeManager,
     $container->get('logger.factory'),
     $container->get('messenger'),
     $resolver,
-    $renderer,
-    $renderCache,
+    NULL,
+    NULL,
+    $container->get('entity_field.manager'),
   );
-  $report = $migration->validateAndRepair(TRUE);
-  $logger = \Drupal::logger('markaspot_icons');
-  $fixed = 0;
-  $remaining = 0;
 
+  // Updates run anonymously. Presave guards such as the blocked-workspace
+  // check reject anonymous saves of pages and category/status terms.
+  /** @var \Drupal\Core\Session\AccountSwitcherInterface $accountSwitcher */
+  $accountSwitcher = $container->get('account_switcher');
+  /** @var \Drupal\Core\Session\AccountInterface|null $admin */
+  $admin = $entityTypeManager->getStorage('user')->load(1);
+  if ($admin) {
+    $accountSwitcher->switchTo($admin);
+  }
+  try {
+    $report = $migration->validateAndRepair(TRUE);
+  }
+  finally {
+    if ($admin) {
+      $accountSwitcher->switchBack();
+    }
+  }
+
+  $logger = \Drupal::logger('markaspot_icons');
+  $counts = ['fixed' => 0, 'unresolved' => 0, 'error' => 0];
   foreach ($report as $row) {
     $isFixed = $row['action'] === 'fixed';
-    $fixed += $isFixed ? 1 : 0;
-    $remaining += $isFixed ? 0 : 1;
+    $counts[$isFixed ? 'fixed' : ($row['action'] === 'error' ? 'error' : 'unresolved')]++;
     $context = [
-      '@term' => $row['term_id'],
+      '@entity_type' => $row['entity_type'],
+      '@id' => $row['entity_id'],
+      '@label' => $row['label'],
       '@field' => $row['field'],
       '@langcode' => $row['langcode'],
       '@old' => $row['value'],
@@ -276,14 +289,15 @@ function _markaspot_icons_repair_taxonomy_icons(): string {
       '@action' => $row['action'],
     ];
     $logger->log(
-      $isFixed ? 'notice' : 'warning',
-      'Icon validation @action: term @term, @field (@langcode), @old -> @new [@issue].',
+      $isFixed ? 'notice' : 'error',
+      'Icon validation @action: @entity_type @id (@label), @field (@langcode), @old -> @new [@issue].',
       $context,
     );
   }
 
-  return t('Icon validation repaired @fixed value(s); @remaining value(s) require review. See the markaspot_icons log for details.', [
-    '@fixed' => $fixed,
-    '@remaining' => $remaining,
+  return t('Icon validation repaired @fixed value(s); @unresolved value(s) need an editorial icon choice; @error value(s) could not be saved. See the markaspot_icons log for details.', [
+    '@fixed' => $counts['fixed'],
+    '@unresolved' => $counts['unresolved'],
+    '@error' => $counts['error'],
   ]);
 }
