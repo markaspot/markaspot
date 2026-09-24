@@ -20,6 +20,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Session\AnonymousUserSession;
+use Drupal\markaspot\Access\SystemWriteContext;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -39,6 +40,7 @@ use Drupal\taxonomy\Entity\Vocabulary;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
+require_once dirname(__DIR__, 5) . '/src/Access/SystemWriteContext.php';
 require_once dirname(__DIR__, 3) . '/src/Service/JurisdictionHierarchyResolverInterface.php';
 require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceVisibilityInterface.php';
 require_once dirname(__DIR__, 3) . '/src/Service/WorkspaceVisibilityService.php';
@@ -765,6 +767,46 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
 
     $this->expectException(AccessDeniedHttpException::class);
     _markaspot_group_enforce_workspace_visibility_presave($node);
+  }
+
+  /**
+   * Tests trusted system runs may save content of a blocked workspace.
+   *
+   * Drush updatedb and cron run as the anonymous user. The backstop keeps
+   * rejecting anonymous web requests and staff, but not the CLI process.
+   */
+  public function testTrustedSystemContextBypassesBlockedWorkspace(): void {
+    $blocked = Node::load($this->requestIds['blocked']);
+    $this->assertInstanceOf(Node::class, $blocked);
+    $kernel = $this->container->get('kernel');
+    $web = new SystemWriteContext($kernel, 'fpm-fcgi');
+    $this->container->set('markaspot.system_write_context', $web);
+    $this->container->get('current_user')->setAccount(new AnonymousUserSession());
+    try {
+      _markaspot_group_enforce_workspace_visibility_presave($blocked);
+      $this->fail('An anonymous web request saved content of a blocked workspace.');
+    }
+    catch (AccessDeniedHttpException) {
+      $this->addToAssertionCount(1);
+    }
+
+    $this->container->set('markaspot.system_write_context', new SystemWriteContext($kernel, 'cli'));
+    _markaspot_group_enforce_workspace_visibility_presave($blocked);
+
+    $this->container->set('markaspot.system_write_context', $web);
+    $this->container->get('current_user')->setAccount($this->staffAccounts['jur-moderator']);
+    $public = Node::load($this->requestIds['public']);
+    $this->assertInstanceOf(Node::class, $public);
+    _markaspot_group_enforce_workspace_visibility_presave($public);
+    try {
+      _markaspot_group_enforce_workspace_visibility_presave($blocked);
+      $this->fail('Jurisdiction staff saved content of a blocked workspace.');
+    }
+    catch (AccessDeniedHttpException) {
+      $this->addToAssertionCount(1);
+    }
+    $this->container->get('current_user')->setAccount($this->administratorAccount);
+    _markaspot_group_enforce_workspace_visibility_presave($blocked);
   }
 
   /**

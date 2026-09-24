@@ -9,7 +9,9 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Query\ConditionInterface;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\DrupalKernelInterface;
 use Drupal\Core\Entity\EntityPublishedInterface;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\EntityTypeRepositoryInterface;
@@ -19,11 +21,14 @@ use Drupal\Core\Render\RendererInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot\Access\SystemWriteContext;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
+
+require_once dirname(__DIR__, 5) . '/src/Access/SystemWriteContext.php';
 
 /**
  * Tests taxonomy term access query alter for tenant admins.
@@ -727,6 +732,54 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
     );
 
     $this->assertTrue($result->isNeutral(), 'Published terms are handled by normal taxonomy access.');
+  }
+
+  /**
+   * The write scope binds tenant staff in web requests, not system runs.
+   *
+   * Anonymous accounts hold no managed taxonomy permission, so the scope never
+   * applied to them. A drush process acting as a tenant admin (an update hook
+   * that switches accounts) is trusted like a site administrator.
+   */
+  public function testTaxonomyWriteScopeSkipsTrustedSystemContext(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(5);
+    $account->method('hasPermission')->willReturn(FALSE);
+    $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+    $container = $this->setUpContainer($account);
+    $this->setUpMembershipMocks($container, 5, [42]);
+    $kernel = $this->createMock(DrupalKernelInterface::class);
+    $container->set('markaspot.system_write_context', new SystemWriteContext($kernel, 'fpm-fcgi'));
+    \Drupal::setContainer($container);
+
+    $own = $this->createManagedTerm(TRUE, 42);
+    $own->method('isNew')->willReturn(TRUE);
+    markaspot_tenant_admin_taxonomy_term_presave($own);
+    $foreign = $this->createManagedTerm(TRUE, 99);
+    $foreign->method('isNew')->willReturn(TRUE);
+    try {
+      markaspot_tenant_admin_taxonomy_term_presave($foreign);
+      $this->fail('A tenant admin saved a term of a foreign jurisdiction.');
+    }
+    catch (EntityStorageException $exception) {
+      $this->assertSame('Taxonomy term belongs to a different jurisdiction.', $exception->getMessage());
+    }
+    $category = $this->createMock(TermInterface::class);
+    $category->method('bundle')->willReturn('service_category');
+    $category->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $category->method('get')->with('field_jurisdiction')->willReturn($this->createJurisdictionField(99, NULL));
+    try {
+      markaspot_tenant_admin_taxonomy_term_predelete($category);
+      $this->fail('A tenant admin deleted a term of a foreign jurisdiction.');
+    }
+    catch (EntityStorageException) {
+      $this->addToAssertionCount(1);
+    }
+
+    $container->set('markaspot.system_write_context', new SystemWriteContext($kernel, 'cli'));
+    markaspot_tenant_admin_taxonomy_term_presave($foreign);
+    markaspot_tenant_admin_taxonomy_term_predelete($category);
+    $this->addToAssertionCount(2);
   }
 
 }

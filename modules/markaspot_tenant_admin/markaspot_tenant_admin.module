@@ -855,7 +855,8 @@ function _markaspot_tenant_admin_taxonomy_jurisdiction_cache_tags(
  *   jurisdiction ownership scope.
  */
 function markaspot_tenant_admin_taxonomy_term_presave(EntityInterface $entity): void {
-  if (!in_array($entity->bundle(), ['service_category', 'service_status', 'internal_status'], TRUE)) {
+  if (!in_array($entity->bundle(), ['service_category', 'service_status', 'internal_status'], TRUE)
+    || _markaspot_tenant_admin_is_trusted_system_write()) {
     return;
   }
 
@@ -918,14 +919,13 @@ function markaspot_tenant_admin_taxonomy_term_predelete(EntityInterface $entity)
     return;
   }
 
-  $scope_reason = _markaspot_tenant_admin_taxonomy_write_scope_block_reason(
-    $entity,
-    \Drupal::currentUser()
-  );
+  $scope_reason = _markaspot_tenant_admin_is_trusted_system_write() ? NULL
+    : _markaspot_tenant_admin_taxonomy_write_scope_block_reason($entity, \Drupal::currentUser());
   if ($scope_reason !== NULL) {
     throw new EntityStorageException($scope_reason);
   }
 
+  // Status integrity applies to every context, like it does to uid 1.
   if ($entity->bundle() !== 'service_status') {
     return;
   }
@@ -934,6 +934,16 @@ function markaspot_tenant_admin_taxonomy_term_predelete(EntityInterface $entity)
   if ($reason !== NULL) {
     throw new EntityStorageException($reason);
   }
+}
+
+/**
+ * Whether the running process is a trusted system write (drush, updatedb).
+ *
+ * The write scope models tenant staff; system runs have no such actor.
+ */
+function _markaspot_tenant_admin_is_trusted_system_write(): bool {
+  return \Drupal::hasService('markaspot.system_write_context')
+    && \Drupal::service('markaspot.system_write_context')->isTrusted();
 }
 
 /**

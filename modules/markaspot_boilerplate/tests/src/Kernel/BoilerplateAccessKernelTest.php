@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_boilerplate\Kernel;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\markaspot_boilerplate\Access\BoilerplateAccess;
+use Drupal\markaspot\Access\SystemWriteContext;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -23,6 +24,8 @@ use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+require_once dirname(__DIR__, 5) . '/src/Access/SystemWriteContext.php';
 
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/TenantAdminHelper.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/WorkspaceVisibilityInterface.php';
@@ -63,6 +66,10 @@ final class BoilerplateAccessKernelTest extends KernelTestBase {
     $root = User::create(['uid' => 1, 'name' => 'root', 'status' => 1]);
     $root->save();
     $this->container->get('current_user')->setAccount($root);
+    // PHPUnit runs on the command line, a trusted system context. Every write
+    // below models a web or API request unless the test switches explicitly.
+    $web_context = new SystemWriteContext($this->container->get('kernel'), 'fpm-fcgi');
+    $this->container->set('markaspot.system_write_context', $web_context);
     foreach (['anonymous', 'authenticated'] as $id) {
       Role::load($id)->grantPermission('access content')->save();
     }
@@ -360,6 +367,43 @@ final class BoilerplateAccessKernelTest extends KernelTestBase {
     $this->assertNotNull($this->container->get('entity_type.manager')->getStorage('group_relationship')->loadUnchanged($foreign_link->id()));
     $this->container->get('current_user')->setAccount($staff);
     $this->assertFalse($handler->access($nodes['shared'], 'delete', $outsider));
+
+    // Drush, updatedb and cron run as anonymous. The scope guard still rejects
+    // anonymous web writes but must not block update hooks on the CLI.
+    $this->container->get('current_user')->setAccount(new AnonymousUserSession());
+    try {
+      $nodes['shared']->setTitle('Anonymous web write')->save();
+      $this->fail('An anonymous web request changed a template.');
+    }
+    catch (EntityStorageException) {
+      $this->addToAssertionCount(1);
+    }
+    $this->assertSame('shared', Node::load($nodes['shared']->id())->label());
+    $cli_context = new SystemWriteContext($this->container->get('kernel'), 'cli');
+    $this->container->set('markaspot.system_write_context', $cli_context);
+    $nodes['shared']->setTitle('Updated by drush')->save();
+    $this->assertSame('Updated by drush', Node::load($nodes['shared']->id())->label());
+    $this->assertCount(1, $jur->getRelationshipsByEntity($nodes['shared'], 'group_node:boilerplate'));
+    $system_template = Node::create([
+      'type' => 'boilerplate', 'title' => 'System template', 'status' => 1,
+      'field_jurisdiction' => $jur->id(), 'field_boilerplate_type' => 'status_notes',
+    ]);
+    $system_template->save();
+    $system_template->delete();
+    $this->assertNull(Node::load($system_template->id()));
+    $this->container->set('markaspot.system_write_context', $web_context);
+    $this->container->get('current_user')->setAccount($group_admin);
+    $nodes['shared']->setTitle('Edited within scope')->save();
+    $this->assertSame('Edited within scope', Node::load($nodes['shared']->id())->label());
+    $this->container->get('current_user')->setAccount($outsider);
+    try {
+      $nodes['shared']->setTitle('Edited outside scope')->save();
+      $this->fail('Staff outside the jurisdiction changed a template.');
+    }
+    catch (EntityStorageException) {
+      $this->addToAssertionCount(1);
+    }
+    $this->container->get('current_user')->setAccount($staff);
 
     try {
       $controller->load(999999);

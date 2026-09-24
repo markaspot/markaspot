@@ -1142,6 +1142,12 @@ function _markaspot_group_enforce_workspace_visibility_presave(EntityInterface $
     || !_markaspot_group_entity_is_blockable_workspace_content($entity)) {
     return;
   }
+  // Drush, updatedb and cron run as anonymous; update hooks must be able to
+  // save content of blocked workspaces like uid 1 can.
+  if (\Drupal::hasService('markaspot.system_write_context')
+    && \Drupal::service('markaspot.system_write_context')->isTrusted()) {
+    return;
+  }
 
   /** @var \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface $service */
   $service = \Drupal::service('markaspot_group.workspace_visibility');

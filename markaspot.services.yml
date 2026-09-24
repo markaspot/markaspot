@@ -13,3 +13,9 @@ services:
   logger.channel.markaspot:
     parent: logger.channel_base
     arguments: ['markaspot']
+
+  # Presave guards of the profile modules skip trusted system runs (drush,
+  # updatedb, install). Look it up with hasService(): missing = untrusted.
+  markaspot.system_write_context:
+    class: Drupal\markaspot\Access\SystemWriteContext
+    arguments: ['@kernel']

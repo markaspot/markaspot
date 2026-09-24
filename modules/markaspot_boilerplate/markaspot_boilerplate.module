@@ -80,6 +80,11 @@ function markaspot_boilerplate_entity_type_alter(array &$entity_types): void {
  * Implements hook_node_presave().
  */
 function markaspot_boilerplate_node_presave(\Drupal\node\NodeInterface $node): void {
+  // Drush, updatedb and cron run as anonymous and have no staff scope.
+  if (\Drupal::hasService('markaspot.system_write_context')
+    && \Drupal::service('markaspot.system_write_context')->isTrusted()) {
+    return;
+  }
   $errors = \Drupal\markaspot_boilerplate\Access\BoilerplateAccess::writeErrors($node, \Drupal::currentUser());
   if ($errors !== []) {
     throw new \Drupal\Core\Entity\EntityStorageException(implode(' ', $errors));
