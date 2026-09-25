@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.204](https://github.com/markaspot/markaspot/compare/11.9.203...11.9.204) (2026-09-25)
+
+### Bug Fixes
+
+* expose the published flag and language of text templates to the dashboard ([4112465](https://github.com/markaspot/markaspot/commit/41124658a5df501b82dbdda9aae94b1e78d3c475))
+* let tenant admins publish text templates in their jurisdiction ([b32f92f](https://github.com/markaspot/markaspot/commit/b32f92f0cf7752b43ab6a7950a98ea028abcf59f))
+
 ## [11.9.203](https://github.com/markaspot/markaspot/compare/11.9.202...11.9.203) (2026-09-25)
 
 ### Bug Fixes
