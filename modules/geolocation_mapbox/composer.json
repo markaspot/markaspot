@@ -11,7 +11,6 @@
     "source": "https://github.com/markaspot/geolocation_mapbox"
   },
   "require": {
-    "npm-asset/leaflet.locatecontrol": "0.62.0",
     "npm-asset/leaflet-control-geocoder": "1.5.6"
   },
   "repositories": [

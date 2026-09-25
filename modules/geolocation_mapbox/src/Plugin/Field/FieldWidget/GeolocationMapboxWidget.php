@@ -240,7 +240,6 @@ class GeolocationMapboxWidget extends WidgetBase {
       'library' => [
         'geolocation_mapbox/leaflet',
         'geolocation_mapbox/mapbox',
-        'geolocation_mapbox/leaflet-locatecontrol',
         'geolocation_mapbox/leaflet-geosearch',
         'geolocation_mapbox/leaflet.fullscreen',
         'geolocation_mapbox/geolocation-mapbox-widget',

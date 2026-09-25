@@ -57,15 +57,10 @@
     );
 
 
-    const locateOptions = {
-      position: 'bottomright'
-    };
-
-    const lc = L.control.locate(locateOptions).addTo(map);
-
-    // Check for ongoing validation and autolocate settings combination.
+    // Auto-locate uses Leaflet's built-in geolocation. The backend map has no
+    // locate button: staff place a report by search or click.
     if (mapSettings.autoLocate && !$('.messages')[0]) {
-      lc.start();
+      map.locate({ setView: true, maxZoom: Number(mapSettings.zoom) || undefined });
     }
 
     function onLocationFound(e) {

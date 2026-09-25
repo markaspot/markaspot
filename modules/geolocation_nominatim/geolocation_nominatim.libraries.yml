@@ -24,12 +24,6 @@ maplibre:
     component:
       /libraries/maplibre-gl/dist/maplibre-gl.css: {}
 
-font-awesome:
-  css:
-    component:
-      /libraries/font-awesome/css/all.min.css: {}
-      /libraries/font-awesome/css/v4-shims.min.css: {}
-
 leaflet-geosearch:
   css:
     component:
@@ -40,14 +34,6 @@ leaflet-geosearch:
     - geolocation_nominatim/geolocation-nominatim-widget
     - geolocation_nominatim/leaflet
 
-leaflet-locatecontrol:
-  js:
-    /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.js: {}
-  css:
-    component:
-      /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: {}
-  dependencies:
-    - geolocation_nominatim/font-awesome
 leaflet.fullscreen:
   js:
     /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: {}

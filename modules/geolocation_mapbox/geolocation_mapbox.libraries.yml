@@ -22,16 +22,10 @@ leaflet:
 
 mapbox:
   dependencies:
-    - core/leaflet
+    - geolocation_mapbox/leaflet
   css:
     component:
       /libraries/maplibre-gl/dist/maplibre-gl.css: { }
-
-font-awesome:
-  css:
-    component:
-      /libraries/font-awesome/css/all.min.css: { }
-      /libraries/font-awesome/css/v4-shims.min.css: { }
 
 leaflet-geosearch:
   css:
@@ -40,15 +34,6 @@ leaflet-geosearch:
   js:
     /libraries/leaflet-geosearch/dist/bundle.min.js: { }
 
-
-leaflet-locatecontrol:
-  js:
-    /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.js: { }
-  css:
-    component:
-      /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: { }
-  dependencies:
-    - geolocation_mapbox/font-awesome
 leaflet.fullscreen:
   js:
     /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: { }
