@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.203](https://github.com/markaspot/markaspot/compare/11.9.202...11.9.203) (2026-09-25)
+
+### Bug Fixes
+
+* drop the locate button and Font Awesome from the backend map widgets ([ab4467f](https://github.com/markaspot/markaspot/commit/ab4467f29c8db57b50e6b72f913e47753f71c81a))
+* let config import uninstall a module together with its shipped config ([b4d6758](https://github.com/markaspot/markaspot/commit/b4d67580ed57f1944fb44ff838519c003e37ea1c))
+
 ## [11.9.202](https://github.com/markaspot/markaspot/compare/11.9.201...11.9.202) (2026-09-24)
 
 ### Bug Fixes
