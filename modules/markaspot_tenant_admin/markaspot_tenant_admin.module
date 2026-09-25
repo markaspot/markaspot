@@ -492,14 +492,15 @@ function _markaspot_tenant_admin_request_image_media_access_result(AccessResult 
  * Implements hook_entity_field_access().
  *
  * Grants jurisdiction-scoped write access to the node 'status' field
- * (published/unpublished) for tenant admins AND moderators on the
- * page + service_request bundles. Without this, JSON:API rejects
+ * (published/unpublished) for tenant admins AND moderators on the page,
+ * service_request and boilerplate bundles. Without this, JSON:API rejects
  * POST/PATCH requests that include the status field because the core
  * 'administer node published status' permission is not granted globally
  * (which would be a cross-tenant security risk in a multi-tenant setup).
  *
  * Coverage:
- *  - bundles: page, service_request
+ *  - bundles: page, service_request, boilerplate (dashboard text templates,
+ *    scoped through the same field_jurisdiction)
  *  - Drupal-site roles: tenant_admin, moderator
  *  - jurisdiction-scope: user must hold a jur-tenant_admin OR jur-moderator
  *    group role on the node's jurisdiction (see
@@ -514,8 +515,10 @@ function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefi
   }
 
   // Only for node entities of supported bundles.
-  $supported_bundles = ['page', 'service_request'];
-  $bundle = $field_definition->getTargetBundle();
+  $supported_bundles = ['page', 'service_request', 'boilerplate'];
+  // The shared status base field has no target bundle unless the bundle ships
+  // a base field override (boilerplate does not); the entity knows it.
+  $bundle = $items ? $items->getEntity()->bundle() : $field_definition->getTargetBundle();
   if ($field_definition->getTargetEntityTypeId() !== 'node' || !in_array($bundle, $supported_bundles, TRUE)) {
     return AccessResult::neutral();
   }
