@@ -15,6 +15,7 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\Utility\UpdateException;
+use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -1678,42 +1679,12 @@ function markaspot_group_update_11907(): void {
       'cardinality' => 1,
       'settings' => ['max_length' => 64],
     ],
-    'field_logo_dark' => [
-      'field_name' => 'field_logo_dark',
-      'entity_type' => 'group',
-      'type' => 'image',
-      'cardinality' => 1,
-      'settings' => [
-        'uri_scheme' => 'public',
-        'default_image' => ['uuid' => NULL, 'alt' => '', 'title' => '', 'width' => NULL, 'height' => NULL],
-        'target_type' => 'file',
-      ],
-    ],
-    'field_logo_light' => [
-      'field_name' => 'field_logo_light',
-      'entity_type' => 'group',
-      'type' => 'image',
-      'cardinality' => 1,
-      'settings' => [
-        'uri_scheme' => 'public',
-        'default_image' => ['uuid' => NULL, 'alt' => '', 'title' => '', 'width' => NULL, 'height' => NULL],
-        'target_type' => 'file',
-      ],
-    ],
-    'field_font_body' => [
-      'field_name' => 'field_font_body',
-      'entity_type' => 'group',
-      'type' => 'string',
-      'cardinality' => 1,
-      'settings' => ['max_length' => 255],
-    ],
-    'field_font_heading' => [
-      'field_name' => 'field_font_heading',
-      'entity_type' => 'group',
-      'type' => 'string',
-      'cardinality' => 1,
-      'settings' => ['max_length' => 255],
-    ],
+    // Logos and fonts are uploads (SVG logos, font files), as shipped by
+    // markaspot_nuxt; see markaspot_group_update_11953().
+    'field_logo_dark' => _markaspot_group_branding_file_storage('field_logo_dark'),
+    'field_logo_light' => _markaspot_group_branding_file_storage('field_logo_light'),
+    'field_font_body' => _markaspot_group_branding_file_storage('field_font_body'),
+    'field_font_heading' => _markaspot_group_branding_file_storage('field_font_heading'),
     'field_parent_jurisdiction' => [
       'field_name' => 'field_parent_jurisdiction',
       'entity_type' => 'group',
@@ -1756,24 +1727,10 @@ function markaspot_group_update_11907(): void {
       'description' => 'Short identifier for URLs (e.g., "bonn", "koeln")',
       'required' => FALSE,
     ],
-    'field_logo_dark' => [
-      'label' => 'Logo (Dark Mode)',
-      'required' => FALSE,
-    ],
-    'field_logo_light' => [
-      'label' => 'Logo (Light Mode)',
-      'required' => FALSE,
-    ],
-    'field_font_body' => [
-      'label' => 'Body Font',
-      'description' => 'Font family for body text',
-      'required' => FALSE,
-    ],
-    'field_font_heading' => [
-      'label' => 'Heading Font',
-      'description' => 'Font family for headings',
-      'required' => FALSE,
-    ],
+    'field_logo_dark' => _markaspot_group_branding_field_config('field_logo_dark'),
+    'field_logo_light' => _markaspot_group_branding_field_config('field_logo_light'),
+    'field_font_body' => _markaspot_group_branding_field_config('field_font_body'),
+    'field_font_heading' => _markaspot_group_branding_field_config('field_font_heading'),
     'field_parent_jurisdiction' => [
       'label' => 'Parent Jurisdiction',
       'description' => 'The parent jurisdiction in a hierarchy.',
@@ -6107,5 +6064,215 @@ function _markaspot_group_filter_content_access_indexes(array $indexes): array {
 function _markaspot_group_stop_search_api_batch_tracking(array $indexes): void {
   foreach ($indexes as $index) {
     $index->stopBatchTracking();
+  }
+}
+
+/**
+ * Converges the jurisdiction logo and font fields on the shipped file type.
+ *
+ * Update 11907 created field_logo_light/dark as image and field_font_heading
+ * and field_font_body as string fields, while markaspot_nuxt ships all four
+ * as file storages and the dashboard uploads SVG logos and font files. Which
+ * type a tenant got depended on install order, and a config import from a
+ * tenant with the other type cannot change it. A storage of another type is
+ * recreated from the shipped config only while it holds no values; one with
+ * values is left alone and reported. Idempotent.
+ */
+function markaspot_group_update_11953(): string {
+  $etm = \Drupal::entityTypeManager();
+  $database = \Drupal::database();
+  $groupStorage = $etm->getStorage('group');
+  $tableMapping = $groupStorage->getTableMapping();
+  $hasJur = (bool) $etm->getStorage('group_type')->load('jur');
+  $converted = [];
+  $kept = [];
+
+  foreach (_markaspot_group_branding_field_names() as $name) {
+    $storage = FieldStorageConfig::loadByName('group', $name);
+    $fieldConfigName = 'field.field.group.jur.' . $name;
+    $overrides = [];
+    if (!$storage || $storage->getType() !== 'file') {
+      if ($storage) {
+        $rows = 0;
+        $tables = [
+          $tableMapping->getDedicatedDataTableName($storage),
+          $tableMapping->getDedicatedRevisionTableName($storage),
+        ];
+        foreach ($tables as $table) {
+          if ($database->schema()->tableExists($table)) {
+            $rows += (int) $database->select($table)->countQuery()->execute()->fetchField();
+          }
+        }
+        if ($rows > 0) {
+          $kept[] = sprintf('%s (%s, %d value rows)', $name, $storage->getType(), $rows);
+          continue;
+        }
+        // Deleting the field also deletes its translated labels; keep them.
+        $overrides = _markaspot_group_config_label_overrides($fieldConfigName);
+        $storage->delete();
+        // Purge the deleted empty field before its name is reused.
+        \Drupal::moduleHandler()->loadInclude('field', 'inc', 'field.purge');
+        field_purge_batch(100);
+      }
+      FieldStorageConfig::create(_markaspot_group_branding_file_storage($name))->save();
+      $converted[] = $name;
+    }
+    // Also completes a file storage whose jur field is missing, for example
+    // after a fresh install without the jur type or an interrupted run.
+    if ($hasJur && !FieldConfig::loadByName('group', 'jur', $name)) {
+      FieldConfig::create(_markaspot_group_branding_field_config($name))->save();
+      _markaspot_group_restore_label_overrides($fieldConfigName, $overrides);
+      if (!in_array($name, $converted, TRUE)) {
+        $converted[] = $name;
+      }
+    }
+  }
+
+  // Deleting a field drops its form display component; restore the upload
+  // widget update 11907 configures for these fields.
+  if ($converted && $hasJur) {
+    $formDisplay = $etm->getStorage('entity_form_display')->load('group.jur.default');
+    if ($formDisplay) {
+      $weights = [
+        'field_logo_light' => 3,
+        'field_logo_dark' => 4,
+        'field_font_heading' => 10,
+        'field_font_body' => 11,
+      ];
+      foreach ($converted as $name) {
+        if (!$formDisplay->getComponent($name)) {
+          $formDisplay->setComponent($name, [
+            'type' => 'file_generic',
+            'weight' => $weights[$name],
+            'region' => 'content',
+            'settings' => ['progress_indicator' => 'throbber'],
+          ]);
+        }
+      }
+      $formDisplay->save();
+    }
+  }
+
+  $message = $converted
+    ? 'Recreated or completed as file fields: ' . implode(', ', $converted) . '.'
+    : 'Jurisdiction logo and font fields already use the file type.';
+  if ($kept) {
+    $message .= ' Left unchanged because they hold values: ' . implode(', ', $kept) . '.';
+    \Drupal::logger('markaspot_group')->warning('Jurisdiction branding fields not converted to file because they hold values: @fields', ['@fields' => implode(', ', $kept)]);
+  }
+  return $message;
+}
+
+/**
+ * Names of the jurisdiction logo and font fields.
+ *
+ * @return string[]
+ *   The field names.
+ */
+function _markaspot_group_branding_field_names(): array {
+  return ['field_logo_light', 'field_logo_dark', 'field_font_heading', 'field_font_body'];
+}
+
+/**
+ * Returns the shipped file storage definition of a branding field.
+ *
+ * @param string $name
+ *   The field name.
+ *
+ * @return array
+ *   The storage definition from markaspot_nuxt's optional config.
+ */
+function _markaspot_group_branding_file_storage(string $name): array {
+  $file = dirname(__DIR__) . '/markaspot_nuxt/config/optional/field.storage.group.' . $name . '.yml';
+  $data = is_file($file) ? Yaml::decode((string) file_get_contents($file)) : NULL;
+  if (!is_array($data) || ($data['type'] ?? NULL) !== 'file') {
+    throw new UpdateException(sprintf('Shipped file storage for group.%s is missing.', $name));
+  }
+  unset($data['_core']);
+  // The shipped storages carry no UUID. A fixed one per field keeps every
+  // converted tenant equal to the config/sync exported for it; a config
+  // import never updates the UUID of an existing storage.
+  $data += ['uuid' => _markaspot_group_branding_storage_uuids()[$name]];
+  return $data;
+}
+
+/**
+ * Fixed UUIDs for the branding field storages created by update 11953.
+ *
+ * @return string[]
+ *   UUIDs keyed by field name.
+ */
+function _markaspot_group_branding_storage_uuids(): array {
+  return [
+    'field_logo_light' => '428e8926-018e-4580-a600-c8f9f941f98d',
+    'field_logo_dark' => '4f1c6dd9-c767-4538-889e-5bd2122c0c2a',
+    'field_font_heading' => '7e5c2c30-b945-4c7a-82bb-e6f56b4eaffd',
+    'field_font_body' => '785457b0-d49e-420f-a206-cfcc1d6d7d75',
+  ];
+}
+
+/**
+ * Returns the shipped jur field definition of a branding field.
+ *
+ * @param string $name
+ *   The field name.
+ *
+ * @return array
+ *   The field definition from the profile's optional config.
+ */
+function _markaspot_group_branding_field_config(string $name): array {
+  $file = dirname(__DIR__, 2) . '/config/optional/field.field.group.jur.' . $name . '.yml';
+  $data = is_file($file) ? Yaml::decode((string) file_get_contents($file)) : NULL;
+  if (!is_array($data) || ($data['field_type'] ?? NULL) !== 'file') {
+    throw new UpdateException(sprintf('Shipped jur field group.jur.%s is missing.', $name));
+  }
+  unset($data['_core']);
+  return $data;
+}
+
+/**
+ * Reads the translated label and description overrides of a config object.
+ *
+ * @param string $name
+ *   The config name.
+ *
+ * @return array
+ *   Override data keyed by langcode, only label and description.
+ */
+function _markaspot_group_config_label_overrides(string $name): array {
+  $active = \Drupal::service('config.storage');
+  $overrides = [];
+  foreach ($active->getAllCollectionNames() as $collection) {
+    if (!str_starts_with($collection, 'language.')) {
+      continue;
+    }
+    $data = $active->createCollection($collection)->read($name);
+    $data = is_array($data) ? array_intersect_key($data, ['label' => TRUE, 'description' => TRUE]) : [];
+    if ($data) {
+      $overrides[substr($collection, strlen('language.'))] = $data;
+    }
+  }
+  return $overrides;
+}
+
+/**
+ * Writes translated label and description overrides back.
+ *
+ * @param string $name
+ *   The config name.
+ * @param array $overrides
+ *   Override data keyed by langcode.
+ */
+function _markaspot_group_restore_label_overrides(string $name, array $overrides): void {
+  $languageManager = \Drupal::languageManager();
+  if (!$overrides || !$languageManager instanceof ConfigurableLanguageManagerInterface) {
+    return;
+  }
+  foreach ($overrides as $langcode => $data) {
+    $override = $languageManager->getLanguageConfigOverride($langcode, $name);
+    foreach ($data as $key => $value) {
+      $override->set($key, $value);
+    }
+    $override->save();
   }
 }
