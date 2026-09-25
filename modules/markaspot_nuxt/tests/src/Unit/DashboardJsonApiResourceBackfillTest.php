@@ -158,9 +158,19 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
       $moduleRoot . '/config/optional/jsonapi_extras.jsonapi_resource_config.node--boilerplate.yml'
     ));
 
-    foreach (['nid', 'title', 'body', 'field_jurisdiction', 'field_boilerplate_type', 'field_organisation'] as $fieldName) {
+    // Status and langcode stay exposed: the dashboard template editor writes
+    // the published flag and matches translations by langcode (update 11916).
+    $exposed = ['nid', 'langcode', 'status', 'title', 'body', 'field_jurisdiction', 'field_boilerplate_type', 'field_organisation'];
+    foreach ($exposed as $fieldName) {
       $this->assertFalse($config['resourceFields'][$fieldName]['disabled']);
     }
+    // The 11907 hardening must keep the same allow-list for legacy copies.
+    $install = file_get_contents($moduleRoot . '/markaspot_nuxt.install');
+    $this->assertIsString($install);
+    $this->assertStringContainsString(
+      "'node--boilerplate' => ['node', 'boilerplate', ['" . implode("', '", $exposed) . "']]",
+      $this->normalizeArraySource($install),
+    );
     foreach (['uuid', 'uid', 'revision_uid', 'revision_log', 'created', 'changed'] as $fieldName) {
       $this->assertTrue($config['resourceFields'][$fieldName]['disabled']);
     }

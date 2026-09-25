@@ -32,7 +32,7 @@ resourceFields:
     enhancer:
       id: ''
   langcode:
-    disabled: true
+    disabled: false
     fieldName: langcode
     publicName: langcode
     enhancer:
@@ -62,7 +62,7 @@ resourceFields:
     enhancer:
       id: ''
   status:
-    disabled: true
+    disabled: false
     fieldName: status
     publicName: status
     enhancer:

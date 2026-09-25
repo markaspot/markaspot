@@ -612,6 +612,8 @@ function markaspot_nuxt_update_11907(): string {
       'boilerplate',
       [
         'nid',
+        'langcode',
+        'status',
         'title',
         'body',
         'field_jurisdiction',
@@ -1014,4 +1016,53 @@ function markaspot_nuxt_update_11915(): string {
   $platform_features['moderation'] = NULL;
   $config->set('platform_features', $platform_features)->save();
   return 'Added the citizen report flagging platform rule setting.';
+}
+
+/**
+ * Exposes status and langcode on the text template JSON:API resource.
+ *
+ * Update 11907 hardened node--boilerplate to an allow-list without both. The
+ * dashboard template editor writes the published flag and reads langcode to
+ * tell existing translations apart; JSON:API silently drops writes to a
+ * hidden field, so unpublishing a template republished it, and every
+ * translation looked missing. Neither value is a secret on a staff text
+ * template. Saved through the config entity storage so jsonapi_extras
+ * rebuilds its resource types. Idempotent; keeps a tenant's public alias.
+ */
+function markaspot_nuxt_update_11916(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('jsonapi_resource_config')) {
+    return 'Skipped node--boilerplate JSON:API resource config: jsonapi_extras not enabled on this tenant.';
+  }
+
+  $resource = $entity_type_manager->getStorage('jsonapi_resource_config')->load('node--boilerplate');
+  if (!$resource) {
+    return 'Skipped node--boilerplate JSON:API resource config: resource not configured on this tenant.';
+  }
+
+  $fields = $resource->get('resourceFields');
+  $fields = is_array($fields) ? $fields : [];
+  $exposed = [];
+  foreach (['status', 'langcode'] as $field_name) {
+    $field = is_array($fields[$field_name] ?? NULL) ? $fields[$field_name] : [];
+    $field += [
+      'fieldName' => $field_name,
+      'publicName' => $field_name,
+      'enhancer' => ['id' => ''],
+    ];
+    $field['disabled'] = FALSE;
+    if (($fields[$field_name] ?? NULL) !== $field) {
+      $fields[$field_name] = $field;
+      $exposed[] = $field_name;
+    }
+  }
+
+  if (!$exposed) {
+    return 'node--boilerplate JSON:API resource already exposes status and langcode.';
+  }
+
+  $resource->set('resourceFields', $fields);
+  $resource->save();
+
+  return 'Exposed ' . implode(', ', $exposed) . ' on the node--boilerplate JSON:API resource.';
 }
