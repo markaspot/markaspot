@@ -69,7 +69,9 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *     (transformed) source is a `delete`. We re-inject any config name that
  *     (a) is still SHIPPED by a currently-ENABLED extension (profile/module
  *     config/install + config/optional), (b) exists in ACTIVE, and (c) is
- *     missing from the import storage. That suppresses the delete for
+ *     missing from the import storage, and (d) does not belong to (name
+ *     owner) or depend on (dependencies module/theme, incl. enforced) an
+ *     extension this import uninstalls. That suppresses the delete for
  *     profile/module-owned config while leaving genuinely client-specific
  *     config (shipped by nobody) untouched and deletable.
  *
@@ -95,6 +97,12 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *     additionally hard-guard on InstallerKernel::installationAttempted().
  *   - `drush config:import --partial` bypasses the transformer entirely, so the
  *     guard does not apply there. Use full `cim` / `deploy`.
+ *   - An extension enabled in active but absent from the import core.extension
+ *     (after the required re-add) is treated as a deliberate uninstall: its
+ *     own and its dependent shipped config is left deletable, as vanilla core
+ *     would. A stale export that merely lost a non-required module is
+ *     indistinguishable from that and resolves as an uninstall too; the guard
+ *     logs a warning listing what it left deletable.
  *
  * OPERATIONAL NOTE
  * ----------------
@@ -103,6 +111,10 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * this guard re-adds any still-declared profile dependency to core.extension,
  * so a cim uninstall of such a module would otherwise silently no-op. Correct
  * order: drop from info.yml first, then deploy.
+ *
+ * A non-required module (e.g. the obsolete contrib `lazy`) is uninstalled
+ * through cim by removing it from core.extension.yml and deleting its config
+ * files from config/sync; the guard no longer restores that config.
  *
  * SAFETY
  * ------
@@ -389,10 +401,15 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   /**
    * Re-injects still-shipped config that active has but the import lacks.
    *
+   * Config of extensions the same import uninstalls is left out, see
+   * getExtensionsUninstalledByImport().
+   *
    * @param \Drupal\Core\Config\StorageInterface $importStorage
    *   The mutable import storage (transformed copy of config/sync).
    */
   private function protectShippedConfig(StorageInterface $importStorage): void {
+    $uninstalling = $this->getExtensionsUninstalledByImport($importStorage);
+    $leftDeletable = [];
     foreach ($this->getShippedConfigNames() as $name) {
       if ($importStorage->exists($name)) {
         continue;
@@ -402,6 +419,12 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       }
       $data = $this->activeStorage->read($name);
       if ($data === FALSE) {
+        continue;
+      }
+      // Config of a module this import deliberately uninstalls goes with the
+      // module; restoring it would fail the import's dependency validation.
+      if ($uninstalling !== [] && $this->dependsOnExtensions($name, $data, $uninstalling)) {
+        $leftDeletable[] = $name;
         continue;
       }
       if (str_starts_with($name, 'eca.model.')) {
@@ -426,6 +449,12 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
         }
       }
       $importStorage->write($name, $data);
+    }
+    if ($leftDeletable !== []) {
+      $this->logger->warning(
+        'Config import uninstalls @extensions; their shipped config stays deletable: @names',
+        ['@extensions' => implode(', ', $uninstalling), '@names' => implode(', ', $leftDeletable)],
+      );
     }
   }
 
@@ -460,12 +489,14 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       $importStorage->write($name, $data);
     }
 
+    $uninstalling = $this->getExtensionsUninstalledByImport($importStorage);
     foreach ($this->activeStorage->listAll('block.block.') as $name) {
       if ($importStorage->exists($name)) {
         continue;
       }
       $activeData = $this->activeStorage->read($name);
-      if (is_array($activeData) && self::isGinUserSwitchBlock($activeData)) {
+      if (is_array($activeData) && self::isGinUserSwitchBlock($activeData)
+        && !$this->dependsOnExtensions($name, $activeData, $uninstalling)) {
         $importStorage->write($name, $activeData);
       }
     }
@@ -1451,6 +1482,65 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     }
 
     return $required;
+  }
+
+  /**
+   * Returns the extensions the import removes from an active core.extension.
+   *
+   * Runs after protectRequiredModules(), so profile-required modules are
+   * already back in the import map and never count as uninstalled.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage (transformed copy of config/sync).
+   *
+   * @return string[]
+   *   Machine names of modules and themes enabled in active but absent from
+   *   the import.
+   */
+  private function getExtensionsUninstalledByImport(StorageInterface $importStorage): array {
+    $active = $this->activeStorage->read(self::CORE_EXTENSION);
+    $import = $importStorage->read(self::CORE_EXTENSION);
+    if (!is_array($active) || !is_array($import)) {
+      return [];
+    }
+    $removed = [];
+    foreach (['module', 'theme'] as $type) {
+      if (is_array($active[$type] ?? NULL) && is_array($import[$type] ?? NULL)) {
+        $removed = array_merge($removed, array_keys(array_diff_key($active[$type], $import[$type])));
+      }
+    }
+    return $removed;
+  }
+
+  /**
+   * Checks whether a config object belongs to or depends on given extensions.
+   *
+   * @param string $name
+   *   The config name; its first segment is the owning extension.
+   * @param array $data
+   *   The config data.
+   * @param string[] $extensions
+   *   Module and theme machine names.
+   *
+   * @return bool
+   *   TRUE when the owner or a module/theme dependency is in $extensions.
+   */
+  private function dependsOnExtensions(string $name, array $data, array $extensions): bool {
+    if ($extensions === []) {
+      return FALSE;
+    }
+    if (in_array(strstr($name, '.', TRUE), $extensions, TRUE)) {
+      return TRUE;
+    }
+    $dependencies = [];
+    foreach ([$data['dependencies'] ?? [], $data['dependencies']['enforced'] ?? []] as $set) {
+      foreach (['module', 'theme'] as $type) {
+        if (is_array($set) && is_array($set[$type] ?? NULL)) {
+          $dependencies = array_merge($dependencies, $set[$type]);
+        }
+      }
+    }
+    return array_intersect($dependencies, $extensions) !== [];
   }
 
   /**
