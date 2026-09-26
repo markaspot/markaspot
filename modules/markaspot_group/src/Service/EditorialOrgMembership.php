@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_group\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -74,6 +75,13 @@ final class EditorialOrgMembership {
   private static bool $writing = FALSE;
 
   /**
+   * Groups being deleted in this request.
+   *
+   * @var array<int, true>
+   */
+  private static array $deletingGroups = [];
+
+  /**
    * Scope per account for the current request.
    *
    * @var array<int, int[]>
@@ -135,6 +143,58 @@ final class EditorialOrgMembership {
     )));
     if ($roles !== array_values($submitted)) {
       $relationship->set('group_roles', $roles);
+    }
+  }
+
+  /**
+   * Marks a group whose relationships are about to be deleted with it.
+   */
+  public static function markGroupDeleting(int $groupId): void {
+    self::$deletingGroups[$groupId] = TRUE;
+  }
+
+  /**
+   * Re-grants an editorial membership that was deleted by hand.
+   *
+   * Editorial memberships are managed by role; deleting one through the
+   * Group UI or JSON:API must not remove an editor from an organisation of
+   * their tenant. Deletions by this service, of the whole organisation and of
+   * deleted or demoted users are left alone.
+   */
+  public function restoreDeletedMembership(GroupRelationshipInterface $relationship): void {
+    if (self::$writing
+      || $relationship->getPluginId() !== 'group_membership'
+      || $relationship->getGroupTypeId() !== self::ORG_GROUP_TYPE
+      || isset(self::$deletingGroups[(int) $relationship->getGroupId()])
+      || !$relationship->hasField('group_roles')) {
+      return;
+    }
+    $roleIds = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+    if (!in_array(MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID, $roleIds, TRUE)) {
+      return;
+    }
+    $uid = (int) $relationship->get('entity_id')->target_id;
+    $this->forgetCachedUser($uid);
+    $user = $this->entityTypeManager->getStorage('user')->load($uid);
+    if ($user instanceof UserInterface && $this->isEditor($user)) {
+      $this->syncEditor($user);
+    }
+  }
+
+  /**
+   * Refuses to move an existing membership to another user.
+   *
+   * The roles of a membership belong to its user; re-targeting entity_id
+   * (possible through JSON:API) would hand them to someone else.
+   */
+  public static function guardMembershipIdentity(GroupRelationshipInterface $relationship): void {
+    if ($relationship->isNew() || $relationship->getPluginId() !== 'group_membership') {
+      return;
+    }
+    $original = $relationship->getOriginal();
+    if ($original instanceof GroupRelationshipInterface
+      && (int) $original->get('entity_id')->target_id !== (int) $relationship->get('entity_id')->target_id) {
+      throw new EntityStorageException('The user of an existing group membership cannot be changed.');
     }
   }
 
@@ -218,7 +278,8 @@ final class EditorialOrgMembership {
       $granted = 0;
       foreach ($this->organisationsInRoots($roots) as $organisation) {
         // The query matches any translation; the default translation decides.
-        if (in_array($this->organisationRootId($organisation), $roots, TRUE)
+        if (!isset(self::$deletingGroups[(int) $organisation->id()])
+          && in_array($this->organisationRootId($organisation), $roots, TRUE)
           && $this->grant($organisation, $account)) {
           $granted++;
         }
@@ -274,7 +335,9 @@ final class EditorialOrgMembership {
    *   Number of memberships created or granted the editorial role.
    */
   public function syncOrganisation(GroupInterface $organisation): int {
-    if ($organisation->bundle() !== self::ORG_GROUP_TYPE || $this->organisationRootId($organisation) === NULL) {
+    if ($organisation->bundle() !== self::ORG_GROUP_TYPE
+      || isset(self::$deletingGroups[(int) $organisation->id()])
+      || $this->organisationRootId($organisation) === NULL) {
       return 0;
     }
     $granted = 0;

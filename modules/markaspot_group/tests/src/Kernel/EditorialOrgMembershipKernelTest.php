@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_group\Kernel;
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -458,6 +459,77 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $relationship->set('group_roles', [])->save();
     $this->assertSame(['org-editorial', 'org-editorial_member'], $this->orgRoles($org, $editor));
     $this->assertTrue($org->hasPermission('edit group', $editor));
+  }
+
+  /**
+   * A membership cannot be moved to another user (JSON:API PATCH entity_id).
+   */
+  public function testMembershipCannotBeRetargeted(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $org = $this->organisation('Org', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $outsider = $this->user('outsider');
+
+    $relationship = $org->getMember($editor)->getGroupRelationship();
+    $relationship->set('entity_id', $outsider->id());
+    try {
+      $relationship->save();
+      $this->fail('Re-targeting a membership must be refused.');
+    }
+    catch (EntityStorageException) {
+    }
+    $this->assertFalse($org->getMember($outsider));
+    $this->assertFalse($org->hasPermission('edit group', $outsider));
+  }
+
+  /**
+   * A hand-deleted editorial membership comes back; a deleted org does not.
+   */
+  public function testHandDeletedEditorialMembershipIsRestored(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $org = $this->organisation('Org', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+
+    $org->getMember($editor)->getGroupRelationship()->delete();
+    $this->assertSame([(int) $org->id()], $this->orgMemberships($editor));
+    $restored = $this->container->get('database')->query(
+      "SELECT gr.group_roles_target_id FROM {group_relationship_field_data} r JOIN {group_relationship__group_roles} gr ON gr.entity_id = r.id WHERE r.gid = :gid AND r.entity_id = :uid ORDER BY gr.delta",
+      [':gid' => $org->id(), ':uid' => $editor->id()],
+    )->fetchCol();
+    $this->assertSame(['org-editorial', 'org-editorial_member'], $restored);
+
+    $orgId = (int) $org->id();
+    Group::load($orgId)->delete();
+    $orphans = $this->container->get('database')->query(
+      'SELECT COUNT(*) FROM {group_relationship_field_data} WHERE gid = :gid',
+      [':gid' => $orgId],
+    )->fetchField();
+    $this->assertSame(0, (int) $orphans);
+  }
+
+  /**
+   * Deleting an editor removes their memberships instead of restoring them.
+   */
+  public function testDeletedEditorLeavesNoMembership(): void {
+    $this->installSchema('user', ['users_data']);
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $this->organisation('Org', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $uid = (int) $editor->id();
+    $this->assertCount(1, $this->orgMemberships($editor));
+
+    $editor->delete();
+    $left = $this->container->get('database')->query(
+      "SELECT COUNT(*) FROM {group_relationship_field_data} WHERE entity_id = :uid AND plugin_id = 'group_membership'",
+      [':uid' => $uid],
+    )->fetchField();
+    $this->assertSame(0, (int) $left);
   }
 
   /**

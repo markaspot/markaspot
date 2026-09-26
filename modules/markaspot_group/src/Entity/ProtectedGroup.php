@@ -14,6 +14,7 @@ use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgParentReferenceConstr
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgRootJurisdictionReferenceConstraint;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgServiceCategoriesJurisdictionConstraint;
 use Drupal\markaspot_group\Exception\OrganisationDeleteBlockedException;
+use Drupal\markaspot_group\Service\EditorialOrgMembership;
 
 /**
  * Adds Mark-a-Spot tenant delete guards before Group removes relationships.
@@ -83,6 +84,11 @@ class ProtectedGroup extends Group {
       }
     }
 
+    // Group deletes the relationships next; editorial memberships of a group
+    // that is going away must not be restored.
+    foreach ($entities as $group) {
+      EditorialOrgMembership::markGroupDeleting((int) $group->id());
+    }
     parent::preDelete($storage, $entities);
   }
 

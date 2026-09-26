@@ -4065,6 +4065,7 @@ function _markaspot_group_reconcile_service_request_relationships(NodeInterface|
  * jur memberships inside editorial writes and must stay unaffected.
  */
 function markaspot_group_group_relationship_presave(GroupRelationshipInterface $relationship): void {
+  EditorialOrgMembership::guardMembershipIdentity($relationship);
   EditorialOrgMembership::guardEditorialRoles($relationship);
 }
 
@@ -4136,6 +4137,7 @@ function markaspot_group_group_relationship_delete(GroupRelationshipInterface $r
   _markaspot_group_cleanup_org_membership_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'delete');
   _markaspot_group_sync_editor_on_jurisdiction_membership($relationship, TRUE, FALSE);
+  \Drupal::service('markaspot_group.editorial_org_membership')->restoreDeletedMembership($relationship);
 }
 
 /**
