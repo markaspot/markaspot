@@ -8,8 +8,10 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\markaspot_sso\Controller\SsoAuthController;
+use Drupal\markaspot_sso\Service\OidcClient;
 use Drupal\markaspot_sso\Service\SsoClientFactory;
 use Drupal\markaspot_sso\Service\SsoGroupMembershipService;
 use Drupal\markaspot_sso\Service\SsoIdentityLinker;
@@ -18,6 +20,7 @@ use Drupal\markaspot_sso\Service\SsoProviderManager;
 use Drupal\markaspot_sso\Service\SsoRelayStateValidator;
 use Drupal\markaspot_sso\Service\SsoReplayCache;
 use Drupal\Tests\UnitTestCase;
+use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -55,6 +58,24 @@ final class SsoAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * Failed OIDC callbacks redirect back to the SPA with the same marker.
+   */
+  public function testCallbackFailureRedirectsToRelayStateWithErrorMarker(): void {
+    $controller = $this->controller();
+    $request = Request::create('/auth/sso/keycloak/callback', 'GET', ['state' => 's', 'code' => 'c']);
+    $session = new Session(new MockArraySessionStorage());
+    $session->set('markaspot_sso.keycloak.relay_state', 'https://dev.ddev.site:3001/amsterdam/dashboard');
+    $request->setSession($session);
+
+    $response = $controller->callback($request, 'keycloak');
+
+    $this->assertSame(302, $response->getStatusCode());
+    $this->assertSame('https://dev.ddev.site:3001/amsterdam/dashboard?sso_error=1', $response->headers->get('Location'));
+    $this->assertSame('no-store, private', $response->headers->get('Cache-Control'));
+    $this->assertFalse($session->has('markaspot_sso.keycloak.relay_state'));
+  }
+
+  /**
    * Builds the controller with real services until ACS validation fails.
    */
   private function controller(): SsoAuthController {
@@ -83,6 +104,11 @@ final class SsoAuthControllerTest extends UnitTestCase {
       $replay_cache,
       $identity_linker,
       $this->createMock(LoggerInterface::class),
+      new OidcClient(
+        $this->createMock(ClientInterface::class),
+        $this->createMock(CacheBackendInterface::class),
+        $this->createMock(TimeInterface::class),
+      ),
     );
 
     return new SsoAuthController(

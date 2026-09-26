@@ -12,9 +12,14 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 /**
- * Coordinates SSO login starts, ACS processing, and dev mock login.
+ * Coordinates SSO login starts, SAML ACS, OIDC callbacks, and dev mock login.
  */
 final class SsoLoginService {
+
+  /**
+   * Seconds a started OIDC login stays valid.
+   */
+  private const OIDC_LOGIN_TTL = 600;
 
   /**
    * Constructs the SSO login service.
@@ -25,6 +30,7 @@ final class SsoLoginService {
     private readonly SsoReplayCache $replayCache,
     private readonly SsoIdentityLinker $identityLinker,
     private readonly LoggerInterface $logger,
+    private readonly OidcClient $oidcClient,
   ) {
   }
 
@@ -37,6 +43,9 @@ final class SsoLoginService {
     if ($this->providerManager->isMockProvider($provider)) {
       $this->providerManager->assertMockAllowed($provider);
       return $this->mockLoginUrl($provider_id, $relay_state);
+    }
+    if ($this->providerManager->isOidcProvider($provider)) {
+      return $this->startOidcLogin($provider_id, $provider, $session);
     }
 
     $auth = $this->clientFactory->auth($provider_id);
@@ -107,6 +116,73 @@ final class SsoLoginService {
   }
 
   /**
+   * Processes an OIDC authorization response and logs in the mapped identity.
+   *
+   * @return array<string, mixed>
+   *   Authenticated user payload plus the "mfa" decision.
+   */
+  public function processCallback(string $provider_id, Request $request, SessionInterface $session): array {
+    $provider = $this->providerManager->enabledProvider($provider_id);
+    if (!$this->providerManager->isOidcProvider($provider) || $this->providerManager->isMockProvider($provider)) {
+      throw new BadRequestHttpException('Provider does not use OpenID Connect.');
+    }
+
+    // Consume the pending login before anything else, so a failed callback
+    // can never be retried with the same state, nonce and verifier.
+    $key = $this->oidcKey($provider_id);
+    $pending = $session->get($key);
+    $session->remove($key);
+    if (!$this->isPendingOidcLogin($pending)) {
+      throw new AccessDeniedHttpException('Missing OIDC login correlation.');
+    }
+    if ($pending['created'] + self::OIDC_LOGIN_TTL < time()) {
+      throw new AccessDeniedHttpException('OIDC login attempt expired.');
+    }
+
+    $error = $request->query->get('error');
+    if (is_string($error) && $error !== '') {
+      $error = preg_replace('/[^a-z_]/', '', strtolower($error)) ?? '';
+      throw new AccessDeniedHttpException(sprintf('Identity provider returned "%s".', $error));
+    }
+    $state = $request->query->get('state');
+    if (!is_string($state) || !hash_equals($pending['state'], $state)) {
+      throw new AccessDeniedHttpException('OIDC state does not match.');
+    }
+    $code = $request->query->get('code');
+    if (!is_string($code) || $code === '') {
+      throw new BadRequestHttpException('Missing authorization code.');
+    }
+
+    $tokens = $this->oidcClient->exchangeCode($provider_id, $provider, $code, $pending['verifier']);
+    $claims = $this->oidcClient->validateIdToken($provider, $tokens['id_token'], $pending['nonce']);
+
+    // The token hash and our own nonce are unique per login. The IdP session
+    // id is not: it stays the same when the IdP reuses its SSO session.
+    if (
+      !$this->replayCache->checkAndStore(
+        $provider_id,
+        hash('sha256', $tokens['id_token']),
+        $pending['nonce'],
+        is_int($claims['exp'] ?? NULL) ? $claims['exp'] : NULL,
+      )
+    ) {
+      throw new AccessDeniedHttpException('OIDC response was already processed.');
+    }
+
+    $attributes = OidcClaims::toAttributes($claims);
+    $user = $this->identityLinker->authenticate($provider_id, $provider, (string) $claims['sub'], $attributes, []);
+    $mfa = OidcClaims::hasMfa($attributes, OidcClaims::mfaClaims($provider));
+    $this->storeLastLogin($session, $provider_id, $user, [
+      'protocol' => 'oidc',
+      'mfa' => $mfa,
+      'amr' => $attributes['amr'] ?? [],
+      'identity_provider' => $attributes['identity_provider'][0] ?? NULL,
+    ]);
+
+    return $user + ['mfa' => $mfa];
+  }
+
+  /**
    * Consumes the RelayState that was stored when login started.
    */
   public function consumeRelayState(string $provider_id, SessionInterface $session): string {
@@ -148,6 +224,56 @@ final class SsoLoginService {
     $this->storeLastLogin($session, $provider_id, $user);
     $this->logger->notice('Dev-only SSO mock login executed for @provider.', ['@provider' => $provider_id]);
     return $user;
+  }
+
+  /**
+   * Stores the PKCE and replay material and returns the authorization URL.
+   *
+   * @param string $provider_id
+   *   Provider machine name.
+   * @param array<string, mixed> $provider
+   *   Provider configuration.
+   * @param \Symfony\Component\HttpFoundation\Session\SessionInterface $session
+   *   Request session.
+   */
+  private function startOidcLogin(string $provider_id, array $provider, SessionInterface $session): string {
+    $state = $this->randomToken();
+    $nonce = $this->randomToken();
+    $verifier = $this->randomToken();
+    $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '=');
+
+    $session->set($this->oidcKey($provider_id), [
+      'state' => $state,
+      'nonce' => $nonce,
+      'verifier' => $verifier,
+      'created' => time(),
+    ]);
+
+    return $this->oidcClient->authorizationUrl($provider, $state, $nonce, $challenge);
+  }
+
+  /**
+   * Checks the shape of a pending OIDC login stored in the session.
+   *
+   * @phpstan-assert-if-true array{state: string, nonce: string, verifier: string, created: int} $pending
+   */
+  private function isPendingOidcLogin(mixed $pending): bool {
+    if (!is_array($pending) || !is_int($pending['created'] ?? NULL)) {
+      return FALSE;
+    }
+    foreach (['state', 'nonce', 'verifier'] as $key) {
+      if (!is_string($pending[$key] ?? NULL) || $pending[$key] === '') {
+        return FALSE;
+      }
+    }
+    return TRUE;
+  }
+
+  /**
+   * Returns 256 random bits as base64url without padding.
+   */
+  private function randomToken(): string {
+    return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
   }
 
   /**
@@ -200,14 +326,16 @@ final class SsoLoginService {
    *   Provider machine name.
    * @param array<string, mixed> $user
    *   Authenticated user payload.
+   * @param array<string, mixed> $extra
+   *   Protocol details, for OIDC the MFA decision the login guard reads.
    */
-  private function storeLastLogin(SessionInterface $session, string $provider_id, array $user): void {
+  private function storeLastLogin(SessionInterface $session, string $provider_id, array $user, array $extra = []): void {
     $session->set('markaspot_sso.last_login', [
       'provider' => $provider_id,
       'uid' => $user['uid'],
       'assurance_level' => $user['assurance_level'] ?? NULL,
       'time' => time(),
-    ]);
+    ] + $extra);
   }
 
   /**
@@ -215,6 +343,13 @@ final class SsoLoginService {
    */
   private function requestIdKey(string $provider_id): string {
     return "markaspot_sso.$provider_id.request_id";
+  }
+
+  /**
+   * Builds the session key for a pending OIDC login.
+   */
+  private function oidcKey(string $provider_id): string {
+    return "markaspot_sso.$provider_id.oidc";
   }
 
   /**

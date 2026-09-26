@@ -42,6 +42,13 @@ services:
       - '@config.factory'
       - '@logger.channel.markaspot_sso'
 
+  markaspot_sso.oidc_client:
+    class: Drupal\markaspot_sso\Service\OidcClient
+    arguments:
+      - '@http_client'
+      - '@cache.default'
+      - '@datetime.time'
+
   markaspot_sso.login_service:
     class: Drupal\markaspot_sso\Service\SsoLoginService
     arguments:
@@ -50,3 +57,4 @@ services:
       - '@markaspot_sso.replay_cache'
       - '@markaspot_sso.identity_linker'
       - '@logger.channel.markaspot_sso'
+      - '@markaspot_sso.oidc_client'

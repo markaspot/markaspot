@@ -4,6 +4,7 @@ providers:
     enabled: false
     label: 'Stadt-Login'
     profile: generic
+    protocol: saml
     jurisdiction_id: 1
     org_id: 0
     default_role: member

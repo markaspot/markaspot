@@ -53,7 +53,9 @@ final class SsoAuthController extends ControllerBase {
    * Returns SP metadata XML for a provider.
    */
   public function metadata(string $provider): Response {
-    $this->providerManager->provider($provider);
+    if ($this->providerManager->isOidcProvider($this->providerManager->provider($provider))) {
+      throw new HttpException(404, 'OIDC providers publish no SAML metadata.');
+    }
     try {
       $settings = $this->clientFactory->settings($provider, TRUE);
       $metadata = $settings->getSPMetadata();
@@ -112,6 +114,30 @@ final class SsoAuthController extends ControllerBase {
     }
     catch (\Throwable $exception) {
       $this->logger->warning('Rejected SSO response for @provider: @message', [
+        '@provider' => $provider,
+        '@message' => $exception->getMessage(),
+      ]);
+      $response = new RedirectResponse($this->withSsoError($target));
+      $this->noStore($response);
+      return $response;
+    }
+
+    $response = new RedirectResponse($target);
+    $this->noStore($response);
+    return $response;
+  }
+
+  /**
+   * Handles OIDC authorization responses.
+   */
+  public function callback(Request $request, string $provider): RedirectResponse {
+    $session = $this->session($request);
+    $target = $this->loginService->consumeRelayState($provider, $session);
+    try {
+      $this->loginService->processCallback($provider, $request, $session);
+    }
+    catch (\Throwable $exception) {
+      $this->logger->warning('Rejected OIDC response for @provider: @message', [
         '@provider' => $provider,
         '@message' => $exception->getMessage(),
       ]);

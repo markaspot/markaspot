@@ -22,6 +22,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 /**
  * Tests SSO login coordination.
@@ -29,6 +30,8 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * @group markaspot_sso
  */
 final class SsoLoginServiceTest extends UnitTestCase {
+
+  use OidcTestIdpTrait;
 
   /**
    * {@inheritdoc}
@@ -134,6 +137,110 @@ final class SsoLoginServiceTest extends UnitTestCase {
   }
 
   /**
+   * Starting an OIDC login stores state, nonce and PKCE verifier together.
+   */
+  public function testOidcLoginStoresPkceMaterial(): void {
+    $session = new Session(new MockArraySessionStorage());
+    $url = $this->loginService()->startLogin('broker', '/dashboard', $session);
+
+    $pending = $session->get('markaspot_sso.broker.oidc');
+    $this->assertIsArray($pending);
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+    $this->assertSame($pending['state'], $query['state']);
+    $this->assertSame($pending['nonce'], $query['nonce']);
+    $this->assertSame(
+      rtrim(strtr(base64_encode(hash('sha256', $pending['verifier'], TRUE)), '+/', '-_'), '='),
+      $query['code_challenge'],
+    );
+    $this->assertSame('S256', $query['code_challenge_method']);
+    $this->assertGreaterThanOrEqual(43, strlen($pending['verifier']));
+    $this->assertNotSame($pending['state'], $pending['nonce']);
+    $this->assertSame('/dashboard', $session->get('markaspot_sso.broker.relay_state'));
+  }
+
+  /**
+   * A callback without a started login is refused.
+   */
+  public function testOidcCallbackRequiresStartedLogin(): void {
+    $request = Request::create('/auth/sso/broker/callback', 'GET', ['state' => 's', 'code' => 'c']);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('correlation');
+    $this->loginService()->processCallback('broker', $request, new Session(new MockArraySessionStorage()));
+  }
+
+  /**
+   * A wrong state is refused and the started login cannot be retried.
+   */
+  public function testOidcCallbackStateMismatchConsumesPendingLogin(): void {
+    $session = $this->sessionWithPendingLogin(time());
+    $request = Request::create('/auth/sso/broker/callback', 'GET', ['state' => 'forged', 'code' => 'c']);
+
+    $exception = NULL;
+    try {
+      $this->loginService()->processCallback('broker', $request, $session);
+    }
+    catch (AccessDeniedHttpException $caught) {
+      $exception = $caught;
+    }
+
+    $this->assertNotNull($exception);
+    $this->assertStringContainsString('state', $exception->getMessage());
+    $this->assertFalse($session->has('markaspot_sso.broker.oidc'));
+  }
+
+  /**
+   * An error answer from the identity provider is refused without echoing it.
+   */
+  public function testOidcCallbackProviderErrorIsRefused(): void {
+    $session = $this->sessionWithPendingLogin(time());
+    $request = Request::create('/auth/sso/broker/callback', 'GET', [
+      'state' => 'state-1',
+      'error' => 'access_denied"><img>',
+    ]);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('Identity provider returned "access_deniedimg"');
+    $this->loginService()->processCallback('broker', $request, $session);
+  }
+
+  /**
+   * A login started more than ten minutes ago is refused.
+   */
+  public function testOidcCallbackExpiredAttemptIsRefused(): void {
+    $session = $this->sessionWithPendingLogin(time() - 601);
+    $request = Request::create('/auth/sso/broker/callback', 'GET', ['state' => 'state-1', 'code' => 'c']);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('expired');
+    $this->loginService()->processCallback('broker', $request, $session);
+  }
+
+  /**
+   * SAML providers do not accept OIDC callbacks.
+   */
+  public function testSamlProviderRejectsOidcCallback(): void {
+    $request = Request::create('/auth/sso/keycloak/callback', 'GET', ['state' => 's', 'code' => 'c']);
+
+    $this->expectException(BadRequestHttpException::class);
+    $this->loginService()->processCallback('keycloak', $request, new Session(new MockArraySessionStorage()));
+  }
+
+  /**
+   * Returns a session holding a started OIDC login for "broker".
+   */
+  private function sessionWithPendingLogin(int $created): Session {
+    $session = new Session(new MockArraySessionStorage());
+    $session->set('markaspot_sso.broker.oidc', [
+      'state' => 'state-1',
+      'nonce' => 'nonce-1',
+      'verifier' => str_repeat('v', 43),
+      'created' => $created,
+    ]);
+    return $session;
+  }
+
+  /**
    * Builds the service with real collaborators that are not reached here.
    */
   private function loginService(): SsoLoginService {
@@ -162,6 +269,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
           $replayCache,
           $identityLinker,
           $this->createMock(LoggerInterface::class),
+          $this->oidcClient(),
       );
   }
 
@@ -169,9 +277,13 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * Builds config for an enabled real SSO provider.
    */
   private function configFactory(): ConfigFactoryInterface {
+    $broker = $this->oidcProvider();
     $config = $this->createMock(Config::class);
     $config->method('get')
-      ->willReturnCallback(static function (string $key): mixed {
+      ->willReturnCallback(static function (string $key) use ($broker): mixed {
+        if ($key === 'providers.broker') {
+          return $broker;
+        }
         if ($key === 'providers.keycloak') {
           return [
             'enabled' => TRUE,
