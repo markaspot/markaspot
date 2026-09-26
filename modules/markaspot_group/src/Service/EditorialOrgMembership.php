@@ -66,6 +66,14 @@ final class EditorialOrgMembership {
   private static array $pruning = [];
 
   /**
+   * Whether this service is writing editorial roles right now.
+   *
+   * The group_relationship presave guard only lets the editorial roles change
+   * while this is set.
+   */
+  private static bool $writing = FALSE;
+
+  /**
    * Scope per account for the current request.
    *
    * @var array<int, int[]>
@@ -90,6 +98,45 @@ final class EditorialOrgMembership {
     private readonly ConfigFactoryInterface $configFactory,
     private readonly LoggerChannelFactoryInterface $loggerFactory,
   ) {}
+
+  /**
+   * Whether this service is currently writing editorial roles.
+   */
+  public static function isWriting(): bool {
+    return self::$writing;
+  }
+
+  /**
+   * Keeps the editorial roles of a membership exactly as they were stored.
+   *
+   * Only this service assigns org-editorial and org-editorial_member; any
+   * other write (Group forms, JSON:API, the member matrix, imports) can
+   * neither add them nor drop them.
+   */
+  public static function guardEditorialRoles(GroupRelationshipInterface $relationship): void {
+    if (self::$writing
+      || $relationship->getPluginId() !== 'group_membership'
+      || $relationship->getGroupTypeId() !== self::ORG_GROUP_TYPE
+      || !$relationship->hasField('group_roles')) {
+      return;
+    }
+    $editorialRoles = [
+      MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID,
+      MembershipRoleNormalizer::EDITORIAL_ORG_MARKER_ROLE_ID,
+    ];
+    $submitted = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+    $original = $relationship->isNew() ? NULL : $relationship->getOriginal();
+    $stored = $original instanceof GroupRelationshipInterface && $original->hasField('group_roles')
+      ? array_column($original->get('group_roles')->getValue(), 'target_id')
+      : [];
+    $roles = array_values(array_unique(array_merge(
+      array_diff($submitted, $editorialRoles),
+      array_intersect($stored, $editorialRoles),
+    )));
+    if ($roles !== array_values($submitted)) {
+      $relationship->set('group_roles', $roles);
+    }
+  }
 
   /**
    * Whether an account is uid 1 or a Drupal administrator.
@@ -418,22 +465,41 @@ final class EditorialOrgMembership {
    */
   private function grant(GroupInterface $organisation, UserInterface $account): bool {
     $relationship = GroupMembership::loadSingle($organisation, $account);
-    if (!$relationship) {
-      $organisation->addMember($account, [
-        'group_roles' => [
-          MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID,
-          MembershipRoleNormalizer::EDITORIAL_ORG_MARKER_ROLE_ID,
-        ],
-      ]);
-      return TRUE;
+    $roleIds = [];
+    if ($relationship) {
+      $roleIds = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+      if (in_array(MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID, $roleIds, TRUE)) {
+        return FALSE;
+      }
+      $roleIds[] = MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID;
     }
-    $roleIds = array_column($relationship->get('group_roles')->getValue(), 'target_id');
-    if (in_array(MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID, $roleIds, TRUE)) {
-      return FALSE;
-    }
-    $roleIds[] = MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID;
-    $relationship->set('group_roles', $roleIds)->save();
+    $this->writeEditorialRoles(function () use ($organisation, $account, $relationship, $roleIds): void {
+      if (!$relationship) {
+        $organisation->addMember($account, [
+          'group_roles' => [
+            MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID,
+            MembershipRoleNormalizer::EDITORIAL_ORG_MARKER_ROLE_ID,
+          ],
+        ]);
+        return;
+      }
+      $relationship->set('group_roles', $roleIds)->save();
+    });
     return TRUE;
+  }
+
+  /**
+   * Runs a write that may change the editorial roles.
+   */
+  private function writeEditorialRoles(callable $write): void {
+    $previous = self::$writing;
+    self::$writing = TRUE;
+    try {
+      $write();
+    }
+    finally {
+      self::$writing = $previous;
+    }
   }
 
   /**
@@ -446,11 +512,13 @@ final class EditorialOrgMembership {
       MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID,
       MembershipRoleNormalizer::EDITORIAL_ORG_MARKER_ROLE_ID,
     ]));
-    if ($created && $remaining === []) {
-      $relationship->delete();
-      return;
-    }
-    $relationship->set('group_roles', $remaining)->save();
+    $this->writeEditorialRoles(function () use ($relationship, $created, $remaining): void {
+      if ($created && $remaining === []) {
+        $relationship->delete();
+        return;
+      }
+      $relationship->set('group_roles', $remaining)->save();
+    });
   }
 
   /**

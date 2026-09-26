@@ -40,6 +40,7 @@ use Drupal\markaspot_group\Entity\ProtectedGroup;
 use Drupal\markaspot_group\Exception\OrganisationDeleteBlockedException;
 use Drupal\markaspot_group\Field\AssigneeLabelItemList;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\markaspot_group\Service\EditorialOrgMembership;
 use Drupal\markaspot_group\Service\TenantAdminHelper;
 use Drupal\markaspot_group\WorkspaceVisibilityNodeAccessControlHandler;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
@@ -4053,6 +4054,18 @@ function _markaspot_group_reconcile_service_request_relationships(NodeInterface|
     $node_id = $node instanceof NodeInterface ? (int) $node->id() : (int) $node;
     throw new EntityStorageException(sprintf('Cannot acquire group sync lock for service_request %d.', $node_id));
   }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for group_relationship entities.
+ *
+ * Only EditorialOrgMembership may add or remove the internal editorial org
+ * roles; hand-assigned ones (Group forms, JSON:API) are dropped and removed
+ * ones are restored. Org memberships only: the jurisdiction mirror writes
+ * jur memberships inside editorial writes and must stay unaffected.
+ */
+function markaspot_group_group_relationship_presave(GroupRelationshipInterface $relationship): void {
+  EditorialOrgMembership::guardEditorialRoles($relationship);
 }
 
 /**

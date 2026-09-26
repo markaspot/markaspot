@@ -419,6 +419,48 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   }
 
   /**
+   * Hand-assigned editorial roles are dropped (Group forms, JSON:API).
+   */
+  public function testHandAssignedEditorialRolesAreDropped(): void {
+    $rootA = $this->jurisdiction('A');
+    $rootB = $this->jurisdiction('B');
+    $orgB = $this->organisation('Org B', $rootB);
+    $editorA = $this->user('editor-a', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editorA);
+    $outsider = $this->user('outsider');
+
+    // Created by an administrator of B with the internal roles submitted.
+    $orgB->addMember($editorA, ['group_roles' => ['org-editorial', 'org-editorial_member']]);
+    $this->assertNotNull($orgB->getMember($editorA));
+    $this->assertSame([], $this->orgRoles($orgB, $editorA));
+    $this->assertFalse($orgB->hasPermission('edit group', $editorA));
+
+    // Patched onto an existing membership.
+    $orgB->addMember($outsider);
+    $relationship = $orgB->getMember($outsider)->getGroupRelationship();
+    $relationship->set('group_roles', ['org-editorial'])->save();
+    $this->assertSame([], $this->orgRoles($orgB, $outsider));
+    $this->assertFalse($orgB->hasPermission('edit group', $outsider));
+  }
+
+  /**
+   * Hand-removed editorial roles are restored.
+   */
+  public function testHandRemovedEditorialRolesAreRestored(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $org = $this->organisation('Org', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $this->assertSame(['org-editorial', 'org-editorial_member'], $this->orgRoles($org, $editor));
+
+    $relationship = $org->getMember($editor)->getGroupRelationship();
+    $relationship->set('group_roles', [])->save();
+    $this->assertSame(['org-editorial', 'org-editorial_member'], $this->orgRoles($org, $editor));
+    $this->assertTrue($org->hasPermission('edit group', $editor));
+  }
+
+  /**
    * A second root ends the single-root fallback; removing it restores it.
    */
   public function testSecondRootEndsSingleRootFallback(): void {
