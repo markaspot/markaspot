@@ -655,7 +655,15 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $org = Group::load($org->id());
     $org->set('field_jurisdiction', $rootB->id());
     $messages = array_map(static fn($violation) => (string) $violation->getMessage(), iterator_to_array($org->validate()));
-    $this->assertContains('You may only manage organisations in a jurisdiction where you are a jurisdiction administrator.', $messages);
+    $this->assertContains('Only administrators can move an organisation to another tenant.', $messages);
+
+    // Tenant-admin rights in the target tenant do not cover the source.
+    $this->joinJurisdiction($rootB, $editor, 'jur-tenant_admin');
+    $this->container->get('current_user')->setAccount(User::load($editor->id()));
+    $org = Group::load($org->id());
+    $org->set('field_jurisdiction', $rootB->id());
+    $messages = array_map(static fn($violation) => (string) $violation->getMessage(), iterator_to_array($org->validate()));
+    $this->assertContains('Only administrators can move an organisation to another tenant.', $messages);
   }
 
   /**

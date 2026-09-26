@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Drupal\markaspot_group\Plugin\Validation\Constraint;
 
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationManagementAccess;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Validator\Constraint;
@@ -23,6 +25,8 @@ class OrgJurisdictionManagementConstraintValidator extends ConstraintValidator i
   public function __construct(
     protected readonly AccountInterface $currentUser,
     protected readonly OrganisationManagementAccess $managementAccess,
+    protected readonly ?EntityTypeManagerInterface $entityTypeManager = NULL,
+    protected readonly ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
   /**
@@ -32,6 +36,8 @@ class OrgJurisdictionManagementConstraintValidator extends ConstraintValidator i
     return new self(
       $container->get('current_user'),
       $container->get('markaspot_group.organisation_management_access'),
+      $container->get('entity_type.manager'),
+      $container->get('markaspot_group.organisation_hierarchy_resolver'),
     );
   }
 
@@ -56,6 +62,14 @@ class OrgJurisdictionManagementConstraintValidator extends ConstraintValidator i
     }
 
     $jurisdictionId = (int) $value->get('field_jurisdiction')->target_id;
+    // Managing the new jurisdiction is not enough to take an organisation,
+    // its members and its requests out of another tenant.
+    if ($this->movesToAnotherTenant($value, $jurisdictionId)) {
+      $this->context->buildViolation($constraint->crossTenantMessage)
+        ->atPath('field_jurisdiction')
+        ->addViolation();
+      return;
+    }
     if ($jurisdictionId > 0
       && $this->managementAccess->canManageJurisdiction($this->currentUser, $jurisdictionId)) {
       return;
@@ -64,6 +78,29 @@ class OrgJurisdictionManagementConstraintValidator extends ConstraintValidator i
     $this->context->buildViolation($constraint->message)
       ->atPath('field_jurisdiction')
       ->addViolation();
+  }
+
+  /**
+   * Whether a saved organisation changes its root jurisdiction.
+   */
+  protected function movesToAnotherTenant(GroupInterface $organisation, int $jurisdictionId): bool {
+    if ($organisation->isNew()
+      || $this->entityTypeManager === NULL
+      || $this->hierarchyResolver === NULL) {
+      return FALSE;
+    }
+    $original = $this->entityTypeManager->getStorage('group')->loadUnchanged($organisation->id());
+    if (!$original instanceof GroupInterface
+      || !$original->hasField('field_jurisdiction')
+      || $original->get('field_jurisdiction')->isEmpty()) {
+      return FALSE;
+    }
+    $originalJurisdictionId = (int) $original->get('field_jurisdiction')->target_id;
+    if ($originalJurisdictionId === $jurisdictionId) {
+      return FALSE;
+    }
+    return $this->hierarchyResolver->getRootJurisdictionId($originalJurisdictionId)
+      !== $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
   }
 
 }

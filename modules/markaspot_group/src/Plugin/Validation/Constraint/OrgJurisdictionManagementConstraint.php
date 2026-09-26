@@ -22,4 +22,9 @@ class OrgJurisdictionManagementConstraint extends Constraint {
    */
   public string $message = 'You may only manage organisations in a jurisdiction where you are a jurisdiction administrator.';
 
+  /**
+   * Message shown when a non-administrator moves an organisation's tenant.
+   */
+  public string $crossTenantMessage = 'Only administrators can move an organisation to another tenant.';
+
 }
