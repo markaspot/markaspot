@@ -725,6 +725,9 @@ function markaspot_group_entity_type_alter(array &$entity_types): void {
   $entity_types['group']->addConstraint('OrgServiceCategoriesJurisdiction');
   $entity_types['group']->addConstraint('JurisdictionParentReference');
   $entity_types['group']->addConstraint('OrgParentReference');
+  if (isset($entity_types['group_relationship'])) {
+    $entity_types['group_relationship']->addConstraint('EditorialMembershipTarget');
+  }
 }
 
 /**
@@ -994,6 +997,34 @@ function markaspot_group_node_access(NodeInterface $node, string $operation, Acc
   )
     ->addCacheableDependency($workspace_access)
     ->addCacheableDependency($node);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_access() for group_relationship entities.
+ *
+ * The Group UI grants organisation admins every membership operation. Editors
+ * hold that role in every organisation of their tenant; outside their
+ * tenant-admin scope the member matrix rule applies here as well.
+ */
+function markaspot_group_group_relationship_access(EntityInterface $relationship, string $operation, AccountInterface $account): AccessResult {
+  if (!in_array($operation, ['update', 'delete'], TRUE)
+    || !$relationship instanceof GroupRelationshipInterface
+    || $relationship->getPluginId() !== 'group_membership'
+    || $relationship->getGroupTypeId() !== _markaspot_group_get_org_group_type()) {
+    return AccessResult::neutral();
+  }
+  $organisation = $relationship->getGroup();
+  $member = $relationship->getEntity();
+  if (!$organisation instanceof GroupInterface || !$member instanceof UserInterface) {
+    return AccessResult::neutral();
+  }
+  /** @var \Drupal\markaspot_group\Service\EditorialOrgMembership $editorial */
+  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  if ($editorial->isReservedForTenantAdmins($account, $organisation, $member, $operation)) {
+    return AccessResult::forbidden('Only tenant administrators can change this membership.')
+      ->setCacheMaxAge(0);
+  }
+  return AccessResult::neutral()->setCacheMaxAge(0);
 }
 
 /**
@@ -2488,18 +2519,18 @@ function markaspot_group_group_update(GroupInterface $group): void {
       $original_jurisdiction_id,
     );
   }
+  // An organisation stamped with (or moved to) a jurisdiction now has the
+  // scope that automatic memberships need. Editors of the previous tenant
+  // lose their membership before the members are mirrored into the new
+  // jurisdiction, so editorial rights and editors never follow an
+  // organisation into a foreign tenant.
+  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  $editorial->pruneOrganisation($group);
   _markaspot_group_resync_org_memberships_for_org_move(
     $group,
     $new_jurisdiction_id,
     $original_jurisdiction_id,
   );
-
-  // An organisation stamped with (or moved to) a jurisdiction now has the
-  // scope that automatic memberships need. Editors of the previous tenant
-  // lose their membership first, so editorial rights never follow an
-  // organisation into a foreign tenant.
-  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
-  $editorial->pruneOrganisation($group);
   _markaspot_group_add_all_groups_members_to_group($group);
   $editorial->syncOrganisation($group);
 }

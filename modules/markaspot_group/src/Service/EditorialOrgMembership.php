@@ -154,6 +154,13 @@ final class EditorialOrgMembership {
   }
 
   /**
+   * Forgets a deletion mark once the group is gone.
+   */
+  public static function clearGroupDeleting(int $groupId): void {
+    unset(self::$deletingGroups[$groupId]);
+  }
+
+  /**
    * Re-grants an editorial membership that was deleted by hand.
    *
    * Editorial memberships are managed by role; deleting one through the
@@ -196,6 +203,134 @@ final class EditorialOrgMembership {
       && (int) $original->get('entity_id')->target_id !== (int) $relationship->get('entity_id')->target_id) {
       throw new EntityStorageException('The user of an existing group membership cannot be changed.');
     }
+  }
+
+  /**
+   * Jurisdictions an account administers as tenant admin, with descendants.
+   *
+   * The same scope as GroupMembersController::getTenantAdminJurisdictionIds();
+   * the editorial scope is deliberately not part of it.
+   *
+   * @return int[]
+   *   Jurisdiction group IDs.
+   */
+  public function tenantAdminJurisdictionIds(AccountInterface $account): array {
+    $rows = $this->entityTypeManager->getStorage('group_relationship')->getAggregateQuery()
+      ->accessCheck(FALSE)
+      ->condition('plugin_id', 'group_membership')
+      ->condition('group_type', $this->jurisdictionGroupType())
+      ->condition('entity_id', (int) $account->id())
+      ->condition('group_roles', TenantAdminHelper::getTenantAdminRoleIds(), 'IN')
+      ->groupBy('gid')
+      ->execute();
+    $jurisdictionIds = [];
+    foreach (array_column($rows, 'gid') as $groupId) {
+      $jurisdictionIds[] = (int) $groupId;
+      foreach ($this->hierarchyResolver->getDescendantIds((int) $groupId) as $descendantId) {
+        $jurisdictionIds[] = (int) $descendantId;
+      }
+    }
+    return array_values(array_unique($jurisdictionIds));
+  }
+
+  /**
+   * Whether an account is an editor, tenant admin or administrator.
+   *
+   * Editors manage plain members and moderators; these accounts are their
+   * peers or supervisors and stay with tenant administrators. The same rule
+   * as GroupMembersController::isProtectedPeer().
+   */
+  public function isProtectedPeer(UserInterface $user): bool {
+    if (array_intersect(['administrator', self::EDITORIAL_ROLE, 'tenant_admin'], $user->getRoles())) {
+      return TRUE;
+    }
+    return (bool) $this->entityTypeManager->getStorage('group_relationship')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('plugin_id', 'group_membership')
+      ->condition('group_type', $this->jurisdictionGroupType())
+      ->condition('entity_id', (int) $user->id())
+      ->condition('group_roles', TenantAdminHelper::getTenantAdminRoleIds(), 'IN')
+      ->range(0, 1)
+      ->count()
+      ->execute();
+  }
+
+  /**
+   * Whether a change to an organisation membership stays with tenant admins.
+   *
+   * Applies the member matrix rule to the Group UI: outside their
+   * tenant-admin scope, editors change neither their own roles nor the
+   * memberships of editors, tenant admins and administrators. Leaving an
+   * organisation stays possible.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $actor
+   *   The acting account.
+   * @param \Drupal\group\Entity\GroupInterface $organisation
+   *   The organisation of the membership.
+   * @param \Drupal\user\UserInterface $target
+   *   The member.
+   * @param string $operation
+   *   The entity operation, 'update' or 'delete'.
+   */
+  public function isReservedForTenantAdmins(AccountInterface $actor, GroupInterface $organisation, UserInterface $target, string $operation): bool {
+    if (!$this->isEditor($actor) || $this->isInTenantAdminScope($actor, $organisation)) {
+      return FALSE;
+    }
+    if ((int) $target->id() === (int) $actor->id()) {
+      return $operation === 'update';
+    }
+    return $this->isProtectedPeer($target);
+  }
+
+  /**
+   * Whether an editor may add an account to an organisation.
+   *
+   * Outside their tenant-admin scope, editors add only accounts that already
+   * belong to their tenant and are no peers, as in the member matrix.
+   */
+  public function mayAddMember(AccountInterface $actor, GroupInterface $organisation, UserInterface $target): bool {
+    if (!$this->isEditor($actor) || $this->isInTenantAdminScope($actor, $organisation)) {
+      return TRUE;
+    }
+    if ($this->isProtectedPeer($target)) {
+      return FALSE;
+    }
+    $roots = $this->rootJurisdictionIds($actor);
+    if (!$roots) {
+      return FALSE;
+    }
+    $groupIds = $this->entityTypeManager->getStorage('group_relationship')->getAggregateQuery()
+      ->accessCheck(FALSE)
+      ->condition('plugin_id', 'group_membership')
+      ->condition('entity_id', (int) $target->id())
+      ->groupBy('gid')
+      ->execute();
+    $groups = $this->entityTypeManager->getStorage('group')
+      ->loadMultiple(array_map('intval', array_column($groupIds, 'gid')));
+    foreach ($groups as $group) {
+      $root = $group->bundle() === self::ORG_GROUP_TYPE
+        ? $this->organisationRootId($group)
+        : $this->hierarchyResolver->getRootJurisdictionId((int) $group->id());
+      if ($root !== NULL && in_array($root, $roots, TRUE)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
+   * Whether an organisation lies in the actor's tenant-admin scope.
+   */
+  private function isInTenantAdminScope(AccountInterface $actor, GroupInterface $organisation): bool {
+    $untranslated = $organisation->getUntranslated();
+    if (!$untranslated->hasField('field_jurisdiction') || $untranslated->get('field_jurisdiction')->isEmpty()) {
+      return FALSE;
+    }
+    return in_array(
+      (int) $untranslated->get('field_jurisdiction')->target_id,
+      $this->tenantAdminJurisdictionIds($actor),
+      TRUE,
+    );
   }
 
   /**

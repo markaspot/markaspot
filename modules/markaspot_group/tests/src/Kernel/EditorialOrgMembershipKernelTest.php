@@ -575,6 +575,17 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     [$status, $body] = $this->patchMemberships($controller, $memberA, $this->setRoles($childA, 'jur-moderator'));
     $this->assertSame([200, 'ok'], [$status, $body['status']]);
     $this->assertSame(['jur-moderator'], $this->jurisdictionRoles(Group::load($childA->id()), $memberA));
+
+    // Organisations of the tenant work like jurisdictions.
+    GroupRole::create(['id' => 'org-member', 'label' => 'Member', 'group_type' => 'org', 'scope' => 'individual'])->save();
+    [, $body] = $this->patchMemberships($controller, $memberA, $this->setRoles($orgA, 'org-member'));
+    $this->assertSame('ok', $body['status']);
+    $this->assertSame(['org-member'], $this->orgRoles(Group::load($orgA->id()), $memberA));
+    [, $body] = $this->patchMemberships($controller, $memberA, [$orgA->id() => ['action' => 'remove']]);
+    $this->assertSame('ok', $body['status']);
+    $this->assertFalse(Group::load($orgA->id())->getMember($memberA));
+    $detail = json_decode((string) $controller->getUserDetail((int) $editor->id())->getContent(), TRUE);
+    $this->assertSame(['roles' => [], 'group_label' => 'Org A', 'managed' => 'editorial'], $detail['memberships'][(string) $orgA->id()]);
     [, $body] = $this->patchMemberships($controller, $memberA, $this->setRoles($childA, 'jur-tenant_admin'));
     $this->assertSame(['Only administrators can assign the tenant_admin role.'], $body['errors']);
     $this->assertSame(200, $this->patchProfile($controller, $memberA, ['name' => 'member-a-renamed']));
@@ -628,6 +639,81 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     [, $body] = $this->patchMemberships($controller, $caller, $this->setRoles($rootB, 'jur-member'));
     $this->assertSame('error', $body['status']);
     $this->assertSame(['jur-editorial'], $this->jurisdictionRoles(Group::load($rootB->id()), $caller));
+  }
+
+  /**
+   * Editors cannot move an organisation into another tenant.
+   */
+  public function testEditorCannotMoveOrganisationToAnotherTenant(): void {
+    $rootA = $this->jurisdiction('A');
+    $rootB = $this->jurisdiction('B');
+    $org = $this->organisation('Org A', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $this->container->get('current_user')->setAccount($editor);
+
+    $org = Group::load($org->id());
+    $org->set('field_jurisdiction', $rootB->id());
+    $messages = array_map(static fn($violation) => (string) $violation->getMessage(), iterator_to_array($org->validate()));
+    $this->assertContains('You may only manage organisations in a jurisdiction where you are a jurisdiction administrator.', $messages);
+  }
+
+  /**
+   * In the Group UI, peers, tenant admins and own roles stay with admins.
+   */
+  public function testGroupUiKeepsPeersWithTenantAdmins(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $org = $this->organisation('Org A', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $peer = $this->user('peer', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $peer);
+    $tenantAdmin = $this->user('tenant-admin');
+    $this->joinJurisdiction($rootA, $tenantAdmin, 'jur-tenant_admin');
+    $moderator = $this->user('moderator', ['moderator']);
+    $org = Group::load($org->id());
+    $org->addMember($tenantAdmin);
+    $org->addMember($moderator);
+
+    $relationship = fn(UserInterface $user) => Group::load($org->id())->getMember($user)->getGroupRelationship();
+    $this->assertFalse($relationship($peer)->access('update', $editor));
+    $this->assertFalse($relationship($peer)->access('delete', $editor));
+    $this->assertFalse($relationship($tenantAdmin)->access('update', $editor));
+    $this->assertFalse($relationship($tenantAdmin)->access('delete', $editor));
+    $this->assertFalse($relationship($editor)->access('update', $editor));
+    $this->assertTrue($relationship($editor)->access('delete', $editor));
+    $this->assertTrue($relationship($moderator)->access('update', $editor));
+    $this->assertTrue($relationship($moderator)->access('delete', $editor));
+  }
+
+  /**
+   * In the Group UI, editors add only accounts of their own tenant.
+   */
+  public function testGroupUiAddsOnlyOwnTenantMembers(): void {
+    $rootA = $this->jurisdiction('A');
+    $childA = $this->jurisdiction('A child', $rootA);
+    $rootB = $this->jurisdiction('B');
+    $org = $this->organisation('Org A', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $memberA = $this->user('member-a');
+    $this->joinJurisdiction($childA, $memberA, 'jur-member');
+    $memberB = $this->user('member-b');
+    $this->joinJurisdiction($rootB, $memberB, 'jur-member');
+    $tenantAdmin = $this->user('tenant-admin');
+    $this->joinJurisdiction($rootA, $tenantAdmin, 'jur-tenant_admin');
+    $this->container->get('current_user')->setAccount($editor);
+
+    $message = 'Editors may only add members of their own tenant who are no editors or tenant administrators.';
+    $violations = function (UserInterface $user) use ($org): array {
+      $relationship = $this->container->get('entity_type.manager')->getStorage('group_relationship')
+        ->createForEntityInGroup($user, Group::load($org->id()), 'group_membership');
+      return array_map(static fn($violation) => (string) $violation->getMessage(), iterator_to_array($relationship->validate()));
+    };
+    $this->assertNotContains($message, $violations($memberA));
+    $this->assertContains($message, $violations($memberB));
+    $this->assertContains($message, $violations($tenantAdmin));
   }
 
   /**

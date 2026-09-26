@@ -93,6 +93,16 @@ class ProtectedGroup extends Group {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public static function postDelete(EntityStorageInterface $storage, array $entities): void {
+    parent::postDelete($storage, $entities);
+    foreach ($entities as $group) {
+      EditorialOrgMembership::clearGroupDeleting((int) $group->id());
+    }
+  }
+
+  /**
    * Checks whether a group bundle carries tenant-boundary protections.
    */
   protected static function isProtectedBundle(string $bundle): bool {

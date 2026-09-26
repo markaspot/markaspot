@@ -635,11 +635,13 @@ class GroupMembersController extends ControllerBase {
         continue;
       }
       $roles = [];
+      $managed = FALSE;
       foreach ($membership->getRoles(FALSE) as $role) {
         $roleId = $role->id();
         if ($this->isJurisdictionGroup($group)) {
           $roleId = $this->canonicalizeJurisdictionRoleId($roleId);
         }
+        $managed = $managed || $roleId === MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID;
         if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID
           && !MembershipRoleNormalizer::isInternalRoleId($roleId)) {
           $roles[] = $roleId;
@@ -649,6 +651,10 @@ class GroupMembersController extends ControllerBase {
         'roles' => $roles,
         'group_label' => $group->label(),
       ];
+      if ($managed) {
+        // Follows the editorial role; the matrix shows it read-only.
+        $memberships[(string) $groupId]['managed'] = 'editorial';
+      }
     }
 
     // Filter out sensitive Drupal roles.
@@ -1453,6 +1459,10 @@ class GroupMembersController extends ControllerBase {
 
     foreach ($memberships as &$groups) {
       foreach ($groups as &$membership) {
+        if (in_array(MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID, $membership['roles'], TRUE)) {
+          // Follows the editorial role; the matrix shows it read-only.
+          $membership['managed'] = 'editorial';
+        }
         $membership['roles'] = array_values(array_unique(array_filter(array_map(
           fn(string $roleId): ?string => $individualRoleIds[$roleId] ?? NULL,
           $membership['roles']
