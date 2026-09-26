@@ -39,6 +39,15 @@ markaspot_sso.settings:
           oidc_idp_hint:
             type: string
             label: 'Identity provider hint for a broker'
+          oidc_attribute_map:
+            type: sequence
+            label: 'OIDC claim mapping'
+            sequence:
+              type: sequence
+              label: 'Claim names'
+              sequence:
+                type: string
+                label: 'Claim name'
           mfa_claims:
             type: sequence
             label: 'Claims that prove a second factor'

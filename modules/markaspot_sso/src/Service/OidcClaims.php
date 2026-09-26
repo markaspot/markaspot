@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_sso\Service;
 
 /**
- * Turns verified OIDC claims into identity-linker attributes and MFA signals.
+ * Turns verified OIDC claims into identity-linker input and an MFA decision.
  */
 final class OidcClaims {
 
@@ -14,13 +14,36 @@ final class OidcClaims {
    *
    * "amr" is set by the IdP that authenticated the user (RFC 8176, for example
    * "hwk" for a passkey). "upstream_amr" is the claim a Keycloak broker
-   * forwards from a customer IdP such as ADFS or Entra ID. It must only be
-   * writable by the broker, never by the user.
+   * forwards from a customer IdP such as ADFS or Entra ID; it only counts for
+   * brokered logins, see hasMfa().
    */
   public const DEFAULT_MFA_CLAIMS = [
     'amr' => ['hwk', 'mfa'],
     'upstream_amr' => ['http://schemas.microsoft.com/claims/multipleauthn'],
   ];
+
+  /**
+   * Standard OIDC claim names for the identity linker's canonical fields.
+   *
+   * "acr" is left out on purpose: Keycloak emits "1" or "0" by default, which
+   * says nothing about the assurance level. Use "mfa_claims" for OIDC.
+   */
+  public const DEFAULT_ATTRIBUTE_MAP = [
+    'email' => ['email'],
+    'first_name' => ['given_name'],
+    'last_name' => ['family_name'],
+    'full_name' => ['name'],
+  ];
+
+  /**
+   * Claim naming the broker's upstream IdP (a Keycloak session note).
+   */
+  private const IDENTITY_PROVIDER_CLAIM = 'identity_provider';
+
+  /**
+   * Upstream claim that only counts for brokered logins.
+   */
+  private const UPSTREAM_CLAIM = 'upstream_amr';
 
   /**
    * Flattens claims into the attribute shape the identity linker expects.
@@ -55,6 +78,41 @@ final class OidcClaims {
   }
 
   /**
+   * Drops the email unless the IdP marked it verified.
+   *
+   * An unverified address must neither link an existing account nor be given
+   * to a new one.
+   *
+   * @param array<string, array<int, string>> $attributes
+   *   Flattened claims.
+   *
+   * @return array<string, array<int, string>>
+   *   Attributes without an unverified email.
+   */
+  public static function withoutUnverifiedEmail(array $attributes): array {
+    if (($attributes['email_verified'][0] ?? '') !== 'true') {
+      unset($attributes['email']);
+    }
+    return $attributes;
+  }
+
+  /**
+   * Returns the claim-to-field map for the identity linker.
+   *
+   * The SAML "attribute_map" is ignored for OIDC because its names differ.
+   *
+   * @param array<string, mixed> $provider
+   *   Provider configuration.
+   *
+   * @return array<string, array<int, string>>
+   *   Claim names keyed by canonical field.
+   */
+  public static function attributeMap(array $provider): array {
+    $configured = $provider['oidc_attribute_map'] ?? NULL;
+    return is_array($configured) && $configured !== [] ? $configured : self::DEFAULT_ATTRIBUTE_MAP;
+  }
+
+  /**
    * Returns the MFA claim rules of a provider.
    *
    * @param array<string, mixed> $provider
@@ -79,15 +137,26 @@ final class OidcClaims {
   }
 
   /**
-   * Checks whether any MFA claim carries an accepted value.
+   * Checks whether the login proves a second factor.
+   *
+   * The upstream claim is a user attribute in the broker. It only counts when
+   * the login actually came through a brokered IdP, and through the tenant's
+   * configured one when a hint is set, so a local account cannot vouch for
+   * itself.
    *
    * @param array<string, array<int, string>> $attributes
    *   Flattened claims.
-   * @param array<string, array<int, string>> $mfa_claims
-   *   Accepted values keyed by claim name.
+   * @param array<string, mixed> $provider
+   *   Provider configuration.
    */
-  public static function hasMfa(array $attributes, array $mfa_claims): bool {
-    foreach ($mfa_claims as $claim => $accepted) {
+  public static function hasMfa(array $attributes, array $provider): bool {
+    $identity_provider = $attributes[self::IDENTITY_PROVIDER_CLAIM][0] ?? '';
+    $hint = is_scalar($provider['oidc_idp_hint'] ?? NULL) ? trim((string) $provider['oidc_idp_hint']) : '';
+
+    foreach (self::mfaClaims($provider) as $claim => $accepted) {
+      if ($claim === self::UPSTREAM_CLAIM && ($identity_provider === '' || ($hint !== '' && $identity_provider !== $hint))) {
+        continue;
+      }
       $present = $attributes[$claim] ?? [];
       if (array_intersect($present, $accepted) !== []) {
         return TRUE;

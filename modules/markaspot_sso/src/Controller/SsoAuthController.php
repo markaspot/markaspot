@@ -18,6 +18,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Handles generic SSO service provider endpoints.
@@ -137,7 +138,10 @@ final class SsoAuthController extends ControllerBase {
       $this->loginService->processCallback($provider, $request, $session);
     }
     catch (\Throwable $exception) {
-      $this->logger->warning('Rejected OIDC response for @provider: @message', [
+      // Rejected responses are warnings; broken configuration or an
+      // unreachable provider is an error the operator has to fix.
+      $level = $exception instanceof HttpExceptionInterface ? 'warning' : 'error';
+      $this->logger->log($level, 'OIDC login failed for @provider: @message', [
         '@provider' => $provider,
         '@message' => $exception->getMessage(),
       ]);

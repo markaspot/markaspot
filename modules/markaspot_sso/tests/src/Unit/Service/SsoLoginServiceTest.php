@@ -9,6 +9,8 @@ use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\markaspot_sso\Service\OidcClaims;
+use Drupal\markaspot_sso\Service\OidcClient;
 use Drupal\markaspot_sso\Service\SsoClientFactory;
 use Drupal\markaspot_sso\Service\SsoGroupMembershipService;
 use Drupal\markaspot_sso\Service\SsoIdentityLinker;
@@ -16,6 +18,7 @@ use Drupal\markaspot_sso\Service\SsoLoginService;
 use Drupal\markaspot_sso\Service\SsoProviderManager;
 use Drupal\markaspot_sso\Service\SsoReplayCache;
 use Drupal\Tests\UnitTestCase;
+use GuzzleHttp\Psr7\Response;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -37,6 +40,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * {@inheritdoc}
    */
   protected function tearDown(): void {
+    putenv('MARKASPOT_SSO_BROKER_CLIENT_SECRET');
     putenv('MARKASPOT_SSO_MOCK');
     putenv('IS_DDEV_PROJECT');
     parent::tearDown();
@@ -173,7 +177,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * A wrong state is refused and the started login cannot be retried.
    */
   public function testOidcCallbackStateMismatchConsumesPendingLogin(): void {
-    $session = $this->sessionWithPendingLogin(time());
+    $session = $this->sessionWithPendingLogin(self::NOW);
     $request = Request::create('/auth/sso/broker/callback', 'GET', ['state' => 'forged', 'code' => 'c']);
 
     $exception = NULL;
@@ -193,7 +197,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * An error answer from the identity provider is refused without echoing it.
    */
   public function testOidcCallbackProviderErrorIsRefused(): void {
-    $session = $this->sessionWithPendingLogin(time());
+    $session = $this->sessionWithPendingLogin(self::NOW);
     $request = Request::create('/auth/sso/broker/callback', 'GET', [
       'state' => 'state-1',
       'error' => 'access_denied"><img>',
@@ -208,12 +212,136 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * A login started more than ten minutes ago is refused.
    */
   public function testOidcCallbackExpiredAttemptIsRefused(): void {
-    $session = $this->sessionWithPendingLogin(time() - 601);
+    $session = $this->sessionWithPendingLogin(self::NOW - 601);
     $request = Request::create('/auth/sso/broker/callback', 'GET', ['state' => 'state-1', 'code' => 'c']);
 
     $this->expectException(AccessDeniedHttpException::class);
     $this->expectExceptionMessage('expired');
     $this->loginService()->processCallback('broker', $request, $session);
+  }
+
+  /**
+   * An error answer with a foreign state is refused as a state mismatch.
+   */
+  public function testOidcCallbackErrorWithForeignStateIsStateMismatch(): void {
+    $session = $this->sessionWithPendingLogin(self::NOW);
+    $request = Request::create('/auth/sso/broker/callback', 'GET', ['state' => 'forged', 'error' => 'access_denied']);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('state does not match');
+    $this->loginService()->processCallback('broker', $request, $session);
+  }
+
+  /**
+   * A valid callback links the identity and records the MFA decision.
+   */
+  public function testOidcCallbackLogsInAndRecordsMfa(): void {
+    $idToken = $this->signToken($this->idTokenClaims([
+      'amr' => [],
+      'email_verified' => TRUE,
+      'identity_provider' => 'bonn-adfs',
+      'upstream_amr' => ['http://schemas.microsoft.com/claims/multipleauthn'],
+    ]));
+    $replay = $this->createMock(SsoReplayCache::class);
+    $replay->expects($this->once())
+      ->method('checkAndStore')
+      ->with('broker', hash('sha256', $idToken), 'nonce-1', self::NOW + 300)
+      ->willReturn(TRUE);
+    $linker = $this->createMock(SsoIdentityLinker::class);
+    $linker->expects($this->once())
+      ->method('authenticate')
+      ->with(
+        'broker',
+        $this->callback(static fn (array $provider): bool => $provider['attribute_map'] === OidcClaims::DEFAULT_ATTRIBUTE_MAP),
+        'subject-1',
+        $this->callback(static fn (array $attributes): bool => $attributes['email'] === ['staff@civicspot.example']),
+        [],
+      )
+      ->willReturn(['uid' => 7, 'assurance_level' => NULL]);
+    $session = $this->sessionWithPendingLogin(self::NOW);
+
+    $user = $this->loginService($replay, $linker, $this->brokerClient($idToken))
+      ->processCallback('broker', $this->callbackRequest(), $session);
+
+    $this->assertSame(7, $user['uid']);
+    $this->assertTrue($user['mfa']);
+    $this->assertSame([
+      'provider' => 'broker',
+      'uid' => 7,
+      'assurance_level' => NULL,
+      'time' => self::NOW,
+      'protocol' => 'oidc',
+      'mfa' => TRUE,
+      'amr' => [],
+      'identity_provider' => 'bonn-adfs',
+    ], $session->get('markaspot_sso.last_login'));
+    $this->assertFalse($session->has('markaspot_sso.broker.oidc'));
+  }
+
+  /**
+   * A local account cannot vouch for MFA, and its unverified email is dropped.
+   */
+  public function testOidcCallbackIgnoresSelfAssertedClaims(): void {
+    $idToken = $this->signToken($this->idTokenClaims([
+      'amr' => ['pwd'],
+      'email_verified' => FALSE,
+      'upstream_amr' => ['http://schemas.microsoft.com/claims/multipleauthn'],
+    ]));
+    $replay = $this->createMock(SsoReplayCache::class);
+    $replay->method('checkAndStore')->willReturn(TRUE);
+    $linker = $this->createMock(SsoIdentityLinker::class);
+    $linker->expects($this->once())
+      ->method('authenticate')
+      ->with(
+        'broker',
+        $this->anything(),
+        'subject-1',
+        $this->callback(static fn (array $attributes): bool => !array_key_exists('email', $attributes)),
+        [],
+      )
+      ->willReturn(['uid' => 8]);
+    $session = $this->sessionWithPendingLogin(self::NOW);
+
+    $user = $this->loginService($replay, $linker, $this->brokerClient($idToken))
+      ->processCallback('broker', $this->callbackRequest(), $session);
+
+    $this->assertFalse($user['mfa']);
+    $this->assertFalse($session->get('markaspot_sso.last_login')['mfa']);
+  }
+
+  /**
+   * A response seen before never reaches the identity linker.
+   */
+  public function testOidcCallbackRejectsReplay(): void {
+    $idToken = $this->signToken($this->idTokenClaims());
+    $replay = $this->createMock(SsoReplayCache::class);
+    $replay->method('checkAndStore')->willReturn(FALSE);
+    $linker = $this->createMock(SsoIdentityLinker::class);
+    $linker->expects($this->never())->method('authenticate');
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('already processed');
+    $this->loginService($replay, $linker, $this->brokerClient($idToken))
+      ->processCallback('broker', $this->callbackRequest(), $this->sessionWithPendingLogin(self::NOW));
+  }
+
+  /**
+   * Returns an OIDC client whose token endpoint answers with an ID token.
+   */
+  private function brokerClient(string $idToken): OidcClient {
+    putenv('MARKASPOT_SSO_BROKER_CLIENT_SECRET=secret');
+    return $this->oidcClient([], [], static fn (): Response => new Response(200, [], (string) json_encode([
+      'id_token' => $idToken,
+      'access_token' => 'at',
+      'token_type' => 'Bearer',
+    ])));
+  }
+
+  /**
+   * Returns a callback request matching the pending login.
+   */
+  private function callbackRequest(): Request {
+    return Request::create('/auth/sso/broker/callback', 'GET', ['state' => 'state-1', 'code' => 'code-1']);
   }
 
   /**
@@ -241,12 +369,12 @@ final class SsoLoginServiceTest extends UnitTestCase {
   }
 
   /**
-   * Builds the service with real collaborators that are not reached here.
+   * Builds the service; collaborators not given are real but never reached.
    */
-  private function loginService(): SsoLoginService {
+  private function loginService(?SsoReplayCache $replayCache = NULL, ?SsoIdentityLinker $identityLinker = NULL, ?OidcClient $oidcClient = NULL): SsoLoginService {
     $providerManager = new SsoProviderManager($this->configFactory());
     $clientFactory = new SsoClientFactory($providerManager, new RequestStack());
-    $replayCache = new SsoReplayCache(
+    $replayCache ??= new SsoReplayCache(
           $this->createMock(Connection::class),
           $this->createMock(TimeInterface::class),
       );
@@ -255,7 +383,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
           $this->configFactory(),
           $this->createMock(LoggerInterface::class),
       );
-    $identityLinker = new SsoIdentityLinker(
+    $identityLinker ??= new SsoIdentityLinker(
           $this->createMock(Connection::class),
           $this->createMock(EntityTypeManagerInterface::class),
           $groupMembership,
@@ -263,13 +391,17 @@ final class SsoLoginServiceTest extends UnitTestCase {
           $this->createMock(LoggerInterface::class),
       );
 
+    $time = $this->createMock(TimeInterface::class);
+    $time->method('getCurrentTime')->willReturn(self::NOW);
+
     return new SsoLoginService(
           $providerManager,
           $clientFactory,
           $replayCache,
           $identityLinker,
           $this->createMock(LoggerInterface::class),
-          $this->oidcClient(),
+          $oidcClient ?? $this->oidcClient(),
+          $time,
       );
   }
 

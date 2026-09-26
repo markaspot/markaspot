@@ -186,6 +186,10 @@ final class OidcClient {
     if (($header['alg'] ?? NULL) !== self::ALGORITHM) {
       throw new AccessDeniedHttpException('ID token algorithm is not allowed.');
     }
+    // RFC 7515 section 4.1.11: no critical extensions are understood here.
+    if (array_key_exists('crit', $header)) {
+      throw new AccessDeniedHttpException('ID token uses unsupported critical header parameters.');
+    }
     $kid = $header['kid'] ?? NULL;
     if (!is_string($kid) || $kid === '') {
       throw new AccessDeniedHttpException('ID token has no key id.');
@@ -222,7 +226,9 @@ final class OidcClient {
       return $cached->data;
     }
 
-    $data = $this->fetchJson($issuer . '/.well-known/openid-configuration', 'discovery document');
+    // The exact issuer string is compared below; only the fetch URL is
+    // normalized, so a configured trailing slash does not produce "//".
+    $data = $this->fetchJson(rtrim($issuer, '/') . '/.well-known/openid-configuration', 'discovery document');
     if (($data['issuer'] ?? NULL) !== $issuer) {
       throw new \RuntimeException('OIDC discovery issuer does not match the configured issuer.');
     }

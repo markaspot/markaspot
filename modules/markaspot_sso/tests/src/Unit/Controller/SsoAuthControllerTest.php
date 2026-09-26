@@ -109,6 +109,7 @@ final class SsoAuthControllerTest extends UnitTestCase {
         $this->createMock(CacheBackendInterface::class),
         $this->createMock(TimeInterface::class),
       ),
+      $this->createMock(TimeInterface::class),
     );
 
     return new SsoAuthController(

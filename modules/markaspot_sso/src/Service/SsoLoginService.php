@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_sso\Service;
 
+use Drupal\Component\Datetime\TimeInterface;
 use OneLogin\Saml2\Auth;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -31,6 +32,7 @@ final class SsoLoginService {
     private readonly SsoIdentityLinker $identityLinker,
     private readonly LoggerInterface $logger,
     private readonly OidcClient $oidcClient,
+    private readonly TimeInterface $time,
   ) {
   }
 
@@ -110,7 +112,7 @@ final class SsoLoginService {
       throw $exception;
     }
 
-    $this->storeLastLogin($session, $provider_id, $user);
+    $this->storeLastLogin($session, $provider_id, $user, ['protocol' => 'saml', 'mfa' => NULL]);
     $session->remove($request_id_key);
     return $user;
   }
@@ -135,18 +137,20 @@ final class SsoLoginService {
     if (!$this->isPendingOidcLogin($pending)) {
       throw new AccessDeniedHttpException('Missing OIDC login correlation.');
     }
-    if ($pending['created'] + self::OIDC_LOGIN_TTL < time()) {
+    if ($pending['created'] + self::OIDC_LOGIN_TTL < $this->time->getCurrentTime()) {
       throw new AccessDeniedHttpException('OIDC login attempt expired.');
     }
 
+    // Error responses carry the state too (RFC 6749 section 4.1.2.1); check it
+    // first so a foreign request cannot write provider errors into the log.
+    $state = $request->query->get('state');
+    if (!is_string($state) || !hash_equals($pending['state'], $state)) {
+      throw new AccessDeniedHttpException('OIDC state does not match.');
+    }
     $error = $request->query->get('error');
     if (is_string($error) && $error !== '') {
       $error = preg_replace('/[^a-z_]/', '', strtolower($error)) ?? '';
       throw new AccessDeniedHttpException(sprintf('Identity provider returned "%s".', $error));
-    }
-    $state = $request->query->get('state');
-    if (!is_string($state) || !hash_equals($pending['state'], $state)) {
-      throw new AccessDeniedHttpException('OIDC state does not match.');
     }
     $code = $request->query->get('code');
     if (!is_string($code) || $code === '') {
@@ -170,8 +174,15 @@ final class SsoLoginService {
     }
 
     $attributes = OidcClaims::toAttributes($claims);
-    $user = $this->identityLinker->authenticate($provider_id, $provider, (string) $claims['sub'], $attributes, []);
-    $mfa = OidcClaims::hasMfa($attributes, OidcClaims::mfaClaims($provider));
+    $linking_provider = ['attribute_map' => OidcClaims::attributeMap($provider)] + $provider;
+    $user = $this->identityLinker->authenticate(
+      $provider_id,
+      $linking_provider,
+      (string) $claims['sub'],
+      OidcClaims::withoutUnverifiedEmail($attributes),
+      [],
+    );
+    $mfa = OidcClaims::hasMfa($attributes, $provider);
     $this->storeLastLogin($session, $provider_id, $user, [
       'protocol' => 'oidc',
       'mfa' => $mfa,
@@ -221,7 +232,7 @@ final class SsoLoginService {
     }
 
     $user = $this->identityLinker->authenticate($provider_id, $provider, $name_id, $attributes, $attributes);
-    $this->storeLastLogin($session, $provider_id, $user);
+    $this->storeLastLogin($session, $provider_id, $user, ['protocol' => 'mock', 'mfa' => NULL]);
     $this->logger->notice('Dev-only SSO mock login executed for @provider.', ['@provider' => $provider_id]);
     return $user;
   }
@@ -242,14 +253,16 @@ final class SsoLoginService {
     $verifier = $this->randomToken();
     $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, TRUE)), '+/', '-_'), '=');
 
+    // Build the URL first: a discovery failure then leaves no pending login.
+    $url = $this->oidcClient->authorizationUrl($provider, $state, $nonce, $challenge);
     $session->set($this->oidcKey($provider_id), [
       'state' => $state,
       'nonce' => $nonce,
       'verifier' => $verifier,
-      'created' => time(),
+      'created' => $this->time->getCurrentTime(),
     ]);
 
-    return $this->oidcClient->authorizationUrl($provider, $state, $nonce, $challenge);
+    return $url;
   }
 
   /**
@@ -327,14 +340,15 @@ final class SsoLoginService {
    * @param array<string, mixed> $user
    *   Authenticated user payload.
    * @param array<string, mixed> $extra
-   *   Protocol details, for OIDC the MFA decision the login guard reads.
+   *   Protocol and MFA decision the login guard reads. "mfa" is NULL when the
+   *   protocol cannot tell.
    */
   private function storeLastLogin(SessionInterface $session, string $provider_id, array $user, array $extra = []): void {
     $session->set('markaspot_sso.last_login', [
       'provider' => $provider_id,
       'uid' => $user['uid'],
       'assurance_level' => $user['assurance_level'] ?? NULL,
-      'time' => time(),
+      'time' => $this->time->getCurrentTime(),
     ] + $extra);
   }
 

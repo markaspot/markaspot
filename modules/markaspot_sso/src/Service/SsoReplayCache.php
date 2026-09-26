@@ -10,8 +10,10 @@ use Drupal\Core\Database\IntegrityConstraintViolationException;
 
 /**
  * Stores processed SSO response IDs to prevent replay.
+ *
+ * Not final, so login tests can replace it with a mock.
  */
-final class SsoReplayCache {
+class SsoReplayCache {
   private const DEFAULT_TTL = 600;
 
   /**

@@ -58,3 +58,4 @@ services:
       - '@markaspot_sso.identity_linker'
       - '@logger.channel.markaspot_sso'
       - '@markaspot_sso.oidc_client'
+      - '@datetime.time'
