@@ -392,8 +392,14 @@ final class EditorialOrgMembership {
       'roots' => 0,
     ];
     $editors = $this->editors();
-    if (!$editors) {
+    $strayHolders = $this->nonEditorHolders(array_map('intval', array_keys($editors)));
+    if (!$editors && !$strayHolders) {
       return $counts;
+    }
+    // Hand-assigned before the guard was active, or left behind by a
+    // demotion that bypassed the hooks.
+    foreach ($strayHolders as $holder) {
+      $counts['revoked'] += $this->pruneEditor($holder);
     }
     $this->hierarchyResolver->resetCache();
     $this->resetScope();
@@ -612,6 +618,29 @@ final class EditorialOrgMembership {
     // deleted, which would write stale roles back. Load them fresh.
     $storage->resetCache($ids);
     return $storage->loadMultiple($ids);
+  }
+
+  /**
+   * Accounts holding an editorial org role without being editors.
+   *
+   * @param int[] $editorIds
+   *   User IDs of the current editors.
+   *
+   * @return \Drupal\user\UserInterface[]
+   *   The holders, keyed by user ID.
+   */
+  private function nonEditorHolders(array $editorIds): array {
+    $query = $this->entityTypeManager->getStorage('group_relationship')->getAggregateQuery()
+      ->accessCheck(FALSE)
+      ->condition('plugin_id', 'group_membership')
+      ->condition('group_type', self::ORG_GROUP_TYPE)
+      ->condition('group_roles', MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID)
+      ->groupBy('entity_id');
+    if ($editorIds) {
+      $query->condition('entity_id', $editorIds, 'NOT IN');
+    }
+    $uids = array_map('intval', array_column($query->execute(), 'entity_id'));
+    return $uids ? $this->entityTypeManager->getStorage('user')->loadMultiple($uids) : [];
   }
 
   /**

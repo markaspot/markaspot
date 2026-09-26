@@ -648,6 +648,35 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   }
 
   /**
+   * The resync strips editorial roles from accounts that are no editors.
+   */
+  public function testResyncStripsStrayEditorialRoles(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $org = $this->organisation('Org', $rootA);
+    $moderator = $this->user('moderator', ['moderator']);
+    $org->addMember($moderator, ['group_roles' => []]);
+    // Written before the presave guard was registered.
+    $relationshipId = (int) $org->getMember($moderator)->getGroupRelationship()->id();
+    $this->container->get('database')->insert('group_relationship__group_roles')->fields([
+      'bundle' => 'org-group_membership',
+      'deleted' => 0,
+      'entity_id' => $relationshipId,
+      'revision_id' => $relationshipId,
+      'langcode' => 'en',
+      'delta' => 0,
+      'group_roles_target_id' => 'org-editorial',
+    ])->execute();
+    $this->container->get('entity_type.manager')->getStorage('group_relationship')->resetCache();
+    $this->assertSame(['org-editorial'], $this->orgRoles(Group::load($org->id()), $moderator));
+
+    $counts = $this->service()->syncAllEditors();
+    $this->assertSame(1, $counts['revoked']);
+    $this->assertSame([], $this->orgRoles(Group::load($org->id()), $moderator));
+    $this->assertSame([(int) $org->id()], $this->orgMemberships($moderator));
+  }
+
+  /**
    * A second root ends the single-root fallback; removing it restores it.
    */
   public function testSecondRootEndsSingleRootFallback(): void {
