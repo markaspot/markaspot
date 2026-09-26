@@ -59,6 +59,13 @@ final class EditorialOrgMembership {
   private static array $syncing = [];
 
   /**
+   * Accounts being pruned; revocation re-enters through the mirror cleanup.
+   *
+   * @var array<int, true>
+   */
+  private static array $pruning = [];
+
+  /**
    * Scope per account for the current request.
    *
    * @var array<int, int[]>
@@ -188,22 +195,29 @@ final class EditorialOrgMembership {
    *   Number of memberships revoked.
    */
   public function pruneEditor(UserInterface $account): int {
-    if (isset(self::$syncing[(int) $account->id()])) {
+    $uid = (int) $account->id();
+    if (isset(self::$syncing[$uid]) || isset(self::$pruning[$uid])) {
       return 0;
     }
-    $this->resetScope((int) $account->id());
-    $this->forgetCachedUser((int) $account->id());
-    $revoked = 0;
-    foreach ($this->editorialMemberships(['entity_id' => $account->id()]) as $relationship) {
-      $organisation = $relationship->getGroup();
-      if (!$organisation instanceof GroupInterface
-        || !$this->isEditor($account)
-        || !$this->mayJoinOrganisation($account, $organisation)) {
-        $this->revoke($relationship);
-        $revoked++;
+    $this->resetScope($uid);
+    $this->forgetCachedUser($uid);
+    self::$pruning[$uid] = TRUE;
+    try {
+      $revoked = 0;
+      foreach ($this->editorialMemberships(['entity_id' => $uid]) as $relationship) {
+        $organisation = $relationship->getGroup();
+        if (!$organisation instanceof GroupInterface
+          || !$this->isEditor($account)
+          || !$this->mayJoinOrganisation($account, $organisation)) {
+          $this->revoke($relationship);
+          $revoked++;
+        }
       }
+      return $revoked;
     }
-    return $revoked;
+    finally {
+      unset(self::$pruning[$uid]);
+    }
   }
 
   /**
@@ -260,15 +274,21 @@ final class EditorialOrgMembership {
    *   Counts for update and drush reports.
    */
   public function syncAllEditors(): array {
-    $this->resetScope();
     $counts = [
       'editors' => 0,
       'granted' => 0,
       'revoked' => 0,
       'without_scope' => 0,
-      'roots' => count($this->hierarchyResolver->getAllRootJurisdictionIds()),
+      'roots' => 0,
     ];
-    foreach ($this->editors() as $editor) {
+    $editors = $this->editors();
+    if (!$editors) {
+      return $counts;
+    }
+    $this->hierarchyResolver->resetCache();
+    $this->resetScope();
+    $counts['roots'] = count($this->hierarchyResolver->getAllRootJurisdictionIds());
+    foreach ($editors as $editor) {
       $counts['editors']++;
       $counts['revoked'] += $this->pruneEditor($editor);
       if (!$this->rootJurisdictionIds($editor)) {
@@ -367,6 +387,9 @@ final class EditorialOrgMembership {
         return NULL;
       }
       $roots[$root] = $root;
+      if (count($roots) > 1) {
+        return NULL;
+      }
     }
     return count($roots) === 1 ? (int) reset($roots) : NULL;
   }

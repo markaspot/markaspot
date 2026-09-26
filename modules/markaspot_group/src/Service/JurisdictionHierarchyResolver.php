@@ -229,6 +229,13 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function resetCache(): void {
+    $this->treeResolver = NULL;
+  }
+
+  /**
    * Gets the generic parent-tree resolver for the jurisdiction axis.
    *
    * @return \Drupal\markaspot_group\Service\ParentTreeResolver

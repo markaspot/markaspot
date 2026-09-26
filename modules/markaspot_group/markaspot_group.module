@@ -2425,7 +2425,14 @@ function markaspot_group_group_insert(GroupInterface $group): void {
   \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
   _markaspot_group_add_all_groups_members_to_group($group);
   _markaspot_group_add_root_admin_to_group($group);
-  \Drupal::service('markaspot_group.editorial_org_membership')->syncOrganisation($group);
+  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  if (_markaspot_group_is_jurisdiction_group($group)) {
+    // A new jurisdiction can end the single-root fallback of weak scopes.
+    $editorial->syncAllEditors();
+  }
+  else {
+    $editorial->syncOrganisation($group);
+  }
 }
 
 /**
@@ -2759,6 +2766,10 @@ function _markaspot_group_restamp_service_requests_for_org_move(
  */
 function markaspot_group_group_delete(GroupInterface $group): void {
   \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
+  if (_markaspot_group_is_jurisdiction_group($group)) {
+    // Removing a jurisdiction can end or start the single-root fallback.
+    \Drupal::service('markaspot_group.editorial_org_membership')->syncAllEditors();
+  }
 }
 
 /**

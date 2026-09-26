@@ -50,6 +50,11 @@ interface JurisdictionHierarchyResolverInterface {
   public function getAllRootJurisdictionIds(): array;
 
   /**
+   * Forgets the cached jurisdiction tree after the hierarchy changed.
+   */
+  public function resetCache(): void;
+
+  /**
    * Gets all descendant jurisdiction IDs (including the given ID).
    *
    * Traverses field_parent_jurisdiction downward via raw SQL for performance.

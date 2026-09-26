@@ -419,6 +419,23 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   }
 
   /**
+   * A second root ends the single-root fallback; removing it restores it.
+   */
+  public function testSecondRootEndsSingleRootFallback(): void {
+    $root = $this->jurisdiction('Only root');
+    $org = $this->organisation('Org', $root);
+    $editor = $this->user('weak-editor', ['editorial_board']);
+    $this->assertContains('org-editorial', $this->orgRoles($org, $editor));
+
+    $second = $this->jurisdiction('Second root');
+    $this->assertSame([], $this->orgRoles($org, $editor));
+    $this->assertFalse($org->hasPermission('edit group', $editor));
+
+    $second->delete();
+    $this->assertContains('org-editorial', $this->orgRoles($org, $editor));
+  }
+
+  /**
    * A jurisdiction with a dangling parent gives no scope.
    */
   public function testUnresolvableJurisdictionFailsClosed(): void {
