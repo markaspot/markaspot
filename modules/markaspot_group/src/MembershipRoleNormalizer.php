@@ -15,11 +15,23 @@ final class MembershipRoleNormalizer {
   public const ORG_DERIVED_JUR_ROLE_ID = 'jur-org_member';
 
   /**
+   * Internal org role granting editorial users full rights in an org.
+   */
+  public const EDITORIAL_ORG_ROLE_ID = 'org-editorial';
+
+  /**
+   * Internal org role marking a membership created for an editorial user.
+   */
+  public const EDITORIAL_ORG_MARKER_ROLE_ID = 'org-editorial_member';
+
+  /**
    * Checks whether a role is managed internally rather than user-assignable.
    */
   public static function isInternalRoleId(string $roleId): bool {
     return $roleId === self::ORG_DERIVED_JUR_ROLE_ID
-      || str_ends_with($roleId, '-org_member');
+      || str_ends_with($roleId, '-org_member')
+      || $roleId === self::EDITORIAL_ORG_ROLE_ID
+      || $roleId === self::EDITORIAL_ORG_MARKER_ROLE_ID;
   }
 
   /**

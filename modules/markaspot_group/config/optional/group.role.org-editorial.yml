@@ -1,0 +1,14 @@
+uuid: 6902c34a-e00d-4d86-a419-d8a3e386cfc9
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+id: org-editorial
+label: Editorial
+weight: -7
+admin: true
+scope: individual
+global_role: null
+group_type: org
+permissions: {  }

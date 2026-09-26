@@ -619,6 +619,7 @@ function markaspot_group_form_user_form_alter(array &$form, FormStateInterface $
  */
 function markaspot_group_user_insert(UserInterface $account): void {
   _markaspot_group_handle_user_membership($account);
+  \Drupal::service('markaspot_group.editorial_org_membership')->syncEditor($account);
 }
 
 /**
@@ -642,6 +643,18 @@ function markaspot_group_user_update(UserInterface $account): void {
         ]
       );
     }
+  }
+
+  // Editorial users get their organisation rights when they gain the role or
+  // are reactivated, and lose them with the role or the account.
+  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  $previous = $account->getOriginal();
+  $was_editor = $previous instanceof UserInterface && $editorial->isEditor($previous);
+  if ($editorial->isEditor($account) && !$was_editor) {
+    $editorial->syncEditor($account);
+  }
+  elseif ($was_editor && !$editorial->isEditor($account)) {
+    $editorial->pruneEditor($account);
   }
 
   // Check if the field exists before accessing it.
@@ -2412,6 +2425,7 @@ function markaspot_group_group_insert(GroupInterface $group): void {
   \Drupal::service('markaspot_group.workspace_visibility')->resetCache((int) $group->id());
   _markaspot_group_add_all_groups_members_to_group($group);
   _markaspot_group_add_root_admin_to_group($group);
+  \Drupal::service('markaspot_group.editorial_org_membership')->syncOrganisation($group);
 }
 
 /**
@@ -2428,6 +2442,15 @@ function markaspot_group_group_update(GroupInterface $group): void {
       !== $original_group->get('field_visibility')->getValue()
     && _markaspot_group_is_jurisdiction_group($group)) {
     _markaspot_group_rewrite_page_access_grants((int) $group->id());
+  }
+
+  // A reparented jurisdiction changes which tenant its members belong to.
+  if ($original_group instanceof GroupInterface
+    && _markaspot_group_is_jurisdiction_group($group)
+    && $group->hasField('field_parent_jurisdiction')
+    && $group->get('field_parent_jurisdiction')->getValue()
+      !== $original_group->get('field_parent_jurisdiction')->getValue()) {
+    \Drupal::service('markaspot_group.editorial_org_membership')->syncAllEditors();
   }
 
   if ($group->bundle() !== _markaspot_group_get_org_group_type()) {
@@ -2462,6 +2485,15 @@ function markaspot_group_group_update(GroupInterface $group): void {
     $new_jurisdiction_id,
     $original_jurisdiction_id,
   );
+
+  // An organisation stamped with (or moved to) a jurisdiction now has the
+  // scope that automatic memberships need. Editors of the previous tenant
+  // lose their membership first, so editorial rights never follow an
+  // organisation into a foreign tenant.
+  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  $editorial->pruneOrganisation($group);
+  _markaspot_group_add_all_groups_members_to_group($group);
+  $editorial->syncOrganisation($group);
 }
 
 /**
@@ -2798,7 +2830,8 @@ function _markaspot_group_jurisdiction_matches_scope(?int $jurisdiction_id, int 
  *
  * Applies different rules based on group type:
  * - JUR (Jurisdiction): Only user 1 (uid=1) is automatically added.
- * - ORG (Organisation): All users with field_all_groups_member are added.
+ * - ORG (Organisation): Users with field_all_groups_member are added inside
+ *   their own jurisdiction; administrators everywhere.
  *
  * @param \Drupal\user\UserInterface $account
  *   The user account to process.
@@ -2829,7 +2862,8 @@ function _markaspot_group_handle_user_membership(UserInterface $account): void {
  *
  * Applies different rules based on group type:
  * - JUR (Jurisdiction): Only user 1 (uid=1) is automatically added.
- * - ORG (Organisation): All users with field_all_groups_member are added.
+ * - ORG (Organisation): Users with field_all_groups_member are added inside
+ *   their own jurisdiction; administrators everywhere.
  *
  * @param \Drupal\group\Entity\GroupInterface $group
  *   The group to add members to.
@@ -2863,8 +2897,9 @@ function _markaspot_group_add_all_groups_members_to_group(GroupInterface $group)
 /**
  * Checks if a user is allowed to be auto-added to a group.
  *
- * Called by _markaspot_group_add_all_groups_members_to_group() for users
- * with field_all_groups_member enabled. Currently allows all group types.
+ * Called for users with field_all_groups_member enabled. Jurisdictions only
+ * take uid 1; organisations take administrators everywhere and other users
+ * only inside their own jurisdiction.
  *
  * @param \Drupal\user\UserInterface $account
  *   The user account to check.
@@ -2879,8 +2914,10 @@ function _markaspot_group_user_allowed_for_group(UserInterface $account, GroupIn
   if (_markaspot_group_is_jurisdiction_group($group)) {
     return (int) $account->id() === 1;
   }
-  // ORG groups: all users with field_all_groups_member are added.
-  return TRUE;
+  // ORG groups: users with field_all_groups_member join the organisations of
+  // their own jurisdiction; administrators and uid 1 join all of them.
+  return \Drupal::service('markaspot_group.editorial_org_membership')
+    ->mayJoinOrganisation($account, $group);
 }
 
 /**
@@ -4020,6 +4057,36 @@ function markaspot_group_group_relationship_insert(GroupRelationshipInterface $r
   _markaspot_group_notify_service_request_org_relationship($relationship, _markaspot_group_is_syncing());
   _markaspot_group_sync_org_membership_to_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'insert');
+  _markaspot_group_sync_editor_on_jurisdiction_membership($relationship, TRUE);
+}
+
+/**
+ * Re-applies the editorial rule when a jurisdiction membership changes.
+ *
+ * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+ *   The membership relationship.
+ * @param bool $prune
+ *   Revoke rights outside the new scope (role change, removal).
+ * @param bool $grant
+ *   Grant rights inside the new scope.
+ */
+function _markaspot_group_sync_editor_on_jurisdiction_membership(GroupRelationshipInterface $relationship, bool $prune = FALSE, bool $grant = TRUE): void {
+  if ($relationship->getPluginId() !== 'group_membership'
+    || !_markaspot_group_is_jurisdiction_group($relationship->getGroup())) {
+    return;
+  }
+  $user = $relationship->getEntity();
+  if (!$user instanceof UserInterface) {
+    return;
+  }
+  $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  $editorial->resetScope((int) $user->id());
+  if ($prune) {
+    $editorial->pruneEditor($user);
+  }
+  if ($grant) {
+    $editorial->syncEditor($user);
+  }
 }
 
 /**
@@ -4030,6 +4097,7 @@ function markaspot_group_group_relationship_insert(GroupRelationshipInterface $r
 function markaspot_group_group_relationship_update(GroupRelationshipInterface $relationship): void {
   _markaspot_group_reset_page_visibility_membership_cache($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'update');
+  _markaspot_group_sync_editor_on_jurisdiction_membership($relationship, TRUE);
 }
 
 /**
@@ -4043,6 +4111,7 @@ function markaspot_group_group_relationship_delete(GroupRelationshipInterface $r
   _markaspot_group_sync_relationship_to_field($relationship, 'delete');
   _markaspot_group_cleanup_org_membership_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'delete');
+  _markaspot_group_sync_editor_on_jurisdiction_membership($relationship, TRUE, FALSE);
 }
 
 /**

@@ -1,0 +1,14 @@
+uuid: 5ac658b7-0098-49bd-ac10-f20db60af905
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+id: org-editorial_member
+label: 'Editorial membership (automatic)'
+weight: -6
+admin: false
+scope: individual
+global_role: null
+group_type: org
+permissions: {  }

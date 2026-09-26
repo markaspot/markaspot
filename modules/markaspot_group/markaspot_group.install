@@ -6164,6 +6164,47 @@ function markaspot_group_update_11953(): string {
 }
 
 /**
+ * Creates the editorial org roles and grants editorial users their rights.
+ *
+ * Editorial users are members of every organisation of their jurisdiction
+ * and have full rights there through the internal individual group role
+ * org-editorial; memberships created for them carry org-editorial_member.
+ */
+function markaspot_group_update_11954(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->getStorage('group_type')->load('org') || !Role::load('editorial_board')) {
+    return 'Skipped the editorial org roles: the org group type or the editorial_board role does not exist.';
+  }
+  $role_storage = $entity_type_manager->getStorage('group_role');
+  $created = [];
+  foreach (['org-editorial', 'org-editorial_member'] as $role_id) {
+    if ($role_storage->load($role_id)) {
+      continue;
+    }
+    // The shipped YAML carries a fixed UUID, so every tenant matches the
+    // config/sync exported for it; a config import never changes the UUID of
+    // an existing role.
+    $file = __DIR__ . '/config/optional/group.role.' . $role_id . '.yml';
+    $data = is_file($file) ? Yaml::decode((string) file_get_contents($file)) : NULL;
+    if (!is_array($data) || ($data['id'] ?? NULL) !== $role_id || empty($data['uuid'])) {
+      throw new UpdateException(sprintf('Shipped group.role.%s is missing.', $role_id));
+    }
+    $role_storage->createFromStorageRecord($data)->save();
+    $created[] = $role_id;
+  }
+  $counts = \Drupal::service('markaspot_group.editorial_org_membership')->syncAllEditors();
+  return sprintf(
+    'Editorial org roles: created %s. Editors %d, memberships granted %d, revoked %d, without jurisdiction scope %d (%d root jurisdiction(s)).',
+    $created ? implode(', ', $created) : 'none',
+    $counts['editors'],
+    $counts['granted'],
+    $counts['revoked'],
+    $counts['without_scope'],
+    $counts['roots'],
+  );
+}
+
+/**
  * Names of the jurisdiction logo and font fields.
  *
  * @return string[]

@@ -36,6 +36,9 @@ final class OrganisationManagementPermissionCalculator extends PermissionCalcula
       return $calculatedPermissions;
     }
 
+    // Editorial management depends on the account's roles; a user save
+    // invalidates this tag.
+    $calculatedPermissions->addCacheTags(['user:' . $account->id()]);
     $managedJurisdictionIds = $this->managementAccess
       ->managedOrganisationJurisdictionIds($account);
     if ($managedJurisdictionIds === []) {

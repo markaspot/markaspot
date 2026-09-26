@@ -46,7 +46,7 @@ class WorkspaceVisibilityService implements WorkspaceVisibilityInterface {
   /**
    * Jurisdiction role suffixes that bypass read visibility restrictions.
    */
-  private const ELEVATED_JURISDICTION_ROLE_SUFFIXES = [
+  public const ELEVATED_JURISDICTION_ROLE_SUFFIXES = [
     'admin',
     'editorial',
     'moderator',

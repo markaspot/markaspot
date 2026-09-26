@@ -20,6 +20,7 @@ class OrganisationManagementAccess {
   public function __construct(
     protected readonly JurisdictionHierarchyResolverInterface $hierarchyResolver,
     protected readonly ConfigFactoryInterface $configFactory,
+    protected readonly ?EditorialOrgMembership $editorialMembership = NULL,
   ) {}
 
   /**
@@ -78,6 +79,11 @@ class OrganisationManagementAccess {
       if ($this->isJurisdictionGroup($group)) {
         $managedIds[] = (int) $group->id();
       }
+    }
+
+    // Editorial users manage the organisations of their own jurisdiction.
+    if ($this->editorialMembership?->isEditor($account)) {
+      array_push($managedIds, ...$this->editorialMembership->rootJurisdictionIds($account));
     }
 
     return array_values(array_unique(array_filter($managedIds)));

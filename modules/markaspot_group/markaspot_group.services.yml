@@ -30,7 +30,10 @@ services:
       - true
   markaspot_group.organisation_management_access:
     class: Drupal\markaspot_group\Service\OrganisationManagementAccess
-    arguments: ['@markaspot_group.organisation_hierarchy_resolver', '@config.factory']
+    arguments: ['@markaspot_group.organisation_hierarchy_resolver', '@config.factory', '@markaspot_group.editorial_org_membership']
+  markaspot_group.editorial_org_membership:
+    class: Drupal\markaspot_group\Service\EditorialOrgMembership
+    arguments: ['@entity_type.manager', '@markaspot_group.organisation_hierarchy_resolver', '@config.factory', '@logger.factory']
   markaspot_group.organisation_management_permission_calculator:
     class: Drupal\markaspot_group\Service\OrganisationManagementPermissionCalculator
     arguments: ['@markaspot_group.organisation_management_access', '@entity_type.manager']
