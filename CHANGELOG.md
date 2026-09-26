@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.205](https://github.com/markaspot/markaspot/compare/11.9.204...11.9.205) (2026-09-26)
+
+### Bug Fixes
+
+* converge the jurisdiction logo and font fields on the shipped file type ([19b9654](https://github.com/markaspot/markaspot/commit/19b9654aabd3b4d97a823f715bfd6131afb724fb))
+
 ## [11.9.204](https://github.com/markaspot/markaspot/compare/11.9.203...11.9.204) (2026-09-25)
 
 ### Bug Fixes
