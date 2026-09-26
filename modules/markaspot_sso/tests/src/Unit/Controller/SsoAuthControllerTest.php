@@ -10,6 +10,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\markaspot_sso\Controller\SsoAuthController;
 use Drupal\markaspot_sso\Service\OidcClient;
 use Drupal\markaspot_sso\Service\SsoClientFactory;
@@ -49,6 +50,7 @@ final class SsoAuthControllerTest extends UnitTestCase {
 
     $response = $controller->acs($request, 'keycloak');
 
+    $this->assertInstanceOf(TrustedRedirectResponse::class, $response);
     $this->assertSame(302, $response->getStatusCode());
     $this->assertSame(
       'https://dev.ddev.site:3001/amsterdam/auth/sso-callback?redirect=/amsterdam/dashboard&sso_error=1',
@@ -69,6 +71,7 @@ final class SsoAuthControllerTest extends UnitTestCase {
 
     $response = $controller->callback($request, 'keycloak');
 
+    $this->assertInstanceOf(TrustedRedirectResponse::class, $response);
     $this->assertSame(302, $response->getStatusCode());
     $this->assertSame('https://dev.ddev.site:3001/amsterdam/dashboard?sso_error=1', $response->headers->get('Location'));
     $this->assertSame('no-store, private', $response->headers->get('Cache-Control'));

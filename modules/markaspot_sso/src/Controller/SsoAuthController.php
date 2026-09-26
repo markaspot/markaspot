@@ -7,6 +7,7 @@ namespace Drupal\markaspot_sso\Controller;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\markaspot_sso\Service\SsoClientFactory;
 use Drupal\markaspot_sso\Service\SsoLoginService;
 use Drupal\markaspot_sso\Service\SsoProviderManager;
@@ -99,7 +100,9 @@ final class SsoAuthController extends ControllerBase {
       throw new HttpException(500, 'SSO login is not available.');
     }
 
-    $response = new RedirectResponse((string) $url);
+    // The IdP URL comes from provider configuration. A plain RedirectResponse
+    // to another host is rejected by core's RedirectResponseSubscriber.
+    $response = new TrustedRedirectResponse((string) $url);
     $this->noStore($response);
     return $response;
   }
@@ -118,12 +121,13 @@ final class SsoAuthController extends ControllerBase {
         '@provider' => $provider,
         '@message' => $exception->getMessage(),
       ]);
-      $response = new RedirectResponse($this->withSsoError($target));
+      $response = new TrustedRedirectResponse($this->withSsoError($target));
       $this->noStore($response);
       return $response;
     }
 
-    $response = new RedirectResponse($target);
+    // RelayState was sanitized against allowed_relay_hosts at login start.
+    $response = new TrustedRedirectResponse($target);
     $this->noStore($response);
     return $response;
   }
@@ -145,12 +149,13 @@ final class SsoAuthController extends ControllerBase {
         '@provider' => $provider,
         '@message' => $exception->getMessage(),
       ]);
-      $response = new RedirectResponse($this->withSsoError($target));
+      $response = new TrustedRedirectResponse($this->withSsoError($target));
       $this->noStore($response);
       return $response;
     }
 
-    $response = new RedirectResponse($target);
+    // RelayState was sanitized against allowed_relay_hosts at login start.
+    $response = new TrustedRedirectResponse($target);
     $this->noStore($response);
     return $response;
   }
@@ -163,7 +168,8 @@ final class SsoAuthController extends ControllerBase {
     $this->consumeMockState($request, $provider, $session);
     $this->loginService->mockLogin($provider, $session);
     $target = $this->relayState->sanitize($provider, $request->query->get('RelayState'));
-    $response = new RedirectResponse($target);
+    // RelayState was sanitized against allowed_relay_hosts at login start.
+    $response = new TrustedRedirectResponse($target);
     $this->noStore($response);
     return $response;
   }
