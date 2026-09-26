@@ -19,6 +19,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\group\PermissionScopeInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\markaspot_group\Service\EditorialOrgMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\user\PermissionHandlerInterface;
@@ -31,8 +32,9 @@ use Symfony\Component\HttpFoundation\Request;
  * Controller for the group members matrix API.
  *
  * Provides REST endpoints for viewing and managing user-group memberships
- * in a matrix/table format. Supports both Drupal administrators and
- * tenant administrators (users with jur-tenant_admin group role).
+ * in a matrix/table format. Supports Drupal administrators, tenant
+ * administrators (users with jur-tenant_admin group role) and editors
+ * (editorial_board) inside their own tenant.
  */
 class GroupMembersController extends ControllerBase {
 
@@ -109,6 +111,8 @@ class GroupMembersController extends ControllerBase {
    *   The lock backend.
    * @param \Drupal\user\PermissionHandlerInterface|null $permissionHandler
    *   Permission definitions used to protect globally privileged accounts.
+   * @param \Drupal\markaspot_group\Service\EditorialOrgMembership|null $editorialMembership
+   *   The editorial scope service; without it editors get no matrix access.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
@@ -117,6 +121,7 @@ class GroupMembersController extends ControllerBase {
     AccountInterface $currentUser,
     LockBackendInterface $lock,
     protected ?PermissionHandlerInterface $permissionHandler = NULL,
+    protected ?EditorialOrgMembership $editorialMembership = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->membershipLoader = $membershipLoader;
@@ -136,6 +141,7 @@ class GroupMembersController extends ControllerBase {
       $container->get('current_user'),
       $container->get('lock'),
       $container->get('user.permissions'),
+      $container->get('markaspot_group.editorial_org_membership'),
     );
   }
 
@@ -217,8 +223,9 @@ class GroupMembersController extends ControllerBase {
   /**
    * Access check for group members matrix endpoints.
    *
-   * Grants access to Drupal administrators and users who hold the
-   * jur-tenant_admin group role in any jurisdiction group.
+   * Grants access to Drupal administrators, users who hold the
+   * jur-tenant_admin group role in any jurisdiction group and editors with a
+   * tenant scope.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The user account to check.
@@ -243,6 +250,12 @@ class GroupMembersController extends ControllerBase {
       if ($this->isJurisdictionGroup($membership->getGroup())) {
         return AccessResult::allowed()->addCacheContexts(['user']);
       }
+    }
+
+    // Editors manage the members of their own tenant. The scope follows
+    // memberships and the jurisdiction tree, so it is never cached.
+    if ($this->getEditorJurisdictionIds($account) !== []) {
+      return AccessResult::allowed()->addCacheContexts(['user'])->setCacheMaxAge(0);
     }
 
     return AccessResult::forbidden('User is not an administrator or tenant admin.')
@@ -384,6 +397,9 @@ class GroupMembersController extends ControllerBase {
    *   JSON response with the update result.
    */
   protected function doUpdateMemberships(array $content, int $uid): JsonResponse {
+    // Preflight may have primed membership, entity and scope caches before
+    // another request changed them under this lock. Re-read the authority.
+    $this->resetAuthorityCaches($uid);
     $context = $this->prepareMembershipUpdateContext($uid);
     if ($context instanceof JsonResponse) {
       return $context;
@@ -395,6 +411,9 @@ class GroupMembersController extends ControllerBase {
     $isAllGroupsMember = $context['is_all_groups_member'];
     $groupStorage = $context['group_storage'];
     $adminJurIds = $context['admin_jur_ids'];
+    $tenantAdminJurIds = $context['tenant_admin_jur_ids'];
+    $isSelf = (int) $targetUser->id() === (int) $currentAccount->id();
+    $isProtectedPeer = NULL;
 
     $updated = [];
     $errors = [];
@@ -414,6 +433,19 @@ class GroupMembersController extends ControllerBase {
       if (!$isDrupalAdmin && !$this->isGroupInAdminScopeWith($group, $adminJurIds)) {
         $errors[] = $this->getMembershipGroupRejectedMessage($groupId);
         continue;
+      }
+
+      // Groups reached only through the editorial scope: the caller's own
+      // memberships and those of editors and tenant admins stay with tenant
+      // administrators.
+      if (!$isDrupalAdmin && !$this->isGroupInAdminScopeWith($group, $tenantAdminJurIds)) {
+        if ($isProtectedPeer === NULL) {
+          $isProtectedPeer = $isSelf || $this->isProtectedPeer($targetUser);
+        }
+        if ($isProtectedPeer) {
+          $errors[] = "Only tenant administrators can change this membership in group $groupId.";
+          continue;
+        }
       }
 
       if ($action === 'remove') {
@@ -491,8 +523,10 @@ class GroupMembersController extends ControllerBase {
 
     // Pre-compute admin scope once to avoid N+1 per group.
     $adminJurIds = [];
+    $tenantAdminJurIds = [];
     if (!$isDrupalAdmin) {
-      $adminJurIds = $this->getAdminJurisdictionIds($currentAccount);
+      $tenantAdminJurIds = $this->getTenantAdminJurisdictionIds($currentAccount);
+      $adminJurIds = $this->mergeJurisdictionIds($tenantAdminJurIds, $this->getEditorJurisdictionIds($currentAccount));
     }
 
     return [
@@ -502,6 +536,7 @@ class GroupMembersController extends ControllerBase {
       'is_all_groups_member' => $isAllGroupsMember,
       'group_storage' => $groupStorage,
       'admin_jur_ids' => $adminJurIds,
+      'tenant_admin_jur_ids' => $tenantAdminJurIds,
     ];
   }
 
@@ -688,13 +723,7 @@ class GroupMembersController extends ControllerBase {
   protected function doUpdateUserProfile(array $content, int $uid): JsonResponse {
     // Preflight may have primed Group's membership and entity caches before
     // another request acquired this lock. Re-read the authority under the lock.
-    $this->entityTypeManager()->getStorage('user')->resetCache([$uid]);
-    $this->entityTypeManager()->getStorage('group_relationship')->resetCache();
-    $this->entityTypeManager()->getStorage('group')->resetCache();
-    Cache::invalidateTags([
-      'group_relationship_list:plugin:group_membership:entity:' . $uid,
-      'group_relationship_list:plugin:group_membership:entity:' . $this->currentUser()->id(),
-    ]);
+    $this->resetAuthorityCaches($uid);
     $context = $this->prepareProfileUpdateContext($uid);
     if ($context instanceof JsonResponse) {
       return $context;
@@ -966,7 +995,46 @@ class GroupMembersController extends ControllerBase {
       }
     }
 
+    // Tenant administrators are peers of editors; only a tenant administrator
+    // scope covering all their memberships may change their account.
+    if ($this->getEditorJurisdictionIds($account) !== [] && $this->isProtectedPeer($targetUser)) {
+      return $this->isUserInAdminScope($targetUser, $account, TRUE, $this->getTenantAdminJurisdictionIds($account));
+    }
+
     return $this->isUserInAdminScope($targetUser, $account, TRUE);
+  }
+
+  /**
+   * Re-reads users, memberships and scopes before an authorized mutation.
+   */
+  protected function resetAuthorityCaches(int $uid): void {
+    $this->entityTypeManager()->getStorage('user')->resetCache([$uid]);
+    $this->entityTypeManager()->getStorage('group_relationship')->resetCache();
+    $this->entityTypeManager()->getStorage('group')->resetCache();
+    Cache::invalidateTags([
+      'group_relationship_list:plugin:group_membership:entity:' . $uid,
+      'group_relationship_list:plugin:group_membership:entity:' . $this->currentUser()->id(),
+    ]);
+    $this->hierarchyResolver->resetCache();
+    $this->editorialMembership?->resetScope();
+  }
+
+  /**
+   * Whether an account is an editor or tenant administrator.
+   *
+   * Editors manage plain members and moderators; these accounts are their
+   * peers or supervisors and stay with tenant administrators.
+   */
+  protected function isProtectedPeer(UserInterface $targetUser): bool {
+    if (array_intersect(['administrator', 'editorial_board', 'tenant_admin'], $targetUser->getRoles()) !== []) {
+      return TRUE;
+    }
+    foreach ($this->membershipLoader->loadByUser($targetUser, $this->jurisdictionRoleIds('tenant_admin')) as $membership) {
+      if ($this->isJurisdictionGroup($membership->getGroup())) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -999,8 +1067,8 @@ class GroupMembersController extends ControllerBase {
   /**
    * Loads groups visible to the current user.
    *
-   * Drupal administrators see all groups. Tenant admins see groups within
-   * their jurisdiction hierarchy plus associated org groups.
+   * Drupal administrators see all groups. Tenant admins and editors see
+   * groups within their jurisdiction hierarchy plus associated org groups.
    *
    * @param string $groupTypeFilter
    *   Optional group type filter ('jur' or 'org').
@@ -1032,20 +1100,11 @@ class GroupMembersController extends ControllerBase {
       return $ids ? $groupStorage->loadMultiple($ids) : [];
     }
 
-    // Tenant admin: scope to their jurisdiction hierarchy.
-    $tenantMemberships = $this->membershipLoader->loadByUser($currentAccount, $this->jurisdictionRoleIds('tenant_admin'));
-    if (empty($tenantMemberships)) {
+    // Tenant admins and editors: scope to their jurisdiction hierarchy.
+    $visibleGroupIds = $this->getAdminJurisdictionIds($currentAccount);
+    if ($visibleGroupIds === []) {
       return [];
     }
-
-    $visibleGroupIds = [];
-    foreach ($tenantMemberships as $membership) {
-      $jurId = (int) $membership->getGroup()->id();
-      // Get all descendant jurisdictions.
-      $jurIds = $this->hierarchyResolver->getDescendantIds($jurId);
-      $visibleGroupIds = array_merge($visibleGroupIds, $jurIds);
-    }
-    $visibleGroupIds = array_unique($visibleGroupIds);
 
     $groups = [];
 
@@ -1070,7 +1129,11 @@ class GroupMembersController extends ControllerBase {
       if ($orgIds) {
         $orgGroups = $groupStorage->loadMultiple($orgIds);
         foreach ($orgGroups as $group) {
-          $groups[] = $group;
+          // The query matches any translation; the default translation
+          // decides, as it does for every write.
+          if ($this->isGroupInAdminScopeWith($group, $visibleGroupIds)) {
+            $groups[] = $group;
+          }
         }
       }
     }
@@ -1459,6 +1522,23 @@ class GroupMembersController extends ControllerBase {
       ];
     }
 
+    // Editorial memberships follow the editorial role and would come back.
+    if ($group->bundle() === 'org') {
+      $relationships = $this->entityTypeManager()->getStorage('group_relationship')->loadByProperties([
+        'gid' => $groupId,
+        'plugin_id' => 'group_membership',
+        'entity_id' => (int) $targetUser->id(),
+      ]);
+      foreach ($relationships as $relationship) {
+        if (in_array(MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID, array_column($relationship->get('group_roles')->getValue(), 'target_id'), TRUE)) {
+          return [
+            'success' => FALSE,
+            'error' => "Cannot remove user from group $groupId: the membership follows the editorial role.",
+          ];
+        }
+      }
+    }
+
     // Cannot self-remove tenant_admin role.
     if ((int) $targetUser->id() === (int) $currentAccount->id()) {
       $member = $group->getMember($targetUser);
@@ -1812,6 +1892,56 @@ class GroupMembersController extends ControllerBase {
   }
 
   /**
+   * Builds the set of jurisdiction IDs a caller manages members in.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The user account to check.
+   *
+   * @return int[]
+   *   Tenant admin and editor jurisdiction IDs (including descendants).
+   */
+  protected function getAdminJurisdictionIds(AccountInterface $account): array {
+    return $this->mergeJurisdictionIds(
+      $this->getTenantAdminJurisdictionIds($account),
+      $this->getEditorJurisdictionIds($account),
+    );
+  }
+
+  /**
+   * Merges jurisdiction ID sets.
+   *
+   * @param int[] ...$sets
+   *   Jurisdiction ID sets.
+   *
+   * @return int[]
+   *   Unique jurisdiction IDs.
+   */
+  protected function mergeJurisdictionIds(array ...$sets): array {
+    return array_values(array_unique(array_merge(...$sets)));
+  }
+
+  /**
+   * Builds the jurisdiction IDs an editor manages: their tenant's tree.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The user account to check.
+   *
+   * @return int[]
+   *   Jurisdiction group IDs; empty for non-editors and unscoped editors.
+   */
+  protected function getEditorJurisdictionIds(AccountInterface $account): array {
+    if ($this->editorialMembership === NULL || !$this->editorialMembership->isEditor($account)) {
+      return [];
+    }
+    $jurIds = [];
+    foreach ($this->editorialMembership->rootJurisdictionIds($account) as $rootId) {
+      $jurIds[] = (int) $rootId;
+      $jurIds = array_merge($jurIds, array_map('intval', $this->hierarchyResolver->getDescendantIds((int) $rootId)));
+    }
+    return array_values(array_unique($jurIds));
+  }
+
+  /**
    * Builds the set of jurisdiction IDs a tenant admin can manage.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
@@ -1820,7 +1950,7 @@ class GroupMembersController extends ControllerBase {
    * @return int[]
    *   Array of jurisdiction group IDs (including descendants).
    */
-  protected function getAdminJurisdictionIds(AccountInterface $account): array {
+  protected function getTenantAdminJurisdictionIds(AccountInterface $account): array {
     $tenantMemberships = $this->membershipLoader->loadByUser($account, $this->jurisdictionRoleIds('tenant_admin'));
     if (empty($tenantMemberships)) {
       return [];
@@ -1902,17 +2032,20 @@ class GroupMembersController extends ControllerBase {
    *   The requesting user account.
    * @param bool $requireCompleteScope
    *   Whether every membership must be managed rather than one being visible.
+   * @param int[]|null $scopeJurIds
+   *   Managed jurisdiction IDs for the complete check; defaults to the full
+   *   caller scope.
    *
    * @return bool
    *   TRUE if the requested scope requirement is satisfied.
    */
-  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account, bool $requireCompleteScope = FALSE): bool {
+  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account, bool $requireCompleteScope = FALSE, ?array $scopeJurIds = NULL): bool {
     $targetMemberships = $this->membershipLoader->loadByUser($targetUser);
     if ($targetMemberships === []) {
       return FALSE;
     }
 
-    $adminJurIds = $requireCompleteScope ? $this->getAdminJurisdictionIds($account) : [];
+    $adminJurIds = $requireCompleteScope ? ($scopeJurIds ?? $this->getAdminJurisdictionIds($account)) : [];
     $visibleGroups = $requireCompleteScope ? [] : $this->loadVisibleGroups('');
     $visibleGroupIds = array_map(fn($g) => (int) $g->id(), $visibleGroups);
 

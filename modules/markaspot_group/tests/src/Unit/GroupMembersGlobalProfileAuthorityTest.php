@@ -167,6 +167,7 @@ final class GroupMembersGlobalProfileAuthorityTest extends UnitTestCase {
     $groupQuery->method('execute')->willReturn($orgIds);
     $groupStorage->method('getQuery')->willReturn($groupQuery);
     $relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $relationshipStorage->method('loadByProperties')->willReturn([]);
     $role = $this->createMock(RoleInterface::class);
     $role->method('isAdmin')->willReturn($targetAdminRole);
     $role->method('getPermissions')->willReturn($targetPermissions);

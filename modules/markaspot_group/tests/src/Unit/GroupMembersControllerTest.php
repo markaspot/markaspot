@@ -270,11 +270,12 @@ class GroupMembersControllerTest extends UnitTestCase {
       ->willReturnSelf();
     $orgQuery->expects($this->once())
       ->method('execute')
-      ->willReturn([20 => 20]);
+      ->willReturn([20 => 20, 21 => 21]);
 
-    $orgGroup = $this->createMock(GroupInterface::class);
-    $orgGroup->method('id')->willReturn(20);
-    $orgGroup->method('bundle')->willReturn('org');
+    $orgGroup = $this->createOrgGroup(20, 2);
+    // Matched through another translation; its default translation belongs
+    // to a foreign jurisdiction.
+    $foreignOrgGroup = $this->createOrgGroup(21, 99);
 
     $groupStorage = $this->createMock(EntityStorageInterface::class);
     $groupStorage->expects($this->once())
@@ -282,8 +283,8 @@ class GroupMembersControllerTest extends UnitTestCase {
       ->willReturn($orgQuery);
     $groupStorage->expects($this->once())
       ->method('loadMultiple')
-      ->with([20 => 20])
-      ->willReturn([20 => $orgGroup]);
+      ->with([20 => 20, 21 => 21])
+      ->willReturn([20 => $orgGroup, 21 => $foreignOrgGroup]);
 
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->expects($this->once())
@@ -316,6 +317,21 @@ class GroupMembersControllerTest extends UnitTestCase {
       ['type', 'org', NULL],
       ['field_jurisdiction', [1, 2], 'IN'],
     ], $conditions);
+  }
+
+  /**
+   * Creates an organisation mock referencing a jurisdiction.
+   */
+  protected function createOrgGroup(int $id, int $jurisdictionId): GroupInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn(FALSE);
+    $field->method('__get')->with('target_id')->willReturn($jurisdictionId);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($id);
+    $group->method('bundle')->willReturn('org');
+    $group->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $group->method('get')->with('field_jurisdiction')->willReturn($field);
+    return $group;
   }
 
   /**

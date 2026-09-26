@@ -14,11 +14,13 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_group\Controller\GroupMembersController;
 use Drupal\node\Entity\NodeType;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Tests that editorial users join every organisation of their jurisdiction.
@@ -64,12 +66,19 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     Role::create(['id' => 'editorial_board', 'label' => 'Editorial board'])->save();
     Role::create(['id' => 'moderator', 'label' => 'Moderator'])->save();
     Role::create(['id' => 'administrator', 'label' => 'Administrator', 'is_admin' => TRUE])->save();
+    Role::create(['id' => 'tenant_admin', 'label' => 'Tenant admin'])->save();
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
     GroupType::create(['id' => 'org', 'label' => 'Organisation'])->save();
     $this->ensureMembershipType('jur');
     $this->ensureMembershipType('org');
-    foreach (['jur-member' => 'Member', 'jur-editorial' => 'Editorial', 'jur-moderator' => 'Moderator'] as $roleId => $label) {
+    $jurisdictionRoles = [
+      'jur-member' => 'Member',
+      'jur-editorial' => 'Editorial',
+      'jur-moderator' => 'Moderator',
+      'jur-tenant_admin' => 'Tenant admin',
+    ];
+    foreach ($jurisdictionRoles as $roleId => $label) {
       GroupRole::create([
         'id' => $roleId,
         'label' => $label,
@@ -533,6 +542,112 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   }
 
   /**
+   * Editors see and manage the member matrix of their own tenant only.
+   */
+  public function testEditorMatrixIsScopedToOwnTenant(): void {
+    $rootA = $this->jurisdiction('A');
+    $childA = $this->jurisdiction('A child', $rootA);
+    $rootB = $this->jurisdiction('B');
+    $orgA = $this->organisation('Org A', $childA);
+    $this->organisation('Org B', $rootB);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $memberA = $this->user('member-a');
+    $this->joinJurisdiction($childA, $memberA, 'jur-member');
+    $memberB = $this->user('member-b');
+    $this->joinJurisdiction($rootB, $memberB, 'jur-member');
+
+    $controller = $this->matrixController($editor);
+    $this->assertTrue($controller->accessCheck($editor)->isAllowed());
+    $this->assertFalse($controller->accessCheck($memberA)->isAllowed());
+    $matrix = json_decode((string) $controller->getMatrix(Request::create('/api/group-members'))->getContent(), TRUE);
+    $groupIds = array_column($matrix['groups'], 'id');
+    sort($groupIds);
+    $this->assertSame([(int) $rootA->id(), (int) $childA->id(), (int) $orgA->id()], $groupIds);
+    $uids = array_column($matrix['users'], 'uid');
+    $this->assertContains((int) $memberA->id(), $uids);
+    $this->assertNotContains((int) $memberB->id(), $uids);
+
+    $this->assertSame(403, $controller->getUserDetail((int) $memberB->id())->getStatusCode());
+    [$status] = $this->patchMemberships($controller, $memberB, $this->setRoles($rootB, 'jur-moderator'));
+    $this->assertSame(403, $status);
+
+    [$status, $body] = $this->patchMemberships($controller, $memberA, $this->setRoles($childA, 'jur-moderator'));
+    $this->assertSame([200, 'ok'], [$status, $body['status']]);
+    $this->assertSame(['jur-moderator'], $this->jurisdictionRoles(Group::load($childA->id()), $memberA));
+    [, $body] = $this->patchMemberships($controller, $memberA, $this->setRoles($childA, 'jur-tenant_admin'));
+    $this->assertSame(['Only administrators can assign the tenant_admin role.'], $body['errors']);
+    $this->assertSame(200, $this->patchProfile($controller, $memberA, ['name' => 'member-a-renamed']));
+  }
+
+  /**
+   * Editors leave their peers, tenant admins and themselves alone.
+   */
+  public function testEditorCannotChangePeersOrSelf(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $this->organisation('Org A', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $peer = $this->user('peer', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $peer);
+    $tenantAdmin = $this->user('tenant-admin');
+    $this->joinJurisdiction($rootA, $tenantAdmin, 'jur-tenant_admin');
+
+    $controller = $this->matrixController($editor);
+    foreach ([$peer, $tenantAdmin, $editor] as $target) {
+      [, $body] = $this->patchMemberships($controller, $target, $this->setRoles($rootA, 'jur-moderator'));
+      $this->assertSame('error', $body['status'], $target->getAccountName());
+      $this->assertStringContainsString('Only tenant administrators', $body['errors'][0]);
+    }
+    $this->assertSame(['jur-tenant_admin'], $this->jurisdictionRoles(Group::load($rootA->id()), $tenantAdmin));
+    $this->assertSame(403, $this->patchProfile($controller, $tenantAdmin, ['status' => 0]));
+    $this->assertSame(403, $this->patchProfile($controller, $peer, ['status' => 0]));
+    $this->assertTrue(User::load($tenantAdmin->id())->isActive());
+  }
+
+  /**
+   * Tenant-admin rights in one tenant do not lift peer protection in another.
+   */
+  public function testTenantAdminExceptionIsScoped(): void {
+    $rootA = $this->jurisdiction('A');
+    $rootB = $this->jurisdiction('B');
+    $caller = $this->user('caller', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $caller, 'jur-tenant_admin');
+    $this->joinJurisdiction($rootB, $caller);
+    $peerA = $this->user('peer-a', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $peerA);
+    $peerB = $this->user('peer-b', ['editorial_board']);
+    $this->joinJurisdiction($rootB, $peerB);
+
+    $controller = $this->matrixController($caller);
+    [, $body] = $this->patchMemberships($controller, $peerA, $this->setRoles($rootA, 'jur-moderator'));
+    $this->assertSame('ok', $body['status']);
+    [, $body] = $this->patchMemberships($controller, $peerB, $this->setRoles($rootB, 'jur-moderator'));
+    $this->assertSame('error', $body['status']);
+    [, $body] = $this->patchMemberships($controller, $caller, $this->setRoles($rootB, 'jur-member'));
+    $this->assertSame('error', $body['status']);
+    $this->assertSame(['jur-editorial'], $this->jurisdictionRoles(Group::load($rootB->id()), $caller));
+  }
+
+  /**
+   * The matrix does not pretend to remove a role-managed membership.
+   */
+  public function testMatrixRefusesToRemoveEditorialMembership(): void {
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $org = $this->organisation('Org A', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+
+    $controller = $this->matrixController(User::load(1));
+    [, $body] = $this->patchMemberships($controller, $editor, [$org->id() => ['action' => 'remove']]);
+    $this->assertSame('error', $body['status']);
+    $this->assertStringContainsString('follows the editorial role', $body['errors'][0]);
+    $this->assertSame([(int) $org->id()], $this->orgMemberships($editor));
+  }
+
+  /**
    * A second root ends the single-root fallback; removing it restores it.
    */
   public function testSecondRootEndsSingleRootFallback(): void {
@@ -661,6 +776,7 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   private function user(string $name, array $roles = [], bool $allGroupsMember = FALSE): UserInterface {
     $user = User::create([
       'name' => $name,
+      'mail' => $name . '@example.test',
       'status' => 1,
       'roles' => $roles,
       'field_all_groups_member' => $allGroupsMember,
@@ -700,6 +816,42 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   private function jurisdictionRoles(GroupInterface $jurisdiction, UserInterface $user): array {
     $membership = $jurisdiction->getMember($user);
     return $membership ? array_keys($membership->getRoles(FALSE)) : [];
+  }
+
+  /**
+   * Builds the member matrix controller for a caller.
+   */
+  private function matrixController(UserInterface $caller): GroupMembersController {
+    $this->container->get('current_user')->setAccount($caller);
+    return GroupMembersController::create($this->container);
+  }
+
+  /**
+   * Sends a membership PATCH and returns status code and decoded body.
+   */
+  private function patchMemberships(GroupMembersController $controller, UserInterface $target, array $memberships): array {
+    $response = $controller->updateMemberships(Request::create(
+      '/api/group-members/' . $target->id(), 'PATCH', [], [], [], [],
+      json_encode(['memberships' => $memberships], JSON_THROW_ON_ERROR),
+    ), (int) $target->id());
+    return [$response->getStatusCode(), json_decode((string) $response->getContent(), TRUE)];
+  }
+
+  /**
+   * Builds a matrix update that sets one role in a group.
+   */
+  private function setRoles(GroupInterface $group, string $roleId): array {
+    return [(int) $group->id() => ['action' => 'set', 'roles' => [$roleId]]];
+  }
+
+  /**
+   * Sends a profile PATCH and returns the status code.
+   */
+  private function patchProfile(GroupMembersController $controller, UserInterface $target, array $body): int {
+    return $controller->updateUserProfile(Request::create(
+      '/api/group-members/' . $target->id() . '/profile', 'PATCH', [], [], [], [],
+      json_encode($body, JSON_THROW_ON_ERROR),
+    ), (int) $target->id())->getStatusCode();
   }
 
   /**
