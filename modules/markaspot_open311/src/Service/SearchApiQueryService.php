@@ -178,7 +178,18 @@ class SearchApiQueryService {
    */
   public function countVisibleRequestId(QueryInterface $query, string $request_id): int {
     $probe = clone $query;
-    return (int) $probe->condition('request_id', $request_id)->count()->execute();
+    // The list query already carries the pager range, which a count keeps.
+    $probe->range();
+    $probe->condition('request_id', $request_id);
+    $probe->count();
+    try {
+      return (int) $probe->execute();
+    }
+    catch (\Exception $e) {
+      // The exception message carries the SQL with the searched ID.
+      $this->logger->error('Request ID lookup failed: @class.', ['@class' => get_class($e)]);
+      return 0;
+    }
   }
 
   /**
@@ -295,6 +306,8 @@ class SearchApiQueryService {
       // No caller renders excerpts, and building them loads every hit: on the
       // largest tenant 1,000 hits cost 124 MB and doubled the search time.
       $query->addTag('search_api_skip_processor_highlight');
+      // Only the IDs are used; the count would run the same scan a second time.
+      $query->setOption('skip result count', TRUE);
 
       $results = $this->executeWithStatementTimeout(static fn () => $query->execute());
 
@@ -310,12 +323,6 @@ class SearchApiQueryService {
 
       // Remove duplicates (can occur with multi-language content).
       $nids = array_unique($nids);
-
-      // Search input can hold personal data; log its length, never the text.
-      $this->logger->debug('Search API query (@length characters) returned @count results.', [
-        '@length' => mb_strlen($query_string),
-        '@count' => count($nids),
-      ]);
 
       return $nids;
     }

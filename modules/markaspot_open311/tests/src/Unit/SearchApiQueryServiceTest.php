@@ -227,10 +227,97 @@ class SearchApiQueryServiceTest extends UnitTestCase {
     $this->assertSame([], $service->search($secret, $this->createStaffUser()));
     $this->assertTrue($service->didLastSearchFail());
 
-    $this->assertCount(2, $logged);
+    // A successful search logs nothing: every log entry stores the request
+    // URL, and that URL carries the search text.
+    $this->assertCount(1, $logged);
     foreach ($logged as $line) {
       $this->assertStringNotContainsString('reporter', $line);
     }
+  }
+
+  /**
+   * Tests the search skips the second scan that only counts the hits.
+   *
+   * @covers ::search
+   */
+  public function testSearchSkipsResultCount(): void {
+    $options = [];
+    $query = $this->createSearchQuery();
+    $query->method('setOption')->willReturnCallback(function (string $name, $value) use (&$options): void {
+      $options[$name] = $value;
+    });
+    $query->method('execute')->willReturn($this->createEmptyResults());
+
+    $this->createServiceWithIndex($this->createIndex($query))->search('Schlagloch', $this->createStaffUser());
+
+    $this->assertTrue($options['skip result count'] ?? FALSE);
+  }
+
+  /**
+   * Tests the ID probe drops the pager range and never throws.
+   *
+   * @covers ::countVisibleRequestId
+   */
+  public function testCountVisibleRequestIdDropsRangeAndSwallowsFailure(): void {
+    $calls = [];
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('range')->willReturnCallback(function (...$args) use (&$calls): void {
+      $calls[] = 'range(' . implode(',', array_map('var_export', $args, array_fill(0, count($args), TRUE))) . ')';
+    });
+    $query->method('condition')->willReturnCallback(function (string $field, $value) use (&$calls): void {
+      $calls[] = "condition($field=$value)";
+    });
+    $query->method('count')->willReturnCallback(function () use (&$calls): void {
+      $calls[] = 'count';
+    });
+    $query->method('execute')->willReturnOnConsecutiveCalls('2');
+
+    $this->assertSame(2, $this->service->countVisibleRequestId($query, '78-2026'));
+    $this->assertSame(['range(NULL,NULL)', 'condition(request_id=78-2026)', 'count'], $calls);
+
+    $failing = $this->createMock(QueryInterface::class);
+    $failing->method('execute')->willThrowException(new \RuntimeException("SQLSTATE ... request_id = '78-2026'"));
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with($this->anything(), $this->callback(static fn (array $context): bool => !str_contains(json_encode($context), '78-2026')));
+    $this->assertSame(0, $this->service->countVisibleRequestId($failing, '78-2026'));
+  }
+
+  /**
+   * Tests a failing timeout read still runs the search, without a timeout.
+   *
+   * @covers ::search
+   */
+  public function testSearchRunsWhenTimeoutCannotBeRead(): void {
+    $database = $this->createMock(MysqlConnection::class);
+    $database->method('databaseType')->willReturn('mysql');
+    $database->method('isMariaDb')->willReturn(TRUE);
+    $database->expects($this->once())
+      ->method('query')
+      ->willThrowException(new \RuntimeException('access denied'));
+
+    $query = $this->createSearchQuery();
+    $query->expects($this->once())->method('execute')->willReturn($this->createEmptyResults());
+
+    $service = $this->createServiceWithIndex($this->createIndex($query), $database);
+    $this->assertSame([], $service->search('Schlagloch', $this->createStaffUser()));
+    $this->assertFalse($service->didLastSearchFail());
+  }
+
+  /**
+   * Tests other databases get no MySQL session statements.
+   *
+   * @covers ::search
+   */
+  public function testSearchSetsNoTimeoutOnOtherDatabases(): void {
+    $database = $this->createMock(Connection::class);
+    $database->method('databaseType')->willReturn('pgsql');
+    $database->expects($this->never())->method('query');
+
+    $query = $this->createSearchQuery();
+    $query->method('execute')->willReturn($this->createEmptyResults());
+
+    $this->createServiceWithIndex($this->createIndex($query), $database)->search('Schlagloch', $this->createStaffUser());
   }
 
   /**

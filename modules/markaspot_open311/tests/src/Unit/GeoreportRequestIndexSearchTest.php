@@ -43,6 +43,21 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
   }
 
   /**
+   * Tests invalid UTF-8 is a client error, not an unfiltered list.
+   *
+   * @covers ::normaliseSearchParameter
+   */
+  public function testInvalidUtf8SearchParameterIsRejected(): void {
+    try {
+      GeoreportRequestIndexResource::normaliseSearchParameter("\xff\xfeabc");
+      $this->fail('Invalid UTF-8 must be rejected.');
+    }
+    catch (GeoreportException $e) {
+      $this->assertSame(400, $e->getCode());
+    }
+  }
+
+  /**
    * Tests q is collapsed and capped like the UI proxy does.
    *
    * @covers ::normaliseSearchParameter
@@ -71,7 +86,7 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
       ->willReturnSelf();
 
     $resource = $this->createResource($service, 1);
-    $this->assertTrue($this->applySearch($resource, $query, '#78-2026'));
+    $this->applySearch($resource, $query, '#78-2026');
   }
 
   /**
@@ -94,7 +109,7 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
       ->willReturnSelf();
 
     $resource = $this->createResource($service, 0);
-    $this->assertTrue($this->applySearch($resource, $query, '78-2026'));
+    $this->applySearch($resource, $query, '78-2026');
   }
 
   /**
@@ -109,10 +124,13 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
     $service->expects($this->never())->method('applySafeFallbackSearch');
 
     $query = $this->createMock(QueryInterface::class);
-    $query->expects($this->never())->method('condition');
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('nid', [0], 'IN')
+      ->willReturnSelf();
 
     $resource = $this->createResource($service, 0);
-    $this->assertFalse($this->applySearch($resource, $query, $input));
+    $this->applySearch($resource, $query, $input);
   }
 
   /**
@@ -142,11 +160,15 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
     $service->method('search')->willReturn([]);
     $service->method('didLastSearchFail')->willReturn(FALSE);
 
+    // Same response shape as hits the caller cannot list: no bare [].
     $query = $this->createMock(QueryInterface::class);
-    $query->expects($this->never())->method('condition');
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('nid', [0], 'IN')
+      ->willReturnSelf();
 
     $resource = $this->createResource($service, 0);
-    $this->assertFalse($this->applySearch($resource, $query, 'Schlagloch'));
+    $this->applySearch($resource, $query, 'Schlagloch');
   }
 
   /**
@@ -168,7 +190,7 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
       ->willReturnSelf();
 
     $resource = $this->createResource($service, 0);
-    $this->assertTrue($this->applySearch($resource, $query, 'Schlagloch'));
+    $this->applySearch($resource, $query, 'Schlagloch');
   }
 
   /**
@@ -200,9 +222,9 @@ class GeoreportRequestIndexSearchTest extends UnitTestCase {
   /**
    * Invokes the protected search method.
    */
-  private function applySearch(GeoreportRequestIndexResource $resource, QueryInterface $query, string $input): bool {
+  private function applySearch(GeoreportRequestIndexResource $resource, QueryInterface $query, string $input): void {
     $method = new \ReflectionMethod($resource, 'applySearchQuery');
-    return $method->invoke($resource, $query, GeoreportRequestIndexResource::normaliseSearchParameter($input), 'de');
+    $method->invoke($resource, $query, GeoreportRequestIndexResource::normaliseSearchParameter($input), 'de');
   }
 
   /**
