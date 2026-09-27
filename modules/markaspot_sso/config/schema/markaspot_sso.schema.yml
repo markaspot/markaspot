@@ -57,6 +57,9 @@ markaspot_sso.settings:
               sequence:
                 type: string
                 label: 'Value'
+          require_mfa:
+            type: boolean
+            label: 'Refuse OIDC logins that do not prove a second factor'
           mock:
             type: boolean
             label: 'Mock provider'

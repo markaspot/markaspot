@@ -174,6 +174,11 @@ final class SsoLoginService {
     }
 
     $attributes = OidcClaims::toAttributes($claims);
+    $mfa = OidcClaims::hasMfa($attributes, $provider);
+    // Decide before any account is created or linked.
+    if (!empty($provider['require_mfa']) && !$mfa) {
+      throw new AccessDeniedHttpException('This provider requires a second factor and the login did not prove one.');
+    }
     $linking_provider = ['attribute_map' => OidcClaims::attributeMap($provider)] + $provider;
     $user = $this->identityLinker->authenticate(
       $provider_id,
@@ -182,7 +187,6 @@ final class SsoLoginService {
       OidcClaims::withoutUnverifiedEmail($attributes, $linking_provider['attribute_map']),
       [],
     );
-    $mfa = OidcClaims::hasMfa($attributes, $provider);
     $this->storeLastLogin($session, $provider_id, $user, [
       'protocol' => 'oidc',
       'mfa' => $mfa,

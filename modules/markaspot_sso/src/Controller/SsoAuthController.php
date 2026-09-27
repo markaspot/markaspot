@@ -83,6 +83,7 @@ final class SsoAuthController extends ControllerBase {
    * Starts SP-initiated SSO login.
    */
   public function login(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $this->providerManager->enabledProvider($provider);
     $relay_state = $this->relayState->sanitize(
           $provider,
@@ -111,6 +112,7 @@ final class SsoAuthController extends ControllerBase {
    * Handles SSO ACS POST responses.
    */
   public function acs(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $session = $this->session($request);
     $target = $this->loginService->consumeRelayState($provider, $session);
     try {
@@ -136,6 +138,7 @@ final class SsoAuthController extends ControllerBase {
    * Handles OIDC authorization responses.
    */
   public function callback(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $session = $this->session($request);
     $target = $this->loginService->consumeRelayState($provider, $session);
     try {
@@ -337,6 +340,17 @@ final class SsoAuthController extends ControllerBase {
       throw new HttpException(500, 'SSO login requires a session.');
     }
     return $request->getSession();
+  }
+
+  /**
+   * Keeps core from replacing the SSO redirect target.
+   *
+   * RedirectResponseSubscriber swaps the target of any redirect for a local
+   * "destination" query value; SSO redirects go only where this controller
+   * decides (the IdP, or the sanitized relay state).
+   */
+  private function ignoreDestination(Request $request): void {
+    $request->query->remove('destination');
   }
 
   /**

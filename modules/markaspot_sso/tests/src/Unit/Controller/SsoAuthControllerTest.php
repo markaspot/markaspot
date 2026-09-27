@@ -79,6 +79,23 @@ final class SsoAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * A destination query cannot redirect an SSO response elsewhere.
+   */
+  public function testCallbackIgnoresDestination(): void {
+    $controller = $this->controller();
+    $request = Request::create('/auth/sso/keycloak/callback', 'GET', [
+      'state' => 's',
+      'code' => 'c',
+      'destination' => '/user/logout',
+    ]);
+    $request->setSession(new Session(new MockArraySessionStorage()));
+
+    $controller->callback($request, 'keycloak');
+
+    $this->assertFalse($request->query->has('destination'));
+  }
+
+  /**
    * Builds the controller with real services until ACS validation fails.
    */
   private function controller(): SsoAuthController {

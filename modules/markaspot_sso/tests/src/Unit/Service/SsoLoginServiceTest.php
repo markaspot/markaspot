@@ -317,6 +317,46 @@ final class SsoLoginServiceTest extends UnitTestCase {
   }
 
   /**
+   * A provider that requires MFA refuses a login without a second factor.
+   */
+  public function testOidcCallbackRequireMfaRefusesWeakLogin(): void {
+    $this->brokerOverrides = ['require_mfa' => TRUE];
+    $idToken = $this->signToken($this->idTokenClaims(['amr' => ['pwd']]));
+    $replay = $this->createMock(SsoReplayCache::class);
+    $replay->method('checkAndStore')->willReturn(TRUE);
+    $linker = $this->createMock(SsoIdentityLinker::class);
+    $linker->expects($this->never())->method('authenticate');
+    $session = $this->sessionWithPendingLogin(self::NOW);
+
+    try {
+      $this->loginService($replay, $linker, $this->brokerClient($idToken))
+        ->processCallback('broker', $this->callbackRequest(), $session);
+      $this->fail('A login without a second factor was accepted.');
+    }
+    catch (AccessDeniedHttpException $exception) {
+      $this->assertStringContainsString('requires a second factor', $exception->getMessage());
+    }
+    $this->assertFalse($session->has('markaspot_sso.last_login'));
+  }
+
+  /**
+   * A provider that requires MFA accepts a passkey login.
+   */
+  public function testOidcCallbackRequireMfaAcceptsPasskey(): void {
+    $this->brokerOverrides = ['require_mfa' => TRUE];
+    $idToken = $this->signToken($this->idTokenClaims(['amr' => ['hwk']]));
+    $replay = $this->createMock(SsoReplayCache::class);
+    $replay->method('checkAndStore')->willReturn(TRUE);
+    $linker = $this->createMock(SsoIdentityLinker::class);
+    $linker->expects($this->once())->method('authenticate')->willReturn(['uid' => 8]);
+
+    $user = $this->loginService($replay, $linker, $this->brokerClient($idToken))
+      ->processCallback('broker', $this->callbackRequest(), $this->sessionWithPendingLogin(self::NOW));
+
+    $this->assertTrue($user['mfa']);
+  }
+
+  /**
    * An unverified email in a custom-mapped claim never reaches the linker.
    */
   public function testOidcCallbackDropsUnverifiedMappedEmail(): void {

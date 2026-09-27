@@ -82,6 +82,32 @@ final class OidcClientTest extends UnitTestCase {
   }
 
   /**
+   * Token and key endpoints on another origin are refused.
+   */
+  #[DataProvider('foreignEndpointProvider')]
+  public function testDiscoveryRejectsForeignOriginEndpoints(string $key, string $url): void {
+    $client = $this->oidcClient([], [$key => $url]);
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage($key . ' is not on the issuer origin');
+    $client->discovery($this->oidcProvider());
+  }
+
+  /**
+   * Endpoints outside the issuer origin.
+   *
+   * @return array<string, array{string, string}>
+   *   Discovery key and URL.
+   */
+  public static function foreignEndpointProvider(): array {
+    return [
+      'token endpoint on another host' => ['token_endpoint', 'https://collector.example.test/token'],
+      'key set on another host' => ['jwks_uri', 'https://collector.example.test/certs'],
+      'token endpoint on another port' => ['token_endpoint', 'https://idp.example.test:8443/token'],
+    ];
+  }
+
+  /**
    * An http issuer is refused before any request is made.
    */
   public function testHttpIssuerIsRefused(): void {

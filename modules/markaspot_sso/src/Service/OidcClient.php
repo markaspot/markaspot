@@ -237,6 +237,13 @@ final class OidcClient {
         throw new \RuntimeException(sprintf('OIDC discovery document has no valid %s.', $key));
       }
     }
+    // The client secret goes to the token endpoint and the signing keys come
+    // from jwks_uri: both must live on the issuer's own origin.
+    foreach (['token_endpoint', 'jwks_uri'] as $key) {
+      if (!$this->isSameOrigin($data[$key], $issuer)) {
+        throw new \RuntimeException(sprintf('OIDC discovery %s is not on the issuer origin.', $key));
+      }
+    }
 
     $document = array_filter(
       array_intersect_key($data, array_flip(self::DISCOVERY_KEYS)),
@@ -456,6 +463,18 @@ final class OidcClient {
     return is_array($parts)
       && ($parts['scheme'] ?? NULL) === 'https'
       && !empty($parts['host']);
+  }
+
+  /**
+   * Checks that two URLs share scheme, host and port.
+   */
+  private function isSameOrigin(string $url, string $reference): bool {
+    $a = parse_url($url);
+    $b = parse_url($reference);
+    return is_array($a) && is_array($b)
+      && strtolower($a['scheme'] ?? '') === strtolower($b['scheme'] ?? '')
+      && strtolower($a['host'] ?? '') === strtolower($b['host'] ?? '')
+      && ($a['port'] ?? 443) === ($b['port'] ?? 443);
   }
 
 }
