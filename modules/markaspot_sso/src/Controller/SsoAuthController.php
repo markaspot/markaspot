@@ -167,6 +167,7 @@ final class SsoAuthController extends ControllerBase {
    * Executes a dev-only mock login and returns to RelayState.
    */
   public function mockLogin(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $session = $this->session($request);
     $this->consumeMockState($request, $provider, $session);
     $this->loginService->mockLogin($provider, $session);

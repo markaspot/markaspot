@@ -220,7 +220,8 @@ final class OidcClient {
    */
   public function discovery(array $provider): array {
     $issuer = $this->issuer($provider);
-    $cid = 'markaspot_sso:oidc:discovery:' . hash('sha256', $issuer);
+    // v2: documents cached before the issuer-origin check are not reused.
+    $cid = 'markaspot_sso:oidc:discovery:v2:' . hash('sha256', $issuer);
     $cached = $this->cache->get($cid);
     if ($cached !== FALSE && is_array($cached->data)) {
       return $cached->data;

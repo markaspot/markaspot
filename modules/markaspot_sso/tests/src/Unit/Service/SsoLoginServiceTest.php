@@ -37,11 +37,11 @@ final class SsoLoginServiceTest extends UnitTestCase {
   use OidcTestIdpTrait;
 
   /**
-   * Overrides merged into the "broker" provider config.
+   * Overrides merged into provider configs, keyed by provider id.
    *
-   * @var array<string, mixed>
+   * @var array<string, array<string, mixed>>
    */
-  private array $brokerOverrides = [];
+  private array $providerOverrides = [];
 
   /**
    * {@inheritdoc}
@@ -320,7 +320,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * A provider that requires MFA refuses a login without a second factor.
    */
   public function testOidcCallbackRequireMfaRefusesWeakLogin(): void {
-    $this->brokerOverrides = ['require_mfa' => TRUE];
+    $this->providerOverrides['broker'] = ['require_mfa' => TRUE];
     $idToken = $this->signToken($this->idTokenClaims(['amr' => ['pwd']]));
     $replay = $this->createMock(SsoReplayCache::class);
     $replay->method('checkAndStore')->willReturn(TRUE);
@@ -343,7 +343,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * A provider that requires MFA accepts a passkey login.
    */
   public function testOidcCallbackRequireMfaAcceptsPasskey(): void {
-    $this->brokerOverrides = ['require_mfa' => TRUE];
+    $this->providerOverrides['broker'] = ['require_mfa' => TRUE];
     $idToken = $this->signToken($this->idTokenClaims(['amr' => ['hwk']]));
     $replay = $this->createMock(SsoReplayCache::class);
     $replay->method('checkAndStore')->willReturn(TRUE);
@@ -357,10 +357,42 @@ final class SsoLoginServiceTest extends UnitTestCase {
   }
 
   /**
+   * SAML cannot prove MFA, so a provider that requires it refuses SAML.
+   */
+  public function testRequireMfaRefusesSamlResponse(): void {
+    $this->providerOverrides['keycloak'] = ['require_mfa' => TRUE];
+    $request = Request::create('/auth/sso/keycloak/acs', 'POST', ['SAMLResponse' => 'dummy-response']);
+    $session = new Session(new MockArraySessionStorage());
+    $session->set('markaspot_sso.keycloak.request_id', 'request-123');
+
+    try {
+      $this->loginService()->processAcs('keycloak', $request, $session);
+      $this->fail('A SAML login was accepted although MFA is required.');
+    }
+    catch (AccessDeniedHttpException $exception) {
+      $this->assertStringContainsString('only OIDC logins can prove', $exception->getMessage());
+    }
+    $this->assertFalse($session->has('markaspot_sso.keycloak.request_id'));
+  }
+
+  /**
+   * The dev mock cannot prove MFA either.
+   */
+  public function testRequireMfaRefusesMockLogin(): void {
+    putenv('MARKASPOT_SSO_MOCK=true');
+    putenv('IS_DDEV_PROJECT=true');
+    $this->providerOverrides['local_mock'] = ['require_mfa' => TRUE];
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('only OIDC logins can prove');
+    $this->loginService()->mockLogin('local_mock', new Session(new MockArraySessionStorage()));
+  }
+
+  /**
    * An unverified email in a custom-mapped claim never reaches the linker.
    */
   public function testOidcCallbackDropsUnverifiedMappedEmail(): void {
-    $this->brokerOverrides = ['oidc_attribute_map' => ['email' => ['upn']]];
+    $this->providerOverrides['broker'] = ['oidc_attribute_map' => ['email' => ['upn']]];
     $idToken = $this->signToken($this->idTokenClaims([
       'email' => NULL,
       'email_verified' => FALSE,
@@ -484,21 +516,22 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * Builds config for an enabled real SSO provider.
    */
   private function configFactory(): ConfigFactoryInterface {
-    $broker = $this->brokerOverrides + $this->oidcProvider();
+    $broker = ($this->providerOverrides['broker'] ?? []) + $this->oidcProvider();
+    $overrides = $this->providerOverrides;
     $config = $this->createMock(Config::class);
     $config->method('get')
-      ->willReturnCallback(static function (string $key) use ($broker): mixed {
+      ->willReturnCallback(static function (string $key) use ($broker, $overrides): mixed {
         if ($key === 'providers.broker') {
           return $broker;
         }
         if ($key === 'providers.keycloak') {
-          return [
+          return ($overrides['keycloak'] ?? []) + [
             'enabled' => TRUE,
             'profile' => 'generic',
           ];
         }
         if ($key === 'providers.local_mock') {
-          return [
+          return ($overrides['local_mock'] ?? []) + [
             'enabled' => TRUE,
             'profile' => 'generic_mock',
             'mock' => TRUE,

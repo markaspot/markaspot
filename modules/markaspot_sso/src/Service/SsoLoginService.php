@@ -70,6 +70,7 @@ final class SsoLoginService {
       if ($this->providerManager->isMockProvider($provider)) {
         throw new BadRequestHttpException('Mock providers do not accept SAMLResponse payloads.');
       }
+      $this->assertMfaNotRequired($provider);
 
       $sso_response = $request->request->get('SAMLResponse');
       if (!is_string($sso_response) || trim($sso_response) === '') {
@@ -220,6 +221,7 @@ final class SsoLoginService {
     if (!$this->providerManager->isMockProvider($provider)) {
       throw new BadRequestHttpException('Provider is not configured as a mock provider.');
     }
+    $this->assertMfaNotRequired($provider);
 
     $claims = is_array($provider['mock_claims'] ?? NULL) ? $provider['mock_claims'] : [];
     $name_id = is_scalar($claims['subject'] ?? NULL)
@@ -319,6 +321,21 @@ final class SsoLoginService {
 
     if ($auth->getErrors() !== []) {
       throw new AccessDeniedHttpException($auth->getLastErrorReason() ?: 'Invalid SSO response.');
+    }
+  }
+
+  /**
+   * Refuses SAML and mock logins on providers that require MFA.
+   *
+   * Only OIDC evaluates MFA claims; the other protocols cannot prove a second
+   * factor, so "require_mfa" fails closed for them.
+   *
+   * @param array<string, mixed> $provider
+   *   Provider configuration.
+   */
+  private function assertMfaNotRequired(array $provider): void {
+    if (!empty($provider['require_mfa'])) {
+      throw new AccessDeniedHttpException('This provider requires a second factor, which only OIDC logins can prove.');
     }
   }
 
