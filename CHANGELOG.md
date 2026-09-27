@@ -1,5 +1,32 @@
 # Changelog
 
+## [11.9.206](https://github.com/markaspot/markaspot/compare/11.9.205...11.9.206) (2026-09-27)
+
+### Features
+
+* **group:** give editorial users full rights in every organisation of their tenant ([9e795ed](https://github.com/markaspot/markaspot/commit/9e795edbc39dc1a3347ca02e08a79c958223d1ca))
+* **group:** open the member matrix to editors inside their tenant ([1d5bb4a](https://github.com/markaspot/markaspot/commit/1d5bb4a1483ebcdebc3841ab3d76c8b066867d46))
+* **sso:** add OpenID Connect login with PKCE and MFA claim evaluation ([b52d18c](https://github.com/markaspot/markaspot/commit/b52d18c2abea6f748845529b9d9d3588098dca82))
+
+### Bug Fixes
+
+* drop unverified emails from mapped OIDC claims too ([f543a91](https://github.com/markaspot/markaspot/commit/f543a91586600199feded40e6f91dd503f8677ae))
+* fail closed on require_mfa for SAML and mock logins and version the OIDC discovery cache ([5ad71ac](https://github.com/markaspot/markaspot/commit/5ad71acbf14b9d42043bf18e0948d0d7656d830a))
+* **group:** apply the member matrix peer and tenant rules to the Group UI ([1598600](https://github.com/markaspot/markaspot/commit/1598600ae37ff3e57204a55e48e86527351124f5))
+* **group:** grant no editorial org roles before they exist ([b49cc31](https://github.com/markaspot/markaspot/commit/b49cc3183187e24af7068f955a1e0a0cf7eedaef))
+* **group:** keep the editorial org roles out of hand-written memberships ([b20e5d1](https://github.com/markaspot/markaspot/commit/b20e5d164a1a4e90fa7141fe22f1528f93c50580))
+* **group:** only administrators move an organisation to another tenant ([cd95a19](https://github.com/markaspot/markaspot/commit/cd95a19d89a8842e573620a28e2be7c516e62635))
+* **group:** restore hand-deleted editorial memberships and refuse re-targeting ([089ce99](https://github.com/markaspot/markaspot/commit/089ce9901064c3b0d950ff310896b7c61a13cc38))
+* **group:** resync editors when jurisdictions appear, vanish or move ([a3ea2b7](https://github.com/markaspot/markaspot/commit/a3ea2b7770cb49f0a18020e215842fd7a45c6e66))
+* **group:** strip editorial org roles from accounts that are no editors on resync ([0690ddd](https://github.com/markaspot/markaspot/commit/0690dddf45e34f6c05e4b25e7a79f85bcda7932a))
+* require MFA per provider, pin OIDC endpoints to the issuer origin and ignore destination on SSO redirects ([dcf1236](https://github.com/markaspot/markaspot/commit/dcf1236b697a89daa0eafd59f86d1a9d6e8a6513))
+* **sso:** harden the OIDC callback after review ([85f766f](https://github.com/markaspot/markaspot/commit/85f766fb593adb0ddf23785a98d168af723768d2))
+* **sso:** redirect to the identity provider with a trusted redirect ([ff19892](https://github.com/markaspot/markaspot/commit/ff19892491dfd3259c06b7e95da7a141714c12f3))
+
+### Performance
+
+* **group:** cache the tenant-admin scope and keep non-editor membership access cacheable ([9565489](https://github.com/markaspot/markaspot/commit/95654895f5cf0c7965ad1f622a71d1e43b1c65ff))
+
 ## [11.9.205](https://github.com/markaspot/markaspot/compare/11.9.204...11.9.205) (2026-09-26)
 
 ### Bug Fixes
