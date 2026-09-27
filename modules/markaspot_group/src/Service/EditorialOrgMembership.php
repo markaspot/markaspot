@@ -668,6 +668,9 @@ final class EditorialOrgMembership {
    *   TRUE when a membership was created or the role was added.
    */
   private function grant(GroupInterface $organisation, UserInterface $account): bool {
+    if (!$this->rolesAvailable()) {
+      return FALSE;
+    }
     $relationship = GroupMembership::loadSingle($organisation, $account);
     $roleIds = [];
     if ($relationship) {
@@ -690,6 +693,21 @@ final class EditorialOrgMembership {
       $relationship->set('group_roles', $roleIds)->save();
     });
     return TRUE;
+  }
+
+  /**
+   * Whether both editorial org roles exist.
+   *
+   * They ship as optional config and are created by update 11954. Until then
+   * (and on sites without organisations) there is nothing to grant, and
+   * saving users or groups must not fail.
+   */
+  private function rolesAvailable(): bool {
+    $roles = $this->entityTypeManager->getStorage('group_role')->loadMultiple([
+      MembershipRoleNormalizer::EDITORIAL_ORG_ROLE_ID,
+      MembershipRoleNormalizer::EDITORIAL_ORG_MARKER_ROLE_ID,
+    ]);
+    return count($roles) === 2;
   }
 
   /**

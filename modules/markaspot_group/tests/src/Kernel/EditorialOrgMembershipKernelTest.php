@@ -771,6 +771,24 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   }
 
   /**
+   * Without the editorial roles (before update 11954) nothing is granted.
+   */
+  public function testMissingRolesGrantNothing(): void {
+    foreach (['org-editorial', 'org-editorial_member'] as $roleId) {
+      GroupRole::load($roleId)->delete();
+    }
+    $rootA = $this->jurisdiction('A');
+    $this->jurisdiction('B');
+    $this->organisation('Org', $rootA);
+    $editor = $this->user('editor', ['editorial_board']);
+    $this->joinJurisdiction($rootA, $editor);
+    $this->organisation('Later', $rootA);
+
+    $this->assertSame([], $this->orgMemberships($editor));
+    $this->assertSame(0, $this->service()->syncAllEditors()['granted']);
+  }
+
+  /**
    * A second root ends the single-root fallback; removing it restores it.
    */
   public function testSecondRootEndsSingleRootFallback(): void {
