@@ -78,20 +78,29 @@ final class OidcClaims {
   }
 
   /**
-   * Drops the email unless the IdP marked it verified.
+   * Drops every email claim unless the IdP marked the email verified.
    *
    * An unverified address must neither link an existing account nor be given
-   * to a new one.
+   * to a new one. This includes the claims mapped to the email field, so a
+   * provider that maps email to "upn" cannot bypass the check.
    *
    * @param array<string, array<int, string>> $attributes
    *   Flattened claims.
+   * @param array<string, mixed> $attribute_map
+   *   Claim names keyed by canonical field, see ::attributeMap().
    *
    * @return array<string, array<int, string>>
    *   Attributes without an unverified email.
    */
-  public static function withoutUnverifiedEmail(array $attributes): array {
-    if (($attributes['email_verified'][0] ?? '') !== 'true') {
-      unset($attributes['email']);
+  public static function withoutUnverifiedEmail(array $attributes, array $attribute_map = []): array {
+    if (($attributes['email_verified'][0] ?? '') === 'true') {
+      return $attributes;
+    }
+    $mapped = is_array($attribute_map['email'] ?? NULL) ? $attribute_map['email'] : [];
+    foreach (array_merge(['email'], $mapped) as $claim) {
+      if (is_scalar($claim)) {
+        unset($attributes[(string) $claim]);
+      }
     }
     return $attributes;
   }

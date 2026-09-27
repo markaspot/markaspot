@@ -37,6 +37,13 @@ final class SsoLoginServiceTest extends UnitTestCase {
   use OidcTestIdpTrait;
 
   /**
+   * Overrides merged into the "broker" provider config.
+   *
+   * @var array<string, mixed>
+   */
+  private array $brokerOverrides = [];
+
+  /**
    * {@inheritdoc}
    */
   protected function tearDown(): void {
@@ -310,6 +317,34 @@ final class SsoLoginServiceTest extends UnitTestCase {
   }
 
   /**
+   * An unverified email in a custom-mapped claim never reaches the linker.
+   */
+  public function testOidcCallbackDropsUnverifiedMappedEmail(): void {
+    $this->brokerOverrides = ['oidc_attribute_map' => ['email' => ['upn']]];
+    $idToken = $this->signToken($this->idTokenClaims([
+      'email' => NULL,
+      'email_verified' => FALSE,
+      'upn' => 'victim@example.test',
+    ]));
+    $replay = $this->createMock(SsoReplayCache::class);
+    $replay->method('checkAndStore')->willReturn(TRUE);
+    $linker = $this->createMock(SsoIdentityLinker::class);
+    $linker->expects($this->once())
+      ->method('authenticate')
+      ->with(
+        'broker',
+        $this->callback(static fn (array $provider): bool => $provider['attribute_map'] === ['email' => ['upn']]),
+        'subject-1',
+        $this->callback(static fn (array $attributes): bool => !array_key_exists('upn', $attributes) && !array_key_exists('email', $attributes)),
+        [],
+      )
+      ->willReturn(['uid' => 8]);
+
+    $this->loginService($replay, $linker, $this->brokerClient($idToken))
+      ->processCallback('broker', $this->callbackRequest(), $this->sessionWithPendingLogin(self::NOW));
+  }
+
+  /**
    * A response seen before never reaches the identity linker.
    */
   public function testOidcCallbackRejectsReplay(): void {
@@ -409,7 +444,7 @@ final class SsoLoginServiceTest extends UnitTestCase {
    * Builds config for an enabled real SSO provider.
    */
   private function configFactory(): ConfigFactoryInterface {
-    $broker = $this->oidcProvider();
+    $broker = $this->brokerOverrides + $this->oidcProvider();
     $config = $this->createMock(Config::class);
     $config->method('get')
       ->willReturnCallback(static function (string $key) use ($broker): mixed {

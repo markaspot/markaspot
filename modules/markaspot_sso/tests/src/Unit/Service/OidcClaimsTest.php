@@ -108,6 +108,18 @@ final class OidcClaimsTest extends UnitTestCase {
   }
 
   /**
+   * A claim mapped to the email field is dropped as well when unverified.
+   */
+  public function testUnverifiedMappedEmailIsDropped(): void {
+    $map = ['email' => ['upn']];
+    $claims = ['upn' => ['victim@example.test'], 'email' => ['a@example.test']];
+
+    $this->assertSame(['email_verified' => ['false']], OidcClaims::withoutUnverifiedEmail($claims + ['email_verified' => ['false']], $map));
+    $this->assertSame([], OidcClaims::withoutUnverifiedEmail($claims, $map));
+    $this->assertSame($claims + ['email_verified' => ['true']], OidcClaims::withoutUnverifiedEmail($claims + ['email_verified' => ['true']], $map));
+  }
+
+  /**
    * OIDC uses its own claim names, never the SAML attribute map.
    */
   public function testAttributeMap(): void {

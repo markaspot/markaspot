@@ -179,7 +179,7 @@ final class SsoLoginService {
       $provider_id,
       $linking_provider,
       (string) $claims['sub'],
-      OidcClaims::withoutUnverifiedEmail($attributes),
+      OidcClaims::withoutUnverifiedEmail($attributes, $linking_provider['attribute_map']),
       [],
     );
     $mfa = OidcClaims::hasMfa($attributes, $provider);
