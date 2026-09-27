@@ -693,6 +693,11 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $this->assertTrue($relationship($editor)->access('delete', $editor));
     $this->assertTrue($relationship($moderator)->access('update', $editor));
     $this->assertTrue($relationship($moderator)->access('delete', $editor));
+
+    // A refusal depends on the target's peer status and is never cached;
+    // other accounts keep a cacheable result.
+    $this->assertSame(0, $relationship($peer)->access('update', $editor, TRUE)->getCacheMaxAge());
+    $this->assertNotSame(0, $relationship($moderator)->access('update', User::load($tenantAdmin->id()), TRUE)->getCacheMaxAge());
   }
 
   /**

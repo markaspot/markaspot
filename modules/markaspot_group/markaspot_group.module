@@ -1020,6 +1020,10 @@ function markaspot_group_group_relationship_access(EntityInterface $relationship
   }
   /** @var \Drupal\markaspot_group\Service\EditorialOrgMembership $editorial */
   $editorial = \Drupal::service('markaspot_group.editorial_org_membership');
+  // Only editors depend on memberships and the jurisdiction tree here.
+  if (!$editorial->isEditor($account)) {
+    return AccessResult::neutral()->addCacheContexts(['user.roles']);
+  }
   if ($editorial->isReservedForTenantAdmins($account, $organisation, $member, $operation)) {
     return AccessResult::forbidden('Only tenant administrators can change this membership.')
       ->setCacheMaxAge(0);

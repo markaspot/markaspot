@@ -89,6 +89,15 @@ final class EditorialOrgMembership {
   private array $scopeCache = [];
 
   /**
+   * Tenant-admin jurisdictions per account for the current request.
+   *
+   * The Group UI checks every membership row of a list against it.
+   *
+   * @var array<int, int[]>
+   */
+  private array $tenantAdminScopeCache = [];
+
+  /**
    * Constructs the service.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -215,6 +224,16 @@ final class EditorialOrgMembership {
    *   Jurisdiction group IDs.
    */
   public function tenantAdminJurisdictionIds(AccountInterface $account): array {
+    return $this->tenantAdminScopeCache[(int) $account->id()] ??= $this->computeTenantAdminJurisdictionIds($account);
+  }
+
+  /**
+   * Computes the tenant-admin jurisdictions of an account.
+   *
+   * @return int[]
+   *   Jurisdiction group IDs.
+   */
+  private function computeTenantAdminJurisdictionIds(AccountInterface $account): array {
     $rows = $this->entityTypeManager->getStorage('group_relationship')->getAggregateQuery()
       ->accessCheck(FALSE)
       ->condition('plugin_id', 'group_membership')
@@ -369,9 +388,10 @@ final class EditorialOrgMembership {
   public function resetScope(?int $uid = NULL): void {
     if ($uid === NULL) {
       $this->scopeCache = [];
+      $this->tenantAdminScopeCache = [];
       return;
     }
-    unset($this->scopeCache[$uid]);
+    unset($this->scopeCache[$uid], $this->tenantAdminScopeCache[$uid]);
   }
 
   /**
