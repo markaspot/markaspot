@@ -7,6 +7,7 @@ namespace Drupal\markaspot_sso\Controller;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\markaspot_sso\Service\SsoClientFactory;
 use Drupal\markaspot_sso\Service\SsoLoginService;
 use Drupal\markaspot_sso\Service\SsoProviderManager;
@@ -18,6 +19,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Handles generic SSO service provider endpoints.
@@ -53,7 +55,9 @@ final class SsoAuthController extends ControllerBase {
    * Returns SP metadata XML for a provider.
    */
   public function metadata(string $provider): Response {
-    $this->providerManager->provider($provider);
+    if ($this->providerManager->isOidcProvider($this->providerManager->provider($provider))) {
+      throw new HttpException(404, 'OIDC providers publish no SAML metadata.');
+    }
     try {
       $settings = $this->clientFactory->settings($provider, TRUE);
       $metadata = $settings->getSPMetadata();
@@ -79,6 +83,7 @@ final class SsoAuthController extends ControllerBase {
    * Starts SP-initiated SSO login.
    */
   public function login(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $this->providerManager->enabledProvider($provider);
     $relay_state = $this->relayState->sanitize(
           $provider,
@@ -96,7 +101,9 @@ final class SsoAuthController extends ControllerBase {
       throw new HttpException(500, 'SSO login is not available.');
     }
 
-    $response = new RedirectResponse((string) $url);
+    // The IdP URL comes from provider configuration. A plain RedirectResponse
+    // to another host is rejected by core's RedirectResponseSubscriber.
+    $response = new TrustedRedirectResponse((string) $url);
     $this->noStore($response);
     return $response;
   }
@@ -105,6 +112,7 @@ final class SsoAuthController extends ControllerBase {
    * Handles SSO ACS POST responses.
    */
   public function acs(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $session = $this->session($request);
     $target = $this->loginService->consumeRelayState($provider, $session);
     try {
@@ -115,12 +123,42 @@ final class SsoAuthController extends ControllerBase {
         '@provider' => $provider,
         '@message' => $exception->getMessage(),
       ]);
-      $response = new RedirectResponse($this->withSsoError($target));
+      $response = new TrustedRedirectResponse($this->withSsoError($target));
       $this->noStore($response);
       return $response;
     }
 
-    $response = new RedirectResponse($target);
+    // RelayState was sanitized against allowed_relay_hosts at login start.
+    $response = new TrustedRedirectResponse($target);
+    $this->noStore($response);
+    return $response;
+  }
+
+  /**
+   * Handles OIDC authorization responses.
+   */
+  public function callback(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
+    $session = $this->session($request);
+    $target = $this->loginService->consumeRelayState($provider, $session);
+    try {
+      $this->loginService->processCallback($provider, $request, $session);
+    }
+    catch (\Throwable $exception) {
+      // Rejected responses are warnings; broken configuration or an
+      // unreachable provider is an error the operator has to fix.
+      $level = $exception instanceof HttpExceptionInterface ? 'warning' : 'error';
+      $this->logger->log($level, 'OIDC login failed for @provider: @message', [
+        '@provider' => $provider,
+        '@message' => $exception->getMessage(),
+      ]);
+      $response = new TrustedRedirectResponse($this->withSsoError($target));
+      $this->noStore($response);
+      return $response;
+    }
+
+    // RelayState was sanitized against allowed_relay_hosts at login start.
+    $response = new TrustedRedirectResponse($target);
     $this->noStore($response);
     return $response;
   }
@@ -129,11 +167,13 @@ final class SsoAuthController extends ControllerBase {
    * Executes a dev-only mock login and returns to RelayState.
    */
   public function mockLogin(Request $request, string $provider): RedirectResponse {
+    $this->ignoreDestination($request);
     $session = $this->session($request);
     $this->consumeMockState($request, $provider, $session);
     $this->loginService->mockLogin($provider, $session);
     $target = $this->relayState->sanitize($provider, $request->query->get('RelayState'));
-    $response = new RedirectResponse($target);
+    // RelayState was sanitized against allowed_relay_hosts at login start.
+    $response = new TrustedRedirectResponse($target);
     $this->noStore($response);
     return $response;
   }
@@ -301,6 +341,17 @@ final class SsoAuthController extends ControllerBase {
       throw new HttpException(500, 'SSO login requires a session.');
     }
     return $request->getSession();
+  }
+
+  /**
+   * Keeps core from replacing the SSO redirect target.
+   *
+   * RedirectResponseSubscriber swaps the target of any redirect for a local
+   * "destination" query value; SSO redirects go only where this controller
+   * decides (the IdP, or the sanitized relay state).
+   */
+  private function ignoreDestination(Request $request): void {
+    $request->query->remove('destination');
   }
 
   /**

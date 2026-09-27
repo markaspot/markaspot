@@ -21,6 +21,45 @@ markaspot_sso.settings:
           profile:
             type: string
             label: 'Provider profile'
+          protocol:
+            type: string
+            label: 'Protocol (saml or oidc)'
+          oidc_issuer:
+            type: uri
+            label: 'OIDC issuer'
+          oidc_client_id:
+            type: string
+            label: 'OIDC client ID'
+          oidc_redirect_uri:
+            type: uri
+            label: 'OIDC redirect URI'
+          oidc_scopes:
+            type: string
+            label: 'OIDC scopes'
+          oidc_idp_hint:
+            type: string
+            label: 'Identity provider hint for a broker'
+          oidc_attribute_map:
+            type: sequence
+            label: 'OIDC claim mapping'
+            sequence:
+              type: sequence
+              label: 'Claim names'
+              sequence:
+                type: string
+                label: 'Claim name'
+          mfa_claims:
+            type: sequence
+            label: 'Claims that prove a second factor'
+            sequence:
+              type: sequence
+              label: 'Accepted values'
+              sequence:
+                type: string
+                label: 'Value'
+          require_mfa:
+            type: boolean
+            label: 'Refuse OIDC logins that do not prove a second factor'
           mock:
             type: boolean
             label: 'Mock provider'

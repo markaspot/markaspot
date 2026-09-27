@@ -34,6 +34,18 @@ markaspot_sso.acs:
   options:
     no_cache: 'TRUE'
 
+markaspot_sso.callback:
+  path: '/auth/sso/{provider}/callback'
+  defaults:
+    _controller: '\Drupal\markaspot_sso\Controller\SsoAuthController::callback'
+  methods: [GET]
+  requirements:
+    # Access is enforced by the session-bound state, PKCE and ID token checks.
+    _access: 'TRUE'
+    provider: '[a-zA-Z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
 markaspot_sso.mock_login:
   path: '/auth/sso/{provider}/mock-login'
   defaults:

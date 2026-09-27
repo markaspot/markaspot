@@ -84,6 +84,7 @@
         "drupal/jsonapi_resources": "^1.5",
         "enshrined/svg-sanitize": "^0.22",
         "onelogin/php-saml": "^4.3",
+        "web-token/jwt-library": "^4.2",
         "webklex/php-imap": "^6.2"
     },
     "suggest": {

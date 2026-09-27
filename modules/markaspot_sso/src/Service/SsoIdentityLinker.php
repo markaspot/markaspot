@@ -14,8 +14,10 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Links validated SSO identities to Drupal users and tenant memberships.
+ *
+ * Not final, so login tests can replace it with a mock.
  */
-final class SsoIdentityLinker {
+class SsoIdentityLinker {
   private const PRIVILEGED_ROLES = [
     'administrator',
     'tenant_admin',

@@ -106,6 +106,16 @@ final class SsoProviderManager {
   }
 
   /**
+   * Checks whether a provider speaks OpenID Connect instead of SAML.
+   *
+   * @param array<string, mixed> $provider
+   *   Provider configuration.
+   */
+  public function isOidcProvider(array $provider): bool {
+    return ($provider['protocol'] ?? 'saml') === 'oidc';
+  }
+
+  /**
    * Throws when a mock provider is used outside an explicit dev context.
    */
   public function assertMockAllowed(array $provider): void {
