@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.207](https://github.com/markaspot/markaspot/compare/11.9.206...11.9.207) (2026-09-27)
+
+### Bug Fixes
+
+* **open311:** bound GeoReport search cost and match request IDs exactly ([dd90431](https://github.com/markaspot/markaspot/commit/dd904310ac8f843c771c889c18d75d026e779a67))
+* **open311:** keep empty search results indistinguishable and skip the search result count ([6f1b112](https://github.com/markaspot/markaspot/commit/6f1b112d4ffeef849a554619c6481093358906a8))
+
 ## [11.9.206](https://github.com/markaspot/markaspot/compare/11.9.205...11.9.206) (2026-09-27)
 
 ### Features
