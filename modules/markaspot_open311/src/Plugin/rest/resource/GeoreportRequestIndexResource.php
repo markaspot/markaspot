@@ -411,6 +411,10 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       $parameters['_request_list_total']
     );
 
+    // Validate the search before anything else: q[]= used to end in a
+    // TypeError (500) further down.
+    $searchQuery = self::normaliseSearchParameter($parameters['q'] ?? NULL);
+
     // Resolve language code from Accept-Language header or query param.
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
@@ -537,67 +541,9 @@ final class GeoreportRequestIndexResource extends ResourceBase {
         ->condition('field_geolocation.lng', $bbox[2], '<');
     }
 
-    // Handle search query using Search API for full-text search.
-    if (isset($parameters['q']) && strlen(trim($parameters['q'])) >= 2) {
-      $searchQuery = trim($parameters['q']);
-      $searchNids = [];
-
-      // Try Search API first for better full-text search.
-      if ($this->searchApiQueryService->isAvailable()) {
-        // Search API is only used to produce a text-match candidate set.
-        // EntityQuery applies structured filters, sorting, count, and the
-        // public offset range exactly once below. Passing the request offset
-        // into both layers would skip page 2+ results.
-        $searchOptions = [
-          'limit' => self::SEARCH_API_CANDIDATE_LIMIT,
-          'offset' => 0,
-          'langcode' => $parameters['langcode'] ?? NULL,
-        ];
-
-        $searchNids = $this->searchApiQueryService->search(
-          $searchQuery,
-          $this->currentUser,
-          $searchOptions
-        );
-
-        // If Search API returned results, restrict entity query to those nids.
-        if (!empty($searchNids)) {
-          $query->condition('nid', $searchNids, 'IN');
-        }
-        elseif ($this->searchApiQueryService->didLastSearchFail()) {
-          if ($this->searchApiQueryService->applySafeFallbackSearch($query, $searchQuery)) {
-            $this->logger->notice('Search API failed, using request_id fallback for query: @query', [
-              '@query' => $searchQuery,
-            ]);
-          }
-          else {
-            $this->logger->debug('Search API failed; full-text query skipped to avoid unbounded LIKE fallback.');
-            $query->condition('nid', [0], 'IN');
-          }
-        }
-        else {
-          // Search API found no results - return empty.
-          $this->logger->debug('Search API returned no results for query: @query', [
-            '@query' => $searchQuery,
-          ]);
-          // Return empty results when Search API finds nothing.
-          return [];
-        }
-      }
-      else {
-        // Search API is the required full-text backend. Without it, only exact
-        // request_id lookup is allowed; never fall back to broad
-        // leading-wildcard LIKE scans over title, body, or address fields.
-        if ($this->searchApiQueryService->applySafeFallbackSearch($query, $searchQuery)) {
-          $this->logger->notice('Search API not available, using request_id fallback for query: @query', [
-            '@query' => $searchQuery,
-          ]);
-        }
-        else {
-          $this->logger->debug('Search API not available; full-text query skipped to avoid unbounded LIKE fallback.');
-          $query->condition('nid', [0], 'IN');
-        }
-      }
+    // Full-text search: an exact request ID, or Search API candidates.
+    if ($searchQuery !== '' && !$this->applySearchQuery($query, $searchQuery, $parameters['langcode'] ?? NULL)) {
+      return [];
     }
 
     // Get jurisdiction ID for downstream status/service_code filtering.
@@ -1333,6 +1279,99 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     'field_hazard_level',
     'field_facility',
   ];
+
+  /**
+   * Reads the full-text search parameter q.
+   *
+   * @param mixed $search
+   *   Raw q query parameter value.
+   *
+   * @return string
+   *   The normalized search input; empty when there is none.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 400 when q is not a single string, e.g. q[]=.
+   */
+  public static function normaliseSearchParameter(mixed $search): string {
+    if ($search === NULL) {
+      return '';
+    }
+    if (!is_string($search)) {
+      throw new GeoreportException('Invalid q.', 400);
+    }
+    return SearchApiQueryService::normalizeQuery($search);
+  }
+
+  /**
+   * Restricts the list query to the full-text search.
+   *
+   * An input that equals a request ID the caller can list returns exactly
+   * that request; partial word matching would also return 178-2026 for
+   * 78-2026. Everything else goes through Search API. Without Search API, or
+   * when it fails, only the exact request ID lookup is allowed, never broad
+   * LIKE scans over title, body, or address fields.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The list query, already carrying access, jurisdiction and workspace
+   *   scope.
+   * @param string $searchQuery
+   *   The normalized, non-empty search input.
+   * @param string|null $langcode
+   *   The resolved request language.
+   *
+   * @return bool
+   *   FALSE when the search matches nothing and the list must stay empty.
+   */
+  protected function applySearchQuery(QueryInterface $query, string $searchQuery, ?string $langcode): bool {
+    $requestId = $this->searchApiQueryService->getExactRequestIdCandidate($searchQuery);
+    if ($requestId !== NULL && $this->searchApiQueryService->countVisibleRequestId($query, $requestId) > 0) {
+      $query->condition('request_id', $requestId);
+      return TRUE;
+    }
+
+    if (!SearchApiQueryService::isSearchableQuery($searchQuery)) {
+      return FALSE;
+    }
+
+    if (!$this->searchApiQueryService->isAvailable()) {
+      if ($this->searchApiQueryService->applySafeFallbackSearch($query, $searchQuery)) {
+        $this->logger->notice('Search API not available, using the request_id fallback.');
+      }
+      else {
+        $this->logger->debug('Search API not available; full-text query skipped to avoid unbounded LIKE fallback.');
+        $query->condition('nid', [0], 'IN');
+      }
+      return TRUE;
+    }
+
+    // Search API only produces a text-match candidate set. The entity query
+    // applies structured filters, sorting, count, and the public offset range
+    // exactly once; passing the request offset into both layers would skip
+    // page 2+ results.
+    $searchNids = $this->searchApiQueryService->search($searchQuery, $this->currentUser, [
+      'limit' => self::SEARCH_API_CANDIDATE_LIMIT,
+      'offset' => 0,
+      'langcode' => $langcode,
+    ]);
+
+    if (!empty($searchNids)) {
+      $query->condition('nid', $searchNids, 'IN');
+      return TRUE;
+    }
+
+    if (!$this->searchApiQueryService->didLastSearchFail()) {
+      return FALSE;
+    }
+
+    if ($this->searchApiQueryService->applySafeFallbackSearch($query, $searchQuery)) {
+      $this->logger->notice('Search API failed, using the request_id fallback.');
+    }
+    else {
+      $this->logger->debug('Search API failed; full-text query skipped to avoid unbounded LIKE fallback.');
+      $query->condition('nid', [0], 'IN');
+    }
+    return TRUE;
+  }
 
   /**
    * Applies the direct service request ID filter.

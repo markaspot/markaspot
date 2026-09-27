@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -60,11 +61,19 @@ class SearchApiQueryService {
   protected const INDEX_ID = 'service_requests';
 
   /**
-   * Minimum query length for Search API to be used.
-   *
-   * Queries shorter than this will fall back to basic LIKE search.
+   * Maximum search input in characters, the cap the UI proxy applies too.
    */
-  protected const MIN_QUERY_LENGTH = 2;
+  public const MAX_QUERY_LENGTH = 100;
+
+  /**
+   * Upper bound for the Search API database statements, in seconds.
+   *
+   * The database server matches parts of words (LIKE '%word%'), which scans
+   * the whole word table. On the largest tenant a common word took 18 s with
+   * full visibility, while the public path stayed under 5 s. The bound keeps
+   * one search from holding a PHP worker for half a minute.
+   */
+  protected const STATEMENT_TIMEOUT_SECONDS = 10;
 
   /**
    * Non-PII fields available to every full-text search account.
@@ -86,17 +95,90 @@ class SearchApiQueryService {
    *   The config factory.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger.
+   * @param \Drupal\Core\Database\Connection|null $database
+   *   The database connection the Search API database backend uses; without
+   *   it searches run without a statement timeout.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     ModuleHandlerInterface $module_handler,
     ConfigFactoryInterface $config_factory,
     LoggerInterface $logger,
+    protected ?Connection $database = NULL,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->moduleHandler = $module_handler;
     $this->configFactory = $config_factory;
     $this->logger = $logger;
+  }
+
+  /**
+   * Normalizes search input: one line, collapsed spaces, capped length.
+   *
+   * @param string $query_string
+   *   The raw search input.
+   *
+   * @return string
+   *   The normalized input; empty for invalid UTF-8.
+   */
+  public static function normalizeQuery(string $query_string): string {
+    $collapsed = trim(preg_replace('/\s+/u', ' ', $query_string) ?? '');
+    return trim(mb_substr($collapsed, 0, self::MAX_QUERY_LENGTH));
+  }
+
+  /**
+   * Checks whether the database backend can match the input at all.
+   *
+   * The server indexes words of three or more characters. Input without such
+   * a run of letters or digits ("a", "%", "_") matched nothing useful and cost
+   * more than no search at all. The UI proxy applies the same rule; this
+   * covers direct API-key clients.
+   *
+   * @param string $query_string
+   *   The normalized search input.
+   *
+   * @return bool
+   *   TRUE when the input holds at least three letters or digits in a row.
+   */
+  public static function isSearchableQuery(string $query_string): bool {
+    return preg_match('/[\p{L}\p{N}]{3,}/u', $query_string) === 1;
+  }
+
+  /**
+   * Returns the input as a request ID candidate for an exact lookup.
+   *
+   * Request IDs are configurable (prefix, delimiter, date format), so any
+   * single token with a digit counts; the caller checks that the ID exists.
+   *
+   * @param string $query_string
+   *   The normalized search input.
+   *
+   * @return string|null
+   *   The request ID candidate, or NULL for general text.
+   */
+  public function getExactRequestIdCandidate(string $query_string): ?string {
+    $request_id = $this->normalizeRequestIdQuery($query_string);
+    return $request_id !== NULL && preg_match('/\d/', $request_id) === 1 ? $request_id : NULL;
+  }
+
+  /**
+   * Counts the requests with this exact ID that the list query can return.
+   *
+   * The probe is a copy of the list query, so it carries the same access,
+   * jurisdiction and workspace scope: an ID the caller cannot list looks
+   * exactly like a missing one.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The list query.
+   * @param string $request_id
+   *   The request ID to look up.
+   *
+   * @return int
+   *   The number of visible requests with that ID.
+   */
+  public function countVisibleRequestId(QueryInterface $query, string $request_id): int {
+    $probe = clone $query;
+    return (int) $probe->condition('request_id', $request_id)->count()->execute();
   }
 
   /**
@@ -153,8 +235,8 @@ class SearchApiQueryService {
   public function search(string $query_string, AccountInterface $user, array $options = []): array {
     $this->lastSearchFailed = FALSE;
 
-    // Check minimum query length.
-    if (strlen(trim($query_string)) < self::MIN_QUERY_LENGTH) {
+    $query_string = self::normalizeQuery($query_string);
+    if (!self::isSearchableQuery($query_string)) {
       return [];
     }
 
@@ -210,8 +292,11 @@ class SearchApiQueryService {
       // query / result processing returns the correct translation.
       // If strict language filtering is needed in the future, it can be enabled
       // via an option like 'filter_by_language' => TRUE.
-      // Execute the query.
-      $results = $query->execute();
+      // No caller renders excerpts, and building them loads every hit: on the
+      // largest tenant 1,000 hits cost 124 MB and doubled the search time.
+      $query->addTag('search_api_skip_processor_highlight');
+
+      $results = $this->executeWithStatementTimeout(static fn () => $query->execute());
 
       // Extract node IDs from results.
       $nids = [];
@@ -226,8 +311,9 @@ class SearchApiQueryService {
       // Remove duplicates (can occur with multi-language content).
       $nids = array_unique($nids);
 
-      $this->logger->debug('Search API query "@query" returned @count results.', [
-        '@query' => $query_string,
+      // Search input can hold personal data; log its length, never the text.
+      $this->logger->debug('Search API query (@length characters) returned @count results.', [
+        '@length' => mb_strlen($query_string),
         '@count' => count($nids),
       ]);
 
@@ -235,10 +321,73 @@ class SearchApiQueryService {
     }
     catch (\Exception $e) {
       $this->lastSearchFailed = TRUE;
-      $this->logger->error('Search API query failed: @message', [
-        '@message' => $e->getMessage(),
+      // Database exception messages carry the SQL with the search words.
+      $this->logger->error('Search API query failed: @class (code @code).', [
+        '@class' => get_class($e),
+        '@code' => $e->getCode(),
       ]);
       return [];
+    }
+  }
+
+  /**
+   * Runs a Search API query under the statement timeout.
+   *
+   * A statement over the limit is aborted by the server and surfaces as an
+   * exception, which search() treats as a failed search.
+   *
+   * @param callable $execute
+   *   Runs the query and returns its result set.
+   *
+   * @return mixed
+   *   The result of $execute.
+   */
+  protected function executeWithStatementTimeout(callable $execute): mixed {
+    $restore = $this->applyStatementTimeout();
+    try {
+      return $execute();
+    }
+    finally {
+      if ($restore !== NULL) {
+        try {
+          $this->database?->query($restore);
+        }
+        catch (\Exception $e) {
+          $this->logger->warning('Could not restore the database statement timeout: @class.', [
+            '@class' => get_class($e),
+          ]);
+        }
+      }
+    }
+  }
+
+  /**
+   * Sets the session statement timeout for MariaDB or MySQL.
+   *
+   * @return string|null
+   *   The statement that restores the previous timeout, or NULL when no
+   *   timeout was set (no connection, other database, or an error).
+   */
+  protected function applyStatementTimeout(): ?string {
+    if ($this->database === NULL || $this->database->databaseType() !== 'mysql') {
+      return NULL;
+    }
+    try {
+      $is_mariadb = method_exists($this->database, 'isMariaDb') && $this->database->isMariaDb();
+      // MariaDB counts seconds for every statement, MySQL milliseconds for
+      // SELECT statements.
+      [$variable, $value] = $is_mariadb
+        ? ['max_statement_time', (float) self::STATEMENT_TIMEOUT_SECONDS]
+        : ['max_execution_time', self::STATEMENT_TIMEOUT_SECONDS * 1000];
+      $previous = $this->database->query('SELECT @@SESSION.' . $variable)->fetchField();
+      $this->database->query('SET SESSION ' . $variable . ' = ' . $value);
+      return 'SET SESSION ' . $variable . ' = ' . ($is_mariadb ? (float) $previous : (int) $previous);
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Could not set the database statement timeout: @class.', [
+        '@class' => get_class($e),
+      ]);
+      return NULL;
     }
   }
 

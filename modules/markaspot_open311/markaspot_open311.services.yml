@@ -46,7 +46,7 @@ services:
 
   markaspot_open311.search_api_query:
     class: Drupal\markaspot_open311\Service\SearchApiQueryService
-    arguments: ['@entity_type.manager', '@module_handler', '@config.factory', '@logger.channel.markaspot_open311']
+    arguments: ['@entity_type.manager', '@module_handler', '@config.factory', '@logger.channel.markaspot_open311', '@database']
 
   logger.channel.markaspot_open311:
     parent: logger.channel_base
