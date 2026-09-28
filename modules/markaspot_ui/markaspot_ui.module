@@ -5,8 +5,10 @@
  * Provides a toolbar integration for Mark-a-Spot modules.
  */
 
+use Drupal\Core\Asset\AttachedAssetsInterface;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Extension\ThemeSettingsProvider;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Url;
@@ -167,5 +169,71 @@ function markaspot_ui_menu_local_tasks_alter(&$data, $route_name) {
 function markaspot_ui_node_view(array &$build, $node, $display, $view_mode) {
   if ($node->bundle() == 'service_request' && $view_mode == 'full') {
     $build['#attached']['library'][] = 'markaspot_ui/node_view';
+  }
+}
+
+/**
+ * Implements hook_js_settings_alter().
+ *
+ * Gin Login builds absolute URLs from the current request host, and the login
+ * page does not vary by host. When an internal request (health check, Nuxt
+ * server via the nginx container name) renders it first, the cached page sends
+ * every visitor's browser to a host such as http://127.0.0.1:8080. This alter
+ * runs after all page attachments, so it needs no module ordering.
+ */
+function markaspot_ui_js_settings_alter(array &$settings, AttachedAssetsInterface $assets): void {
+  if (!isset($settings['gin_login']['path'])) {
+    return;
+  }
+  $path = \Drupal::service('extension.list.module')->getPath('gin_login');
+  $settings['gin_login']['path'] = base_path() . $path;
+}
+
+/**
+ * Implements hook_theme_registry_alter().
+ *
+ * Gin Login pins its preprocess functions on the login page hooks, so a plain
+ * preprocess hook would never run there. Append ours right after it.
+ */
+function markaspot_ui_theme_registry_alter(array &$theme_registry): void {
+  foreach ($theme_registry as &$info) {
+    $functions = $info['preprocess functions'] ?? [];
+    $position = array_search('gin_login_preprocess_ginlogin', $functions, TRUE);
+    if ($position === FALSE || in_array('markaspot_ui_preprocess_gin_login_icon', $functions, TRUE)) {
+      continue;
+    }
+    array_splice($functions, $position + 1, 0, ['markaspot_ui_preprocess_gin_login_icon']);
+    $info['preprocess functions'] = $functions;
+  }
+}
+
+/**
+ * Preprocess callback for the Gin Login pages: a root-relative logo URL.
+ *
+ * Mirrors the source selection of gin_login_preprocess_ginlogin(), which uses
+ * generateAbsoluteString() and so embeds the request host.
+ */
+function markaspot_ui_preprocess_gin_login_icon(array &$variables): void {
+  if (empty($variables['icon_path'])) {
+    return;
+  }
+  $theme = \Drupal::theme()->getActiveTheme()->getName();
+  $theme_settings = \Drupal::service(ThemeSettingsProvider::class);
+  $source = NULL;
+  $use_default = $theme_settings->getSetting('icon_default', $theme);
+  $theme_icon = $theme_settings->getSetting('icon_path', $theme);
+  if ($use_default === NULL) {
+    $use_default = $theme_settings->getSetting('logo.use_default', $theme);
+    $theme_icon = $theme_settings->getSetting('logo.path', $theme);
+  }
+  if (!$use_default && !empty($theme_icon)) {
+    $source = $theme_icon;
+  }
+  $logo = \Drupal::config('gin_login.settings')->get('logo');
+  if (isset($logo['use_default']) && $logo['use_default'] == '0' && !empty($logo['path'])) {
+    $source = $logo['path'];
+  }
+  if ($source !== NULL) {
+    $variables['icon_path'] = \Drupal::service('file_url_generator')->generateString($source);
   }
 }
