@@ -8,6 +8,7 @@
 use Drupal\locale\Gettext;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
+use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\user\Entity\Role;
 
 /**
@@ -1398,4 +1399,54 @@ function _service_request_load_markaspot_profile_updates(): void {
   if (is_readable($profile_install)) {
     require_once $profile_install;
   }
+}
+
+/**
+ * Remove the New York placeholder default from the report location field.
+ *
+ * The field shipped 40.7370610/-73.935242 as its default, so backend forms
+ * opened new reports in New York. The widgets now fall back to the tenant's
+ * map center. Only the exact placeholder is removed, in the field and in its
+ * language overrides; real tenant defaults stay.
+ */
+function service_request_update_11022(): string {
+  $name = 'field.field.node.service_request.field_geolocation';
+  // Numeric comparison: a re-saved field may store 40.737061 or a float.
+  $is_placeholder = static function (mixed $default): bool {
+    $item = is_array($default) ? ($default[0] ?? NULL) : NULL;
+    return is_array($item)
+      && is_numeric($item['lat'] ?? NULL) && is_numeric($item['lng'] ?? NULL)
+      && abs((float) $item['lat'] - 40.737061) < 0.000001
+      && abs((float) $item['lng'] + 73.935242) < 0.000001;
+  };
+
+  $cleared = [];
+  // The entity API also resets the cached field definitions.
+  $field = FieldConfig::load('node.service_request.field_geolocation');
+  if ($field && $is_placeholder($field->getDefaultValueLiteral())) {
+    $field->setDefaultValue([])->save();
+    $cleared[] = 'field';
+  }
+
+  $language_manager = \Drupal::languageManager();
+  if ($language_manager instanceof ConfigurableLanguageManagerInterface) {
+    foreach ($language_manager->getLanguages() as $langcode => $language) {
+      $override = $language_manager->getLanguageConfigOverride($langcode, $name);
+      if ($override->isNew() || !$is_placeholder($override->get('default_value'))) {
+        continue;
+      }
+      $override->clear('default_value');
+      if ($override->get() === []) {
+        $override->delete();
+      }
+      else {
+        $override->save();
+      }
+      $cleared[] = $langcode;
+    }
+  }
+
+  return $cleared
+    ? 'Removed the New York placeholder location default from: ' . implode(', ', $cleared) . '.'
+    : 'No New York placeholder location default found.';
 }

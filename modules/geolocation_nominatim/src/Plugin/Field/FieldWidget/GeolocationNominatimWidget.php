@@ -7,6 +7,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\WidgetBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\markaspot\Geolocation\TenantMapCenter;
 
 /**
  * Plugin implementation of the 'geolocation_nominatim_widget' widget.
@@ -265,6 +266,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       $label = $items->getEntity()->label();
     }
 
+    $center = $this->initialCenter($element);
     $element['#attached'] = [
       'library' => [
         'geolocation_nominatim/leaflet',
@@ -278,8 +280,8 @@ class GeolocationNominatimWidget extends WidgetBase {
           'widgetMaps' => [
             $uniq_id => [
               'id' => $uniq_id,
-              'centerLat' => !empty($element['lat']['#default_value']) ? $element['lat']['#default_value'] : $this->getSetting('center_lat'),
-              'centerLng' => !empty($element['lng']['#default_value']) ? $element['lng']['#default_value'] : $this->getSetting('center_lng'),
+              'centerLat' => $center[0],
+              'centerLng' => $center[1],
               'zoom' => $this->getSetting('zoom'),
               'lat' => (float) $element['lat']['#default_value'],
               'lng' => (float) $element['lng']['#default_value'],
@@ -314,6 +316,24 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#title' => $element['#title'],
     ];
     return $element;
+  }
+
+  /**
+   * Returns the initial map center: field value, widget setting, tenant.
+   *
+   * Without a field default and a widget center the map would open at 0/0,
+   * so the tenant's own map center fills the gap.
+   */
+  protected function initialCenter(array $element): array {
+    if (!empty($element['lat']['#default_value']) && !empty($element['lng']['#default_value'])) {
+      return [$element['lat']['#default_value'], $element['lng']['#default_value']];
+    }
+    $lat = $this->getSetting('center_lat');
+    $lng = $this->getSetting('center_lng');
+    if (!empty((float) $lat) && !empty((float) $lng)) {
+      return [$lat, $lng];
+    }
+    return TenantMapCenter::resolve() ?? [$lat, $lng];
   }
 
 }

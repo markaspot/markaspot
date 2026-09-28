@@ -22,6 +22,11 @@
     });
     const map = Drupal.geolocationMapboxWidget.map;
 
+    // Start on the widget or tenant center; a field value below takes over.
+    if (Number(mapSettings.centerLat) || Number(mapSettings.centerLng)) {
+      map.setView([mapSettings.centerLat, mapSettings.centerLng], mapSettings.zoom);
+    }
+
     let tileLayer;
     if (mapSettings.mapboxStyle !== "") {
       tileLayer = L.maplibreGL({

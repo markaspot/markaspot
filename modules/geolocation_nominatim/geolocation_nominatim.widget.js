@@ -16,7 +16,7 @@
       dragging: mapSettings.dragging,
       zoomControl: mapSettings.zoomControl,
       tab: mapSettings.zoomControl
-    }).setView([mapSettings.centerLat, mapSettings.centerLng], 14);
+    }).setView([Number(mapSettings.centerLat) || 0, Number(mapSettings.centerLng) || 0], 14);
 
     const map = Drupal.geolocationNominatimWidget.map;
 

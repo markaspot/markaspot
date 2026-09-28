@@ -14,14 +14,7 @@ label: Location
 description: '<span id="locateMe">Use the GPS sensor<span> of your device to show your location on the map or search for a certain address.'
 required: false
 translatable: false
-default_value:
-  -
-    lat: '40.7370610'
-    lng: '-73.935242'
-    lat_sin: null
-    lat_cos: null
-    lng_rad: null
-    data: null
+default_value: {  }
 default_value_callback: ''
 settings: {  }
 field_type: geolocation
