@@ -723,7 +723,7 @@ class MarkASpotSettingsController extends ControllerBase {
       }
 
       // Add operator data for legal pages (Impressum, Privacy).
-      // TMG §5 requires this data to be publicly accessible.
+      // § 5 DDG requires this data to be publicly accessible.
       $operator = [];
       if ($group->hasField('field_platform_name') && !$group->get('field_platform_name')->isEmpty()) {
         $operator['name'] = $group->get('field_platform_name')->value;
