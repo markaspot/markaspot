@@ -93,7 +93,7 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
     $this->installConfig(['system', 'user', 'field', 'filter', 'group', 'language']);
 
     // Add German so syncGroup() can create the 'de' translation. Tests
-    // exercise the de template path because it carries the TMG §5 wording
+    // exercise the de template path because it carries the § 5 DDG wording
     // we actually validate against.
     ConfigurableLanguage::createFromLangcode('de')->save();
 
@@ -220,7 +220,7 @@ class LegalNoticeGeneratorTest extends KernelTestBase {
     $html = $this->generator->generateForGroup($this->group, 'de');
 
     $this->assertStringContainsString('Impressum', $html);
-    $this->assertStringContainsString('Angaben gemäß § 5 TMG', $html);
+    $this->assertStringContainsString('Angaben gemäß § 5 DDG', $html);
     $this->assertStringContainsString('Civic Patches GmbH', $html);
     $this->assertStringContainsString('Musterstraße 1', $html);
     $this->assertStringContainsString('c/o Beispiel AG', $html);

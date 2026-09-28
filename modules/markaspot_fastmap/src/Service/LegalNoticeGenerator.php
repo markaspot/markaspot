@@ -15,7 +15,7 @@ use Drupal\group\Entity\GroupInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Generates TMG §5 conforming Impressum content from operator data.
+ * Generates § 5 DDG conforming Impressum content from operator data.
  *
  * Renders per-locale Twig templates under templates/legal-notice/.
  * Writes the result to field_legal_notice (text_long, translatable). This
