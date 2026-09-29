@@ -2,9 +2,15 @@ services:
   markaspot_search_meilisearch.search_restriction:
     class: Drupal\markaspot_search_meilisearch\SearchRestriction
 
+  markaspot_search_meilisearch.search_restriction_subscriber:
+    class: Drupal\markaspot_search_meilisearch\EventSubscriber\SearchRestrictionSubscriber
+    arguments: ['@markaspot_search_meilisearch.search_restriction', '@current_user']
+    tags:
+      - { name: event_subscriber }
+
   markaspot_search_meilisearch.index_settings:
     class: Drupal\markaspot_search_meilisearch\IndexSettings
-    arguments: ['@search_api_meilisearch.api', '@logger.channel.markaspot_search_meilisearch']
+    arguments: ['@search_api_meilisearch.api', '@state', '@logger.channel.markaspot_search_meilisearch']
 
   logger.channel.markaspot_search_meilisearch:
     parent: logger.channel_base

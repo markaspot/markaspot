@@ -152,6 +152,9 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
   /**
    * Maximum Search API candidate IDs loaded before EntityQuery pagination.
+   *
+   * On Meilisearch the index's maxTotalHits must be at least this value
+   * (\Drupal\markaspot_search_meilisearch\IndexSettings::MIN_MAX_TOTAL_HITS).
    */
   protected const SEARCH_API_CANDIDATE_LIMIT = 10000;
 

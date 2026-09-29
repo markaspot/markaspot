@@ -204,7 +204,53 @@ class SearchApiQueryService {
     }
 
     $index = $this->getIndex();
-    return $index !== NULL && $index->status();
+    if ($index === NULL || !$index->status()) {
+      return FALSE;
+    }
+
+    $server = $index->getServerInstanceIfAvailable();
+    if ($server?->getBackendId() === 'search_api_meilisearch') {
+      // The contributed Meilisearch backend searches every text field for
+      // every account; only markaspot_search_meilisearch restricts it.
+      // Without it an anonymous search would find reports by e-mail address.
+      if (!$this->moduleHandler->moduleExists('markaspot_search_meilisearch')) {
+        $this->logger->error('Search index @index runs on Meilisearch without markaspot_search_meilisearch; full-text search is disabled.', [
+          '@index' => self::INDEX_ID,
+        ]);
+        return FALSE;
+      }
+      // An unreachable server would otherwise fail inside the backend, which
+      // reports errors through the messenger and so opens anonymous sessions.
+      if (!$server->isAvailable()) {
+        return FALSE;
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Returns the full-text fields an account may search.
+   *
+   * Contact fields are searchable only for accounts that may see them, so a
+   * search cannot tell whether an address or e-mail occurs in a report.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The searching account.
+   *
+   * @return string[]
+   *   Search API field IDs of the service_requests index.
+   */
+  public static function fulltextFieldsFor(AccountInterface $account): array {
+    $fields = self::PUBLIC_FULLTEXT_FIELDS;
+    if ($account->hasPermission('view field_e_mail')) {
+      $fields[] = 'field_e_mail';
+    }
+    if ($account->hasPermission('view field_address')) {
+      $fields[] = 'address_line1';
+      $fields[] = 'postal_code';
+    }
+    return $fields;
   }
 
   /**
@@ -266,15 +312,7 @@ class SearchApiQueryService {
       // Create the Search API query.
       $query = $index->query();
 
-      $fulltext_fields = self::PUBLIC_FULLTEXT_FIELDS;
-      if ($user->hasPermission('view field_e_mail')) {
-        $fulltext_fields[] = 'field_e_mail';
-      }
-      if ($user->hasPermission('view field_address')) {
-        $fulltext_fields[] = 'address_line1';
-        $fulltext_fields[] = 'postal_code';
-      }
-      $query->setFulltextFields($fulltext_fields);
+      $query->setFulltextFields(self::fulltextFieldsFor($user));
 
       // Set the search keys (the search text).
       $query->keys($query_string);

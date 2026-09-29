@@ -15,6 +15,7 @@ use Drupal\mysql\Driver\Database\mysql\Connection as MysqlConnection;
 use Drupal\search_api\Entity\Index;
 use Drupal\search_api\Query\QueryInterface as SearchApiQueryInterface;
 use Drupal\search_api\Query\ResultSetInterface;
+use Drupal\search_api\ServerInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
@@ -735,6 +736,89 @@ class SearchApiQueryServiceTest extends UnitTestCase {
       return $statement;
     });
     return $database;
+  }
+
+  /**
+   * Returns the service with an enabled index on a server of the backend.
+   */
+  protected function serviceOnBackend(string $backend_id, bool $server_available = TRUE): SearchApiQueryService {
+    $server = $this->createMock(ServerInterface::class);
+    $server->method('getBackendId')->willReturn($backend_id);
+    $server->method('isAvailable')->willReturn($server_available);
+    $index = $this->createMock(Index::class);
+    $index->method('status')->willReturn(TRUE);
+    $index->method('getServerInstanceIfAvailable')->willReturn($server);
+
+    return new class($this->entityTypeManager, $this->moduleHandler, $this->configFactory, $this->logger, $index) extends SearchApiQueryService {
+
+      /**
+       * Constructs the service with a fixed index.
+       */
+      public function __construct($entity_type_manager, $module_handler, $config_factory, $logger, protected Index $fixedIndex) {
+        parent::__construct($entity_type_manager, $module_handler, $config_factory, $logger);
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function getIndex(): ?Index {
+        return $this->fixedIndex;
+      }
+
+    };
+  }
+
+  /**
+   * Meilisearch without the hardening module would search contact fields.
+   *
+   * @covers ::isAvailable
+   */
+  public function testMeilisearchWithoutHardeningModuleIsUnavailable(): void {
+    $this->moduleHandler->method('moduleExists')->willReturnMap([
+      ['search_api', TRUE],
+      ['markaspot_search_meilisearch', FALSE],
+    ]);
+    $this->logger->expects($this->once())->method('error');
+
+    $this->assertFalse($this->serviceOnBackend('search_api_meilisearch')->isAvailable());
+  }
+
+  /**
+   * An unreachable Meilisearch takes the fallback before the backend fails.
+   *
+   * @covers ::isAvailable
+   */
+  public function testUnreachableMeilisearchIsUnavailable(): void {
+    $this->moduleHandler->method('moduleExists')->willReturn(TRUE);
+
+    $this->assertFalse($this->serviceOnBackend('search_api_meilisearch', FALSE)->isAvailable());
+  }
+
+  /**
+   * Meilisearch with the hardening module and the database backend work.
+   *
+   * @covers ::isAvailable
+   */
+  public function testHardenedMeilisearchAndDatabaseAreAvailable(): void {
+    $this->moduleHandler->method('moduleExists')->willReturn(TRUE);
+
+    $this->assertTrue($this->serviceOnBackend('search_api_meilisearch')->isAvailable());
+    $this->assertTrue($this->serviceOnBackend('search_api_db', FALSE)->isAvailable());
+  }
+
+  /**
+   * Contact fields are searchable only for accounts that may see them.
+   *
+   * @covers ::fulltextFieldsFor
+   */
+  public function testFulltextFieldsFor(): void {
+    $anonymous = $this->createMock(AccountInterface::class);
+    $anonymous->method('hasPermission')->willReturn(FALSE);
+    $this->assertSame(['title', 'body', 'request_id'], SearchApiQueryService::fulltextFieldsFor($anonymous));
+
+    $staff = $this->createMock(AccountInterface::class);
+    $staff->method('hasPermission')->willReturn(TRUE);
+    $this->assertSame(['title', 'body', 'request_id', 'field_e_mail', 'address_line1', 'postal_code'], SearchApiQueryService::fulltextFieldsFor($staff));
   }
 
 }

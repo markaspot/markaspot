@@ -1,0 +1,62 @@
+<?php
+
+/**
+ * @file
+ * Status report checks for the Meilisearch search hardening.
+ */
+
+use Drupal\markaspot_search_meilisearch\IndexSettings;
+use Drupal\search_api\Entity\Index;
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_search_meilisearch_requirements(string $phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
+  $requirements = [];
+
+  // Both submodules query Meilisearch without the search restriction;
+  // autocomplete even without access filters.
+  foreach (['search_api_meilisearch_autocomplete', 'search_api_meilisearch_facets'] as $module) {
+    if (\Drupal::moduleHandler()->moduleExists($module)) {
+      $requirements['markaspot_search_meilisearch_' . $module] = [
+        'title' => t('Meilisearch search hardening'),
+        'value' => t('@module is enabled', ['@module' => $module]),
+        'description' => t('@module bypasses the per-account search restriction. Uninstall it.', ['@module' => $module]),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+  }
+
+  /** @var \Drupal\markaspot_search_meilisearch\IndexSettings $settings */
+  $settings = \Drupal::service('markaspot_search_meilisearch.index_settings');
+  foreach (Index::loadMultiple() as $index) {
+    if (!IndexSettings::isMeilisearch($index) || !$index->status()) {
+      continue;
+    }
+    try {
+      $missing = $settings->check($index);
+    }
+    catch (\Exception $e) {
+      $missing = ['unreachable'];
+    }
+    $ok = $missing === [] && IndexSettings::isApplied(\Drupal::state(), $index->id());
+    $requirements['markaspot_search_meilisearch_' . $index->id()] = [
+      'title' => t('Meilisearch index @index', ['@index' => $index->id()]),
+      'value' => $ok ? t('Settings applied') : t('Settings missing: @missing', ['@missing' => implode(', ', $missing ?: ['not confirmed'])]),
+      'description' => $ok ? '' : t('Searches on this index are refused or unrestricted in matching. Save the index to reapply the settings.'),
+      'severity' => $ok ? REQUIREMENT_OK : REQUIREMENT_ERROR,
+    ];
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_search_meilisearch_uninstall(): void {
+  \Drupal::state()->delete(IndexSettings::STATE_KEY);
+}

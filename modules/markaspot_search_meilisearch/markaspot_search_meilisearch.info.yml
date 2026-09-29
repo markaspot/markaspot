@@ -1,7 +1,8 @@
 name: Mark-a-Spot Search Meilisearch
 type: module
-description: Hardens the Meilisearch Search API backend for service requests (per-user search fields, fail-closed filters, candidate limit).
+description: Hardens the Meilisearch Search API backend for service requests (per-account search fields, fail-closed filters, candidate limit, request timeout).
 core_version_requirement: ^10 || ^11
 package: Mark-a-Spot
 dependencies:
+  - markaspot_open311:markaspot_open311
   - search_api_meilisearch:search_api_meilisearch

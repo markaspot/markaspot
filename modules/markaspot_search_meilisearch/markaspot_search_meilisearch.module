@@ -5,18 +5,7 @@
  * Hardens the Meilisearch Search API backend for service request search.
  */
 
-use Drupal\markaspot_search_meilisearch\IndexSettings;
 use Drupal\search_api\IndexInterface;
-use Drupal\search_api\Query\QueryInterface;
-
-/**
- * Implements hook_search_api_query_alter().
- */
-function markaspot_search_meilisearch_search_api_query_alter(QueryInterface $query): void {
-  if (IndexSettings::isMeilisearch($query->getIndex())) {
-    \Drupal::service('markaspot_search_meilisearch.search_restriction')->record($query);
-  }
-}
 
 /**
  * Implements hook_ENTITY_TYPE_insert() for search_api_index.
