@@ -1,0 +1,18 @@
+services:
+  markaspot_search_meilisearch.search_restriction:
+    class: Drupal\markaspot_search_meilisearch\SearchRestriction
+
+  markaspot_search_meilisearch.index_settings:
+    class: Drupal\markaspot_search_meilisearch\IndexSettings
+    arguments: ['@search_api_meilisearch.api', '@logger.channel.markaspot_search_meilisearch']
+
+  logger.channel.markaspot_search_meilisearch:
+    parent: logger.channel_base
+    arguments: ['markaspot_search_meilisearch']
+
+  markaspot_search_meilisearch.fail_closed_condition_parser:
+    class: Drupal\markaspot_search_meilisearch\Parser\FailClosedConditionParser
+    tags:
+      # Lowest priority: only reached when no contributed parser supports the
+      # condition, which the filter parser would otherwise drop silently.
+      - { name: meilisearch_condition_parser, priority: -1000 }

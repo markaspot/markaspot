@@ -69,6 +69,7 @@
         "drupal/migrate_tools": "^6.1",
         "drupal/services_api_key_auth": "dev-4.x",
         "drupal/search_api": "^1.5",
+        "drupal/search_api_meilisearch": "^2.1",
         "drupal/views_bulk_operations": "^4.4",
         "drupal/views_bulk_edit": "^3.0",
         "drupal/better_exposed_filters": "^7.1",
