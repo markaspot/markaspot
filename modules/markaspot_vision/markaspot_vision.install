@@ -388,5 +388,13 @@ function markaspot_vision_requirements($phase): array {
       'description' => t('Keeping originals is switched on, but the site has no private file system. Set file_private_path; until then photos are blurred without keeping the original.'),
     ];
   }
+  elseif ($config->get('retain_originals') && !\Drupal::service('markaspot_vision.original_image_store')->isWritable()) {
+    $requirements['markaspot_vision_originals'] = [
+      'title' => t('Unblurred originals for staff'),
+      'value' => t('Not kept'),
+      'severity' => REQUIREMENT_WARNING,
+      'description' => t('Keeping originals is switched on, but the web server cannot write to the private file system. Give the PHP user write access to it; until then photos are blurred without keeping the original.'),
+    ];
+  }
   return $requirements;
 }
