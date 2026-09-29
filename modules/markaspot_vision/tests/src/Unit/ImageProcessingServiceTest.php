@@ -719,4 +719,95 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertSame('https://canonical.example/blur', $url);
   }
 
+  /**
+   * Builds a service whose HTTP calls all answer with the given response.
+   *
+   * @param \GuzzleHttp\Psr7\Response $response
+   *   The answer for every request.
+   * @param string|null $sentBody
+   *   Receives the body of the last request.
+   * @param array $config
+   *   Config overrides.
+   */
+  private function createAnsweringService(Response $response, ?string &$sentBody, array $config = []): ImageProcessingService {
+    $handler = function (RequestInterface $request) use ($response, &$sentBody) {
+      $sentBody = (string) $request->getBody();
+      return new FulfilledPromise($response);
+    };
+    return $this->createService($config, NULL, new Client(['handler' => $handler]));
+  }
+
+  /**
+   * Blur enabled against a test endpoint.
+   */
+  private const BLUR_ON = [
+    'enable_blur_preprocessing' => TRUE,
+    'blur_service_url' => 'http://blur.test/blur',
+  ];
+
+  /**
+   * A normal blur request stays what older blur services expect.
+   */
+  public function testNormalBlurRequestCarriesNoModeField(): void {
+    $service = $this->createAnsweringService(new Response(200, ['X-Image-Blurred' => 'false'], 'bytes'), $sent, self::BLUR_ON);
+
+    $result = $service->blurSensitiveAreas('image-bytes', 'image/jpeg');
+
+    $this->assertStringNotContainsString('name="mode"', $sent);
+    $this->assertSame(ImageProcessingService::BLUR_MODE_NORMAL, $result['mode']);
+  }
+
+  /**
+   * An escalation asks for its mode and trusts only a confirming service.
+   */
+  public function testEscalatedBlurSendsItsModeAndReportsIt(): void {
+    $service = $this->createAnsweringService(new Response(200, [
+      'X-Image-Blurred' => 'true',
+      'X-Blur-Mode' => 'strong',
+      'X-Detections-Text' => '3',
+    ], 'strong-bytes'), $sent, self::BLUR_ON);
+
+    $result = $service->blurSensitiveAreas('image-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_STRONG);
+
+    $this->assertMatchesRegularExpression('/name="mode"\r\n(?:[^\r\n]+\r\n)*\r\nstrong\r\n/', $sent);
+    $this->assertSame('strong-bytes', $result['contents']);
+    $this->assertTrue($result['blurred']);
+    $this->assertSame(ImageProcessingService::BLUR_MODE_STRONG, $result['mode']);
+  }
+
+  /**
+   * An older blur service that ignores the mode must not pass as escalated.
+   */
+  public function testEscalatedBlurFailsWhenTheServiceIgnoresTheMode(): void {
+    $service = $this->createAnsweringService(new Response(200, ['X-Image-Blurred' => 'true'], 'normal-bytes'), $sent, self::BLUR_ON);
+
+    $this->expectException(\RuntimeException::class);
+    $service->blurSensitiveAreas('image-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_FULL);
+  }
+
+  /**
+   * The privacy re-check returns the model's verdict on the escalated image.
+   */
+  public function testScreenPrivacyReturnsTheModelVerdict(): void {
+    $content = json_encode(['privacy_flag' => TRUE, 'privacy_issues' => ['readable name on a letter', ' ']]);
+    $service = $this->createAnsweringService(new Response(200, [], json_encode([
+      'choices' => [['message' => ['content' => $content], 'finish_reason' => 'stop']],
+    ])), $sent);
+
+    $this->assertSame(
+      ['privacy_flag' => TRUE, 'privacy_issues' => ['readable name on a letter']],
+      $service->screenPrivacy('escalated-bytes', 'image/jpeg'),
+    );
+    $this->assertStringContainsString(base64_encode('escalated-bytes'), $sent);
+  }
+
+  /**
+   * A re-check that cannot run reads as "still visible" to the caller.
+   */
+  public function testScreenPrivacyReturnsNullWhenTheCheckCannotRun(): void {
+    $service = $this->createAnsweringService(new Response(403, [], '{"error":{"message":"denied"}}'), $sent);
+
+    $this->assertNull($service->screenPrivacy('escalated-bytes', 'image/jpeg'));
+  }
+
 }

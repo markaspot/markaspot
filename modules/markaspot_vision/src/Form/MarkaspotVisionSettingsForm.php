@@ -128,6 +128,22 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['blur']['residual_privacy_handling'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Personal data the blur missed'),
+      '#options' => [
+        'hold' => $this->t('Hold the photo for moderation'),
+        'reblur' => $this->t('Blur more strongly: faces, plates and text first, the whole photo as a last resort'),
+      ],
+      '#default_value' => $config->get('residual_privacy_handling') ?? 'hold',
+      '#description' => $this->t('Applies when the AI still sees personal data (for example a name on a letter) after faces and plates were blurred. Holding keeps the photo unpublished until staff review it. Blurring more strongly publishes it without those details; staff only see them if originals are kept.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_blur_preprocessing"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     if ($this->imageProcessing->isBlurRequired()) {
       $form['blur']['blur_service_url']['#default_value'] = $this->t('Set by the hosting platform');
       $form['blur']['blur_service_url']['#disabled'] = TRUE;
@@ -335,6 +351,8 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       ->set('ai_model', $form_state->getValue('ai_model'))
       ->set('system_prompt', $form_state->getValue('system_prompt'))
       ->set('image_prompt', $form_state->getValue('image_prompt'));
+
+    $config->set('residual_privacy_handling', $form_state->getValue('residual_privacy_handling') === 'reblur' ? 'reblur' : 'hold');
 
     if (!$this->imageProcessing->isBlurRequired()) {
       $config->set('enable_blur_preprocessing', (bool) $form_state->getValue('enable_blur_preprocessing'));

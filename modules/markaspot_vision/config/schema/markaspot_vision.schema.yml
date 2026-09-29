@@ -44,6 +44,11 @@ markaspot_vision.settings:
     blur_service_url:
       type: string
       label: 'Blur Service URL'
+    residual_privacy_handling:
+      type: string
+      label: 'Handling of personal data the normal blur missed'
+      constraints:
+        Choice: [hold, reblur]
     max_tokens_param:
       type: string
       label: 'Token limit parameter'

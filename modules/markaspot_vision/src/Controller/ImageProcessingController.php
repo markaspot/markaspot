@@ -281,7 +281,7 @@ class ImageProcessingController extends ControllerBase {
       // non-compliant provider must not be able to smuggle them into the
       // persisted field_ai_metadata audit blob or the response; the
       // authoritative values are computed below.
-      unset($decoded_result['privacy_handled_by_blur'], $decoded_result['blurred_previews'], $decoded_result['privacy_flags']);
+      unset($decoded_result['privacy_handled_by_blur'], $decoded_result['blurred_previews'], $decoded_result['privacy_flags'], $decoded_result['privacy_reblurred']);
       $privacy_flag = !empty($decoded_result['privacy_flag']);
       $privacy_issues = $decoded_result['privacy_issues'] ?? [];
       if (!is_array($privacy_issues)) {
@@ -310,6 +310,16 @@ class ImageProcessingController extends ControllerBase {
           $blur_applied = TRUE;
           break;
         }
+      }
+
+      // Residual findings the normal blur left behind: sites that chose
+      // re-blurring over holding the photo escalate those media (strong, then
+      // full), so they can be published instead of waiting for moderation.
+      $reblurred = $this->isResidualReblurEnabled()
+        ? $this->escalateResidualPrivacy($media_entities, $media_uri_map, $blur_results, $skipped_uris, $privacy_issues, $unclassified_privacy_flag, $effective_privacy_flag)
+        : [];
+      if ($reblurred) {
+        $blur_applied = TRUE;
       }
 
       // Response-only blurred thumbnails (data URLs), keyed by media UUID, so
@@ -342,6 +352,13 @@ class ImageProcessingController extends ControllerBase {
             $privacy_held = $effective_privacy_flag || $media_was_skipped;
           }
 
+          // An escalated blur covered what the model still saw: nothing left
+          // to hold, and the audit trail is in the log, not in the issues
+          // field (any text there is a hold for the node hook).
+          if ($media_uri && isset($reblurred[$media_uri])) {
+            $media_privacy_issues = [];
+            $privacy_held = FALSE;
+          }
           if ($privacy_held && $unclassified_privacy_flag && empty($media_privacy_issues)) {
             $media_privacy_issues[] = $unclassified_privacy_issue;
           }
@@ -478,7 +495,7 @@ class ImageProcessingController extends ControllerBase {
       $response_result = $decoded_result;
       // Strip any echo of our own response-only keys in case a non-compliant
       // provider returns them; the authoritative values are computed here.
-      unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews'], $response_result['privacy_flags']);
+      unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews'], $response_result['privacy_flags'], $response_result['privacy_reblurred']);
       $all_analyzed_media_blurred = $blur_applied && !$batch_has_skipped_media;
       foreach ($media_entities as $media) {
         $media_uri = $media_uri_map[$media->id()] ?? NULL;
@@ -542,6 +559,24 @@ class ImageProcessingController extends ControllerBase {
         && !in_array(TRUE, $response_privacy_flags, TRUE)) {
         $response_privacy_flags = array_fill_keys(array_keys($response_privacy_flags), TRUE);
       }
+      // Escalated media are covered; the verdict clears once nothing else is
+      // flagged. privacy_reblurred tells the citizen why a photo looks
+      // coarser than their original.
+      if ($reblurred) {
+        $reblur_levels = [];
+        foreach ($media_entities as $media) {
+          $media_uri = $media_uri_map[$media->id()] ?? NULL;
+          if ($media_uri && isset($reblurred[$media_uri])) {
+            $response_privacy_flags[$media->uuid()] = FALSE;
+            $reblur_levels[$media->uuid()] = $reblurred[$media_uri];
+          }
+        }
+        if (!$batch_has_skipped_media && !in_array(TRUE, $response_privacy_flags, TRUE)) {
+          $response_result['privacy_flag'] = FALSE;
+          $response_result['privacy_issues'] = [];
+        }
+        $response_result['privacy_reblurred'] = $reblur_levels;
+      }
       $response_result['privacy_flags'] = $response_privacy_flags;
       // Blurred thumbnails (data URLs) so the citizen preview shows the
       // privacy-protected version. Only present when something was blurred.
@@ -574,6 +609,108 @@ class ImageProcessingController extends ControllerBase {
     }
 
     return 10;
+  }
+
+  /**
+   * Whether residual privacy findings are re-blurred instead of held.
+   */
+  protected function isResidualReblurEnabled(): bool {
+    return $this->visionConfigFactory
+      ->get('markaspot_vision.settings')
+      ->get('residual_privacy_handling') === 'reblur';
+  }
+
+  /**
+   * Re-blurs media that the normal blur left with a privacy finding.
+   *
+   * Strong mode first (eager detection plus text regions), re-checked by the
+   * model; full mode when the finding persists or the check cannot run.
+   * Every media the moderation predicate below would hold is escalated: the
+   * model's per-image attribution only scopes UI hints, never moderation.
+   * Media whose escalation fails stay held, so nothing is ever published
+   * less blurred than before.
+   *
+   * @param \Drupal\media\MediaInterface[] $media_entities
+   *   Analysed media, keyed by id.
+   * @param array $media_uri_map
+   *   File URI per media id.
+   * @param array $blur_results
+   *   Blur results per URI; escalated bytes replace 'contents'.
+   * @param array $skipped_uris
+   *   URIs the analysis skipped; they stay held.
+   * @param array $privacy_issues
+   *   The model's privacy issues for the batch.
+   * @param bool $unclassified_privacy_flag
+   *   Whether the model flagged privacy without naming an issue.
+   * @param bool $effective_privacy_flag
+   *   The batch verdict for media the normal blur did not touch.
+   *
+   * @return array
+   *   Applied blur mode ('strong' or 'full') keyed by file URI.
+   */
+  private function escalateResidualPrivacy(array $media_entities, array $media_uri_map, array &$blur_results, array $skipped_uris, array $privacy_issues, bool $unclassified_privacy_flag, bool $effective_privacy_flag): array {
+    $applied = [];
+    foreach ($media_entities as $media) {
+      $uri = $media_uri_map[$media->id()] ?? NULL;
+      if (!$uri || isset($skipped_uris[$uri]) || !isset($blur_results[$uri]['source'])) {
+        continue;
+      }
+      $held = !empty($blur_results[$uri]['blurred'])
+        ? (!empty($this->filterBlurHandledPrivacyIssues($privacy_issues)) || $unclassified_privacy_flag)
+        : $effective_privacy_flag;
+      if (!$held) {
+        continue;
+      }
+
+      $source = $blur_results[$uri]['source'];
+      $mime = $blur_results[$uri]['mime'] ?? 'image/jpeg';
+      $escalated = NULL;
+      $mode = NULL;
+      try {
+        $strong = $this->imageProcessingService->blurSensitiveAreas($source, $mime, ImageProcessingService::BLUR_MODE_STRONG);
+        // A strong pass that found nothing to blur changed nothing: go on.
+        if (!empty($strong['blurred'])) {
+          $check = $this->imageProcessingService->screenPrivacy($strong['contents'], $mime);
+          if ($check !== NULL && !$check['privacy_flag']) {
+            $escalated = $strong['contents'];
+            $mode = ImageProcessingService::BLUR_MODE_STRONG;
+          }
+        }
+      }
+      catch (\Exception $e) {
+        $this->logger->warning('Strong blur failed for media @id; trying the full blur: @message', [
+          '@id' => $media->id(),
+          '@message' => mb_substr($e->getMessage(), 0, 200),
+        ]);
+      }
+      if ($escalated === NULL) {
+        try {
+          $full = $this->imageProcessingService->blurSensitiveAreas($source, $mime, ImageProcessingService::BLUR_MODE_FULL);
+          if (!empty($full['blurred'])) {
+            $escalated = $full['contents'];
+            $mode = ImageProcessingService::BLUR_MODE_FULL;
+          }
+        }
+        catch (\Exception $e) {
+          $this->logger->error('Full blur failed for media @id; the photo stays held for moderation: @message', [
+            '@id' => $media->id(),
+            '@message' => mb_substr($e->getMessage(), 0, 200),
+          ]);
+        }
+      }
+      if ($escalated === NULL) {
+        continue;
+      }
+
+      $blur_results[$uri]['contents'] = $escalated;
+      $blur_results[$uri]['blurred'] = TRUE;
+      $applied[$uri] = $mode;
+      $this->logger->notice('GDPR audit: residual privacy finding on media @id covered by the @mode blur.', [
+        '@id' => $media->id(),
+        '@mode' => $mode,
+      ]);
+    }
+    return $applied;
   }
 
   /**

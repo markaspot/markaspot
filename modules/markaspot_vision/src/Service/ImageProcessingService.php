@@ -51,6 +51,13 @@ class ImageProcessingService {
   protected const MAX_ORIGINAL_FALLBACK_BYTES = 4194304;
 
   /**
+   * Blur modes of the blur service, from the default to the last resort.
+   */
+  public const BLUR_MODE_NORMAL = 'normal';
+  public const BLUR_MODE_STRONG = 'strong';
+  public const BLUR_MODE_FULL = 'full';
+
+  /**
    * The HTTP client.
    *
    * @var \GuzzleHttp\ClientInterface
@@ -130,6 +137,12 @@ class ImageProcessingService {
    *   The raw image bytes.
    * @param string $mimeType
    *   The MIME type of the image (e.g., 'image/jpeg').
+   * @param string $mode
+   *   Either 'normal' (faces and plates), or an escalation after the vision
+   *   model still saw personal data: 'strong' (eager detection plus text
+   *   regions) or 'full' (the whole image). Escalations fail unless the
+   *   service confirms the mode, so an older service cannot silently blur
+   *   less.
    *
    * @return array
    *   Array with keys:
@@ -137,19 +150,24 @@ class ImageProcessingService {
    *   - 'blurred': Whether blurring was applied.
    *   - 'faces': Number of detected faces.
    *   - 'plates': Number of detected license plates.
+   *   - 'mode': The blur mode the service applied.
    */
-  public function blurSensitiveAreas(string $contents, string $mimeType): array {
+  public function blurSensitiveAreas(string $contents, string $mimeType, string $mode = self::BLUR_MODE_NORMAL): array {
     if (!class_exists(BlurPolicy::class)) {
       $this->getBlurMode();
       throw new \RuntimeException('Blur policy unavailable; refusing to forward images.');
     }
     $config = $this->configFactory->get('markaspot_vision.settings');
+    if (!in_array($mode, [self::BLUR_MODE_NORMAL, self::BLUR_MODE_STRONG, self::BLUR_MODE_FULL], TRUE)) {
+      throw new \InvalidArgumentException('Unknown blur mode.');
+    }
     $fallback = [
       'contents' => $contents,
       'blurred' => FALSE,
       'processed' => FALSE,
       'faces' => 0,
       'plates' => 0,
+      'mode' => self::BLUR_MODE_NORMAL,
     ];
 
     // Check if blur preprocessing is enabled.
@@ -189,6 +207,10 @@ class ImageProcessingService {
       'connect_timeout' => 5,
       'http_errors' => FALSE,
     ];
+    // Normal requests stay byte-identical to what older services expect.
+    if ($mode !== self::BLUR_MODE_NORMAL) {
+      $request_options['multipart'][] = ['name' => 'mode', 'contents' => $mode];
+    }
 
     if ($this->isBlurRequired()) {
       $request_options['allow_redirects'] = FALSE;
@@ -226,6 +248,9 @@ class ImageProcessingService {
 
       $faces = (int) ($response->getHeaderLine('X-Detections-Faces') ?: 0);
       $plates = (int) ($response->getHeaderLine('X-Detections-Plates') ?: 0);
+      if ($mode !== self::BLUR_MODE_NORMAL && $response->getHeaderLine('X-Blur-Mode') !== $mode) {
+        throw new \RuntimeException('Blur service did not apply blur mode ' . $mode . '.');
+      }
       $blurred = strtolower($response->getHeaderLine('X-Image-Blurred')) === 'true';
       $blurredContents = (string) $response->getBody();
       if ($blurredContents === '' || ($this->isBlurRequired() && @getimagesizefromstring($blurredContents) === FALSE)) {
@@ -245,6 +270,7 @@ class ImageProcessingService {
         'processed' => TRUE,
         'faces' => $faces,
         'plates' => $plates,
+        'mode' => $mode,
       ];
     }
     catch (\Exception $e) {
@@ -419,6 +445,9 @@ class ImageProcessingService {
         $blur_result = $this->blurSensitiveAreas($contents, $mime);
         // Carry the MIME so the controller can build a data URL preview.
         $blur_result['mime'] = $mime;
+        // In-memory only: an escalated blur must start from the unblurred
+        // derivative, detectors miss faces that are already half blurred.
+        $blur_result['source'] = $contents;
         $blur_results[$file_uri] = $blur_result;
         if (!empty($blur_result['blurred'])) {
           $blur_applied = TRUE;
@@ -539,6 +568,71 @@ class ImageProcessingService {
     }
     catch (\Exception $e) {
       $this->logger->error('Error processing image set: @message', ['@message' => mb_substr($e->getMessage(), 0, 300)]);
+      return NULL;
+    }
+  }
+
+  /**
+   * Asks the vision model whether personal data is still visible in an image.
+   *
+   * Runs after an escalated blur on that single image, with a short privacy
+   * prompt instead of the full analysis (no categories, no attributes).
+   *
+   * @param string $contents
+   *   The escalated, already blurred image bytes.
+   * @param string $mimeType
+   *   The MIME type of the image.
+   *
+   * @return array|null
+   *   ['privacy_flag' => bool, 'privacy_issues' => string[]], or NULL when the
+   *   check could not run; callers must treat NULL as "still visible".
+   */
+  public function screenPrivacy(string $contents, string $mimeType): ?array {
+    $config = $this->configFactory->get('markaspot_vision.settings');
+    try {
+      $api_config = $this->getApiConfig($config);
+      $messages = [
+        [
+          'role' => 'system',
+          'content' => [
+            [
+              'type' => 'text',
+              'text' => 'You check a citizen report photo for personal data before it is published. '
+                . 'Faces, license plates and text in this image have already been blurred or pixelated; '
+                . 'blurred or pixelated regions are not concerns. Set privacy_flag to true only if personal '
+                . 'data is still recognisable or readable: faces, license plates, personal names, addresses, '
+                . 'documents, IDs, phone numbers or house numbers. List what remains in privacy_issues. '
+                . 'Fill every other field of the schema minimally; only the privacy fields are used.',
+            ],
+          ],
+        ],
+        [
+          'role' => 'user',
+          'content' => [
+            ['type' => 'text', 'text' => 'Is any personal data still recognisable in this image?'],
+            [
+              'type' => 'image_url',
+              'image_url' => ['url' => 'data:' . $mimeType . ';base64,' . base64_encode($contents)],
+            ],
+          ],
+        ],
+      ];
+      $ai_data = $this->sendRequestWithRetry($api_config, $this->prepareRequestPayload($messages, $api_config), 2);
+      $result = json_decode((string) ($ai_data['choices'][0]['message']['content'] ?? ''), TRUE);
+      if (!is_array($result) || !is_bool($result['privacy_flag'] ?? NULL)) {
+        return NULL;
+      }
+      $issues = array_values(array_filter(
+        (array) ($result['privacy_issues'] ?? []),
+        static fn ($issue): bool => is_string($issue) && trim($issue) !== '',
+      ));
+      return [
+        'privacy_flag' => $result['privacy_flag'] || !empty($issues),
+        'privacy_issues' => $issues,
+      ];
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Privacy re-check after an escalated blur failed: @message', ['@message' => mb_substr($e->getMessage(), 0, 300)]);
       return NULL;
     }
   }

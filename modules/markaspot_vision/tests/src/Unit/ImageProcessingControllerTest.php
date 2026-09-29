@@ -72,6 +72,13 @@ class ImageProcessingControllerTest extends UnitTestCase {
   protected mixed $rateLimitMax = 10;
 
   /**
+   * Configured residual_privacy_handling ('hold', 'reblur' or NULL).
+   *
+   * @var string|null
+   */
+  protected ?string $residualHandling = NULL;
+
+  /**
    * Private upload-session identifier returned by the access guard.
    */
   protected ?string $rateLimitIdentifier = 'csrf:test-fingerprint';
@@ -139,7 +146,11 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $visionConfig = $this->createMock(ImmutableConfig::class);
     $visionConfig->method('get')
-      ->willReturnCallback(fn ($key) => $key === 'rate_limit_max' ? $this->rateLimitMax : NULL);
+      ->willReturnCallback(fn ($key) => match ($key) {
+        'rate_limit_max' => $this->rateLimitMax,
+        'residual_privacy_handling' => $this->residualHandling,
+        default => NULL,
+      });
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')
       ->with('markaspot_vision.settings')
@@ -1415,6 +1426,133 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $response = $this->controller->getAIResults($request);
 
     $this->assertEquals(400, $response->getStatusCode());
+  }
+
+  /**
+   * Sets up one analysed media whose normal blur left a readable address.
+   *
+   * @return array
+   *   The media mock and the captured persisted fields (by reference).
+   */
+  private function residualAddressScenario(): array {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode([
+        'category' => 42,
+        'description' => 'Bulky waste next to a wall',
+        'alt_text' => ['Bulky waste next to a wall'],
+        'hazard_flag' => FALSE,
+        'hazard_level' => 0,
+        'hazard_issues' => [],
+        'privacy_flag' => TRUE,
+        'privacy_issues' => ['readable name and address on a letter'],
+      ]),
+      'blur_results' => [
+        'public://test.jpg' => [
+          'contents' => 'normal-bytes',
+          'blurred' => TRUE,
+          'faces' => 0,
+          'plates' => 1,
+          'mime' => 'image/jpeg',
+          'source' => 'original-bytes',
+        ],
+      ],
+    ]);
+    $captured = new \ArrayObject();
+    $media->method('set')->willReturnCallback(function (string $field, $value) use ($captured, $media) {
+      $captured[$field] = $value;
+      return $media;
+    });
+    return [$media, $captured];
+  }
+
+  /**
+   * By default a residual finding holds the photo, as before.
+   */
+  public function testHoldKeepsResidualFindingHeldWithoutEscalating(): void {
+    [$media, $captured] = $this->residualAddressScenario();
+    $this->imageProcessingService->expects($this->never())->method('blurSensitiveAreas');
+    $this->imageProcessingService->expects($this->never())->method('screenPrivacy');
+    $media->expects($this->never())->method('setPublished');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertTrue($data['privacy_flag']);
+    $this->assertArrayNotHasKey('privacy_reblurred', $data);
+    $this->assertTrue($captured['field_ai_privacy_flag']);
+  }
+
+  /**
+   * Re-blurring covers the finding with the strong mode when the check passes.
+   */
+  public function testReblurCoversResidualFindingWithStrongBlur(): void {
+    $this->residualHandling = 'reblur';
+    [$media, $captured] = $this->residualAddressScenario();
+    $this->imageProcessingService->expects($this->once())->method('blurSensitiveAreas')
+      ->with('original-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_STRONG)
+      ->willReturn(['contents' => 'strong-bytes', 'blurred' => TRUE, 'mode' => 'strong']);
+    $this->imageProcessingService->expects($this->once())->method('screenPrivacy')
+      ->with('strong-bytes', 'image/jpeg')
+      ->willReturn(['privacy_flag' => FALSE, 'privacy_issues' => []]);
+    $this->imageProcessingService->expects($this->once())->method('saveBlurredImage')
+      ->with($media, 'strong-bytes', 'public://test.jpg');
+    $media->expects($this->once())->method('setPublished');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertFalse($data['privacy_flag']);
+    $this->assertSame([], $data['privacy_issues']);
+    $this->assertSame(['uuid-1' => FALSE], $data['privacy_flags']);
+    $this->assertSame(['uuid-1' => 'strong'], $data['privacy_reblurred']);
+    $this->assertSame('data:image/jpeg;base64,' . base64_encode('strong-bytes'), $data['blurred_previews']['uuid-1']);
+    $this->assertFalse($captured['field_ai_privacy_flag']);
+    // Any text in the issues field would hold the photo again on node save.
+    $this->assertSame('', $captured['field_ai_privacy_issues']);
+  }
+
+  /**
+   * A finding the strong pass leaves visible escalates to the full blur.
+   */
+  public function testReblurFallsBackToFullBlurWhenDataStaysVisible(): void {
+    $this->residualHandling = 'reblur';
+    [$media] = $this->residualAddressScenario();
+    $this->imageProcessingService->method('blurSensitiveAreas')
+      ->willReturnCallback(fn (string $contents, string $mime, string $mode) => [
+        'contents' => $mode . '-bytes',
+        'blurred' => TRUE,
+        'mode' => $mode,
+      ]);
+    $this->imageProcessingService->method('screenPrivacy')
+      ->willReturn(['privacy_flag' => TRUE, 'privacy_issues' => ['address still readable']]);
+    $this->imageProcessingService->expects($this->once())->method('saveBlurredImage')
+      ->with($media, 'full-bytes', 'public://test.jpg');
+    $media->expects($this->once())->method('setPublished');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertFalse($data['privacy_flag']);
+    $this->assertSame(['uuid-1' => 'full'], $data['privacy_reblurred']);
+  }
+
+  /**
+   * When no escalation succeeds the photo stays held, never less blurred.
+   */
+  public function testReblurKeepsPhotoHeldWhenEveryEscalationFails(): void {
+    $this->residualHandling = 'reblur';
+    [$media, $captured] = $this->residualAddressScenario();
+    $this->imageProcessingService->method('blurSensitiveAreas')
+      ->willThrowException(new \RuntimeException('Blur service did not apply blur mode.'));
+    $this->imageProcessingService->expects($this->once())->method('saveBlurredImage')
+      ->with($media, 'normal-bytes', 'public://test.jpg');
+    $media->expects($this->never())->method('setPublished');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertTrue($data['privacy_flag']);
+    $this->assertArrayNotHasKey('privacy_reblurred', $data);
+    $this->assertTrue($captured['field_ai_privacy_flag']);
   }
 
 }

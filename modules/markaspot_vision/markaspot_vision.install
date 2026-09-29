@@ -249,6 +249,18 @@ function markaspot_vision_update_11805(): string {
 }
 
 /**
+ * Keeps holding photos with residual personal data unless a site opts in.
+ */
+function markaspot_vision_update_11806(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
+  if ($config->get('residual_privacy_handling') !== NULL) {
+    return 'Skipped: residual_privacy_handling already set.';
+  }
+  $config->set('residual_privacy_handling', 'hold')->save();
+  return 'Residual privacy findings keep holding the photo for moderation.';
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_vision_requirements($phase): array {
