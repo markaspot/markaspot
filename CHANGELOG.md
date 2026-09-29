@@ -1,5 +1,26 @@
 # Changelog
 
+## [11.9.208](https://github.com/markaspot/markaspot/compare/11.9.207...11.9.208) (2026-09-29)
+
+### Features
+
+* **vision:** keep the unblurred original of a blurred photo for the staff who may edit its report, behind a site setting ([faff093](https://github.com/markaspot/markaspot/commit/faff0937347233628d82ba1e34a9ba9bba375f8f))
+* **vision:** re-blur residual personal data with the strong or full blur instead of holding the photo, behind a site setting ([e85a60b](https://github.com/markaspot/markaspot/commit/e85a60b9ca4c31f5a4bb68aaaf8d3865d99884ae))
+
+### Bug Fixes
+
+* cite section 5 DDG instead of the repealed TMG in generated legal notices ([103d58d](https://github.com/markaspot/markaspot/commit/103d58d184fec893cb7a10ce32550d4b68ae7252))
+* keep Gin Login wallpaper and logo URLs root-relative so cached login pages never point browsers at an internal host ([048c7f6](https://github.com/markaspot/markaspot/commit/048c7f696d6d3a2f6fd8d2910ead61560e1e5ace))
+* open backend location widgets on the tenant map center instead of the New York placeholder default ([36a1184](https://github.com/markaspot/markaspot/commit/36a1184031419803ab7338f9ca3edcba6b2097c5))
+* **vision:** bind a kept original to its first report, keep contractors out, purge with a cursor and delete everything once switched off ([302d3ef](https://github.com/markaspot/markaspot/commit/302d3ef2a24e366df1f732440440977e43aece32))
+* **vision:** count a strong blur only when its detector matched the finding, keep failed escalations flagged and record the applied mode ([1362555](https://github.com/markaspot/markaspot/commit/13625552c66995425a83bb4b72e98debe9a576db))
+* **vision:** hand kept originals to a split report, claim only fresh uploads and never purge without a private file system ([bc5d01f](https://github.com/markaspot/markaspot/commit/bc5d01feb028255f8bb0a0bf3ca609624f2a3d51))
+* **vision:** match originals case-sensitively, render only images inline and catch every attribute spelling in the file access guard ([203abff](https://github.com/markaspot/markaspot/commit/203abff8693b8db5c99da67a32083acf1b326126))
+
+### Documentation
+
+* cite section 5 DDG in legal notice comments ([fbe7635](https://github.com/markaspot/markaspot/commit/fbe76359513e06f3035abb0aea24312ace7b8cf9))
+
 ## [11.9.207](https://github.com/markaspot/markaspot/compare/11.9.206...11.9.207) (2026-09-27)
 
 ### Bug Fixes
