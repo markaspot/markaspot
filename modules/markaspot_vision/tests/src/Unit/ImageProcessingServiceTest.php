@@ -771,6 +771,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
     $this->assertMatchesRegularExpression('/name="mode"\r\n(?:[^\r\n]+\r\n)*\r\nstrong\r\n/', $sent);
     $this->assertSame('strong-bytes', $result['contents']);
+    $this->assertSame(3, $result['texts']);
     $this->assertTrue($result['blurred']);
     $this->assertSame(ImageProcessingService::BLUR_MODE_STRONG, $result['mode']);
   }
@@ -781,8 +782,13 @@ class ImageProcessingServiceTest extends UnitTestCase {
   public function testEscalatedBlurFailsWhenTheServiceIgnoresTheMode(): void {
     $service = $this->createAnsweringService(new Response(200, ['X-Image-Blurred' => 'true'], 'normal-bytes'), $sent, self::BLUR_ON);
 
-    $this->expectException(\RuntimeException::class);
-    $service->blurSensitiveAreas('image-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_FULL);
+    try {
+      $service->blurSensitiveAreas('image-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_FULL);
+      $this->fail('An unconfirmed escalation must not pass.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringContainsString('did not apply blur mode full', (string) $e->getPrevious()?->getMessage());
+    }
   }
 
   /**
@@ -796,9 +802,12 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
     $this->assertSame(
       ['privacy_flag' => TRUE, 'privacy_issues' => ['readable name on a letter']],
-      $service->screenPrivacy('escalated-bytes', 'image/jpeg'),
+      $service->screenPrivacy('escalated-bytes', 'image/jpeg', ["readable name\non a letter"]),
     );
     $this->assertStringContainsString(base64_encode('escalated-bytes'), $sent);
+    // The check names the earlier finding and claims nothing was blurred.
+    $this->assertStringContainsString('An earlier check of this photo reported: readable name on a letter.', $sent);
+    $this->assertStringNotContainsString('have already been blurred', $sent);
   }
 
   /**

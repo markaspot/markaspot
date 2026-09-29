@@ -1492,9 +1492,10 @@ class ImageProcessingControllerTest extends UnitTestCase {
     [$media, $captured] = $this->residualAddressScenario();
     $this->imageProcessingService->expects($this->once())->method('blurSensitiveAreas')
       ->with('original-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_STRONG)
-      ->willReturn(['contents' => 'strong-bytes', 'blurred' => TRUE, 'mode' => 'strong']);
+      ->willReturn(['contents' => 'strong-bytes', 'blurred' => TRUE, 'texts' => 2, 'mode' => 'strong']);
+    // The re-check asks about exactly what the first analysis still saw.
     $this->imageProcessingService->expects($this->once())->method('screenPrivacy')
-      ->with('strong-bytes', 'image/jpeg')
+      ->with('strong-bytes', 'image/jpeg', ['readable name and address on a letter'])
       ->willReturn(['privacy_flag' => FALSE, 'privacy_issues' => []]);
     $this->imageProcessingService->expects($this->once())->method('saveBlurredImage')
       ->with($media, 'strong-bytes', 'public://test.jpg');
@@ -1510,6 +1511,9 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertFalse($captured['field_ai_privacy_flag']);
     // Any text in the issues field would hold the photo again on node save.
     $this->assertSame('', $captured['field_ai_privacy_issues']);
+    $metadata = json_decode($captured['field_ai_metadata'], TRUE);
+    $this->assertSame(['mode' => 'strong'], $metadata['markaspot_privacy_escalation']);
+    $this->assertTrue($metadata['privacy_flag'], 'The raw model verdict stays in the audit blob.');
   }
 
   /**
@@ -1522,6 +1526,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       ->willReturnCallback(fn (string $contents, string $mime, string $mode) => [
         'contents' => $mode . '-bytes',
         'blurred' => TRUE,
+        'texts' => 1,
         'mode' => $mode,
       ]);
     $this->imageProcessingService->method('screenPrivacy')
@@ -1553,6 +1558,131 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertTrue($data['privacy_flag']);
     $this->assertArrayNotHasKey('privacy_reblurred', $data);
     $this->assertTrue($captured['field_ai_privacy_flag']);
+  }
+
+  /**
+   * Blur results for a strong pass that answers per mode.
+   */
+  private function answerBlurModes(array $strong): void {
+    $this->imageProcessingService->method('blurSensitiveAreas')
+      ->willReturnCallback(fn (string $contents, string $mime, string $mode) => $mode === ImageProcessingService::BLUR_MODE_STRONG
+        ? $strong + ['contents' => 'strong-bytes', 'mode' => 'strong']
+        : ['contents' => 'full-bytes', 'blurred' => TRUE, 'mode' => 'full']);
+  }
+
+  /**
+   * A strong pass that blurred something else proves nothing about a letter.
+   */
+  public function testStrongBlurThatFoundNoTextGoesToFullBlur(): void {
+    $this->residualHandling = 'reblur';
+    $this->residualAddressScenario();
+    $this->answerBlurModes(['blurred' => TRUE, 'texts' => 0, 'plates' => 1]);
+    $this->imageProcessingService->expects($this->never())->method('screenPrivacy');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertSame(['uuid-1' => 'full'], $data['privacy_reblurred']);
+  }
+
+  /**
+   * A re-check that cannot run counts as data still visible.
+   */
+  public function testFailedRecheckGoesToFullBlur(): void {
+    $this->residualHandling = 'reblur';
+    $this->residualAddressScenario();
+    $this->answerBlurModes(['blurred' => TRUE, 'texts' => 2]);
+    $this->imageProcessingService->method('screenPrivacy')->willReturn(NULL);
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertSame(['uuid-1' => 'full'], $data['privacy_reblurred']);
+  }
+
+  /**
+   * Findings no detector can locate skip the strong pass entirely.
+   */
+  public function testUnlocatableFindingGoesStraightToFullBlur(): void {
+    $this->residualHandling = 'reblur';
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode([
+        'category' => 42,
+        'description' => 'Overflowing bin',
+        'alt_text' => ['Overflowing bin'],
+        'privacy_flag' => TRUE,
+        'privacy_issues' => ['distinctive tattoo visible'],
+      ]),
+      'blur_results' => [
+        'public://test.jpg' => [
+          'contents' => 'normal-bytes',
+          'blurred' => FALSE,
+          'mime' => 'image/jpeg',
+          'source' => 'original-bytes',
+        ],
+      ],
+    ]);
+    $this->imageProcessingService->expects($this->once())->method('blurSensitiveAreas')
+      ->with('original-bytes', 'image/jpeg', ImageProcessingService::BLUR_MODE_FULL)
+      ->willReturn(['contents' => 'full-bytes', 'blurred' => TRUE, 'mode' => 'full']);
+    $this->imageProcessingService->expects($this->never())->method('screenPrivacy');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]))->getContent(), TRUE);
+
+    $this->assertFalse($data['privacy_flag']);
+    $this->assertSame(['uuid-1' => 'full'], $data['privacy_reblurred']);
+  }
+
+  /**
+   * A photo whose escalation failed keeps the verdict despite attribution.
+   */
+  public function testFailedEscalationInBatchKeepsTheCitizenVerdict(): void {
+    $this->residualHandling = 'reblur';
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $first = $this->createMockMedia(1, TRUE, TRUE, 'public://first.jpg');
+    $second = $this->createMockMedia(2, TRUE, TRUE, 'public://second.jpg');
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $first, 2 => $second]);
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode([
+        'category' => 42,
+        'description' => 'Bulky waste',
+        'alt_text' => ['Bulky waste', 'Bulky waste'],
+        'privacy_flag' => TRUE,
+        'privacy_issues' => ['readable name on a letter'],
+        'privacy_image_flags' => [FALSE, TRUE],
+      ]),
+      'blur_results' => [
+        'public://first.jpg' => [
+          'contents' => 'first-normal',
+          'blurred' => TRUE,
+          'mime' => 'image/jpeg',
+          'source' => 'first-source',
+        ],
+        'public://second.jpg' => [
+          'contents' => 'second-normal',
+          'blurred' => TRUE,
+          'mime' => 'image/jpeg',
+          'source' => 'second-source',
+        ],
+      ],
+    ]);
+    $this->imageProcessingService->method('blurSensitiveAreas')
+      ->willReturnCallback(function (string $contents, string $mime, string $mode) {
+        if ($contents === 'first-source') {
+          throw new \RuntimeException('Blur service timed out.');
+        }
+        return ['contents' => 'second-' . $mode, 'blurred' => TRUE, 'texts' => 1, 'mode' => $mode];
+      });
+    $this->imageProcessingService->method('screenPrivacy')->willReturn(['privacy_flag' => FALSE, 'privacy_issues' => []]);
+    $first->expects($this->never())->method('setPublished');
+    $second->expects($this->once())->method('setPublished');
+
+    $data = json_decode($this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]))->getContent(), TRUE);
+
+    $this->assertTrue($data['privacy_flag']);
+    $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => FALSE], $data['privacy_flags']);
+    $this->assertSame(['uuid-2' => 'strong'], $data['privacy_reblurred']);
   }
 
 }

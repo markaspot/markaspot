@@ -136,7 +136,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
         'reblur' => $this->t('Blur more strongly: faces, plates and text first, the whole photo as a last resort'),
       ],
       '#default_value' => $config->get('residual_privacy_handling') ?? 'hold',
-      '#description' => $this->t('Applies when the AI still sees personal data (for example a name on a letter) after faces and plates were blurred. Holding keeps the photo unpublished until staff review it. Blurring more strongly publishes it without those details; staff only see them if originals are kept.'),
+      '#description' => $this->t('Applies when the AI still sees personal data (for example a name on a letter) after faces and plates were blurred. Holding keeps the photo unpublished until staff review it. Blurring more strongly publishes it without those details, for staff too.'),
       '#states' => [
         'visible' => [
           ':input[name="enable_blur_preprocessing"]' => ['checked' => TRUE],

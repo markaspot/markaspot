@@ -150,6 +150,7 @@ class ImageProcessingService {
    *   - 'blurred': Whether blurring was applied.
    *   - 'faces': Number of detected faces.
    *   - 'plates': Number of detected license plates.
+   *   - 'texts': Number of text regions blurred (strong mode only).
    *   - 'mode': The blur mode the service applied.
    */
   public function blurSensitiveAreas(string $contents, string $mimeType, string $mode = self::BLUR_MODE_NORMAL): array {
@@ -167,6 +168,7 @@ class ImageProcessingService {
       'processed' => FALSE,
       'faces' => 0,
       'plates' => 0,
+      'texts' => 0,
       'mode' => self::BLUR_MODE_NORMAL,
     ];
 
@@ -248,6 +250,7 @@ class ImageProcessingService {
 
       $faces = (int) ($response->getHeaderLine('X-Detections-Faces') ?: 0);
       $plates = (int) ($response->getHeaderLine('X-Detections-Plates') ?: 0);
+      $texts = (int) ($response->getHeaderLine('X-Detections-Text') ?: 0);
       if ($mode !== self::BLUR_MODE_NORMAL && $response->getHeaderLine('X-Blur-Mode') !== $mode) {
         throw new \RuntimeException('Blur service did not apply blur mode ' . $mode . '.');
       }
@@ -270,6 +273,7 @@ class ImageProcessingService {
         'processed' => TRUE,
         'faces' => $faces,
         'plates' => $plates,
+        'texts' => $texts,
         'mode' => $mode,
       ];
     }
@@ -582,13 +586,24 @@ class ImageProcessingService {
    *   The escalated, already blurred image bytes.
    * @param string $mimeType
    *   The MIME type of the image.
+   * @param array $reportedIssues
+   *   What the first analysis still saw; the check asks about exactly that.
    *
    * @return array|null
    *   ['privacy_flag' => bool, 'privacy_issues' => string[]], or NULL when the
    *   check could not run; callers must treat NULL as "still visible".
    */
-  public function screenPrivacy(string $contents, string $mimeType): ?array {
+  public function screenPrivacy(string $contents, string $mimeType, array $reportedIssues = []): ?array {
     $config = $this->configFactory->get('markaspot_vision.settings');
+    // The first analysis's own wording, flattened and bounded: it only
+    // steers the question, never the verdict format.
+    $reported = array_slice(array_filter(array_map(
+      static fn ($issue): string => is_scalar($issue) ? mb_substr(trim(preg_replace('/\s+/u', ' ', (string) $issue)), 0, 200) : '',
+      $reportedIssues,
+    )), 0, 5);
+    $earlier = $reported
+      ? 'An earlier check of this photo reported: ' . implode('; ', $reported) . '. '
+      : 'An earlier check of this photo reported personal data. ';
     try {
       $api_config = $this->getApiConfig($config);
       $messages = [
@@ -598,11 +613,13 @@ class ImageProcessingService {
             [
               'type' => 'text',
               'text' => 'You check a citizen report photo for personal data before it is published. '
-                . 'Faces, license plates and text in this image have already been blurred or pixelated; '
-                . 'blurred or pixelated regions are not concerns. Set privacy_flag to true only if personal '
-                . 'data is still recognisable or readable: faces, license plates, personal names, addresses, '
-                . 'documents, IDs, phone numbers or house numbers. List what remains in privacy_issues. '
-                . 'Fill every other field of the schema minimally; only the privacy fields are used.',
+                . $earlier
+                . 'The photo has since been blurred again. Set privacy_flag to true if any personal data is '
+                . 'still recognisable or readable, above all what the earlier check reported: faces, license '
+                . 'plates, personal names, addresses, documents, IDs, phone numbers or house numbers. Areas '
+                . 'that are blurred or pixelated beyond recognition are not concerns. List what remains in '
+                . 'privacy_issues. Fill every other field of the schema minimally; only the privacy fields '
+                . 'are used.',
             ],
           ],
         ],
@@ -617,7 +634,9 @@ class ImageProcessingService {
           ],
         ],
       ];
-      $ai_data = $this->sendRequestWithRetry($api_config, $this->prepareRequestPayload($messages, $api_config), 2);
+      // No retry: a failed check escalates to the full blur anyway, and a
+      // retry would sleep inside the citizen's request.
+      $ai_data = $this->sendRequestWithRetry($api_config, $this->prepareRequestPayload($messages, $api_config), 1);
       $result = json_decode((string) ($ai_data['choices'][0]['message']['content'] ?? ''), TRUE);
       if (!is_array($result) || !is_bool($result['privacy_flag'] ?? NULL)) {
         return NULL;
