@@ -67,7 +67,10 @@ class FileDownloadHookTest extends UnitTestCase {
   }
 
   /**
-   * A path the store does not hold is denied, traversal included.
+   * A path the store does not hold is denied.
+   *
+   * Traversal is core's to collapse before any hook runs; the store then
+   * matches the exact URI (OriginalImageStoreTest).
    */
   public function testDeniedWithoutStoredOriginal(): void {
     $store = $this->store(TRUE, NULL, TRUE);
@@ -75,7 +78,6 @@ class FileDownloadHookTest extends UnitTestCase {
     $this->boot($store, $this->createMock(MediaInterface::class));
 
     self::assertSame(-1, markaspot_vision_file_download(self::URI));
-    self::assertSame(-1, markaspot_vision_file_download(OriginalImageStore::DIRECTORY . '/../../settings.php'));
   }
 
   /**
@@ -104,8 +106,12 @@ class FileDownloadHookTest extends UnitTestCase {
    * Only an allowed account gets the file, uncached, and the view is logged.
    */
   public function testServedAndLoggedForAnAllowedAccount(): void {
-    $store = $this->store(TRUE, ['mid' => 7, 'mime' => 'image/png'], TRUE);
-    $account = $this->boot($store, $this->createMock(MediaInterface::class));
+    $media = $this->createMock(MediaInterface::class);
+    $store = $this->createMock(OriginalImageStore::class);
+    $store->method('isEnabled')->willReturn(TRUE);
+    $store->method('findByUri')->willReturn(['mid' => 7, 'mime' => 'image/png']);
+    $account = $this->boot($store, $media);
+    $store->expects($this->once())->method('canView')->with($media, $account)->willReturn(TRUE);
     $store->expects($this->once())->method('logView')->with(7, $account);
 
     self::assertSame([
@@ -114,6 +120,16 @@ class FileDownloadHookTest extends UnitTestCase {
       'X-Content-Type-Options' => 'nosniff',
       'Content-Disposition' => 'inline',
     ], markaspot_vision_file_download(self::URI));
+  }
+
+  /**
+   * Anything but an image is handed over as a download, never rendered.
+   */
+  public function testNonImageIsAnAttachment(): void {
+    $store = $this->store(TRUE, ['mid' => 7, 'mime' => 'text/html'], TRUE);
+    $this->boot($store, $this->createMock(MediaInterface::class));
+
+    self::assertSame('attachment', markaspot_vision_file_download(self::URI)['Content-Disposition']);
   }
 
   /**

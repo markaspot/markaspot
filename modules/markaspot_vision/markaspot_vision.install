@@ -275,6 +275,8 @@ function _markaspot_vision_original_table(): array {
         'type' => 'varchar',
         'length' => 255,
         'not null' => TRUE,
+        // Case-sensitive like file_managed.uri: a lookup must match the file.
+        'binary' => TRUE,
         'description' => 'Private URI of the original.',
       ],
       'mime' => [

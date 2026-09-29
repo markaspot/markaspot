@@ -52,8 +52,11 @@ final class FileAccessHookAbsenceTest extends TestCase {
 
   /**
    * Matches attribute-based file access/download hooks.
+   *
+   * Short or fully qualified class name, positional or named argument.
+   * A hook name built from a constant stays out of reach of a regex.
    */
-  private const ATTRIBUTE_PATTERN = '/#\[\s*Hook\(\s*[\'"]file_(?:access|download)[\'"]/';
+  private const ATTRIBUTE_PATTERN = '/#\[\s*(?:[\w\\\\]+\\\\)?Hook\s*\([^)]*[\'"]file_(?:access|download)[\'"]/';
 
   /**
    * File hooks reviewed one by one: file => the one function allowed there.
@@ -94,6 +97,29 @@ final class FileAccessHookAbsenceTest extends TestCase {
       . 'disables private-file protection profile-wide; see this test docblock.',
       implode(', ', $offenders)
     ));
+  }
+
+  /**
+   * The patterns must recognise every spelling a hook can take.
+   */
+  public function testPatternsRecogniseEverySpelling(): void {
+    foreach ([
+      "function foo_file_download(\$uri) {",
+      "function foo_file_access (\$file) {",
+      "#[Hook('file_download')]",
+      '#[Hook("file_access")]',
+      "#[Hook(hook: 'file_download')]",
+      "#[\\Drupal\\Core\\Hook\\Attribute\\Hook('file_access')]",
+      "#[Hook('file_download', module: 'foo')]",
+    ] as $source) {
+      $this->assertTrue(
+        preg_match(self::FUNCTION_PATTERN, $source) === 1 || preg_match(self::ATTRIBUTE_PATTERN, $source) === 1,
+        $source
+      );
+    }
+    foreach (["function foo_file_validate(\$file) {", "#[Hook('file_validate')]", "#[Hook('entity_access')]"] as $source) {
+      $this->assertSame(0, preg_match(self::FUNCTION_PATTERN, $source) + preg_match(self::ATTRIBUTE_PATTERN, $source), $source);
+    }
   }
 
   /**

@@ -197,7 +197,8 @@ function markaspot_vision_file_download(string $uri): array|int|null {
     'Content-Type' => $original['mime'],
     'Cache-Control' => 'private, no-store',
     'X-Content-Type-Options' => 'nosniff',
-    'Content-Disposition' => 'inline',
+    // Only images render inline; anything else would be a document of its own.
+    'Content-Disposition' => str_starts_with($original['mime'], 'image/') ? 'inline' : 'attachment',
   ];
 }
 
