@@ -31,11 +31,6 @@ class SearchRestrictionWiringKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected $strictConfigSchema = FALSE;
-
-  /**
-   * {@inheritdoc}
-   */
   protected static $modules = [
     'system',
     'user',
