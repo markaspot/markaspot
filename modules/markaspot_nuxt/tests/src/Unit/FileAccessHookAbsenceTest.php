@@ -28,7 +28,8 @@ use PHPUnit\Framework\TestCase;
  * Core already resolves this correctly by delegating to the referencing
  * entity, so the profile does not need an opinion here. Should a future
  * requirement genuinely call for one, this test must be updated deliberately
- * rather than a blanket allow slipping back in unnoticed.
+ * rather than a blanket allow slipping back in unnoticed. The exceptions made
+ * so far are listed in REVIEWED_HOOKS, one named function per file.
  *
  * Scope and limits — this is a static scan, not a behavioural assertion:
  * - It covers procedural hooks in .module, .profile, .inc and .install files,
@@ -45,11 +46,27 @@ use PHPUnit\Framework\TestCase;
 final class FileAccessHookAbsenceTest extends TestCase {
 
   /**
-   * Matches procedural and attribute-based file access/download hooks.
+   * Matches procedural file access/download hooks, capturing the name.
    */
-  private const HOOK_PATTERNS = [
-    '/function\s+\w+_file_(?:access|download)\s*\(/',
-    '/#\[\s*Hook\(\s*[\'"]file_(?:access|download)[\'"]/',
+  private const FUNCTION_PATTERN = '/function\s+(\w+_file_(?:access|download))\s*\(/';
+
+  /**
+   * Matches attribute-based file access/download hooks.
+   */
+  private const ATTRIBUTE_PATTERN = '/#\[\s*Hook\(\s*[\'"]file_(?:access|download)[\'"]/';
+
+  /**
+   * File hooks reviewed one by one: file => the one function allowed there.
+   *
+   * Markaspot_vision_file_download() serves the unblurred originals kept for
+   * staff. They are unmanaged files, so core has no file entity to delegate
+   * to and denies them without a hook. It returns NULL for every URI outside
+   * private://markaspot_vision/originals/, -1 inside it unless the store
+   * holds that exact file and the account may edit its report, and headers
+   * only then. FileDownloadHookTest in markaspot_vision pins that behaviour.
+   */
+  private const REVIEWED_HOOKS = [
+    'modules/markaspot_vision/markaspot_vision.module' => 'markaspot_vision_file_download',
   ];
 
   /**
@@ -63,11 +80,11 @@ final class FileAccessHookAbsenceTest extends TestCase {
       if ($source === FALSE) {
         continue;
       }
-      foreach (self::HOOK_PATTERNS as $pattern) {
-        if (preg_match($pattern, $source) === 1) {
-          $offenders[] = $this->relativePath($path);
-          break;
-        }
+      $relative = $this->relativePath($path);
+      preg_match_all(self::FUNCTION_PATTERN, $source, $matches);
+      $unreviewed = array_diff($matches[1], [self::REVIEWED_HOOKS[$relative] ?? '']);
+      if ($unreviewed || preg_match(self::ATTRIBUTE_PATTERN, $source) === 1) {
+        $offenders[] = $relative;
       }
     }
 
@@ -77,6 +94,20 @@ final class FileAccessHookAbsenceTest extends TestCase {
       . 'disables private-file protection profile-wide; see this test docblock.',
       implode(', ', $offenders)
     ));
+  }
+
+  /**
+   * An exception must go once its hook is gone, so it cannot cover a new one.
+   */
+  public function testReviewedHooksStillExist(): void {
+    foreach (self::REVIEWED_HOOKS as $relative => $function) {
+      $source = (string) file_get_contents($this->profileRoot() . '/' . $relative);
+      $this->assertMatchesRegularExpression(
+        '/function\s+' . preg_quote($function, '/') . '\s*\(/',
+        $source,
+        sprintf('%s no longer defines %s(); remove its REVIEWED_HOOKS entry.', $relative, $function)
+      );
+    }
   }
 
   /**
