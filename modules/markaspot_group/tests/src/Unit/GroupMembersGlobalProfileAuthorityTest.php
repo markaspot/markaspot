@@ -52,6 +52,7 @@ final class GroupMembersGlobalProfileAuthorityTest extends UnitTestCase {
     array $actorRoles = ['authenticated', 'tenant_admin'],
     ?array $membershipsAfterLock = NULL,
     bool $targetAdminRole = FALSE,
+    array $targetTenantAdminIds = [],
   ): array {
     $container = new ContainerBuilder();
     $contexts = $this->createMock(CacheContextsManager::class);
@@ -93,7 +94,7 @@ final class GroupMembersGlobalProfileAuthorityTest extends UnitTestCase {
     $groups = [];
     foreach (array_merge($targetGroupDefinitions, $membershipsAfterLock ?? [], array_map(
       static fn(int $id): array => [$id, 'jur'],
-      $managedIds,
+      array_merge($managedIds, $targetTenantAdminIds),
     )) as $definition) {
       [$id, $bundle] = $definition;
       $jurisdiction = $definition[2] ?? NULL;
@@ -117,16 +118,20 @@ final class GroupMembersGlobalProfileAuthorityTest extends UnitTestCase {
     $targetMemberships = $wrap($targetGroupDefinitions);
     $freshMemberships = $membershipsAfterLock === NULL ? $targetMemberships : $wrap($membershipsAfterLock);
     $managedMemberships = $wrap(array_map(static fn(int $id): array => [$id, 'jur'], $managedIds));
+    $targetTenantAdminMemberships = $wrap(array_map(static fn(int $id): array => [$id, 'jur'], $targetTenantAdminIds));
     $refreshed = FALSE;
     // The existing controller constructor still requires Group's legacy loader.
     // @phpstan-ignore classConstant.deprecatedInterface
     $loader = $this->createMock(GroupMembershipLoaderInterface::class);
     $loader->method('loadByUser')->willReturnCallback(
       static function ($account, $roles = NULL) use (
-        $actor, $target, $managedMemberships, $targetMemberships, $freshMemberships, &$refreshed,
+        $actor, $target, $managedMemberships, $targetMemberships, $freshMemberships, $targetTenantAdminMemberships, &$refreshed,
       ): array {
         if ($account === $actor && $roles === ['jur-tenant_admin']) {
           return $managedMemberships;
+        }
+        if ($account === $target && $roles === ['jur-tenant_admin']) {
+          return $targetTenantAdminMemberships;
         }
         if ($account === $target && $roles === NULL) {
           return $refreshed ? $freshMemberships : $targetMemberships;
@@ -304,6 +309,50 @@ final class GroupMembersGlobalProfileAuthorityTest extends UnitTestCase {
     $fixture['target']->expects($this->never())->method('setEmail');
     $fixture['target']->expects($this->never())->method('save');
     $this->assertSame(403, $this->patch($fixture['controller'], ['email' => 'changed@example.test'])->getStatusCode());
+  }
+
+  /**
+   * A tenant administrator cannot change another tenant administrator.
+   */
+  #[DataProvider('tenantAdministratorPeers')]
+  public function testTenantAdministratorPeerIsProtected(array $targetRoles, array $targetTenantAdminIds, array $body): void {
+    $fixture = $this->fixture(targetRoles: $targetRoles, targetTenantAdminIds: $targetTenantAdminIds);
+    foreach (['save', 'setUsername', 'setEmail', 'block', 'activate'] as $method) {
+      $fixture['target']->expects($this->never())->method($method);
+    }
+    $fixture['lock']->expects($this->never())->method('acquire');
+    $this->assertSame(403, $this->patch($fixture['controller'], $body)->getStatusCode());
+    $this->assertSame([], $fixture['controller']->invalidated);
+  }
+
+  /**
+   * Both forms of tenant administration and all global mutation types.
+   */
+  public static function tenantAdministratorPeers(): iterable {
+    foreach ([
+      'jurisdiction tenant admin' => [['authenticated', 'moderator'], [101]],
+      'tenant admin role' => [['authenticated', 'tenant_admin'], []],
+    ] as $peer => [$roles, $tenantAdminIds]) {
+      foreach ([
+        'name' => ['name' => 'Changed'],
+        'email' => ['email' => 'changed@example.test'],
+        'status' => ['status' => 0],
+        'anonymize' => ['anonymize' => TRUE],
+      ] as $operation => $body) {
+        yield "$peer / $operation" => [$roles, $tenantAdminIds, $body];
+      }
+    }
+  }
+
+  /**
+   * Platform administrators keep authority over tenant administrators.
+   */
+  #[DataProvider('platformAdministrators')]
+  public function testPlatformAdministratorCanDeactivateTenantAdministrator(int $actorId, array $actorRoles): void {
+    $fixture = $this->fixture(actorId: $actorId, actorRoles: $actorRoles, targetTenantAdminIds: [101]);
+    $fixture['target']->expects($this->once())->method('block');
+    $fixture['target']->expects($this->once())->method('save');
+    $this->assertSame(200, $this->patch($fixture['controller'], ['status' => 0])->getStatusCode());
   }
 
   /**

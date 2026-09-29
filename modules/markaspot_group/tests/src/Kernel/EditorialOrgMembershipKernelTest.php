@@ -619,6 +619,9 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
 
   /**
    * Tenant-admin rights in one tenant do not lift peer protection in another.
+   *
+   * Within its own tenant, tenant administration covers memberships but not
+   * the account of another tenant administrator.
    */
   public function testTenantAdminExceptionIsScoped(): void {
     $rootA = $this->jurisdiction('A');
@@ -630,8 +633,14 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $this->joinJurisdiction($rootA, $peerA);
     $peerB = $this->user('peer-b', ['editorial_board']);
     $this->joinJurisdiction($rootB, $peerB);
+    $tenantAdminA = $this->user('tenant-admin-a');
+    $this->joinJurisdiction($rootA, $tenantAdminA, 'jur-tenant_admin');
 
     $controller = $this->matrixController($caller);
+    $this->assertSame(403, $this->patchProfile($controller, $tenantAdminA, ['status' => 0]));
+    $this->assertSame(403, $this->patchProfile($controller, $tenantAdminA, ['name' => 'renamed']));
+    $this->assertTrue(User::load($tenantAdminA->id())->isActive());
+    $this->assertSame('tenant-admin-a', User::load($tenantAdminA->id())->getAccountName());
     [, $body] = $this->patchMemberships($controller, $peerA, $this->setRoles($rootA, 'jur-moderator'));
     $this->assertSame('ok', $body['status']);
     [, $body] = $this->patchMemberships($controller, $peerB, $this->setRoles($rootB, 'jur-moderator'));
