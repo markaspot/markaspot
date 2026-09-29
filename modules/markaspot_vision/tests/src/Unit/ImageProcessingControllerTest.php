@@ -14,6 +14,7 @@ use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
+use Drupal\markaspot_vision\Service\OriginalImageStore;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -1683,6 +1684,38 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertTrue($data['privacy_flag']);
     $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => FALSE], $data['privacy_flags']);
     $this->assertSame(['uuid-2' => 'strong'], $data['privacy_reblurred']);
+  }
+
+  /**
+   * The unblurred original is kept before the blur overwrites the file.
+   */
+  public function testOriginalIsKeptBeforeTheBlurOverwritesIt(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode(['category' => 42, 'privacy_flag' => FALSE, 'privacy_issues' => []]),
+      'blur_results' => [
+        'public://test.jpg' => ['contents' => 'blurred-bytes', 'blurred' => TRUE, 'faces' => 1, 'plates' => 0],
+      ],
+    ]);
+    $calls = [];
+    $store = $this->createMock(OriginalImageStore::class);
+    $store->expects($this->once())->method('retain')
+      ->with($media, 'public://test.jpg')
+      ->willReturnCallback(function () use (&$calls) {
+        $calls[] = 'retain';
+      });
+    $this->imageProcessingService->method('saveBlurredImage')
+      ->willReturnCallback(function () use (&$calls) {
+        $calls[] = 'overwrite';
+      });
+    $property = new \ReflectionProperty($this->controller, 'originalImageStore');
+    $property->setValue($this->controller, $store);
+
+    $this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1']]));
+
+    $this->assertSame(['retain', 'overwrite'], $calls);
   }
 
 }

@@ -16,6 +16,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
+use Drupal\markaspot_vision\Service\OriginalImageStore;
 
 /**
  * Controller for processing images with AI vision services.
@@ -53,6 +54,11 @@ class ImageProcessingController extends ControllerBase {
   protected ?TierConfigService $tierConfig;
 
   /**
+   * Keeps unblurred originals for staff, where the site opted in.
+   */
+  protected ?OriginalImageStore $originalImageStore;
+
+  /**
    * The feature flag checker.
    *
    * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver
@@ -88,6 +94,8 @@ class ImageProcessingController extends ControllerBase {
    *   The configuration factory.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
+   * @param \Drupal\markaspot_vision\Service\OriginalImageStore|null $original_image_store
+   *   The original image store (optional).
    */
   public function __construct(
     ImageProcessingService $image_processing_service,
@@ -97,6 +105,7 @@ class ImageProcessingController extends ControllerBase {
     MediaAnalysisAccessGuard $media_analysis_access_guard,
     ConfigFactoryInterface $config_factory,
     ?TierConfigService $tier_config = NULL,
+    ?OriginalImageStore $original_image_store = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
@@ -105,6 +114,7 @@ class ImageProcessingController extends ControllerBase {
     $this->mediaAnalysisAccessGuard = $media_analysis_access_guard;
     $this->visionConfigFactory = $config_factory;
     $this->tierConfig = $tier_config;
+    $this->originalImageStore = $original_image_store;
   }
 
   /**
@@ -122,6 +132,7 @@ class ImageProcessingController extends ControllerBase {
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
+      $container->get('markaspot_vision.original_image_store'),
     );
   }
 
@@ -389,6 +400,9 @@ class ImageProcessingController extends ControllerBase {
           // Replace original with blurred version if faces or plates were
           // detected on THIS media.
           if ($media_was_blurred) {
+            // Staff keep the unblurred original where the site opted in;
+            // the file on disk is still unblurred until the next line.
+            $this->originalImageStore?->retain($media, $media_uri);
             $this->imageProcessingService->saveBlurredImage(
               $media,
               $blur_results[$media_uri]['contents'],

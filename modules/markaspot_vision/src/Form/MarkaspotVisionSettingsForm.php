@@ -136,7 +136,19 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
         'reblur' => $this->t('Blur more strongly: faces, plates and text first, the whole photo as a last resort'),
       ],
       '#default_value' => $config->get('residual_privacy_handling') ?? 'hold',
-      '#description' => $this->t('Applies when the AI still sees personal data (for example a name on a letter) after faces and plates were blurred. Holding keeps the photo unpublished until staff review it. Blurring more strongly publishes it without those details, for staff too.'),
+      '#description' => $this->t('Applies when the AI still sees personal data (for example a name on a letter) after faces and plates were blurred. Holding keeps the photo unpublished until staff review it. Blurring more strongly publishes it without those details; staff see them only where the original is kept (below).'),
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_blur_preprocessing"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    $form['blur']['retain_originals'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Keep the unblurred original for staff'),
+      '#default_value' => (bool) $config->get('retain_originals'),
+      '#description' => $this->t('Stores the original of every blurred photo in the private file system. Only people who may edit a report showing the photo can open it, every view is logged, and the original is deleted 30 days after the report was closed. Needs a private file system and must be covered by your data protection impact assessment.'),
       '#states' => [
         'visible' => [
           ':input[name="enable_blur_preprocessing"]' => ['checked' => TRUE],
@@ -353,6 +365,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       ->set('image_prompt', $form_state->getValue('image_prompt'));
 
     $config->set('residual_privacy_handling', $form_state->getValue('residual_privacy_handling') === 'reblur' ? 'reblur' : 'hold');
+    $config->set('retain_originals', (bool) $form_state->getValue('retain_originals'));
 
     if (!$this->imageProcessing->isBlurRequired()) {
       $config->set('enable_blur_preprocessing', (bool) $form_state->getValue('enable_blur_preprocessing'));

@@ -6,6 +6,18 @@ markaspot_vision.settings:
   requirements:
     _permission: 'administer site configuration'
 
+markaspot_vision.originals:
+  path: '/api/vision/originals'
+  defaults:
+    _controller: '\Drupal\markaspot_vision\Controller\OriginalImageController::list'
+    _title: 'Originals of blurred photos'
+  methods: [GET]
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
+  requirements:
+    _user_is_logged_in: 'TRUE'
+
 markaspot_vision.image_processing:
   path: '/api/vision/analyze'
   defaults:

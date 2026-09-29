@@ -7,6 +7,7 @@
 
 use Drupal\Core\Config\FileStorage;
 use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use Drupal\markaspot_vision\Service\OriginalImageStore;
 
 /**
  * Install hazard level and category fields for media entities.
@@ -249,15 +250,82 @@ function markaspot_vision_update_11805(): string {
 }
 
 /**
- * Keeps holding photos with residual personal data unless a site opts in.
+ * Implements hook_schema().
+ */
+function markaspot_vision_schema(): array {
+  return [
+    OriginalImageStore::TABLE => _markaspot_vision_original_table(),
+  ];
+}
+
+/**
+ * Schema of the table mapping media to their unblurred original.
+ */
+function _markaspot_vision_original_table(): array {
+  return [
+    'description' => 'Unblurred originals kept for staff; one private file per media.',
+    'fields' => [
+      'mid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Media id.',
+      ],
+      'uri' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'Private URI of the original.',
+      ],
+      'mime' => [
+        'type' => 'varchar',
+        'length' => 100,
+        'not null' => TRUE,
+        'default' => 'application/octet-stream',
+        'description' => 'MIME type of the original.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'When the original was kept.',
+      ],
+    ],
+    'primary key' => ['mid'],
+    'unique keys' => ['uri' => ['uri']],
+    'indexes' => ['created' => ['created']],
+  ];
+}
+
+/**
+ * Keeps today's behaviour: hold residual findings, keep no originals.
  */
 function markaspot_vision_update_11806(): string {
   $config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
-  if ($config->get('residual_privacy_handling') !== NULL) {
-    return 'Skipped: residual_privacy_handling already set.';
+  $set = [];
+  foreach (['residual_privacy_handling' => 'hold', 'retain_originals' => FALSE] as $key => $default) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $default);
+      $set[] = $key;
+    }
   }
-  $config->set('residual_privacy_handling', 'hold')->save();
-  return 'Residual privacy findings keep holding the photo for moderation.';
+  if (!$set) {
+    return 'Skipped: residual privacy settings already set.';
+  }
+  $config->save();
+  return 'Set defaults for ' . implode(', ', $set) . '.';
+}
+
+/**
+ * Creates the table of unblurred originals kept for staff.
+ */
+function markaspot_vision_update_11807(): string {
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists(OriginalImageStore::TABLE)) {
+    return 'Skipped: table already exists.';
+  }
+  $schema->createTable(OriginalImageStore::TABLE, _markaspot_vision_original_table());
+  return 'Created the table of unblurred originals.';
 }
 
 /**
@@ -284,7 +352,7 @@ function markaspot_vision_requirements($phase): array {
     $severity = REQUIREMENT_WARNING;
     $description = BlurAdvisory::message();
   }
-  return [
+  $requirements = [
     'markaspot_vision_blur' => [
       'title' => t('Image blurring before AI analysis'),
       'value' => $mode,
@@ -292,4 +360,13 @@ function markaspot_vision_requirements($phase): array {
       'description' => $description,
     ],
   ];
+  if ($config->get('retain_originals') && !\Drupal::service('stream_wrapper_manager')->isValidScheme('private')) {
+    $requirements['markaspot_vision_originals'] = [
+      'title' => t('Unblurred originals for staff'),
+      'value' => t('Not kept'),
+      'severity' => REQUIREMENT_WARNING,
+      'description' => t('Keeping originals is switched on, but the site has no private file system. Set file_private_path; until then photos are blurred without keeping the original.'),
+    ];
+  }
+  return $requirements;
 }

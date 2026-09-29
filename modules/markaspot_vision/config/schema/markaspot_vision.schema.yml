@@ -49,6 +49,9 @@ markaspot_vision.settings:
       label: 'Handling of personal data the normal blur missed'
       constraints:
         Choice: [hold, reblur]
+    retain_originals:
+      type: boolean
+      label: 'Keep unblurred originals of blurred photos for staff'
     max_tokens_param:
       type: string
       label: 'Token limit parameter'

@@ -9,6 +9,17 @@ services:
       - '@logger.factory'
       - '@state'
       - '@datetime.time'
+  markaspot_vision.original_image_store:
+    class: Drupal\markaspot_vision\Service\OriginalImageStore
+    arguments:
+      - '@config.factory'
+      - '@database'
+      - '@entity_type.manager'
+      - '@file_system'
+      - '@stream_wrapper_manager'
+      - '@datetime.time'
+      - '@logger.factory'
+      - '@?markaspot_open311.status_classifier'
   markaspot_vision.media_analysis_access_guard:
     class: Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard
     arguments:

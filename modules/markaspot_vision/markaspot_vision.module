@@ -7,6 +7,8 @@
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\markaspot_vision\Service\OriginalImageStore;
+use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
 use Drupal\node\NodeInterface;
 
@@ -164,4 +166,69 @@ function _markaspot_vision_propagate_hazard_level(NodeInterface $node): void {
 
   // Set directly on the entity object (mid-save), no $node->save() needed.
   $node->set('field_hazard_level', $max_hazard_level);
+}
+
+/**
+ * Implements hook_file_download().
+ *
+ * Unblurred originals open only for accounts that may edit a report showing
+ * the photo; every view is logged. Any other private file is not ours.
+ */
+function markaspot_vision_file_download(string $uri): array|int|null {
+  if (!str_starts_with($uri, OriginalImageStore::DIRECTORY . '/')) {
+    return NULL;
+  }
+  /** @var \Drupal\markaspot_vision\Service\OriginalImageStore $store */
+  $store = \Drupal::service('markaspot_vision.original_image_store');
+  $original = $store->findByUri($uri);
+  $media = $original ? Media::load($original['mid']) : NULL;
+  $account = \Drupal::currentUser();
+  if (!$media || !$store->canView($media, $account)) {
+    return -1;
+  }
+  $store->logView($original['mid'], $account);
+  return [
+    'Content-Type' => $original['mime'],
+    'Cache-Control' => 'private, no-store',
+    'X-Content-Type-Options' => 'nosniff',
+    'Content-Disposition' => 'inline',
+  ];
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_vision_cron(): void {
+  if (\Drupal::database()->schema()->tableExists(OriginalImageStore::TABLE)) {
+    \Drupal::service('markaspot_vision.original_image_store')->purgeExpired();
+  }
+}
+
+/**
+ * Implements hook_media_delete().
+ */
+function markaspot_vision_media_delete(MediaInterface $media): void {
+  if (\Drupal::database()->schema()->tableExists(OriginalImageStore::TABLE)) {
+    \Drupal::service('markaspot_vision.original_image_store')->delete((int) $media->id());
+  }
+}
+
+/**
+ * Implements hook_node_delete().
+ *
+ * An original goes with the last report that showed its photo.
+ */
+function markaspot_vision_node_delete(NodeInterface $node): void {
+  if ($node->bundle() !== 'service_request' || !$node->hasField('field_request_media')
+    || !\Drupal::database()->schema()->tableExists(OriginalImageStore::TABLE)) {
+    return;
+  }
+  /** @var \Drupal\markaspot_vision\Service\OriginalImageStore $store */
+  $store = \Drupal::service('markaspot_vision.original_image_store');
+  foreach ($node->get('field_request_media') as $item) {
+    $mid = (int) $item->target_id;
+    if ($mid && !$store->isUsed($mid)) {
+      $store->delete($mid);
+    }
+  }
 }
