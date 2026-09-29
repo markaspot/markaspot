@@ -54,6 +54,11 @@ class OriginalImageStore {
   public const PURGE_CURSOR = 'markaspot_vision.original_purge_cursor';
 
   /**
+   * Seconds after upload within which a report can take on an original.
+   */
+  public const CLAIM_WINDOW = 86400;
+
+  /**
    * The logger channel.
    */
   protected LoggerInterface $logger;
@@ -158,10 +163,11 @@ class OriginalImageStore {
    * Binds the originals of a report's photos to it, if not bound yet.
    *
    * Called when a report is saved: the first report that shows a photo owns
-   * its original. Later reports showing the same photo gain nothing.
+   * its original. Later reports showing the same photo gain nothing, and an
+   * upload nobody submitted within a day can no longer be claimed at all.
    */
   public function bind(NodeInterface $node): void {
-    if ($node->bundle() !== 'service_request' || !$node->hasField('field_request_media') || !$this->tableExists()) {
+    if ($node->bundle() !== 'service_request' || !$node->hasField('field_request_media') || !$this->isEnabled()) {
       return;
     }
     $mids = array_filter(array_map(
@@ -175,6 +181,7 @@ class OriginalImageStore {
       ->fields(['nid' => (int) $node->id()])
       ->condition('mid', $mids, 'IN')
       ->isNull('nid')
+      ->condition('created', $this->time->getRequestTime() - self::CLAIM_WINDOW, '>')
       ->execute();
   }
 
@@ -278,9 +285,12 @@ class OriginalImageStore {
   }
 
   /**
-   * Deletes the originals a report owns.
+   * Hands the originals of a deleted report on, or deletes them.
+   *
+   * A report split off the deleted one may still show the photo; it takes
+   * the original over. Without such a report the original goes.
    */
-  public function deleteOwnedBy(int $nid): void {
+  public function releaseOwnedBy(int $nid): void {
     if (!$this->tableExists()) {
       return;
     }
@@ -290,6 +300,14 @@ class OriginalImageStore {
       ->execute()
       ->fetchCol();
     foreach ($mids as $mid) {
+      $next = $this->firstReportUsing((int) $mid);
+      if ($next !== NULL && $next !== $nid) {
+        $this->database->update(self::TABLE)
+          ->fields(['nid' => $next])
+          ->condition('mid', (int) $mid)
+          ->execute();
+        continue;
+      }
       $this->delete((int) $mid);
     }
   }
@@ -308,10 +326,12 @@ class OriginalImageStore {
    *   Number of originals deleted.
    */
   public function purgeExpired(int $limit = 200): int {
-    if (!$this->tableExists()) {
+    // Without a working private file system nothing can be deleted cleanly;
+    // wiping the mapping alone would strand the files.
+    if (!$this->tableExists() || !$this->streamWrapperManager->isValidScheme('private')) {
       return 0;
     }
-    $enabled = $this->isEnabled();
+    $enabled = (bool) $this->configFactory->get('markaspot_vision.settings')->get('retain_originals');
     $cutoff = $this->time->getRequestTime() - self::RETENTION_DAYS * 86400;
     $cursor = (int) $this->state->get(self::PURGE_CURSOR, 0);
     $query = $this->database->select(self::TABLE, 'o')

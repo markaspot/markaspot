@@ -65,6 +65,11 @@ class OriginalImageStoreTest extends UnitTestCase {
   private bool $enabled = TRUE;
 
   /**
+   * Whether the private file system works.
+   */
+  private bool $privateOk = TRUE;
+
+  /**
    * Whether a database transaction is open.
    */
   private bool $inTransaction = FALSE;
@@ -152,7 +157,7 @@ class OriginalImageStoreTest extends UnitTestCase {
 
     $this->fileSystem = $this->createMock(FileSystemInterface::class);
     $streamWrappers = $this->createMock(StreamWrapperManagerInterface::class);
-    $streamWrappers->method('isValidScheme')->with('private')->willReturn(TRUE);
+    $streamWrappers->method('isValidScheme')->with('private')->willReturnCallback(fn () => $this->privateOk);
     $time = $this->createMock(TimeInterface::class);
     $time->method('getRequestTime')->willReturn(self::NOW);
     $state = $this->createMock(StateInterface::class);
@@ -259,17 +264,25 @@ class OriginalImageStoreTest extends UnitTestCase {
       $values = $fields;
       return $update;
     });
-    $update->method('condition')->willReturnCallback(function ($field, $value) use (&$mids, $update) {
-      $mids = (array) $value;
+    $createdAfter = NULL;
+    $update->method('condition')->willReturnCallback(function ($field, $value) use (&$mids, &$createdAfter, $update) {
+      if ($field === 'created') {
+        $createdAfter = $value;
+      }
+      else {
+        $mids = (array) $value;
+      }
       return $update;
     });
     $update->method('isNull')->willReturnCallback(function ($field) use (&$onlyUnbound, $update) {
       $onlyUnbound = $field === 'nid';
       return $update;
     });
-    $update->method('execute')->willReturnCallback(function () use (&$values, &$mids, &$onlyUnbound) {
+    $update->method('execute')->willReturnCallback(function () use (&$values, &$mids, &$onlyUnbound, &$createdAfter) {
       foreach ($mids as $mid) {
-        if (isset($this->rows[$mid]) && (!$onlyUnbound || $this->rows[$mid]['nid'] === NULL)) {
+        if (isset($this->rows[$mid])
+          && (!$onlyUnbound || $this->rows[$mid]['nid'] === NULL)
+          && ($createdAfter === NULL || $this->rows[$mid]['created'] > $createdAfter)) {
           $this->rows[$mid] = $values + $this->rows[$mid];
         }
       }
@@ -538,6 +551,62 @@ class OriginalImageStoreTest extends UnitTestCase {
     $store->delete(2);
     ($this->afterCommit[0])(TRUE);
     ($this->afterCommit[1])(FALSE);
+  }
+
+  /**
+   * An upload nobody submitted within a day can no longer be claimed.
+   */
+  public function testAbandonedUploadCannotBeClaimedLater(): void {
+    $this->rows[7] = $this->row(7, self::NOW - 2 * 86400, NULL);
+    $late = $this->report(5, [7], TRUE);
+    $store = $this->store();
+
+    $store->bind($late);
+
+    $this->assertNull($this->rows[7]['nid']);
+  }
+
+  /**
+   * With the feature off, saving a report binds nothing.
+   */
+  public function testBindDoesNothingWhenSwitchedOff(): void {
+    $this->rows[7] = $this->row(7, self::NOW, NULL);
+    $report = $this->report(1, [7], TRUE);
+    $this->enabled = FALSE;
+    $store = $this->store();
+
+    $store->bind($report);
+
+    $this->assertNull($this->rows[7]['nid']);
+  }
+
+  /**
+   * A split-off report still showing the photo takes the original over.
+   */
+  public function testDeletedReportHandsTheOriginalToReportStillShowingIt(): void {
+    $this->rows[7] = $this->row(7, self::NOW, 1);
+    $this->rows[8] = $this->row(8, self::NOW, 1);
+    // Report 1 was deleted; report 2, split off it, still shows photo 7.
+    $this->report(2, [7], TRUE);
+    $store = $this->store();
+    $this->fileSystem->expects($this->once())->method('delete')->with(OriginalImageStore::DIRECTORY . '/uuid-8');
+
+    $store->releaseOwnedBy(1);
+
+    $this->assertSame(2, $this->rows[7]['nid']);
+    $this->assertArrayNotHasKey(8, $this->rows);
+  }
+
+  /**
+   * A broken private file system never makes the purge strand files.
+   */
+  public function testPurgeLeavesEverythingWithoutPrivateFileSystem(): void {
+    $this->rows[1] = $this->row(1, self::NOW - 40 * 86400, NULL);
+    $this->privateOk = FALSE;
+    $store = $this->store();
+
+    $this->assertSame(0, $store->purgeExpired());
+    $this->assertArrayHasKey(1, $this->rows);
   }
 
 }

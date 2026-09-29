@@ -218,10 +218,11 @@ function markaspot_vision_media_delete(MediaInterface $media): void {
 /**
  * Implements hook_node_delete().
  *
- * The originals a report owns go with it.
+ * The originals a report owns pass to a report still showing the photo, or
+ * go with it.
  */
 function markaspot_vision_node_delete(NodeInterface $node): void {
   if ($node->bundle() === 'service_request') {
-    \Drupal::service('markaspot_vision.original_image_store')->deleteOwnedBy((int) $node->id());
+    \Drupal::service('markaspot_vision.original_image_store')->releaseOwnedBy((int) $node->id());
   }
 }
