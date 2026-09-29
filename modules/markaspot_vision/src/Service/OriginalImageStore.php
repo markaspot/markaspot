@@ -5,11 +5,13 @@ namespace Drupal\markaspot_vision\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\media\MediaInterface;
@@ -21,10 +23,13 @@ use Psr\Log\LoggerInterface;
  *
  * Opt-in per site (retain_originals). The original lives in the private file
  * system, one file per media named by its UUID, mapped in a table of its own
- * so JSON:API and GeoReport never enumerate it. Only accounts that may edit
- * a report showing the photo can open it, and every view is logged. An
+ * so JSON:API and GeoReport never enumerate it. Each original belongs to one
+ * report, the first that showed the photo; only accounts that may edit that
+ * report can open it (external contractors never), and every view is logged.
+ * Attaching someone else's photo to another report grants nothing. An
  * original goes 30 days after its report was closed, with its media or
- * report, or 30 days after upload when no report ever used it.
+ * report, 30 days after upload when no report ever used it, and entirely
+ * once the site switches the feature off.
  */
 class OriginalImageStore {
 
@@ -44,9 +49,19 @@ class OriginalImageStore {
   public const RETENTION_DAYS = 30;
 
   /**
+   * State key of the purge cursor (last media id examined).
+   */
+  public const PURGE_CURSOR = 'markaspot_vision.original_purge_cursor';
+
+  /**
    * The logger channel.
    */
   protected LoggerInterface $logger;
+
+  /**
+   * Whether the table exists, once asked.
+   */
+  protected ?bool $tableExists = NULL;
 
   /**
    * Constructs the store.
@@ -58,6 +73,7 @@ class OriginalImageStore {
     protected FileSystemInterface $fileSystem,
     protected StreamWrapperManagerInterface $streamWrapperManager,
     protected TimeInterface $time,
+    protected StateInterface $state,
     LoggerChannelFactoryInterface $loggerFactory,
     protected ?StatusClassifier $statusClassifier = NULL,
   ) {
@@ -69,15 +85,24 @@ class OriginalImageStore {
    */
   public function isEnabled(): bool {
     return (bool) $this->configFactory->get('markaspot_vision.settings')->get('retain_originals')
-      && $this->streamWrapperManager->isValidScheme('private');
+      && $this->streamWrapperManager->isValidScheme('private')
+      && $this->tableExists();
+  }
+
+  /**
+   * Whether the table exists; false between deploy and the database update.
+   */
+  public function tableExists(): bool {
+    return $this->tableExists ??= $this->database->schema()->tableExists(self::TABLE);
   }
 
   /**
    * Keeps the current file of a media before the blur overwrites it.
    *
-   * The first original wins: a later analysis of an already blurred photo
-   * must not replace it with the blurred bytes. Failures are logged and never
-   * stop the blur; privacy of the published photo comes first.
+   * The table row is the lock: only the first analysis keeps an original,
+   * and it always reads the file before its own blur overwrites it. Failures
+   * are logged and never stop the blur; privacy of the published photo
+   * comes first.
    *
    * @param \Drupal\media\MediaInterface $media
    *   The media about to be blurred.
@@ -85,50 +110,94 @@ class OriginalImageStore {
    *   Its current (still unblurred) file URI.
    */
   public function retain(MediaInterface $media, string $uri): void {
-    if (!$this->isEnabled() || $this->find((int) $media->id())) {
+    if (!$this->isEnabled()) {
       return;
     }
+    $mid = (int) $media->id();
     try {
       $contents = @file_get_contents($uri);
       if ($contents === FALSE || $contents === '') {
         throw new \RuntimeException('The original file is unreadable.');
       }
-      $directory = self::DIRECTORY;
-      $this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
       $target = self::DIRECTORY . '/' . $media->uuid();
-      $this->fileSystem->saveData($contents, $target, FileExists::Replace);
-      $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($contents) ?: 'application/octet-stream';
-      $this->database->merge(self::TABLE)
-        ->key('mid', (int) $media->id())
-        ->fields([
-          'uri' => $target,
-          'mime' => $mime,
-          'created' => $this->time->getRequestTime(),
-        ])
-        ->execute();
-      $this->logger->notice('GDPR audit: unblurred original of media @id kept for staff before blurring.', ['@id' => $media->id()]);
+      try {
+        $this->database->insert(self::TABLE)
+          ->fields([
+            'mid' => $mid,
+            'uri' => $target,
+            'mime' => (new \finfo(FILEINFO_MIME_TYPE))->buffer($contents) ?: 'application/octet-stream',
+            'created' => $this->time->getRequestTime(),
+            'nid' => $this->firstReportUsing($mid),
+          ])
+          ->execute();
+      }
+      catch (IntegrityConstraintViolationException $e) {
+        // Kept by an earlier analysis; that copy is the unblurred one.
+        return;
+      }
+      try {
+        $directory = self::DIRECTORY;
+        $this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+        $this->fileSystem->saveData($contents, $target, FileExists::Replace);
+      }
+      catch (\Throwable $e) {
+        $this->database->delete(self::TABLE)->condition('mid', $mid)->execute();
+        throw $e;
+      }
+      $this->logger->notice('GDPR audit: unblurred original of media @id kept for staff before blurring.', ['@id' => $mid]);
     }
     catch (\Throwable $e) {
       $this->logger->error('Could not keep the original of media @id; the blur goes ahead without it: @message', [
-        '@id' => $media->id(),
+        '@id' => $mid,
         '@message' => mb_substr($e->getMessage(), 0, 200),
       ]);
     }
   }
 
   /**
+   * Binds the originals of a report's photos to it, if not bound yet.
+   *
+   * Called when a report is saved: the first report that shows a photo owns
+   * its original. Later reports showing the same photo gain nothing.
+   */
+  public function bind(NodeInterface $node): void {
+    if ($node->bundle() !== 'service_request' || !$node->hasField('field_request_media') || !$this->tableExists()) {
+      return;
+    }
+    $mids = array_filter(array_map(
+      static fn ($item): int => (int) $item->target_id,
+      iterator_to_array($node->get('field_request_media')),
+    ));
+    if (!$mids) {
+      return;
+    }
+    $this->database->update(self::TABLE)
+      ->fields(['nid' => (int) $node->id()])
+      ->condition('mid', $mids, 'IN')
+      ->isNull('nid')
+      ->execute();
+  }
+
+  /**
    * Returns the stored original of a media.
    *
    * @return array|null
-   *   ['uri' => string, 'mime' => string], or NULL.
+   *   ['uri' => string, 'mime' => string, 'nid' => int|null], or NULL.
    */
   public function find(int $mid): ?array {
+    if (!$this->tableExists()) {
+      return NULL;
+    }
     $row = $this->database->select(self::TABLE, 'o')
-      ->fields('o', ['uri', 'mime'])
+      ->fields('o', ['uri', 'mime', 'nid'])
       ->condition('mid', $mid)
       ->execute()
       ->fetchAssoc();
-    return $row ?: NULL;
+    if (!$row) {
+      return NULL;
+    }
+    $row['nid'] = $row['nid'] === NULL ? NULL : (int) $row['nid'];
+    return $row;
   }
 
   /**
@@ -138,7 +207,7 @@ class OriginalImageStore {
    *   ['mid' => int, 'mime' => string], or NULL for any other URI.
    */
   public function findByUri(string $uri): ?array {
-    if (!str_starts_with($uri, self::DIRECTORY . '/')) {
+    if (!str_starts_with($uri, self::DIRECTORY . '/') || !$this->tableExists()) {
       return NULL;
     }
     $row = $this->database->select(self::TABLE, 'o')
@@ -150,18 +219,21 @@ class OriginalImageStore {
   }
 
   /**
-   * Whether an account may see the original: it may edit a report using it.
+   * Whether an account may see the original of a media.
+   *
+   * Only accounts that may edit the report owning the original, and never
+   * external contractors: the original shows third parties unblurred.
    */
   public function canView(MediaInterface $media, AccountInterface $account): bool {
-    if ($account->isAnonymous()) {
+    if ($account->isAnonymous() || $this->isRestrictedContractor($account)) {
       return FALSE;
     }
-    foreach ($this->reportsUsing((int) $media->id()) as $node) {
-      if ($node->access('update', $account)) {
-        return TRUE;
-      }
+    $original = $this->find((int) $media->id());
+    if (!$original || $original['nid'] === NULL) {
+      return FALSE;
     }
-    return FALSE;
+    $node = $this->entityTypeManager->getStorage('node')->load($original['nid']);
+    return $node instanceof NodeInterface && $node->access('update', $account);
   }
 
   /**
@@ -175,32 +247,59 @@ class OriginalImageStore {
   }
 
   /**
-   * Deletes the original of a media, file and mapping.
+   * Deletes the original of a media, mapping now and file once committed.
    */
   public function delete(int $mid): void {
     $original = $this->find($mid);
     if (!$original) {
       return;
     }
-    try {
-      $this->fileSystem->delete($original['uri']);
-    }
-    catch (\Throwable $e) {
-      // A file already gone must not keep the mapping alive.
-    }
     $this->database->delete(self::TABLE)->condition('mid', $mid)->execute();
+    $unlink = function (bool $committed = TRUE) use ($original): void {
+      if (!$committed) {
+        return;
+      }
+      try {
+        $this->fileSystem->delete($original['uri']);
+      }
+      catch (\Throwable $e) {
+        // Nothing is left to serve it once the mapping is gone.
+      }
+    };
+    // Inside an entity delete, the file goes only if the delete commits.
+    $transactions = $this->database->transactionManager();
+    if ($transactions->inTransaction()) {
+      $transactions->addPostTransactionCallback($unlink);
+    }
+    else {
+      $unlink();
+    }
     $this->logger->notice('GDPR audit: unblurred original of media @id deleted.', ['@id' => $mid]);
   }
 
   /**
-   * Whether any report still shows a media.
+   * Deletes the originals a report owns.
    */
-  public function isUsed(int $mid): bool {
-    return (bool) $this->reportsUsing($mid);
+  public function deleteOwnedBy(int $nid): void {
+    if (!$this->tableExists()) {
+      return;
+    }
+    $mids = $this->database->select(self::TABLE, 'o')
+      ->fields('o', ['mid'])
+      ->condition('nid', $nid)
+      ->execute()
+      ->fetchCol();
+    foreach ($mids as $mid) {
+      $this->delete((int) $mid);
+    }
   }
 
   /**
    * Deletes originals whose retention ended.
+   *
+   * Walks the table in media id order with a cursor kept in state, so
+   * originals of reports still open never block the ones behind them.
+   * With the site switch off, nothing may be kept and all go.
    *
    * @param int $limit
    *   Maximum number of originals examined per run.
@@ -209,46 +308,60 @@ class OriginalImageStore {
    *   Number of originals deleted.
    */
   public function purgeExpired(int $limit = 200): int {
-    $cutoff = $this->time->getRequestTime() - self::RETENTION_DAYS * 86400;
-    $rows = $this->database->select(self::TABLE, 'o')
-      ->fields('o', ['mid', 'created'])
-      ->condition('created', $cutoff, '<')
-      ->orderBy('created')
-      ->range(0, $limit)
-      ->execute()
-      ->fetchAllKeyed();
-    $deleted = 0;
-    foreach ($rows as $mid => $created) {
-      $reports = $this->reportsUsing((int) $mid);
-      // An upload no report ever used goes after the retention period; a
-      // used one only once every report showing it is closed long enough.
-      $expired = !$reports || array_reduce(
-        $reports,
-        fn (bool $carry, NodeInterface $node): bool => $carry && $this->closedBefore($node, $cutoff),
-        TRUE,
-      );
-      if ($expired) {
-        $this->delete((int) $mid);
-        $deleted++;
-      }
+    if (!$this->tableExists()) {
+      return 0;
     }
+    $enabled = $this->isEnabled();
+    $cutoff = $this->time->getRequestTime() - self::RETENTION_DAYS * 86400;
+    $cursor = (int) $this->state->get(self::PURGE_CURSOR, 0);
+    $query = $this->database->select(self::TABLE, 'o')
+      ->fields('o', ['mid', 'nid'])
+      ->condition('mid', $cursor, '>')
+      ->orderBy('mid')
+      ->range(0, $limit);
+    if ($enabled) {
+      $query->condition('created', $cutoff, '<');
+    }
+    $rows = $query->execute()->fetchAllKeyed();
+
+    $deleted = 0;
+    $node_storage = $this->entityTypeManager->getStorage('node');
+    foreach ($rows as $mid => $nid) {
+      if ($enabled && $nid !== NULL) {
+        $node = $node_storage->load((int) $nid);
+        if ($node instanceof NodeInterface && !$this->closedBefore($node, $cutoff)) {
+          continue;
+        }
+      }
+      // Switched off, never used by a report, report gone or closed long
+      // enough: the original goes.
+      $this->delete((int) $mid);
+      $deleted++;
+    }
+    $this->state->set(self::PURGE_CURSOR, count($rows) < $limit ? 0 : (int) array_key_last($rows));
     return $deleted;
   }
 
   /**
-   * Service requests that show a media.
-   *
-   * @return \Drupal\node\NodeInterface[]
-   *   The reports.
+   * Whether an account is an external contractor without an editorial role.
    */
-  protected function reportsUsing(int $mid): array {
-    $storage = $this->entityTypeManager->getStorage('node');
-    $nids = $storage->getQuery()
+  protected function isRestrictedContractor(AccountInterface $account): bool {
+    return function_exists('_markaspot_group_account_has_restricted_contractor_access')
+      && _markaspot_group_account_has_restricted_contractor_access($account);
+  }
+
+  /**
+   * The first service request showing a media, if any.
+   */
+  protected function firstReportUsing(int $mid): ?int {
+    $nids = $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
       ->condition('field_request_media', $mid)
+      ->sort('nid')
+      ->range(0, 1)
       ->execute();
-    return $nids ? $storage->loadMultiple($nids) : [];
+    return $nids ? (int) reset($nids) : NULL;
   }
 
   /**

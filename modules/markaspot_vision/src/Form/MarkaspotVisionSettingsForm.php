@@ -148,7 +148,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Keep the unblurred original for staff'),
       '#default_value' => (bool) $config->get('retain_originals'),
-      '#description' => $this->t('Stores the original of every blurred photo in the private file system. Only people who may edit a report showing the photo can open it, every view is logged, and the original is deleted 30 days after the report was closed. Needs a private file system and must be covered by your data protection impact assessment.'),
+      '#description' => $this->t('Stores the original of every blurred photo in the private file system. Only people who may edit the report the photo was first submitted with can open it (external contractors never), every view is logged, and the original is deleted 30 days after the report was closed. Switching this off deletes all kept originals with the next cron run. Needs a private file system and must be covered by your data protection impact assessment.'),
       '#states' => [
         'visible' => [
           ':input[name="enable_blur_preprocessing"]' => ['checked' => TRUE],

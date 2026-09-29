@@ -18,6 +18,7 @@ services:
       - '@file_system'
       - '@stream_wrapper_manager'
       - '@datetime.time'
+      - '@state'
       - '@logger.factory'
       - '@?markaspot_open311.status_classifier'
   markaspot_vision.media_analysis_access_guard:

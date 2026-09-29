@@ -57,7 +57,8 @@ class OriginalImageController extends ControllerBase {
       foreach ($media_items as $media) {
         $original = $this->originalImageStore->find((int) $media->id());
         if ($original && $this->originalImageStore->canView($media, $this->currentUser())) {
-          $originals[$media->uuid()] = $this->fileUrlGenerator->generateString($original['uri']);
+          // Path only: the dashboard loads it through its own image proxy.
+          $originals[$media->uuid()] = (string) parse_url($this->fileUrlGenerator->generateString($original['uri']), PHP_URL_PATH);
         }
       }
     }

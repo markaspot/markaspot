@@ -290,11 +290,29 @@ function _markaspot_vision_original_table(): array {
         'default' => 0,
         'description' => 'When the original was kept.',
       ],
+      'nid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'The report owning the original: the first that showed the photo.',
+      ],
     ],
     'primary key' => ['mid'],
     'unique keys' => ['uri' => ['uri']],
-    'indexes' => ['created' => ['created']],
+    'indexes' => ['created' => ['created'], 'nid' => ['nid']],
   ];
+}
+
+/**
+ * Implements hook_uninstall().
+ *
+ * The table goes with the module; the unblurred originals must go with it.
+ */
+function markaspot_vision_uninstall(): void {
+  if (\Drupal::service('stream_wrapper_manager')->isValidScheme('private')) {
+    \Drupal::service('file_system')->deleteRecursive(OriginalImageStore::DIRECTORY);
+  }
+  \Drupal::state()->delete(OriginalImageStore::PURGE_CURSOR);
 }
 
 /**
