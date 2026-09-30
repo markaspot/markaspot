@@ -95,6 +95,25 @@ final class FieldAuthorUpdateKernelTest extends KernelTestBase {
   }
 
   /**
+   * The status report warns while field_author is missing.
+   */
+  public function testRequirementsWarnUntilFieldAuthorIsRestored(): void {
+    require_once $this->root . '/core/includes/install.inc';
+    $this->createParagraphType('status');
+    $this->createParagraphType('internal_remark');
+
+    $requirement = markaspot_dashboard_requirements('runtime')['markaspot_dashboard_field_author'];
+    $this->assertSame(REQUIREMENT_WARNING, $requirement['severity']);
+    $this->assertStringContainsString('status, internal_remark', (string) $requirement['value']);
+
+    markaspot_dashboard_update_11902();
+
+    $requirement = markaspot_dashboard_requirements('runtime')['markaspot_dashboard_field_author'];
+    $this->assertSame(REQUIREMENT_OK, $requirement['severity']);
+    $this->assertSame([], markaspot_dashboard_requirements('install'));
+  }
+
+  /**
    * Asserts active config equals the shipped YAML, ignoring generated keys.
    */
   private function assertMatchesShippedConfig(string $name): void {

@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Config\FileStorage;
+use Drupal\field\Entity\FieldConfig;
 
 /**
  * Implements hook_schema().
@@ -78,6 +79,38 @@ function markaspot_dashboard_schema(): array {
   ];
 
   return $schema;
+}
+
+/**
+ * Implements hook_requirements().
+ *
+ * Reports a missing paragraph field_author on the status report. Status
+ * notes are then saved without their author and internal remarks cannot be
+ * created, while the only other trace is a log warning nobody reads.
+ */
+function markaspot_dashboard_requirements(string $phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
+
+  $type_storage = \Drupal::entityTypeManager()->getStorage('paragraphs_type');
+  $missing = [];
+  foreach (['status', 'internal_remark'] as $bundle) {
+    if ($type_storage->load($bundle) && !FieldConfig::loadByName('paragraph', $bundle, 'field_author')) {
+      $missing[] = $bundle;
+    }
+  }
+
+  $requirement = [
+    'title' => t('Mark-a-Spot paragraph authors'),
+    'value' => $missing ? t('field_author missing on: @bundles', ['@bundles' => implode(', ', $missing)]) : t('field_author present'),
+    'severity' => $missing ? REQUIREMENT_WARNING : REQUIREMENT_OK,
+  ];
+  if ($missing) {
+    $requirement['description'] = t('Status notes are saved without their author and internal remarks cannot be created. Run the database updates (markaspot_dashboard_update_11902) and export the field to the config sync so the next config import keeps it.');
+  }
+
+  return ['markaspot_dashboard_field_author' => $requirement];
 }
 
 /**
