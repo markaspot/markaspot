@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.209](https://github.com/markaspot/markaspot/compare/11.9.208...11.9.209) (2026-09-30)
+
+### Bug Fixes
+
+* **dashboard:** let members of the responsible organisation read remarks and authors ([9ce14c1](https://github.com/markaspot/markaspot/commit/9ce14c1f5f48dbf76a824b493b6bd2f1f57dae97))
+* **dashboard:** only count organisation groups for remark and author access ([3dcc4db](https://github.com/markaspot/markaspot/commit/3dcc4dbc4f1a5d9f6385b138dca1c06833cd3943))
+* **dashboard:** restore paragraph field_author on sites that lost it and seed it from the shipped config ([993cb3c](https://github.com/markaspot/markaspot/commit/993cb3c3be5fb3f9dadd4e55e8c1333f30a20711))
+* **dashboard:** restrict paragraph author visibility to jurisdiction staff and forbid editing it ([1d993ae](https://github.com/markaspot/markaspot/commit/1d993ae65a95ab68019e47d715b3012794777af7))
+* **dashboard:** scope internal remark reads to staff of the request jurisdiction ([7f2e87f](https://github.com/markaspot/markaspot/commit/7f2e87fb423bd8f3081945954750a4cc9c2434a9))
+* **group:** cache tenant administrator membership access per account and membership ([45e5015](https://github.com/markaspot/markaspot/commit/45e50151c95e5510fe5f4639cc2e4bf1839dadc0))
+* **group:** drop tenant administrator roles handed out through Group forms or JSON:API ([764e8e3](https://github.com/markaspot/markaspot/commit/764e8e3823f2e49a46831826b32286d59581f344))
+* **group:** keep tenant administrator accounts with platform administrators ([3792c58](https://github.com/markaspot/markaspot/commit/3792c58ebf05d5d8ca421b83d55220b2e80a1476))
+* **group:** keep tenant administrator memberships with platform administrators ([5a69008](https://github.com/markaspot/markaspot/commit/5a69008334d706d1240b0dd6f1ddfda3885d497e))
+* **group:** match tenant administrator roles by suffix and cover system saves in the guard ([79ce271](https://github.com/markaspot/markaspot/commit/79ce2714e367489b335ec2b760921c8058658eda))
+* **vision:** warn on the status report when the private file system is not writable for kept originals ([d1b1667](https://github.com/markaspot/markaspot/commit/d1b1667b1c30310c52e508e7a2b378a5d88c671b))
+
 ## [11.9.208](https://github.com/markaspot/markaspot/compare/11.9.207...11.9.208) (2026-09-29)
 
 ### Features
