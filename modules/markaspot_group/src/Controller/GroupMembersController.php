@@ -951,8 +951,9 @@ class GroupMembersController extends ControllerBase {
    *
    * Own name/email updates are still available to authorized route callers;
    * self-blocking and self-anonymization remain forbidden by the mutator.
-   * Other accounts must have no platform privileges and every membership must
-   * belong to a jurisdiction or organisation the caller actually administers.
+   * Other accounts must have no platform privileges, must not be tenant
+   * administrators or editors, and every membership must belong to a
+   * jurisdiction or organisation the caller actually administers.
    */
   protected function canManageGlobalProfile(UserInterface $targetUser, AccountInterface $account): bool {
     if ((int) $targetUser->id() === (int) $account->id()) {
@@ -1001,10 +1002,11 @@ class GroupMembersController extends ControllerBase {
       }
     }
 
-    // Tenant administrators are peers of editors; only a tenant administrator
-    // scope covering all their memberships may change their account.
-    if ($this->getEditorJurisdictionIds($account) !== [] && $this->isProtectedPeer($targetUser)) {
-      return $this->isUserInAdminScope($targetUser, $account, TRUE, $this->getTenantAdminJurisdictionIds($account));
+    // Tenant administrators are peers of each other and supervisors of
+    // editors. Their identity and lifecycle stay with platform administrators,
+    // so no tenant administrator can rename, lock out or anonymize another.
+    if ($this->isProtectedPeer($targetUser)) {
+      return FALSE;
     }
 
     return $this->isUserInAdminScope($targetUser, $account, TRUE);
@@ -1029,7 +1031,8 @@ class GroupMembersController extends ControllerBase {
    * Whether an account is an editor or tenant administrator.
    *
    * Editors manage plain members and moderators; these accounts are their
-   * peers or supervisors and stay with tenant administrators.
+   * peers or supervisors. Their memberships stay with tenant administrators,
+   * their global profile and lifecycle with platform administrators.
    */
   protected function isProtectedPeer(UserInterface $targetUser): bool {
     if (array_intersect(['administrator', 'editorial_board', 'tenant_admin'], $targetUser->getRoles()) !== []) {
@@ -1549,18 +1552,21 @@ class GroupMembersController extends ControllerBase {
       }
     }
 
-    // Cannot self-remove tenant_admin role.
-    if ((int) $targetUser->id() === (int) $currentAccount->id()) {
-      $member = $group->getMember($targetUser);
-      if ($member) {
-        foreach ($member->getRoles(FALSE) as $role) {
-          if (str_ends_with($role->id(), '-tenant_admin')) {
-            return [
-              'success' => FALSE,
-              'error' => "Cannot remove yourself from group $groupId while holding tenant_admin role.",
-            ];
-          }
-        }
+    // A tenant administrator never removes themselves, and only platform
+    // administrators remove another one, so tenant administrators cannot
+    // lock each other out of a tenant.
+    if ($this->holdsTenantAdminRole($group, $targetUser)) {
+      if ((int) $targetUser->id() === (int) $currentAccount->id()) {
+        return [
+          'success' => FALSE,
+          'error' => "Cannot remove yourself from group $groupId while holding tenant_admin role.",
+        ];
+      }
+      if (!$this->isDrupalAdminAccount($currentAccount)) {
+        return [
+          'success' => FALSE,
+          'error' => "Only administrators can remove a tenant administrator from group $groupId.",
+        ];
       }
     }
 
@@ -1570,6 +1576,25 @@ class GroupMembersController extends ControllerBase {
       'success' => TRUE,
       'data' => ['action' => 'removed', 'group_id' => $groupId],
     ];
+  }
+
+  /**
+   * Whether a user holds a tenant administrator role in a group.
+   */
+  protected function holdsTenantAdminRole(GroupInterface $group, UserInterface $user): bool {
+    $relationships = $this->entityTypeManager()->getStorage('group_relationship')->loadByProperties([
+      'gid' => (int) $group->id(),
+      'plugin_id' => 'group_membership',
+      'entity_id' => (int) $user->id(),
+    ]);
+    foreach ($relationships as $relationship) {
+      foreach (array_column($relationship->get('group_roles')->getValue(), 'target_id') as $roleId) {
+        if (is_string($roleId) && str_ends_with($roleId, '-tenant_admin')) {
+          return TRUE;
+        }
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -1676,6 +1701,14 @@ class GroupMembersController extends ControllerBase {
           ];
         }
       }
+    }
+    elseif (!$isDrupalAdmin && $this->holdsTenantAdminRole($group, $targetUser)) {
+      // Only platform administrators demote another tenant administrator;
+      // assigning the role back is reserved to them as well (see above).
+      return [
+        'success' => FALSE,
+        'error' => "Only administrators can remove the tenant_admin role in group $groupId.",
+      ];
     }
 
     $existingMember = $group->getMember($targetUser);
@@ -2042,20 +2075,17 @@ class GroupMembersController extends ControllerBase {
    *   The requesting user account.
    * @param bool $requireCompleteScope
    *   Whether every membership must be managed rather than one being visible.
-   * @param int[]|null $scopeJurIds
-   *   Managed jurisdiction IDs for the complete check; defaults to the full
-   *   caller scope.
    *
    * @return bool
    *   TRUE if the requested scope requirement is satisfied.
    */
-  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account, bool $requireCompleteScope = FALSE, ?array $scopeJurIds = NULL): bool {
+  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account, bool $requireCompleteScope = FALSE): bool {
     $targetMemberships = $this->membershipLoader->loadByUser($targetUser);
     if ($targetMemberships === []) {
       return FALSE;
     }
 
-    $adminJurIds = $requireCompleteScope ? ($scopeJurIds ?? $this->getAdminJurisdictionIds($account)) : [];
+    $adminJurIds = $requireCompleteScope ? $this->getAdminJurisdictionIds($account) : [];
     $visibleGroups = $requireCompleteScope ? [] : $this->loadVisibleGroups('');
     $visibleGroupIds = array_map(fn($g) => (int) $g->id(), $visibleGroups);
 
