@@ -298,6 +298,9 @@ final class PageScopingUpdateKernelTest extends KernelTestBase {
       $module_handler,
       $this->container->get('language_manager'),
       $this->container->get('node.view_all_nodes_memory_cache'),
+      // Drupal 11.4 added the grants helper; NULL loads the service, 11.3
+      // ignores the extra argument.
+      NULL,
     );
     $this->container->set('module_handler', $module_handler);
     $this->container->set('node.grant_storage', $grant_storage);

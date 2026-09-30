@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_ai\Unit;
 
 use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -52,6 +53,9 @@ class BlurAdminMessageTest extends UnitTestCase {
       $container = new ContainerBuilder();
       $container->set('config.factory', $factory);
       $container->set('config.typed', $typed);
+      // Drupal 11.4 autowires config forms by interface, 11.3 by service id.
+      $container->set(ConfigFactoryInterface::class, $factory);
+      $container->set(TypedConfigManagerInterface::class, $typed);
       $container->set('string_translation', $this->getStringTranslationStub());
       $generator = $this->createMock(UrlGeneratorInterface::class);
       $generator->method('generateFromRoute')->with('markaspot_vision.settings')->willReturn('/admin/config/services/markaspot-snap');

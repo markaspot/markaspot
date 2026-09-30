@@ -51,7 +51,11 @@ class RequiredBlurFormTest extends UnitTestCase {
       $factory->method('getEditable')->willReturn($config);
       $container = new ContainerBuilder();
       $container->set('config.factory', $factory);
-      $container->set('config.typed', $this->createMock(TypedConfigManagerInterface::class));
+      $typed = $this->createMock(TypedConfigManagerInterface::class);
+      $container->set('config.typed', $typed);
+      // Drupal 11.4 autowires config forms by interface, 11.3 by service id.
+      $container->set(ConfigFactoryInterface::class, $factory);
+      $container->set(TypedConfigManagerInterface::class, $typed);
       $container->set('markaspot_vision.image_processing', $vision);
       $container->set('string_translation', $this->getStringTranslationStub());
       $container->set('messenger', $this->createMock(MessengerInterface::class));
