@@ -4112,11 +4112,25 @@ function _markaspot_group_reconcile_service_request_relationships(NodeInterface|
  * Only EditorialOrgMembership may add or remove the internal editorial org
  * roles; hand-assigned ones (Group forms, JSON:API) are dropped and removed
  * ones are restored. Org memberships only: the jurisdiction mirror writes
- * jur memberships inside editorial writes and must stay unaffected.
+ * jur memberships inside editorial writes and must stay unaffected. Tenant
+ * administrator roles added through the Group forms or JSON:API by anyone
+ * but a platform administrator are dropped as well.
  */
 function markaspot_group_group_relationship_presave(GroupRelationshipInterface $relationship): void {
   EditorialOrgMembership::guardMembershipIdentity($relationship);
   EditorialOrgMembership::guardEditorialRoles($relationship);
+  $dropped = TenantAdminHelper::guardTenantAdminRoles(
+    $relationship,
+    \Drupal::currentUser(),
+    \Drupal::routeMatch()->getRouteName(),
+  );
+  if ($dropped !== []) {
+    \Drupal::logger('markaspot_group')->warning('Dropped tenant administrator role(s) @roles for user @uid in group @gid: only administrators assign them.', [
+      '@roles' => implode(', ', $dropped),
+      '@uid' => $relationship->getEntityId(),
+      '@gid' => $relationship->getGroupId(),
+    ]);
+  }
 }
 
 /**

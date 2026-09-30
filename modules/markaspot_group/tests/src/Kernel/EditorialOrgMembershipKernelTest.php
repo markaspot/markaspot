@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_group\Kernel;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\Core\Routing\RouteObjectInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -15,12 +16,14 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_group\Controller\GroupMembersController;
+use Drupal\markaspot_group\Service\TenantAdminHelper;
 use Drupal\node\Entity\NodeType;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Route;
 
 /**
  * Tests that editorial users join every organisation of their jurisdiction.
@@ -698,6 +701,85 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $this->assertFalse($relationship($peer)->access('update', $caller));
     $this->assertFalse($relationship($peer)->access('delete', $caller));
     $this->assertTrue($relationship($moderator)->access('delete', $caller));
+  }
+
+  /**
+   * Direct membership writes cannot hand out a tenant administrator role.
+   */
+  public function testDirectWritesCannotGrantTenantAdministratorRole(): void {
+    $rootA = $this->jurisdiction('A');
+    $tenantAdmin = $this->user('tenant-admin');
+    $this->joinJurisdiction($rootA, $tenantAdmin, 'jur-tenant_admin');
+    $moderator = $this->user('moderator', ['moderator']);
+    $this->joinJurisdiction($rootA, $moderator, 'jur-moderator');
+    $platformAdmin = $this->user('platform-admin', ['administrator']);
+    $newcomer = $this->user('newcomer');
+    $storage = $this->container->get('entity_type.manager')->getStorage('group_relationship');
+    $promote = function () use ($rootA, $moderator, $storage) {
+      $relationship = Group::load($rootA->id())->getMember($moderator)->getGroupRelationship();
+      $relationship->setOriginal($storage->loadUnchanged($relationship->id()));
+      $relationship->set('group_roles', ['jur-moderator', 'jur-tenant_admin']);
+      return $relationship;
+    };
+    $roles = fn($relationship) => array_column($relationship->get('group_roles')->getValue(), 'target_id');
+
+    $directRoutes = [
+      'jsonapi.group_relationship--jur-group_membership.individual.patch',
+      'entity.group_relationship.edit_form',
+    ];
+    foreach ($directRoutes as $route) {
+      $relationship = $promote();
+      $this->assertSame(['jur-tenant_admin'], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, $route), $route);
+      $this->assertSame(['jur-moderator'], $roles($relationship), $route);
+    }
+
+    // Platform administrators and programmatic writes keep the role.
+    $relationship = $promote();
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $platformAdmin, 'entity.group_relationship.edit_form'));
+    $this->assertSame(['jur-moderator', 'jur-tenant_admin'], $roles($relationship));
+    $relationship = $promote();
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, NULL));
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, 'markaspot_group.member_update'));
+    // Installation, drush and migrations run without a route as uid 0.
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, User::load(0), NULL));
+    $this->assertSame(['jur-moderator', 'jur-tenant_admin'], $roles($relationship));
+
+    // A role already held survives a direct write.
+    $relationship = Group::load($rootA->id())->getMember($tenantAdmin)->getGroupRelationship();
+    $relationship->setOriginal($storage->loadUnchanged($relationship->id()));
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, 'entity.group_relationship.edit_form'));
+    $this->assertSame(['jur-tenant_admin'], $roles($relationship));
+
+    // A new membership posted through JSON:API loses the role as well.
+    $relationship = $storage->createForEntityInGroup($newcomer, Group::load($rootA->id()), 'group_membership', [
+      'group_roles' => ['jur-tenant_admin'],
+    ]);
+    $this->assertSame(['jur-tenant_admin'], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, 'jsonapi.group_relationship--jur-group_membership.collection.post'));
+    $this->assertSame([], $roles($relationship));
+  }
+
+  /**
+   * Saving a membership through the Group UI drops a handed-out admin role.
+   */
+  public function testGroupUiSaveDropsTenantAdministratorRole(): void {
+    $rootA = $this->jurisdiction('A');
+    $tenantAdmin = $this->user('tenant-admin');
+    $this->joinJurisdiction($rootA, $tenantAdmin, 'jur-tenant_admin');
+    $moderator = $this->user('moderator', ['moderator']);
+    $this->joinJurisdiction($rootA, $moderator, 'jur-moderator');
+
+    $request = Request::create('/group/' . $rootA->id() . '/content/edit');
+    $request->attributes->set(RouteObjectInterface::ROUTE_NAME, 'entity.group_relationship.edit_form');
+    $request->attributes->set(RouteObjectInterface::ROUTE_OBJECT, new Route('/group/{group}/content/{group_relationship}/edit'));
+    $this->container->get('request_stack')->push($request);
+    $this->container->get('current_user')->setAccount($tenantAdmin);
+
+    $relationship = Group::load($rootA->id())->getMember($moderator)->getGroupRelationship();
+    $relationship->set('group_roles', ['jur-moderator', 'jur-tenant_admin']);
+    $relationship->save();
+
+    $this->assertSame(['jur-moderator'], $this->jurisdictionRoles(Group::load($rootA->id()), $moderator));
+    $this->assertFalse(User::load($moderator->id())->hasRole('tenant_admin'));
   }
 
   /**
