@@ -1017,13 +1017,16 @@ function markaspot_group_group_relationship_access(EntityInterface $relationship
   $roleIds = array_column($relationship->get('group_roles')->getValue(), 'target_id');
   if (array_intersect(TenantAdminHelper::getTenantAdminRoleIds(), $roleIds) !== []) {
     if ((int) $account->id() === 1 || in_array('administrator', $account->getRoles(), TRUE)) {
-      return AccessResult::neutral()->setCacheMaxAge(0);
+      return AccessResult::neutral()
+        ->addCacheContexts(['user'])
+        ->addCacheableDependency($relationship);
     }
     return AccessResult::forbidden('Only administrators can change a tenant administrator membership.')
       ->setCacheMaxAge(0);
   }
   if ($relationship->getGroupTypeId() !== _markaspot_group_get_org_group_type()) {
-    return AccessResult::neutral();
+    // The decision above depends on the membership's roles.
+    return AccessResult::neutral()->addCacheableDependency($relationship);
   }
   $organisation = $relationship->getGroup();
   $member = $relationship->getEntity();
