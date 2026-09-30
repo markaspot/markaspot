@@ -24,9 +24,6 @@ env:
   SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal
   SIMPLETEST_BASE_URL: http://localhost
   COMPOSER_NO_INTERACTION: 1
-  # Composer still asks GitHub about the VCS repository of the profile;
-  # anonymous calls share a small rate limit per runner.
-  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
 
 jobs:
   test:
@@ -63,19 +60,21 @@ jobs:
 
     steps:
       - name: Check out the profile
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: profile
+          persist-credentials: false
 
       - name: Check out the mark-a-spot template
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: markaspot/mark-a-spot
           ref: 11.9.x-dev
           path: site
+          persist-credentials: false
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.4'
           extensions: gd, intl, mbstring, pdo_mysql, zip, bcmath, exif, apcu
@@ -88,7 +87,7 @@ jobs:
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       - name: Cache Composer downloads
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: composer-${{ hashFiles('site/composer.lock', 'profile/composer.json') }}
@@ -96,6 +95,10 @@ jobs:
 
       - name: Install the site with this profile
         working-directory: site
+        env:
+          # Many dists come from GitHub; anonymous downloads share a small
+          # rate limit per runner. Only this step sees the token.
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
         run: |
           # Put this checkout first, copied (a symlink would resolve the
           # profile's relative bootstrap path outside web/), and pin its
@@ -118,12 +121,12 @@ jobs:
           test -f web/profiles/contrib/markaspot/markaspot.profile
           test ! -L web/profiles/contrib/markaspot
           # Prove the tests below run this checkout, not a published release.
-          diff -rq --exclude=.git ../profile/modules web/profiles/contrib/markaspot/modules
+          diff -rq --exclude=.git ../profile web/profiles/contrib/markaspot
 
       - name: Run the unit tests
         if: matrix.suite == 'unit'
         working-directory: site/web
-        run: ../vendor/bin/phpunit -c profiles/contrib/markaspot/phpunit.xml.dist --testsuite unit
+        run: ../vendor/bin/phpunit -c profiles/contrib/markaspot/phpunit.xml.dist --testsuite unit --fail-on-empty-test-suite
 
       - name: Run kernel shard ${{ matrix.shard }}
         if: matrix.suite == 'kernel'

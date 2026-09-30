@@ -57,6 +57,8 @@ if (!$config->load($profile . '/phpunit.xml.dist')) {
   exit(1);
 }
 $root = $config->documentElement;
+// A shard that resolves to no tests must fail, not pass quietly.
+$root->setAttribute('failOnEmptyTestSuite', 'true');
 foreach (iterator_to_array($root->getElementsByTagName('testsuites')) as $old) {
   $root->removeChild($old);
 }
