@@ -17,11 +17,13 @@ use Drupal\paragraphs\Entity\ParagraphsType;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
- * Kernel coverage of the field access gate on paragraph field_author.
+ * Kernel coverage of the jurisdiction staff gates in markaspot_dashboard.
  *
  * JSON:API serves a label-only user object (the username) for any user
- * reference a viewer may see, so the author must stay hidden from everyone
- * but dashboard managers of the request's jurisdiction. The jurisdiction
+ * reference a viewer may see, so the paragraph author must stay hidden from
+ * everyone but dashboard managers of the request's jurisdiction. Internal
+ * remarks follow the same rule: self-signup sites grant the remark
+ * permissions through a global role to every workspace admin. The jurisdiction
  * resolver is stubbed like in GeoreportReadScopeKernelTest; the hook is
  * called directly because markaspot_dashboard is not installed (see
  * InternalRemarkAccessKernelTest).
@@ -30,6 +32,8 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
  *
  * @covers ::markaspot_dashboard_entity_field_access
  * @covers ::_markaspot_dashboard_paragraph_author_access
+ * @covers ::_markaspot_dashboard_jurisdiction_staff_access
+ * @covers ::markaspot_dashboard_entity_access
  */
 #[RunTestsInSeparateProcesses]
 final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
@@ -60,6 +64,16 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
   private Paragraph $note;
 
   /**
+   * Internal remark paragraph attached to the same service request.
+   */
+  private Paragraph $remark;
+
+  /**
+   * The service request node.
+   */
+  private Node $request;
+
+  /**
    * Uids that are members of the request's jurisdiction.
    *
    * @var int[]
@@ -83,27 +97,34 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
 
     NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
     ParagraphsType::create(['id' => 'status', 'label' => 'Status'])->save();
+    ParagraphsType::create(['id' => 'internal_remark', 'label' => 'Internal remark'])->save();
     _markaspot_dashboard_ensure_field_author('status');
+    _markaspot_dashboard_ensure_field_author('internal_remark');
 
-    FieldStorageConfig::create([
-      'field_name' => 'field_status_notes',
-      'entity_type' => 'node',
-      'type' => 'entity_reference_revisions',
-      'settings' => ['target_type' => 'paragraph'],
-      'cardinality' => -1,
-    ])->save();
-    FieldConfig::create([
-      'field_name' => 'field_status_notes',
-      'entity_type' => 'node',
-      'bundle' => 'service_request',
-    ])->save();
+    foreach (['field_status_notes', 'field_internal_remark'] as $field_name) {
+      FieldStorageConfig::create([
+        'field_name' => $field_name,
+        'entity_type' => 'node',
+        'type' => 'entity_reference_revisions',
+        'settings' => ['target_type' => 'paragraph'],
+        'cardinality' => -1,
+      ])->save();
+      FieldConfig::create([
+        'field_name' => $field_name,
+        'entity_type' => 'node',
+        'bundle' => 'service_request',
+      ])->save();
+    }
 
     $this->note = Paragraph::create(['type' => 'status', 'field_author' => 1]);
-    Node::create([
+    $this->remark = Paragraph::create(['type' => 'internal_remark', 'field_author' => 1]);
+    $this->request = Node::create([
       'type' => 'service_request',
       'title' => 'Request',
       'field_status_notes' => [$this->note],
-    ])->save();
+      'field_internal_remark' => [$this->remark],
+    ]);
+    $this->request->save();
 
     $processor = $this->createMock(GeoreportProcessorServiceInterface::class);
     $processor->method('resolveNodeJurisdictionId')->willReturn(self::JURISDICTION_ID);
@@ -175,6 +196,59 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
     $definition = $this->note->get('field_author')->getFieldDefinition();
     $result = markaspot_dashboard_entity_field_access('view', $definition, $this->account(24, ['access open311 advanced properties']));
     $this->assertTrue($result->isForbidden());
+  }
+
+  /**
+   * A tenant admin of another workspace cannot read internal remarks.
+   */
+  public function testRemarkForbiddenForForeignTenantAdmin(): void {
+    $account = $this->account(30, ['view field_internal_remark', 'edit field_internal_remark']);
+    $this->assertTrue($this->remarkAccess($account)->isForbidden());
+    $this->assertTrue($this->remarkFieldAccess($account)->isForbidden());
+  }
+
+  /**
+   * Staff of the request's jurisdiction read internal remarks.
+   */
+  public function testRemarkVisibleToStaffOfRequestJurisdiction(): void {
+    $this->members = [31];
+    $account = $this->account(31, ['view field_internal_remark']);
+    $this->assertFalse($this->remarkAccess($account)->isForbidden());
+    $this->assertFalse($this->remarkFieldAccess($account)->isForbidden());
+  }
+
+  /**
+   * Members without the remark permission still cannot read remarks.
+   */
+  public function testRemarkForbiddenForMemberWithoutPermission(): void {
+    $this->members = [32];
+    $account = $this->account(32, ['access open311 advanced properties']);
+    $this->assertTrue($this->remarkAccess($account)->isForbidden());
+    $this->assertTrue($this->remarkFieldAccess($account)->isForbidden());
+  }
+
+  /**
+   * Site operators read internal remarks across jurisdictions.
+   */
+  public function testRemarkVisibleToOperator(): void {
+    $account = $this->account(33, ['administer nodes', 'view field_internal_remark']);
+    $this->assertFalse($this->remarkAccess($account)->isForbidden());
+    $this->assertFalse($this->remarkFieldAccess($account)->isForbidden());
+  }
+
+  /**
+   * Runs the entity access hook for viewing the remark paragraph.
+   */
+  private function remarkAccess(AccountInterface $account) {
+    return markaspot_dashboard_entity_access(Paragraph::load($this->remark->id()), 'view', $account);
+  }
+
+  /**
+   * Runs the field access hook for the request's remark reference field.
+   */
+  private function remarkFieldAccess(AccountInterface $account) {
+    $items = Node::load($this->request->id())->get('field_internal_remark');
+    return markaspot_dashboard_entity_field_access('view', $items->getFieldDefinition(), $account, $items);
   }
 
   /**
