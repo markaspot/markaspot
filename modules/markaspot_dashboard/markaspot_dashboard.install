@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Config\FileStorage;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\field\Entity\FieldConfig;
 
 /**
@@ -104,10 +105,12 @@ function markaspot_dashboard_requirements(string $phase): array {
   $requirement = [
     'title' => t('Mark-a-Spot paragraph authors'),
     'value' => $missing ? t('field_author missing on: @bundles', ['@bundles' => implode(', ', $missing)]) : t('field_author present'),
-    'severity' => $missing ? REQUIREMENT_WARNING : REQUIREMENT_OK,
+    'severity' => $missing ? RequirementSeverity::Warning : RequirementSeverity::OK,
   ];
   if ($missing) {
-    $requirement['description'] = t('Status notes are saved without their author and internal remarks cannot be created. Run the database updates (markaspot_dashboard_update_11902) and export the field to the config sync so the next config import keeps it.');
+    // Update 11902 has usually run already when this fires (a later config
+    // import removed the field again), so drush updb would do nothing.
+    $requirement['description'] = t('Status notes are saved without their author and internal remarks cannot be created. Restore the field with <code>drush php:eval "\\Drupal::moduleHandler()->loadInclude(\'markaspot_dashboard\', \'install\'); _markaspot_dashboard_ensure_field_author(\'status\'); _markaspot_dashboard_ensure_field_author(\'internal_remark\');"</code>, then export it to the config sync so the next config import keeps it.');
   }
 
   return ['markaspot_dashboard_field_author' => $requirement];

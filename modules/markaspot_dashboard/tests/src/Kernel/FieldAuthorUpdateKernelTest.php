@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_dashboard\Kernel;
 
 use Drupal\Core\Config\FileStorage;
+use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -98,18 +99,17 @@ final class FieldAuthorUpdateKernelTest extends KernelTestBase {
    * The status report warns while field_author is missing.
    */
   public function testRequirementsWarnUntilFieldAuthorIsRestored(): void {
-    require_once $this->root . '/core/includes/install.inc';
     $this->createParagraphType('status');
     $this->createParagraphType('internal_remark');
 
     $requirement = markaspot_dashboard_requirements('runtime')['markaspot_dashboard_field_author'];
-    $this->assertSame(REQUIREMENT_WARNING, $requirement['severity']);
+    $this->assertSame(RequirementSeverity::Warning, $requirement['severity']);
     $this->assertStringContainsString('status, internal_remark', (string) $requirement['value']);
 
     markaspot_dashboard_update_11902();
 
     $requirement = markaspot_dashboard_requirements('runtime')['markaspot_dashboard_field_author'];
-    $this->assertSame(REQUIREMENT_OK, $requirement['severity']);
+    $this->assertSame(RequirementSeverity::OK, $requirement['severity']);
     $this->assertSame([], markaspot_dashboard_requirements('install'));
   }
 
