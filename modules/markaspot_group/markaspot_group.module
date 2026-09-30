@@ -1004,13 +1004,25 @@ function markaspot_group_node_access(NodeInterface $node, string $operation, Acc
  *
  * The Group UI grants organisation admins every membership operation. Editors
  * hold that role in every organisation of their tenant; outside their
- * tenant-admin scope the member matrix rule applies here as well.
+ * tenant-admin scope the member matrix rule applies here as well. A tenant
+ * administrator membership stays with platform administrators, so tenant
+ * administrators cannot demote or remove each other through the Group UI.
  */
 function markaspot_group_group_relationship_access(EntityInterface $relationship, string $operation, AccountInterface $account): AccessResult {
   if (!in_array($operation, ['update', 'delete'], TRUE)
     || !$relationship instanceof GroupRelationshipInterface
-    || $relationship->getPluginId() !== 'group_membership'
-    || $relationship->getGroupTypeId() !== _markaspot_group_get_org_group_type()) {
+    || $relationship->getPluginId() !== 'group_membership') {
+    return AccessResult::neutral();
+  }
+  $roleIds = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+  if (array_intersect(TenantAdminHelper::getTenantAdminRoleIds(), $roleIds) !== []) {
+    if ((int) $account->id() === 1 || in_array('administrator', $account->getRoles(), TRUE)) {
+      return AccessResult::neutral()->setCacheMaxAge(0);
+    }
+    return AccessResult::forbidden('Only administrators can change a tenant administrator membership.')
+      ->setCacheMaxAge(0);
+  }
+  if ($relationship->getGroupTypeId() !== _markaspot_group_get_org_group_type()) {
     return AccessResult::neutral();
   }
   $organisation = $relationship->getGroup();

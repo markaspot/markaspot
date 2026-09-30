@@ -1552,18 +1552,21 @@ class GroupMembersController extends ControllerBase {
       }
     }
 
-    // Cannot self-remove tenant_admin role.
-    if ((int) $targetUser->id() === (int) $currentAccount->id()) {
-      $member = $group->getMember($targetUser);
-      if ($member) {
-        foreach ($member->getRoles(FALSE) as $role) {
-          if (str_ends_with($role->id(), '-tenant_admin')) {
-            return [
-              'success' => FALSE,
-              'error' => "Cannot remove yourself from group $groupId while holding tenant_admin role.",
-            ];
-          }
-        }
+    // A tenant administrator never removes themselves, and only platform
+    // administrators remove another one, so tenant administrators cannot
+    // lock each other out of a tenant.
+    if ($this->holdsTenantAdminRole($group, $targetUser)) {
+      if ((int) $targetUser->id() === (int) $currentAccount->id()) {
+        return [
+          'success' => FALSE,
+          'error' => "Cannot remove yourself from group $groupId while holding tenant_admin role.",
+        ];
+      }
+      if (!$this->isDrupalAdminAccount($currentAccount)) {
+        return [
+          'success' => FALSE,
+          'error' => "Only administrators can remove a tenant administrator from group $groupId.",
+        ];
       }
     }
 
@@ -1573,6 +1576,25 @@ class GroupMembersController extends ControllerBase {
       'success' => TRUE,
       'data' => ['action' => 'removed', 'group_id' => $groupId],
     ];
+  }
+
+  /**
+   * Whether a user holds a tenant administrator role in a group.
+   */
+  protected function holdsTenantAdminRole(GroupInterface $group, UserInterface $user): bool {
+    $relationships = $this->entityTypeManager()->getStorage('group_relationship')->loadByProperties([
+      'gid' => (int) $group->id(),
+      'plugin_id' => 'group_membership',
+      'entity_id' => (int) $user->id(),
+    ]);
+    foreach ($relationships as $relationship) {
+      foreach (array_column($relationship->get('group_roles')->getValue(), 'target_id') as $roleId) {
+        if (is_string($roleId) && str_ends_with($roleId, '-tenant_admin')) {
+          return TRUE;
+        }
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -1679,6 +1701,14 @@ class GroupMembersController extends ControllerBase {
           ];
         }
       }
+    }
+    elseif (!$isDrupalAdmin && $this->holdsTenantAdminRole($group, $targetUser)) {
+      // Only platform administrators demote another tenant administrator;
+      // assigning the role back is reserved to them as well (see above).
+      return [
+        'success' => FALSE,
+        'error' => "Only administrators can remove the tenant_admin role in group $groupId.",
+      ];
     }
 
     $existingMember = $group->getMember($targetUser);

@@ -651,6 +651,56 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
   }
 
   /**
+   * Tenant administrators cannot demote or remove each other.
+   *
+   * The member matrix never lets one tenant administrator take the role or
+   * the tenant membership of another; plain members of the same tenant stay
+   * manageable.
+   */
+  public function testTenantAdministratorsCannotDemoteEachOther(): void {
+    $rootA = $this->jurisdiction('A');
+    $caller = $this->user('caller');
+    $this->joinJurisdiction($rootA, $caller, 'jur-tenant_admin');
+    $peer = $this->user('peer');
+    $this->joinJurisdiction($rootA, $peer, 'jur-tenant_admin');
+    $moderator = $this->user('moderator', ['moderator']);
+    $this->joinJurisdiction($rootA, $moderator, 'jur-moderator');
+
+    $controller = $this->matrixController($caller);
+    [, $body] = $this->patchMemberships($controller, $peer, $this->setRoles($rootA, 'jur-moderator'));
+    $this->assertSame('error', $body['status']);
+    $this->assertStringContainsString('Only administrators can remove the tenant_admin role', $body['errors'][0]);
+    [, $body] = $this->patchMemberships($controller, $peer, [(int) $rootA->id() => ['action' => 'remove']]);
+    $this->assertSame('error', $body['status']);
+    $this->assertStringContainsString('Only administrators can remove a tenant administrator', $body['errors'][0]);
+    $this->assertSame(['jur-tenant_admin'], $this->jurisdictionRoles(Group::load($rootA->id()), $peer));
+    $this->assertTrue(User::load($peer->id())->hasRole('tenant_admin'));
+
+    [, $body] = $this->patchMemberships($controller, $moderator, $this->setRoles($rootA, 'jur-member'));
+    $this->assertSame('ok', $body['status']);
+  }
+
+  /**
+   * The Group UI keeps tenant administrator memberships with administrators.
+   */
+  public function testGroupUiKeepsTenantAdministratorMemberships(): void {
+    // As shipped, tenant administrators administer jurisdiction members.
+    GroupRole::load('jur-tenant_admin')->grantPermission('administer members')->save();
+    $rootA = $this->jurisdiction('A');
+    $caller = $this->user('caller');
+    $this->joinJurisdiction($rootA, $caller, 'jur-tenant_admin');
+    $peer = $this->user('peer');
+    $this->joinJurisdiction($rootA, $peer, 'jur-tenant_admin');
+    $moderator = $this->user('moderator', ['moderator']);
+    $this->joinJurisdiction($rootA, $moderator, 'jur-moderator');
+
+    $relationship = fn(UserInterface $user) => Group::load($rootA->id())->getMember($user)->getGroupRelationship();
+    $this->assertFalse($relationship($peer)->access('update', $caller));
+    $this->assertFalse($relationship($peer)->access('delete', $caller));
+    $this->assertTrue($relationship($moderator)->access('delete', $caller));
+  }
+
+  /**
    * Editors cannot move an organisation into another tenant.
    */
   public function testEditorCannotMoveOrganisationToAnotherTenant(): void {
