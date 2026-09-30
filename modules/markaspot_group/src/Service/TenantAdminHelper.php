@@ -156,6 +156,46 @@ class TenantAdminHelper {
   }
 
   /**
+   * Drops tenant administrator roles handed out through direct writes.
+   *
+   * The member matrix and invitations only let platform administrators assign
+   * a tenant administrator role. The Group UI forms and JSON:API write
+   * memberships directly, so a tenant administrator role newly added there is
+   * removed again unless a platform administrator saves the membership.
+   * Programmatic writes (tenant setup, imports, sign-up) are not affected.
+   *
+   * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+   *   The membership about to be saved.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The account saving it.
+   * @param string|null $routeName
+   *   The current route name.
+   *
+   * @return string[]
+   *   The tenant administrator role IDs that were dropped.
+   */
+  public static function guardTenantAdminRoles(GroupRelationshipInterface $relationship, AccountInterface $account, ?string $routeName): array {
+    $routeName = (string) $routeName;
+    if ($relationship->getPluginId() !== 'group_membership'
+      || !$relationship->hasField('group_roles')
+      || (!str_starts_with($routeName, 'jsonapi.') && !str_starts_with($routeName, 'entity.group_relationship.'))
+      || (int) $account->id() === 1
+      || in_array('administrator', $account->getRoles(), TRUE)) {
+      return [];
+    }
+    $submitted = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+    $original = $relationship->isNew() ? NULL : $relationship->getOriginal();
+    $stored = $original instanceof GroupRelationshipInterface && $original->hasField('group_roles')
+      ? array_column($original->get('group_roles')->getValue(), 'target_id')
+      : [];
+    $dropped = array_values(array_diff(array_intersect($submitted, self::getTenantAdminRoleIds()), $stored));
+    if ($dropped !== []) {
+      $relationship->set('group_roles', array_values(array_diff($submitted, $dropped)));
+    }
+    return $dropped;
+  }
+
+  /**
    * Checks whether a group uses the configured jurisdiction group type.
    *
    * @param mixed $group
