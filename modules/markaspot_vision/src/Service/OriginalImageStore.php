@@ -95,6 +95,29 @@ class OriginalImageStore {
   }
 
   /**
+   * Whether PHP may create the originals directory or write into it.
+   *
+   * Checks the deepest directory that already exists on the way down, so a
+   * private root owned by another user shows before the first photo does.
+   */
+  public function isWritable(): bool {
+    if (!$this->streamWrapperManager->isValidScheme('private')) {
+      return FALSE;
+    }
+    $path = $this->fileSystem->realpath('private://');
+    if (!$path || !is_dir($path)) {
+      return FALSE;
+    }
+    foreach (explode('/', substr(self::DIRECTORY, strlen('private://'))) as $segment) {
+      if (!is_dir($path . '/' . $segment)) {
+        break;
+      }
+      $path .= '/' . $segment;
+    }
+    return is_writable($path);
+  }
+
+  /**
    * Whether the table exists; false between deploy and the database update.
    */
   public function tableExists(): bool {

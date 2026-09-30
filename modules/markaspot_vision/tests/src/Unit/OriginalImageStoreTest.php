@@ -103,6 +103,44 @@ class OriginalImageStoreTest extends UnitTestCase {
   private LoggerInterface $logger;
 
   /**
+   * The status check sees a directory PHP may not write to, before any photo.
+   */
+  public function testWritableFollowsTheDeepestExistingDirectory(): void {
+    if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+      $this->markTestSkipped('root ignores file modes.');
+    }
+    $root = sys_get_temp_dir() . '/mas-originals-' . bin2hex(random_bytes(4));
+    $originals = $root . '/markaspot_vision/originals';
+    mkdir($root);
+    try {
+      $store = $this->store();
+      $this->fileSystem->method('realpath')->willReturnCallback(fn ($uri) => $uri === 'private://' ? $root : FALSE);
+      self::assertTrue($store->isWritable(), 'writable private root');
+
+      chmod($root, 0555);
+      self::assertFalse($store->isWritable(), 'private root owned by someone else');
+
+      chmod($root, 0755);
+      mkdir($originals, 0755, TRUE);
+      chmod($originals, 0555);
+      self::assertFalse($store->isWritable(), 'read-only originals directory');
+
+      chmod($originals, 0755);
+      self::assertTrue($store->isWritable(), 'writable originals directory');
+
+      $this->privateOk = FALSE;
+      self::assertFalse($store->isWritable(), 'no private file system');
+    }
+    finally {
+      @chmod($root, 0755);
+      @chmod($originals, 0755);
+      @rmdir($originals);
+      @rmdir(dirname($originals));
+      @rmdir($root);
+    }
+  }
+
+  /**
    * Builds the store over in-memory rows, reports and state.
    */
   private function store(bool $contractor = FALSE): OriginalImageStore {
