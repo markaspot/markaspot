@@ -1,0 +1,121 @@
+name: Tests
+
+# Unit and kernel tests of the profile, run inside the public mark-a-spot
+# template with this checkout swapped in as markaspot/markaspot. Kernel tests
+# are spread over four jobs (see .github/scripts/phpunit-shard.php).
+
+on:
+  push:
+    branches: ['11.9.x-dev', 'ci/**']
+  pull_request:
+    branches: ['11.9.x-dev']
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SHARDS: 4
+  # MariaDB like production; the profile has MariaDB-specific SQL.
+  SIMPLETEST_DB: mysql://root:root@127.0.0.1:3306/drupal
+  SIMPLETEST_BASE_URL: http://localhost
+  COMPOSER_NO_INTERACTION: 1
+  # Composer still asks GitHub about the VCS repository of the profile;
+  # anonymous calls share a small rate limit per runner.
+  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+
+jobs:
+  test:
+    name: ${{ matrix.suite }}${{ matrix.suite == 'kernel' && format(' {0}', matrix.shard) || '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: unit
+            shard: 0
+          - suite: kernel
+            shard: 0
+          - suite: kernel
+            shard: 1
+          - suite: kernel
+            shard: 2
+          - suite: kernel
+            shard: 3
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: drupal
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Check out the profile
+        uses: actions/checkout@v4
+        with:
+          path: profile
+
+      - name: Check out the mark-a-spot template
+        uses: actions/checkout@v4
+        with:
+          repository: markaspot/mark-a-spot
+          ref: 11.9.x-dev
+          path: site
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd, intl, mbstring, pdo_mysql, zip, bcmath, exif, apcu
+          # 2.10.2 and later reject asset-packagist names the profile uses.
+          tools: composer:2.10.1
+          coverage: none
+
+      - name: Locate the Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('site/composer.lock', 'profile/composer.json') }}
+          restore-keys: composer-
+
+      - name: Install the site with this profile
+        working-directory: site
+        run: |
+          # Put this checkout first, copied (a symlink would resolve the
+          # profile's relative bootstrap path outside web/), and pin its
+          # version: a detached checkout has no branch to guess it from.
+          jq '.repositories = [{"type": "path", "url": "../profile", "options": {"symlink": false, "versions": {"markaspot/markaspot": "dev-11.9.x-dev"}}}] + .repositories' composer.json > composer.json.ci
+          mv composer.json.ci composer.json
+          composer config repositories | head -c 400; echo
+          composer update markaspot/markaspot --with-dependencies --no-progress
+          test -f web/profiles/contrib/markaspot/markaspot.profile
+          test ! -L web/profiles/contrib/markaspot
+          diff -q ../profile/markaspot.info.yml web/profiles/contrib/markaspot/markaspot.info.yml
+
+      - name: Run the unit tests
+        if: matrix.suite == 'unit'
+        working-directory: site/web
+        run: ../vendor/bin/phpunit -c profiles/contrib/markaspot/phpunit.xml.dist --testsuite unit
+
+      - name: Run kernel shard ${{ matrix.shard }}
+        if: matrix.suite == 'kernel'
+        working-directory: site/web
+        run: |
+          php ../../profile/.github/scripts/phpunit-shard.php profiles/contrib/markaspot ${{ matrix.shard }} "$SHARDS" > profiles/contrib/markaspot/phpunit.shard.xml
+          ../vendor/bin/phpunit -c profiles/contrib/markaspot/phpunit.shard.xml --testsuite shard
