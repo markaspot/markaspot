@@ -36,6 +36,9 @@ class InternalRemarkAccessTest extends UnitTestCase {
     $paragraph = $this->createMock(EntityInterface::class);
     $paragraph->method('getEntityTypeId')->willReturn('paragraph');
     $paragraph->method('bundle')->willReturn($bundle);
+    $paragraph->method('getCacheContexts')->willReturn([]);
+    $paragraph->method('getCacheTags')->willReturn([]);
+    $paragraph->method('getCacheMaxAge')->willReturn(-1);
     return $paragraph;
   }
 
@@ -66,16 +69,19 @@ class InternalRemarkAccessTest extends UnitTestCase {
   }
 
   /**
-   * Staff view permission leaves parent entity access in control.
+   * The view permission alone is not enough without a parent request.
+   *
+   * Viewing also requires membership in the request's jurisdiction, which
+   * ParagraphAuthorFieldAccessKernelTest covers with a real request.
    */
-  public function testViewPermissionKeepsAccessNeutral(): void {
+  public function testViewPermissionWithoutParentRequestIsForbidden(): void {
     $result = markaspot_dashboard_entity_access(
           $this->createParagraph('internal_remark'),
           'view',
           $this->createAccount(['view field_internal_remark'])
       );
 
-    $this->assertTrue($result->isNeutral());
+    $this->assertTrue($result->isForbidden());
     $this->assertContains('user.permissions', $result->getCacheContexts());
   }
 

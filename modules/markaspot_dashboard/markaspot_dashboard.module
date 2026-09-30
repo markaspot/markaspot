@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 use Symfony\Component\Routing\RouteCollection;
 
@@ -33,7 +34,8 @@ function markaspot_dashboard_route_alter(RouteCollection $collection): void {
  * Implements hook_entity_access().
  *
  * Three layers of defense for internal_remark paragraphs:
- *  - view/update/delete require the corresponding field_permissions grant
+ *  - view/update/delete require the corresponding field_permissions grant,
+ *    view additionally membership in the request's jurisdiction
  *  - update/delete additionally require authorship OR 'administer nodes'
  *    so a staff member with the bare grant cannot rewrite peers' remarks
  *    via direct JSON:API PATCH/DELETE
@@ -55,6 +57,12 @@ function markaspot_dashboard_entity_access(EntityInterface $entity, $operation, 
 
   if (!$account->hasPermission($permissions[$operation])) {
     return AccessResult::forbidden()->cachePerPermissions();
+  }
+
+  if ($operation === 'view') {
+    $parent = method_exists($entity, 'getParentEntity') ? $entity->getParentEntity() : NULL;
+    return _markaspot_dashboard_jurisdiction_staff_access($account, $parent, $permissions['view'])
+      ->addCacheableDependency($entity);
   }
 
   // Authorship gate for write operations. The custom InternalRemarkController
@@ -101,20 +109,115 @@ function markaspot_dashboard_entity_create_access(AccountInterface $account, arr
  * Backstop for the node-level field_internal_remark reference field. It does
  * not depend on the field_permissions UI setting, mirroring the gate that
  * markaspot_open311 applies to field_status_attributes, so the remark text
- * stays staff-only even if that setting is changed.
+ * stays staff-only even if that setting is changed. Viewing is further
+ * limited to staff of the request's jurisdiction: self-signup sites grant
+ * the remark permissions through a global role to every workspace admin.
  */
 function markaspot_dashboard_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResultInterface {
+  if (
+    $field_definition->getName() === 'field_author'
+    && $field_definition->getTargetEntityTypeId() === 'paragraph'
+  ) {
+    return _markaspot_dashboard_paragraph_author_access($operation, $account, $items);
+  }
+
   if (
     in_array($operation, ['view', 'edit'], TRUE)
     && $field_definition->getName() === 'field_internal_remark'
     && $field_definition->getTargetEntityTypeId() === 'node'
   ) {
-    $permission = $operation === 'edit' ? 'edit field_internal_remark' : 'view field_internal_remark';
-    return AccessResult::forbiddenIf(!$account->hasPermission($permission))
+    if ($operation === 'view') {
+      return _markaspot_dashboard_jurisdiction_staff_access($account, $items?->getEntity(), 'view field_internal_remark');
+    }
+    return AccessResult::forbiddenIf(!$account->hasPermission('edit field_internal_remark'))
       ->cachePerPermissions();
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Field access for field_author on status and internal_remark paragraphs.
+ *
+ * The author is set server-side only, and it doubles as the authorship gate
+ * for internal remarks, so edit is always forbidden. JSON:API falls back to a
+ * label-only user object when view access to the user is denied, and user
+ * labels are usernames (email addresses on self-signup sites), so view is
+ * restricted like the node uid in markaspot_open311_entity_field_access().
+ */
+function _markaspot_dashboard_paragraph_author_access(string $operation, AccountInterface $account, ?FieldItemListInterface $items): AccessResultInterface {
+  if ($operation !== 'view') {
+    return AccessResult::forbidden('The paragraph author is set server-side only.');
+  }
+
+  $paragraph = $items?->getEntity();
+  $parent = $paragraph && method_exists($paragraph, 'getParentEntity') ? $paragraph->getParentEntity() : NULL;
+  $result = _markaspot_dashboard_jurisdiction_staff_access($account, $parent, 'access open311 advanced properties');
+  return $paragraph ? $result->addCacheableDependency($paragraph) : $result;
+}
+
+/**
+ * Limits access to staff currently responsible for the service request.
+ *
+ * Site operators with 'administer nodes' pass. Everyone else needs the given
+ * permission and membership in the jurisdiction the request resolves to now,
+ * or in one of its responsible organisations. Responsibility is checked
+ * against the request's current assignment, so after a handover the new
+ * jurisdiction or organisation sees earlier remarks and the previous one
+ * loses them unless it is still a member. Fails closed without a request,
+ * which covers filters and sorts.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The viewer.
+ * @param \Drupal\Core\Entity\EntityInterface|null $node
+ *   The service request, or NULL when there is no entity context.
+ * @param string $permission
+ *   The staff permission required besides membership.
+ */
+function _markaspot_dashboard_jurisdiction_staff_access(AccountInterface $account, ?EntityInterface $node, string $permission): AccessResultInterface {
+  if ($account->hasPermission('administer nodes')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  if (!$account->hasPermission($permission)) {
+    return AccessResult::forbidden('Restricted to dashboard staff.')
+      ->cachePerPermissions();
+  }
+
+  if (!$node instanceof NodeInterface) {
+    return AccessResult::forbidden('Staff access requires a service request context.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user'])
+      ->setCacheMaxAge(0);
+  }
+
+  /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+  $processor = \Drupal::service('markaspot_open311.processor');
+  $jurisdictionId = $processor->resolveNodeJurisdictionId($node);
+  $allowed = $jurisdictionId === NULL
+    ? !$processor->hasJurisdictionGroups()
+    : $processor->isJurisdictionMember($jurisdictionId, $account);
+
+  if (!$allowed && $node->hasField('field_organisation')) {
+    foreach ($node->get('field_organisation')->referencedEntities() as $organisation) {
+      // Only organisation groups count. markaspot_group's presave and
+      // relationship sync keep field_organisation within the request's
+      // jurisdiction tree, so membership here cannot cross tenants.
+      if ($organisation instanceof GroupInterface && $organisation->bundle() === 'org' && $organisation->getMember($account)) {
+        $allowed = TRUE;
+        break;
+      }
+    }
+  }
+
+  $result = $allowed
+    ? AccessResult::neutral()
+    : AccessResult::forbidden('Restricted to staff responsible for the request.');
+  return $result
+    ->cachePerPermissions()
+    ->addCacheContexts(['user'])
+    ->addCacheableDependency($node)
+    ->setCacheMaxAge(0);
 }
 
 /**
