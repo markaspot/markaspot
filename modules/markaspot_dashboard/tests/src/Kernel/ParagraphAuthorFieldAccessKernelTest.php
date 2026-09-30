@@ -8,12 +8,15 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\paragraphs\Entity\ParagraphsType;
+use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -51,12 +54,33 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
     'entity_reference_revisions',
     'file',
     'paragraphs',
+    'options',
+    'entity',
+    'flexible_permissions',
+    'group',
   ];
 
   /**
    * Jurisdiction group of the request under test.
    */
   private const JURISDICTION_ID = 7;
+
+  /**
+   * Jurisdiction a request is handed over to.
+   */
+  private const HANDOVER_JURISDICTION_ID = 8;
+
+  /**
+   * Jurisdiction the request currently resolves to.
+   */
+  private int $currentJurisdiction = self::JURISDICTION_ID;
+
+  /**
+   * Uids that are members of the handover jurisdiction.
+   *
+   * @var int[]
+   */
+  private array $handoverMembers = [];
 
   /**
    * Status note paragraph attached to a service request.
@@ -91,6 +115,10 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
     $this->installEntitySchema('paragraph');
     $this->installEntitySchema('file');
     $this->installSchema('node', 'node_access');
+    $this->installEntitySchema('group');
+    $this->installEntitySchema('group_relationship');
+    $this->installEntitySchema('group_config_wrapper');
+    $this->installConfig(['group']);
 
     require_once dirname(__DIR__, 3) . '/markaspot_dashboard.install';
     require_once dirname(__DIR__, 3) . '/markaspot_dashboard.module';
@@ -100,6 +128,24 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
     ParagraphsType::create(['id' => 'internal_remark', 'label' => 'Internal remark'])->save();
     _markaspot_dashboard_ensure_field_author('status');
     _markaspot_dashboard_ensure_field_author('internal_remark');
+
+    $org_type = GroupType::create(['id' => 'org', 'label' => 'Organisation']);
+    $org_type->save();
+    $relationship_types = $this->container->get('entity_type.manager')->getStorage('group_relationship_type');
+    if (!$relationship_types->load('org-group_membership')) {
+      $relationship_types->createFromPlugin($org_type, 'group_membership')->save();
+    }
+    FieldStorageConfig::create([
+      'field_name' => 'field_organisation',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_organisation',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+    ])->save();
 
     foreach (['field_status_notes', 'field_internal_remark'] as $field_name) {
       FieldStorageConfig::create([
@@ -127,11 +173,14 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
     $this->request->save();
 
     $processor = $this->createMock(GeoreportProcessorServiceInterface::class);
-    $processor->method('resolveNodeJurisdictionId')->willReturn(self::JURISDICTION_ID);
+    $processor->method('resolveNodeJurisdictionId')->willReturnCallback(fn (): int => $this->currentJurisdiction);
     $processor->method('hasJurisdictionGroups')->willReturn(TRUE);
     $processor->method('isJurisdictionMember')->willReturnCallback(
-      fn (?int $jid, $account = NULL): bool => $jid === self::JURISDICTION_ID
-        && in_array((int) $account?->id(), $this->members, TRUE)
+      fn (?int $jid, $account = NULL): bool => in_array(
+        (int) $account?->id(),
+        $jid === self::HANDOVER_JURISDICTION_ID ? $this->handoverMembers : ($jid === self::JURISDICTION_ID ? $this->members : []),
+        TRUE,
+      )
     );
     $this->container->set('markaspot_open311.processor', $processor);
   }
@@ -234,6 +283,63 @@ final class ParagraphAuthorFieldAccessKernelTest extends KernelTestBase {
     $account = $this->account(33, ['administer nodes', 'view field_internal_remark']);
     $this->assertFalse($this->remarkAccess($account)->isForbidden());
     $this->assertFalse($this->remarkFieldAccess($account)->isForbidden());
+  }
+
+  /**
+   * Members of the responsible organisation read remarks and authors.
+   *
+   * Covers organisation-only staff who are not members of the jurisdiction.
+   */
+  public function testOrganisationMemberOfRequestIsAllowed(): void {
+    $member = User::create(['name' => 'org-staff']);
+    $member->save();
+    $organisation = Group::create(['type' => 'org', 'label' => 'Works department']);
+    $organisation->save();
+    $organisation->addMember($member);
+    $this->request->set('field_organisation', $organisation)->save();
+
+    $account = $this->account((int) $member->id(), [
+      'view field_internal_remark',
+      'access open311 advanced properties',
+    ]);
+    $this->assertFalse($this->remarkAccess($account)->isForbidden());
+    $this->assertFalse($this->remarkFieldAccess($account)->isForbidden());
+    $this->assertNotForbidden('view', $account);
+
+    $outsider = $this->account(51, ['view field_internal_remark']);
+    $this->assertTrue($this->remarkAccess($outsider)->isForbidden());
+  }
+
+  /**
+   * After a handover the new jurisdiction sees earlier remarks.
+   *
+   * Staff of the previous jurisdiction lose them unless they are members of
+   * the new one: access follows the current assignment, not where a remark
+   * was written.
+   */
+  public function testHandoverMovesRemarkAccessToNewJurisdiction(): void {
+    $this->members = [60];
+    $this->handoverMembers = [61];
+    $previous = $this->account(60, ['view field_internal_remark']);
+    $next = $this->account(61, ['view field_internal_remark']);
+    $this->assertFalse($this->remarkAccess($previous)->isForbidden());
+    $this->assertTrue($this->remarkAccess($next)->isForbidden());
+
+    $this->currentJurisdiction = self::HANDOVER_JURISDICTION_ID;
+
+    $this->assertTrue($this->remarkAccess($previous)->isForbidden());
+    $this->assertTrue($this->remarkFieldAccess($previous)->isForbidden());
+    $this->assertFalse($this->remarkAccess($next)->isForbidden());
+    $this->assertFalse($this->remarkFieldAccess($next)->isForbidden());
+  }
+
+  /**
+   * A moderator without any membership no longer reads remarks.
+   */
+  public function testModeratorWithoutMembershipIsForbidden(): void {
+    $account = $this->account(62, ['view field_internal_remark', 'edit field_internal_remark']);
+    $this->assertTrue($this->remarkAccess($account)->isForbidden());
+    $this->assertTrue($this->remarkFieldAccess($account)->isForbidden());
   }
 
   /**

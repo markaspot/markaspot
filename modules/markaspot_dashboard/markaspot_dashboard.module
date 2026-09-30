@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 use Symfony\Component\Routing\RouteCollection;
 
@@ -156,11 +157,15 @@ function _markaspot_dashboard_paragraph_author_access(string $operation, Account
 }
 
 /**
- * Limits access to staff of the service request's jurisdiction.
+ * Limits access to staff currently responsible for the service request.
  *
  * Site operators with 'administer nodes' pass. Everyone else needs the given
- * permission and membership in the jurisdiction the request resolves to.
- * Fails closed without a request, which covers filters and sorts.
+ * permission and membership in the jurisdiction the request resolves to now,
+ * or in one of its responsible organisations. Responsibility is checked
+ * against the request's current assignment, so after a handover the new
+ * jurisdiction or organisation sees earlier remarks and the previous one
+ * loses them unless it is still a member. Fails closed without a request,
+ * which covers filters and sorts.
  *
  * @param \Drupal\Core\Session\AccountInterface $account
  *   The viewer.
@@ -193,9 +198,18 @@ function _markaspot_dashboard_jurisdiction_staff_access(AccountInterface $accoun
     ? !$processor->hasJurisdictionGroups()
     : $processor->isJurisdictionMember($jurisdictionId, $account);
 
+  if (!$allowed && $node->hasField('field_organisation')) {
+    foreach ($node->get('field_organisation')->referencedEntities() as $organisation) {
+      if ($organisation instanceof GroupInterface && $organisation->getMember($account)) {
+        $allowed = TRUE;
+        break;
+      }
+    }
+  }
+
   $result = $allowed
     ? AccessResult::neutral()
-    : AccessResult::forbidden('Restricted to staff of the request jurisdiction.');
+    : AccessResult::forbidden('Restricted to staff responsible for the request.');
   return $result
     ->cachePerPermissions()
     ->addCacheContexts(['user'])
