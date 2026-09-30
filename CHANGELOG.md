@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.210](https://github.com/markaspot/markaspot/compare/11.9.209...11.9.210) (2026-09-30)
+
+### Features
+
+* **dashboard:** warn on the status report when paragraph field_author is missing ([a508b91](https://github.com/markaspot/markaspot/commit/a508b914bcf43441e66ced9f8260f4ab4f756462))
+
+### Bug Fixes
+
+* **dashboard:** use RequirementSeverity and a working restore command in the field_author warning ([9fa9545](https://github.com/markaspot/markaspot/commit/9fa9545effc2791aae270a86eb64e30c1373bb90))
+* **escalation:** check field_internal_remark before creating the escalation remark ([5da4886](https://github.com/markaspot/markaspot/commit/5da488609db77a10dc8fb504a2bb6d0f620b2329))
+* **mail_inbound:** stage a reply as new mail when it cannot be stored as a remark ([b4e758f](https://github.com/markaspot/markaspot/commit/b4e758f07d1474e69787fa38c6878afa92e5eca0))
+
 ## [11.9.209](https://github.com/markaspot/markaspot/compare/11.9.208...11.9.209) (2026-09-30)
 
 ### Bug Fixes
