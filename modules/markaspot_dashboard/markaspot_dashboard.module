@@ -105,6 +105,13 @@ function markaspot_dashboard_entity_create_access(AccountInterface $account, arr
  */
 function markaspot_dashboard_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResultInterface {
   if (
+    $field_definition->getName() === 'field_author'
+    && $field_definition->getTargetEntityTypeId() === 'paragraph'
+  ) {
+    return _markaspot_dashboard_paragraph_author_access($operation, $account, $items);
+  }
+
+  if (
     in_array($operation, ['view', 'edit'], TRUE)
     && $field_definition->getName() === 'field_internal_remark'
     && $field_definition->getTargetEntityTypeId() === 'node'
@@ -115,6 +122,58 @@ function markaspot_dashboard_entity_field_access(string $operation, FieldDefinit
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Field access for field_author on status and internal_remark paragraphs.
+ *
+ * The author is set server-side only, and it doubles as the authorship gate
+ * for internal remarks, so edit is always forbidden. JSON:API falls back to a
+ * label-only user object when view access to the user is denied, and user
+ * labels are usernames (email addresses on self-signup sites), so view is
+ * restricted like the node uid in markaspot_open311_entity_field_access():
+ * dashboard managers who are members of the request's jurisdiction, or site
+ * operators with 'administer nodes'. Fails closed without an entity context.
+ */
+function _markaspot_dashboard_paragraph_author_access(string $operation, AccountInterface $account, ?FieldItemListInterface $items): AccessResultInterface {
+  if ($operation !== 'view') {
+    return AccessResult::forbidden('The paragraph author is set server-side only.');
+  }
+
+  if ($account->hasPermission('administer nodes')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  if (!$account->hasPermission('access open311 advanced properties')) {
+    return AccessResult::forbidden('Paragraph authors require dashboard manager access.')
+      ->cachePerPermissions();
+  }
+
+  $paragraph = $items?->getEntity();
+  $node = $paragraph && method_exists($paragraph, 'getParentEntity') ? $paragraph->getParentEntity() : NULL;
+  if (!$node instanceof NodeInterface) {
+    return AccessResult::forbidden('Paragraph author access requires a parent request.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user'])
+      ->setCacheMaxAge(0);
+  }
+
+  /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+  $processor = \Drupal::service('markaspot_open311.processor');
+  $jurisdictionId = $processor->resolveNodeJurisdictionId($node);
+  $allowed = $jurisdictionId === NULL
+    ? !$processor->hasJurisdictionGroups()
+    : $processor->isJurisdictionMember($jurisdictionId, $account);
+
+  $result = $allowed
+    ? AccessResult::neutral()
+    : AccessResult::forbidden('Paragraph authors are restricted to the request jurisdiction.');
+  return $result
+    ->cachePerPermissions()
+    ->addCacheContexts(['user'])
+    ->addCacheableDependency($paragraph)
+    ->addCacheableDependency($node)
+    ->setCacheMaxAge(0);
 }
 
 /**
