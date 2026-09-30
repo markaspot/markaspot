@@ -392,6 +392,14 @@ class EscalationService implements EscalationServiceInterface {
    * {@inheritdoc}
    */
   public function appendInternalRemarkText(NodeInterface $node, string $text): void {
+    // Check before creating the paragraph: saved without a parent field it
+    // would stay behind as an orphan while the audit remark is lost.
+    if (!$node->hasField('field_internal_remark')) {
+      $this->logger->error('Node @nid has no field_internal_remark; the escalation remark was not recorded.', [
+        '@nid' => $node->id(),
+      ]);
+      return;
+    }
     $paragraph = $this->createInternalRemarkParagraph($text, $node->language()->getId());
     $this->appendInternalRemark($node, $paragraph);
   }
@@ -615,19 +623,15 @@ class EscalationService implements EscalationServiceInterface {
   /**
    * Appends a paragraph to the node's field_internal_remark field.
    *
+   * The caller has checked that the field exists, see
+   * appendInternalRemarkText().
+   *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.
    * @param \Drupal\paragraphs\Entity\Paragraph $paragraph
    *   The paragraph to append.
    */
   protected function appendInternalRemark(NodeInterface $node, Paragraph $paragraph): void {
-    if (!$node->hasField('field_internal_remark')) {
-      $this->logger->warning('Node @nid does not have field_internal_remark.', [
-        '@nid' => $node->id(),
-      ]);
-      return;
-    }
-
     $current = $node->get('field_internal_remark')->getValue();
     $current[] = [
       'target_id' => $paragraph->id(),

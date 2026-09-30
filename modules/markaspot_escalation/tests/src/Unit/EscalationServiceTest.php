@@ -1407,7 +1407,7 @@ class EscalationServiceTest extends UnitTestCase {
     $node->method('id')->willReturn(100);
     $node->method('language')->willReturn($language);
     $node->method('hasField')
-      ->willReturnCallback(static fn(string $name): bool => isset($fields[$name]));
+      ->willReturnCallback(static fn(string $name): bool => isset($fields[$name]) || $name === 'field_internal_remark');
     $node->method('get')
       ->willReturnCallback(static fn(string $name): object => $fields[$name]);
     $node->method('set')
@@ -2279,6 +2279,54 @@ class EscalationServiceTest extends UnitTestCase {
     $result = $this->service->resolveEscalationTarget($node);
     // Should resolve to parent of child jur 4, which is 1.
     $this->assertEquals(1, $result, 'Org relationships should be skipped, only jur relationships used.');
+  }
+
+  /**
+   * Without field_internal_remark no remark paragraph is created.
+   *
+   * Creating it first would save an orphaned paragraph and lose the audit
+   * remark, so the field is checked before anything is written.
+   */
+  public function testAppendInternalRemarkTextSkipsCreationWithoutField(): void {
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('hasField')->willReturnMap([['field_internal_remark', FALSE]]);
+    $node->method('id')->willReturn(42);
+    $node->expects($this->never())->method('get');
+
+    $service = new class(
+      $this->entityTypeManager,
+      $this->hierarchyResolver,
+      $this->processor,
+      $this->currentUser,
+      $this->configFactory,
+      $this->statusClassifier,
+      $this->time,
+      $this->logger,
+      $this->mailManager,
+      $this->orgHierarchyResolver,
+    ) extends EscalationService {
+
+      /**
+       * Number of remark paragraphs created.
+       */
+      public int $created = 0;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function createInternalRemarkParagraph(string $text, string $langcode = ''): Paragraph {
+        $this->created++;
+        throw new \LogicException('No paragraph may be created without the field.');
+      }
+
+    };
+
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with($this->stringContains('field_internal_remark'));
+
+    $service->appendInternalRemarkText($node, 'Escalated to parent jurisdiction.');
+    $this->assertSame(0, $service->created);
   }
 
 }
