@@ -158,27 +158,35 @@ class MailIngestOrchestrator {
         $node = $stagedParent->getServiceRequest();
       }
       if ($node !== NULL && $this->replySenderMatchesReporter($node, $message)) {
-        $this->appendReplyRemark($node, $message, $settings);
-        // Keep the conversation chain alive for the NEXT round: record the
-        // reply's ids on the promoted mail so a follow-up reply to any
-        // message of this thread still resolves (idempotent).
-        if ($stagedParent !== NULL && $stagedParent->getState() === InboundMail::STATE_PROMOTED) {
-          $this->recordThreadIds($stagedParent, $message);
+        if ($this->appendReplyRemark($node, $message, $settings)) {
+          // Keep the conversation chain alive for the NEXT round: record the
+          // reply's ids on the promoted mail so a follow-up reply to any
+          // message of this thread still resolves (idempotent).
+          if ($stagedParent !== NULL && $stagedParent->getState() === InboundMail::STATE_PROMOTED) {
+            $this->recordThreadIds($stagedParent, $message);
+          }
+          // A reply to a promoted request also consumes a flood slot, so the
+          // rate limit applies uniformly to new mails and both reply paths.
+          $this->flood->register(self::FLOOD_NAME, $settings['flood_window'], $floodId);
+          $this->eventDispatcher->dispatch(
+            new InboundReplyReceivedEvent($node, $message),
+            InboundReplyReceivedEvent::EVENT_NAME
+          );
+          $this->logger->notice('Inbound mail threaded as reply to promoted request node @nid (mailbox @mb).', [
+            '@nid' => $node->id(),
+            '@mb' => $mailbox['id'] ?? '',
+          ]);
+          return IngestResult::replyToNode((int) $node->id());
         }
-        // A reply to a promoted request also consumes a flood slot, so the
-        // rate limit applies uniformly to new mails and both reply paths.
-        $this->flood->register(self::FLOOD_NAME, $settings['flood_window'], $floodId);
-        $this->eventDispatcher->dispatch(
-          new InboundReplyReceivedEvent($node, $message),
-          InboundReplyReceivedEvent::EVENT_NAME
-        );
-        $this->logger->notice('Inbound mail threaded as reply to promoted request node @nid (mailbox @mb).', [
+        // The remark could not be stored, e.g. because the request has no
+        // field_internal_remark. Stage the reply as a new mail below so the
+        // citizen's text is kept instead of being reported as handled.
+        $this->logger->warning('Reply to promoted request node @nid could not be stored as a remark; staging it as a new mail (mailbox @mb).', [
           '@nid' => $node->id(),
           '@mb' => $mailbox['id'] ?? '',
         ]);
-        return IngestResult::replyToNode((int) $node->id());
       }
-      if ($node !== NULL) {
+      elseif ($node !== NULL) {
         $this->logger->warning('Inbound mail references promoted request node @nid but the sender does not match the reporter; staging a new mail (mailbox @mb).', [
           '@nid' => $node->id(),
           '@mb' => $mailbox['id'] ?? '',

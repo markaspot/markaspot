@@ -19,6 +19,8 @@ use Drupal\markaspot_mail_inbound\Util\MailTextUtils;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
+use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\paragraphs\Entity\ParagraphsType;
 use Drupal\user\Entity\User;
 
 /**
@@ -57,6 +59,8 @@ class InboundMailReturnChannelKernelTest extends KernelTestBase {
     'options',
     'taxonomy',
     'field_permissions',
+    'entity_reference_revisions',
+    'paragraphs',
     'file',
     'entity',
     'flexible_permissions',
@@ -409,6 +413,13 @@ class InboundMailReturnChannelKernelTest extends KernelTestBase {
    * and the reply id must be recorded for the next round.
    */
   public function testReplyToOutboundIdOnPromotedMailThreadsToNode(): void {
+    // The reply is stored as an internal remark; without the field the
+    // orchestrator stages it as a new mail instead (see the staging test).
+    $this->installEntitySchema('paragraph');
+    ParagraphsType::create(['id' => 'internal_remark', 'label' => 'Internal remark'])->save();
+    $this->createField('paragraph', 'internal_remark', 'field_internal_remark_text', 'text_long', [], 1);
+    $this->createNodeField('field_internal_remark', 'entity_reference_revisions', ['target_type' => 'paragraph'], -1);
+
     [$mail, $node] = $this->promotedPair();
 
     // A status mail to the citizen records an outbound id on the chain.
@@ -439,6 +450,12 @@ class InboundMailReturnChannelKernelTest extends KernelTestBase {
 
     // The reply id was recorded so a follow-up reply still resolves.
     $this->assertContains('round3-001@example.org', $this->reload($mail)->getThreadMessageIds());
+
+    // The reply text actually landed on the request.
+    $remarks = Node::load($node->id())->get('field_internal_remark')->getValue();
+    $this->assertCount(1, $remarks);
+    $text = (string) Paragraph::load($remarks[0]['target_id'])->get('field_internal_remark_text')->value;
+    $this->assertStringContainsString('near the church', $text);
   }
 
   /**

@@ -357,6 +357,36 @@ class InboundMailStagingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A reply the request cannot store as a remark is staged, not dropped.
+   *
+   * Without field_internal_remark on the request the remark writer fails.
+   * The reply must then land as a new inbound_mail instead of being reported
+   * as threaded while its text is lost.
+   */
+  public function testReplyToPromotedRequestWithoutRemarkFieldIsStaged(): void {
+    $staged = $this->ingest($this->makeRaw('kept-001@example.org'));
+    $node = $this->makePromoter()->promoteToServiceRequest($this->loadMail((int) $staged->entityId), $this->categoryTid);
+    $this->assertFalse($node->hasField('field_internal_remark'));
+    $this->assertSame('citizen@example.org', $node->get('field_e_mail')->value);
+
+    $reply = "From: Citizen <citizen@example.org>\r\n"
+      . "To: report@city.example\r\n"
+      . "Subject: Re: Broken light\r\n"
+      . "Message-ID: <kept-reply-001@example.org>\r\n"
+      . "In-Reply-To: <kept-001@example.org>\r\n"
+      . "References: <kept-001@example.org>\r\n"
+      . "Date: Wed, 10 Jun 2026 09:00:00 +0200\r\n"
+      . "Content-Type: text/plain; charset=utf-8\r\n"
+      . "\r\n"
+      . "It is the one near the church.\r\n";
+
+    $result = $this->ingest($reply);
+    $this->assertSame(IngestResult::STAGED, $result->status);
+    $this->assertNotSame($staged->entityId, $result->entityId);
+    $this->assertStringContainsString('near the church', $this->loadMail((int) $result->entityId)->getBody());
+  }
+
+  /**
    * Promotion creates a node via the processor contract; mail flips state.
    */
   public function testPromotionCreatesServiceRequest(): void {
