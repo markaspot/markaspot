@@ -23,6 +23,8 @@ use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\Routing\Route;
 
 /**
@@ -771,12 +773,20 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $request = Request::create('/group/' . $rootA->id() . '/content/edit');
     $request->attributes->set(RouteObjectInterface::ROUTE_NAME, 'entity.group_relationship.edit_form');
     $request->attributes->set(RouteObjectInterface::ROUTE_OBJECT, new Route('/group/{group}/content/{group_relationship}/edit'));
-    $this->container->get('request_stack')->push($request);
+    // KernelTestBase::tearDown() reads the session of the current request.
+    $request->setSession(new Session(new MockArraySessionStorage()));
+    $requestStack = $this->container->get('request_stack');
+    $requestStack->push($request);
     $this->container->get('current_user')->setAccount($tenantAdmin);
 
-    $relationship = Group::load($rootA->id())->getMember($moderator)->getGroupRelationship();
-    $relationship->set('group_roles', ['jur-moderator', 'jur-tenant_admin']);
-    $relationship->save();
+    try {
+      $relationship = Group::load($rootA->id())->getMember($moderator)->getGroupRelationship();
+      $relationship->set('group_roles', ['jur-moderator', 'jur-tenant_admin']);
+      $relationship->save();
+    }
+    finally {
+      $requestStack->pop();
+    }
 
     $this->assertSame(['jur-moderator'], $this->jurisdictionRoles(Group::load($rootA->id()), $moderator));
     $this->assertFalse(User::load($moderator->id())->hasRole('tenant_admin'));
