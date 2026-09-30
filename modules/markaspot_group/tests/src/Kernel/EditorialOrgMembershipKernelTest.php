@@ -739,7 +739,10 @@ final class EditorialOrgMembershipKernelTest extends KernelTestBase {
     $this->assertSame(['jur-moderator', 'jur-tenant_admin'], $roles($relationship));
     $relationship = $promote();
     $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, NULL));
-    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, 'markaspot_group.group_members.update'));
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, $tenantAdmin, 'markaspot_group.member_update'));
+    // Installation, drush and migrations run without a route as uid 0.
+    $this->assertSame([], TenantAdminHelper::guardTenantAdminRoles($relationship, User::load(0), NULL));
+    $this->assertSame(['jur-moderator', 'jur-tenant_admin'], $roles($relationship));
 
     // A role already held survives a direct write.
     $relationship = Group::load($rootA->id())->getMember($tenantAdmin)->getGroupRelationship();

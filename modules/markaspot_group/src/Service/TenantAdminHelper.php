@@ -188,7 +188,9 @@ class TenantAdminHelper {
     $stored = $original instanceof GroupRelationshipInterface && $original->hasField('group_roles')
       ? array_column($original->get('group_roles')->getValue(), 'target_id')
       : [];
-    $dropped = array_values(array_diff(array_intersect($submitted, self::getTenantAdminRoleIds()), $stored));
+    // Match the suffix like the member matrix and invitations do.
+    $adminRoles = array_filter($submitted, static fn($roleId): bool => is_string($roleId) && str_ends_with($roleId, '-tenant_admin'));
+    $dropped = array_values(array_diff($adminRoles, $stored));
     if ($dropped !== []) {
       $relationship->set('group_roles', array_values(array_diff($submitted, $dropped)));
     }
