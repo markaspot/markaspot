@@ -5,6 +5,8 @@
  * Install and update functions for markaspot_dashboard.
  */
 
+use Drupal\Core\Config\FileStorage;
+
 /**
  * Implements hook_schema().
  */
@@ -81,15 +83,15 @@ function markaspot_dashboard_schema(): array {
 /**
  * Implements hook_install().
  *
- * Ensures field_author exists on the status paragraph type on fresh installs.
- * The field is shipped programmatically (not via config/install) and was
- * historically only created by markaspot_dashboard_update_11900(). Update
- * hooks do not run on a fresh site install, so without this hook a clean
- * install would lack paragraph.status.field_author, breaking the Pro
- * dashboard request detail (JSON:API include field_status_notes.field_author).
+ * Ensures field_author exists on the status and internal_remark paragraph
+ * types on fresh installs. Update hooks do not run on a fresh site install,
+ * so without this hook a clean install could lack the field, breaking the Pro
+ * dashboard request detail (JSON:API includes field_status_notes.field_author
+ * and field_internal_remark.field_author).
  */
 function markaspot_dashboard_install(): void {
   _markaspot_dashboard_ensure_field_author('status');
+  _markaspot_dashboard_ensure_field_author('internal_remark');
   _markaspot_dashboard_grant_contractor_status_note_permission();
 }
 
@@ -229,9 +231,25 @@ function markaspot_dashboard_update_11901(): string {
 }
 
 /**
+ * Restores field_author on the status and internal_remark paragraph types.
+ *
+ * Sites whose config sync never carried the field lose it on the next config
+ * import, even after 11900 and markaspot_escalation_update_10003 created it
+ * (fastmap). The dashboard requests both author includes on every detail view,
+ * so a missing instance costs one 400 and a retry each, and status notes are
+ * written without their author. Idempotent; missing bundles are skipped.
+ */
+function markaspot_dashboard_update_11902(): void {
+  _markaspot_dashboard_ensure_field_author('status');
+  _markaspot_dashboard_ensure_field_author('internal_remark');
+}
+
+/**
  * Creates field_author on a paragraph bundle if missing.
  *
- * Shared helper: field storage is created once, instances per bundle.
+ * Shared helper: field storage is created once, instances per bundle. Both
+ * are seeded from the YAML shipped in markaspot_status_paragraph, so a site
+ * repaired here exports the same config as a site installed from it.
  *
  * @param string $bundle
  *   The paragraph type machine name.
@@ -248,36 +266,45 @@ function _markaspot_dashboard_ensure_field_author(string $bundle): void {
     return;
   }
 
+  $source = new FileStorage(dirname(__DIR__) . '/markaspot_status_paragraph/config/install');
+
   // Ensure field storage exists.
-  $field_storage = $etm->getStorage('field_storage_config')
-    ->load('paragraph.field_author');
+  $storage_handler = $etm->getStorage('field_storage_config');
+  $field_storage = $storage_handler->load('paragraph.field_author');
   if (!$field_storage) {
-    $field_storage = $etm->getStorage('field_storage_config')->create([
-      'field_name' => 'field_author',
-      'entity_type' => 'paragraph',
-      'type' => 'entity_reference',
-      'settings' => ['target_type' => 'user'],
-      'cardinality' => 1,
-    ]);
+    $record = $source->read('field.storage.paragraph.field_author');
+    $field_storage = $record
+      ? $storage_handler->createFromStorageRecord($record)
+      : $storage_handler->create([
+        'field_name' => 'field_author',
+        'entity_type' => 'paragraph',
+        'type' => 'entity_reference',
+        'settings' => ['target_type' => 'user'],
+        'cardinality' => 1,
+      ]);
     $field_storage->save();
     $logger->info('Created field storage paragraph.field_author.');
   }
 
   // Create field instance.
-  $field_id = "paragraph.{$bundle}.field_author";
-  if (!$etm->getStorage('field_config')->load($field_id)) {
-    $etm->getStorage('field_config')->create([
-      'field_storage' => $field_storage,
-      'bundle' => $bundle,
-      'label' => 'Author',
-      'description' => 'The user who created this paragraph.',
-      'required' => FALSE,
-      'translatable' => FALSE,
-      'settings' => [
-        'handler' => 'default:user',
-        'handler_settings' => ['include_anonymous' => FALSE],
-      ],
-    ])->save();
+  $field_handler = $etm->getStorage('field_config');
+  if (!$field_handler->load("paragraph.{$bundle}.field_author")) {
+    $record = $source->read("field.field.paragraph.{$bundle}.field_author");
+    $field = $record
+      ? $field_handler->createFromStorageRecord($record)
+      : $field_handler->create([
+        'field_storage' => $field_storage,
+        'bundle' => $bundle,
+        'label' => 'Author',
+        'description' => 'The user who created this paragraph.',
+        'required' => FALSE,
+        'translatable' => TRUE,
+        'settings' => [
+          'handler' => 'default:user',
+          'handler_settings' => ['include_anonymous' => FALSE],
+        ],
+      ]);
+    $field->save();
     $logger->info('Created field instance paragraph.@bundle.field_author.', [
       '@bundle' => $bundle,
     ]);

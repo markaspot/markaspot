@@ -3267,7 +3267,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         // on the `status` paragraph bundle is visible to operators rather
         // than silently dropping author attribution on status notes.
         $this->logger?->warning(
-          'Paragraph bundle @bundle is missing field_author; author uid @uid not recorded for status note. Run markaspot_status_paragraph update to restore the field.',
+          'Paragraph bundle @bundle is missing field_author; author uid @uid not recorded for status note. Run the markaspot_dashboard database updates to restore the field and add it to the config sync.',
           ['@bundle' => $paragraph->bundle(), '@uid' => $fields['author_id']]
         );
       }
