@@ -200,7 +200,10 @@ function _markaspot_dashboard_jurisdiction_staff_access(AccountInterface $accoun
 
   if (!$allowed && $node->hasField('field_organisation')) {
     foreach ($node->get('field_organisation')->referencedEntities() as $organisation) {
-      if ($organisation instanceof GroupInterface && $organisation->getMember($account)) {
+      // Only organisation groups count. markaspot_group's presave and
+      // relationship sync keep field_organisation within the request's
+      // jurisdiction tree, so membership here cannot cross tenants.
+      if ($organisation instanceof GroupInterface && $organisation->bundle() === 'org' && $organisation->getMember($account)) {
         $allowed = TRUE;
         break;
       }
