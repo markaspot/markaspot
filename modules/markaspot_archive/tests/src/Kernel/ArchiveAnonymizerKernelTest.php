@@ -701,6 +701,177 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
   }
 
   /**
+   * A manual status change to archived anonymizes in the same save.
+   */
+  public function testManualArchiveTransitionAnonymizesNodeAndRevisions(): void {
+    $this->listenToArchiveChannel();
+    $node = $this->createQueueRequest();
+    $this->config('markaspot_archive.settings')
+      ->set('anonymize_fields', [
+        'field_e_mail' => 'field_e_mail',
+        'field_phone' => 'field_phone',
+        'field_notification' => 'field_notification',
+      ])
+      ->save();
+    $first_revision = (int) $node->getRevisionId();
+
+    $node->setNewRevision(TRUE);
+    $node->set('field_phone', '+49 221 123456');
+    $node->set('field_notification', 1);
+    $node->save();
+
+    $node->setNewRevision(TRUE);
+    $node->set('field_status', $this->archivedStatusId());
+    $node->save();
+
+    $email = $node->get('field_e_mail')->value;
+    self::assertStringEndsWith('@anonymized.off', $email);
+    self::assertSame('+49-0123459995555', $node->get('field_phone')->value);
+    self::assertSame('0', (string) $node->get('field_notification')->value);
+    self::assertSame($email, $this->revisionFieldValue($first_revision, 'field_e_mail'));
+    self::assertTrue($this->loggerHasRecord(
+      LogLevel::NOTICE,
+      'Node ID @nid anonymized on transition to the archived status: @fields'
+    ));
+  }
+
+  /**
+   * Saving an already archived node does not anonymize it again.
+   */
+  public function testSavingArchivedNodeDoesNotReanonymize(): void {
+    $node = $this->createQueueRequest();
+    $node->set('field_status', $this->archivedStatusId());
+    $node->save();
+    $email = $node->get('field_e_mail')->value;
+
+    $reloaded = Node::load($node->id());
+    $reloaded->setTitle('Edited after archiving');
+    $reloaded->save();
+
+    self::assertSame($email, $reloaded->get('field_e_mail')->value);
+  }
+
+  /**
+   * The queue worker anonymizes once; the transition hook does not repeat it.
+   */
+  public function testQueueWorkerArchiveIsNotAnonymizedTwice(): void {
+    $this->listenToArchiveChannel();
+    $node = $this->createQueueRequest();
+    $queue = $this->createMock(QueueInterface::class);
+    $worker = $this->archiveQueueWorker(
+      $this->container->get('markaspot_archive.archive'),
+      $queue
+    );
+
+    $worker->processItem(['nid' => $node->id()]);
+
+    $archived = Node::load($node->id());
+    self::assertSame($this->archivedStatusId(), (string) $archived->get('field_status')->target_id);
+    self::assertStringEndsWith('@anonymized.off', $archived->get('field_e_mail')->value);
+    self::assertFalse($this->loggerHasRecord(
+      LogLevel::NOTICE,
+      'Node ID @nid anonymized on transition to the archived status: @fields'
+    ));
+  }
+
+  /**
+   * The backfill anonymizes only archived nodes with plain contact data.
+   */
+  public function testBackfillAnonymizesArchivedPlainContactData(): void {
+    $this->createQueueRequest();
+    $this->config('markaspot_archive.settings')
+      ->set('anonymize', 0)
+      ->set('anonymize_fields', [
+        'field_e_mail' => 'field_e_mail',
+        'field_phone' => 'field_phone',
+      ])
+      ->save();
+    $archived = $this->archivedStatusId();
+    $plain = $this->createRequest([
+      'field_status' => $archived,
+      'field_e_mail' => 'plain@example.org',
+      'changed' => 1000000000,
+    ]);
+    $phone_only = $this->createRequest([
+      'field_status' => $archived,
+      'field_phone' => '+49 221 654321',
+    ]);
+    $done = $this->createRequest([
+      'field_status' => $archived,
+      'field_e_mail' => 'abc@anonymized.off',
+    ]);
+    $open = $this->createRequest([
+      'field_e_mail' => 'open@example.org',
+    ]);
+    $this->config('markaspot_archive.settings')->set('anonymize', 1)->save();
+
+    $count = $this->container->get('markaspot_archive.archive')
+      ->backfillArchived(10, 20);
+
+    self::assertSame(2, $count);
+    $plain = Node::load($plain->id());
+    self::assertStringEndsWith('@anonymized.off', $plain->get('field_e_mail')->value);
+    self::assertSame(1000000000, (int) $plain->getChangedTime());
+    self::assertSame('+49-0123459995555', Node::load($phone_only->id())->get('field_phone')->value);
+    self::assertSame('abc@anonymized.off', Node::load($done->id())->get('field_e_mail')->value);
+    self::assertSame('open@example.org', Node::load($open->id())->get('field_e_mail')->value);
+  }
+
+  /**
+   * The backfill honors its limit and starts over once it is exhausted.
+   */
+  public function testBackfillLimitAndCursorReset(): void {
+    $this->createQueueRequest();
+    $this->config('markaspot_archive.settings')->set('anonymize', 0)->save();
+    $nids = [];
+    foreach (['a', 'b', 'c'] as $name) {
+      $nids[] = (int) $this->createRequest([
+        'field_status' => $this->archivedStatusId(),
+        'field_e_mail' => $name . '@example.org',
+      ])->id();
+    }
+    $this->config('markaspot_archive.settings')->set('anonymize', 1)->save();
+    $service = $this->container->get('markaspot_archive.archive');
+    $state = $this->container->get('state');
+
+    self::assertSame(2, $service->backfillArchived(2, 20));
+    self::assertSame($nids[1], (int) $state->get(ArchiveService::BACKFILL_CURSOR_STATE));
+    self::assertSame(1, $service->backfillArchived(2, 20));
+    self::assertSame(0, $service->backfillArchived(2, 20));
+    self::assertSame(0, (int) $state->get(ArchiveService::BACKFILL_CURSOR_STATE));
+  }
+
+  /**
+   * Disabled anonymization leaves transitions and the backfill alone.
+   */
+  public function testDisabledAnonymizationSkipsTransitionAndBackfill(): void {
+    $node = $this->createQueueRequest();
+    $this->config('markaspot_archive.settings')->set('anonymize', 0)->save();
+
+    $node->set('field_status', $this->archivedStatusId());
+    $node->save();
+
+    self::assertSame('citizen@example.org', $node->get('field_e_mail')->value);
+    self::assertSame(0, $this->container->get('markaspot_archive.archive')->backfillArchived(10, 20));
+    self::assertSame('citizen@example.org', Node::load($node->id())->get('field_e_mail')->value);
+  }
+
+  /**
+   * Returns the archived status term id from the archive settings.
+   */
+  private function archivedStatusId(): string {
+    return (string) $this->config('markaspot_archive.settings')->get('status_archived');
+  }
+
+  /**
+   * Routes the container archive service log channel into the test sink.
+   */
+  private function listenToArchiveChannel(): void {
+    $this->container->get('logger.channel.markaspot_archive')
+      ->addLogger($this->loggerSink);
+  }
+
+  /**
    * Creates a field on the service_request node type.
    */
   private function createNodeField(

@@ -50,6 +50,49 @@ interface ArchiveServiceInterface {
   public function anonymize(EntityInterface $archivable, array $anonymize_fields): array;
 
   /**
+   * Anonymizes a node whose status changes to the archived status.
+   *
+   * Runs on presave, so every way into the archive is covered: the queue
+   * worker, a manual status change and Open311 status updates. Entities the
+   * worker or the staff command anonymized in this request are skipped.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node being saved.
+   *
+   * @return array<string, array{type: string, value: int|string}>
+   *   Anonymized values keyed by field machine name, empty if nothing changed.
+   */
+  public function anonymizeOnArchiveTransition(NodeInterface $node): array;
+
+  /**
+   * Anonymizes previous revisions after an archive transition was saved.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The saved node.
+   *
+   * @return int
+   *   Number of revision field rows updated.
+   */
+  public function finishArchiveTransition(NodeInterface $node): int;
+
+  /**
+   * Anonymizes archived requests that still hold plain contact data.
+   *
+   * Picks up requests archived before transition anonymization existed or
+   * while anonymization was disabled. Only e-mail and telephone fields reveal
+   * plain data; the changed time of the requests is kept.
+   *
+   * @param int $limit
+   *   Maximum number of nodes to process.
+   * @param int $time_budget
+   *   Seconds after which no further node is started.
+   *
+   * @return int
+   *   Number of anonymized nodes.
+   */
+  public function backfillArchived(int $limit, int $time_budget): int;
+
+  /**
    * Updates previous revision field tables with anonymized values.
    *
    * @param \Drupal\Core\Entity\EntityInterface $archivable

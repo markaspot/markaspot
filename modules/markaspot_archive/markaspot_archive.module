@@ -8,7 +8,9 @@
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_archive\ArchiveService;
 use Drupal\markaspot_archive\Plugin\QueueWorker\ArchiveQueueWorker;
+use Drupal\node\NodeInterface;
 
 /**
  * Implements hook_help().
@@ -85,6 +87,28 @@ function markaspot_archive_cron() {
     'Enqueued @count nodes for archiving.',
     ['@count' => $count]
   );
+
+  // Catch up on archived requests that still hold plain contact data.
+  \Drupal::service('markaspot_archive.archive')->backfillArchived(
+    ArchiveService::BACKFILL_LIMIT,
+    ArchiveService::BACKFILL_TIME_BUDGET
+  );
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for node entities.
+ */
+function markaspot_archive_node_presave(NodeInterface $node) {
+  \Drupal::service('markaspot_archive.archive')
+    ->anonymizeOnArchiveTransition($node);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for node entities.
+ */
+function markaspot_archive_node_update(NodeInterface $node) {
+  \Drupal::service('markaspot_archive.archive')
+    ->finishArchiveTransition($node);
 }
 
 /**

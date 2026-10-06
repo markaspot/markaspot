@@ -4,6 +4,7 @@ namespace Drupal\markaspot_archive;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\DatabaseException;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
@@ -11,6 +12,7 @@ use Drupal\Core\Entity\RevisionableInterface;
 use Drupal\Core\Entity\RevisionableStorageInterface;
 use Drupal\Core\Entity\Sql\SqlContentEntityStorage;
 use Drupal\Core\Entity\TranslatableInterface;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\node\NodeInterface;
@@ -19,6 +21,40 @@ use Drupal\node\NodeInterface;
  * Class ArchiveService finds all service requests that can be archived.
  */
 class ArchiveService implements ArchiveServiceInterface {
+
+  /**
+   * Archived nodes the backfill anonymizes per cron run at most.
+   */
+  public const BACKFILL_LIMIT = 50;
+
+  /**
+   * Seconds the backfill may spend per cron run.
+   */
+  public const BACKFILL_TIME_BUDGET = 20;
+
+  /**
+   * State key of the last node id the backfill has processed.
+   */
+  public const BACKFILL_CURSOR_STATE = 'markaspot_archive.backfill_last_nid';
+
+  /**
+   * Telephone value written by ::anonymizedValue().
+   */
+  protected const ANONYMIZED_PHONE = '+49-0123459995555';
+
+  /**
+   * Entities anonymized during this request.
+   *
+   * @var \WeakMap<\Drupal\Core\Entity\EntityInterface, true>
+   */
+  protected \WeakMap $anonymizedEntities;
+
+  /**
+   * Anonymized values waiting for the revision cleanup after the save.
+   *
+   * @var \WeakMap<\Drupal\node\NodeInterface, array>
+   */
+  protected \WeakMap $pendingRevisionValues;
 
   /**
    * Entity manager Service Object.
@@ -70,6 +106,8 @@ class ArchiveService implements ArchiveServiceInterface {
     $this->state = $state;
     $this->logger = $logger;
     $this->database = $database;
+    $this->anonymizedEntities = new \WeakMap();
+    $this->pendingRevisionValues = new \WeakMap();
   }
 
   /**
@@ -293,7 +331,181 @@ class ArchiveService implements ArchiveServiceInterface {
       }
     }
 
+    $this->anonymizedEntities[$archivable] = TRUE;
     return $anonymized_values;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function anonymizeOnArchiveTransition(NodeInterface $node): array {
+    if ($node->bundle() !== 'service_request' || !$node->hasField('field_status')) {
+      return [];
+    }
+    $config = $this->configFactory->get('markaspot_archive.settings');
+    $archived_status = (string) $config->get('status_archived');
+    if ($config->get('anonymize') != 1 || $archived_status === '') {
+      return [];
+    }
+    if ((string) $node->get('field_status')->target_id !== $archived_status) {
+      return [];
+    }
+    $original = $this->originalNode($node);
+    if ($original !== NULL && (string) $original->get('field_status')->target_id === $archived_status) {
+      return [];
+    }
+    // The queue worker and the staff command anonymize before they save.
+    if (isset($this->anonymizedEntities[$node])) {
+      return [];
+    }
+
+    $fields = $this->normalizeConfiguredFields((array) $config->get('anonymize_fields'));
+    if ($fields === []) {
+      return [];
+    }
+    $anonymized_values = $this->anonymize($node, $fields);
+    if ($anonymized_values === []) {
+      return [];
+    }
+    if (!$node->isNew()) {
+      $this->pendingRevisionValues[$node] = $anonymized_values;
+    }
+    $this->logger->notice(
+      'Node ID @nid anonymized on transition to the archived status: @fields',
+      [
+        '@nid' => $node->isNew() ? 'new' : $node->id(),
+        '@fields' => implode(', ', array_keys($anonymized_values)),
+      ]
+    );
+    return $anonymized_values;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function finishArchiveTransition(NodeInterface $node): int {
+    if (!isset($this->pendingRevisionValues[$node])) {
+      return 0;
+    }
+    $anonymized_values = $this->pendingRevisionValues[$node];
+    unset($this->pendingRevisionValues[$node]);
+    return $this->anonymizeRevisions($node, $anonymized_values);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function backfillArchived(
+    int $limit = self::BACKFILL_LIMIT,
+    int $time_budget = self::BACKFILL_TIME_BUDGET,
+  ): int {
+    $config = $this->configFactory->get('markaspot_archive.settings');
+    $archived_status = (string) $config->get('status_archived');
+    if ($config->get('anonymize') != 1 || $archived_status === '') {
+      return 0;
+    }
+    $fields = $this->normalizeConfiguredFields((array) $config->get('anonymize_fields'));
+    $storage = $this->entityTypeManager->getStorage('node');
+    $query = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_status', $archived_status);
+
+    // Only e-mail and telephone values reveal whether they were anonymized.
+    $plaintext = $query->orConditionGroup();
+    $detectable = 0;
+    $field_storage = $this->entityTypeManager->getStorage('field_storage_config');
+    foreach ($this->fieldNames($fields) as $field_name) {
+      $definition = $field_storage->load('node.' . $field_name);
+      if (!$definition instanceof FieldStorageDefinitionInterface) {
+        continue;
+      }
+      $marker = match ($definition->getType()) {
+        'email' => ['%@anonymized.off', 'NOT LIKE'],
+        'telephone' => [self::ANONYMIZED_PHONE, '<>'],
+        default => NULL,
+      };
+      if ($marker === NULL) {
+        continue;
+      }
+      $plaintext->condition($query->andConditionGroup()
+        ->condition($field_name, $marker[0], $marker[1])
+        ->condition($field_name, '', '<>'));
+      $detectable++;
+    }
+    if ($detectable === 0) {
+      return 0;
+    }
+
+    $cursor = (int) $this->state->get(self::BACKFILL_CURSOR_STATE, 0);
+    $nids = $query
+      ->condition($plaintext)
+      ->condition('nid', $cursor, '>')
+      ->sort('nid')
+      ->range(0, $limit)
+      ->execute();
+    if ($nids === []) {
+      // Start over on the next run to catch nodes archived meanwhile.
+      if ($cursor > 0) {
+        $this->state->set(self::BACKFILL_CURSOR_STATE, 0);
+      }
+      return 0;
+    }
+
+    $started = microtime(TRUE);
+    $anonymized = 0;
+    $failed = 0;
+    foreach ($nids as $nid) {
+      if (microtime(TRUE) - $started > $time_budget) {
+        break;
+      }
+      $cursor = (int) $nid;
+      try {
+        $node = $storage->load($nid);
+        if (!$node instanceof NodeInterface) {
+          continue;
+        }
+        $anonymized_values = $this->anonymize($node, $fields);
+        if ($anonymized_values === []) {
+          continue;
+        }
+        // Keep the changed time: anonymizing is no change of the request.
+        $node->setSyncing(TRUE);
+        $node->save();
+        $this->anonymizeRevisions($node, $anonymized_values);
+        $anonymized++;
+      }
+      catch (DatabaseException $e) {
+        throw $e;
+      }
+      catch (\Throwable $e) {
+        $failed++;
+        $this->logger->warning(
+          'Archived node @nid could not be anonymized: @error',
+          ['@nid' => $nid, '@error' => $e->getMessage()]
+        );
+      }
+    }
+    $this->state->set(self::BACKFILL_CURSOR_STATE, $cursor);
+
+    if ($anonymized > 0 || $failed > 0) {
+      $this->logger->notice(
+        'Anonymized @count archived service requests with plain contact data (@failed failed, up to node ID @nid).',
+        ['@count' => $anonymized, '@failed' => $failed, '@nid' => $cursor]
+      );
+    }
+    return $anonymized;
+  }
+
+  /**
+   * Returns the unchanged node of the save in progress, if any.
+   */
+  protected function originalNode(NodeInterface $node): ?NodeInterface {
+    // getOriginal() exists since Drupal 11.2; the property before.
+    $original = method_exists($node, 'getOriginal')
+      ? $node->getOriginal()
+      : ($node->original ?? NULL);
+    return $original instanceof NodeInterface ? $original : NULL;
   }
 
   /**
@@ -440,7 +652,7 @@ class ArchiveService implements ArchiveServiceInterface {
         return $this->randomToken() . '@anonymized.off';
 
       case 'telephone':
-        return '+49-0123459995555';
+        return self::ANONYMIZED_PHONE;
 
       case 'boolean':
         return 0;
