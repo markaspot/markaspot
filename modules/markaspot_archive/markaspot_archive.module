@@ -32,6 +32,13 @@ function markaspot_archive_help($route_name, RouteMatchInterface $route_match) {
  * Implements hook_cron().
  */
 function markaspot_archive_cron() {
+  // Catch up on archived requests that still hold plain contact data on every
+  // run. It depends only on the anonymize setting, not on the archive throttle.
+  \Drupal::service('markaspot_archive.archive')->backfillArchived(
+    ArchiveService::BACKFILL_LIMIT,
+    ArchiveService::BACKFILL_TIME_BUDGET
+  );
+
   // Get the configuration and check if cron‐based archiving is enabled.
   $config = \Drupal::config('markaspot_archive.settings');
   // Bail out only if cron_enable is explicitly disabled (0).
@@ -87,16 +94,13 @@ function markaspot_archive_cron() {
     'Enqueued @count nodes for archiving.',
     ['@count' => $count]
   );
-
-  // Catch up on archived requests that still hold plain contact data.
-  \Drupal::service('markaspot_archive.archive')->backfillArchived(
-    ArchiveService::BACKFILL_LIMIT,
-    ArchiveService::BACKFILL_TIME_BUDGET
-  );
 }
 
 /**
  * Implements hook_ENTITY_TYPE_presave() for node entities.
+ *
+ * Presave hooks of modules sorted after this one must not set the archived
+ * status: such a transition is only caught later by the cron backfill.
  */
 function markaspot_archive_node_presave(NodeInterface $node) {
   \Drupal::service('markaspot_archive.archive')
