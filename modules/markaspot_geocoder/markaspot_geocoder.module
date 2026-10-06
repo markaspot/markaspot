@@ -37,6 +37,13 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
       $geolocationChanged = $lat !== $original_lat || $lng !== $original_lng;
     }
 
+    // Syncing saves of existing requests that keep their location, such as
+    // the archive anonymization backfill, must not geocode or change the
+    // address and districts. Migrations with new coordinates still geocode.
+    if ($node->isSyncing() && !$isNew && !$geolocationChanged) {
+      return;
+    }
+
     // Check if address is missing.
     $addressMissing = $node->hasField('field_address') &&
       ($node->get('field_address')->isEmpty() ||
