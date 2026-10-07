@@ -844,6 +844,30 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
   }
 
   /**
+   * The backfill finds plain names left in previous revisions.
+   */
+  public function testBackfillCleansPlainNamesInPreviousRevisions(): void {
+    $this->createQueueRequest();
+    $this->config('markaspot_archive.settings')
+      ->set('anonymize', 0)
+      ->set('anonymize_fields', ['field_first_name' => 'field_first_name'])
+      ->save();
+    $node = $this->createRequest([
+      'field_status' => $this->archivedStatusId(),
+      'field_first_name' => 'Jane',
+    ]);
+    $first_revision = (int) $node->getRevisionId();
+    $node->setNewRevision(TRUE);
+    $node->set('field_first_name', '0a1b2c3d4e');
+    $node->save();
+    $this->config('markaspot_archive.settings')->set('anonymize', 1)->save();
+
+    self::assertSame(1, $this->container->get('markaspot_archive.archive')->backfillArchived(10, 20));
+    self::assertMatchesRegularExpression('/^[0-9a-f]{10}$/', (string) $this->revisionFieldValue($first_revision, 'field_first_name'));
+    self::assertSame(0, $this->container->get('markaspot_archive.archive')->backfillArchived(10, 20));
+  }
+
+  /**
    * The backfill honors its limit and starts over once it is exhausted.
    */
   public function testBackfillLimitAndCursorReset(): void {

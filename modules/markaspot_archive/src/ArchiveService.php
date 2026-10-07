@@ -479,7 +479,8 @@ class ArchiveService implements ArchiveServiceInterface {
   /**
    * Returns the configured fields whose values reveal plain contact data.
    *
-   * Only e-mail and telephone values show whether they were anonymized.
+   * E-mail and telephone values show whether they were anonymized; string
+   * values are anonymized to a 10 character hex token.
    *
    * @param array $fields
    *   Configured field machine names.
@@ -491,7 +492,7 @@ class ArchiveService implements ArchiveServiceInterface {
     $detectable = [];
     foreach ($this->fieldNames($fields) as $field_name) {
       $type = $this->nodeFieldStorage($field_name)?->getType();
-      if ($type === 'email' || $type === 'telephone') {
+      if (in_array($type, ['email', 'telephone', 'string'], TRUE)) {
         $detectable[$field_name] = $type;
       }
     }
@@ -543,12 +544,11 @@ class ArchiveService implements ArchiveServiceInterface {
         ->condition('s.' . $status_column, $archived_status)
         ->condition('r.entity_id', $cursor, '>')
         ->condition($column, '', '<>');
-      if ($type === 'email') {
-        $query->condition($column, '%' . $this->database->escapeLike('@anonymized.off'), 'NOT LIKE');
-      }
-      else {
-        $query->condition($column, self::ANONYMIZED_PHONE, '<>');
-      }
+      match ($type) {
+        'email' => $query->condition($column, '%' . $this->database->escapeLike('@anonymized.off'), 'NOT LIKE'),
+        'telephone' => $query->condition($column, self::ANONYMIZED_PHONE, '<>'),
+        default => $query->condition($column, '^[0-9a-f]{10}$', 'NOT REGEXP'),
+      };
       $query->distinct()->orderBy('r.entity_id')->range(0, $limit);
       $nids = array_merge($nids, array_map('intval', $query->execute()->fetchCol()));
     }

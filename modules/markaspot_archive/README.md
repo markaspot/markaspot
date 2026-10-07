@@ -38,8 +38,8 @@ This module works with:
   status update. Requires the "Anonymize" setting.
 - Every cron run anonymizes up to 50 archived requests that still hold plain
   contact data in the current or a previous revision (archived before this
-  existed or while anonymization was off), keeping their changed time. Only e-mail and telephone fields show whether a
-  value is plain, so requests with a plain name but neither e-mail nor phone
-  are not caught up.
+  existed or while anonymization was off), keeping their changed time. Plain
+  values are recognized in e-mail, telephone and string fields (anonymized
+  strings are 10 character hex tokens).
 - Category-specific overrides via taxonomy term fields
 - Implements data privacy protections through field anonymization
