@@ -12,7 +12,6 @@ use Drupal\Core\Entity\RevisionableInterface;
 use Drupal\Core\Entity\RevisionableStorageInterface;
 use Drupal\Core\Entity\Sql\SqlContentEntityStorage;
 use Drupal\Core\Entity\TranslatableInterface;
-use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\node\NodeInterface;
@@ -406,44 +405,13 @@ class ArchiveService implements ArchiveServiceInterface {
     }
     $fields = $this->normalizeConfiguredFields((array) $config->get('anonymize_fields'));
     $storage = $this->entityTypeManager->getStorage('node');
-    $query = $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('type', 'service_request')
-      ->condition('field_status', $archived_status);
-
-    // Only e-mail and telephone values reveal whether they were anonymized.
-    $plaintext = $query->orConditionGroup();
-    $detectable = 0;
-    $field_storage = $this->entityTypeManager->getStorage('field_storage_config');
-    foreach ($this->fieldNames($fields) as $field_name) {
-      $definition = $field_storage->load('node.' . $field_name);
-      if (!$definition instanceof FieldStorageDefinitionInterface) {
-        continue;
-      }
-      $marker = match ($definition->getType()) {
-        'email' => ['%@anonymized.off', 'NOT LIKE'],
-        'telephone' => [self::ANONYMIZED_PHONE, '<>'],
-        default => NULL,
-      };
-      if ($marker === NULL) {
-        continue;
-      }
-      $plaintext->condition($query->andConditionGroup()
-        ->condition($field_name, $marker[0], $marker[1])
-        ->condition($field_name, '', '<>'));
-      $detectable++;
-    }
-    if ($detectable === 0) {
+    $detectable = $this->detectableFields($fields);
+    if ($detectable === []) {
       return 0;
     }
 
     $cursor = (int) $this->state->get(self::BACKFILL_CURSOR_STATE, 0);
-    $nids = $query
-      ->condition($plaintext)
-      ->condition('nid', $cursor, '>')
-      ->sort('nid')
-      ->range(0, $limit)
-      ->execute();
+    $nids = $this->backfillCandidates($archived_status, $detectable, $cursor, $limit);
     if ($nids === []) {
       // Start over on the next run to catch nodes archived meanwhile.
       if ($cursor > 0) {
@@ -466,6 +434,16 @@ class ArchiveService implements ArchiveServiceInterface {
           continue;
         }
         $anonymized_values = $this->anonymize($node, $fields);
+        // A field empty on the current revision may still hold plain data in
+        // previous revisions.
+        foreach ($detectable as $field_name => $type) {
+          if (!isset($anonymized_values[$field_name]) && $node->hasField($field_name)) {
+            $anonymized_values[$field_name] = [
+              'type' => $type,
+              'value' => $this->anonymizedValue($type),
+            ];
+          }
+        }
         if ($anonymized_values === []) {
           continue;
         }
@@ -495,6 +473,88 @@ class ArchiveService implements ArchiveServiceInterface {
       );
     }
     return $anonymized;
+  }
+
+  /**
+   * Returns the configured fields whose values reveal plain contact data.
+   *
+   * Only e-mail and telephone values show whether they were anonymized.
+   *
+   * @param array $fields
+   *   Configured field machine names.
+   *
+   * @return array<string, string>
+   *   Field types keyed by field machine name.
+   */
+  protected function detectableFields(array $fields): array {
+    $definitions = $this->entityTypeManager->getStorage('node')->getFieldStorageDefinitions();
+    $detectable = [];
+    foreach ($this->fieldNames($fields) as $field_name) {
+      $type = isset($definitions[$field_name]) ? $definitions[$field_name]->getType() : NULL;
+      if ($type === 'email' || $type === 'telephone') {
+        $detectable[$field_name] = $type;
+      }
+    }
+    return $detectable;
+  }
+
+  /**
+   * Returns archived requests with plain contact data in any revision.
+   *
+   * Joins the revision tables of the contact fields with the current status,
+   * so values left in previous revisions are found as well.
+   *
+   * @param string $archived_status
+   *   The archived status term id.
+   * @param array<string, string> $detectable
+   *   Field types keyed by field machine name.
+   * @param int $cursor
+   *   Only node ids above this one are returned.
+   * @param int $limit
+   *   Maximum number of node ids.
+   *
+   * @return int[]
+   *   Node ids in ascending order.
+   */
+  protected function backfillCandidates(string $archived_status, array $detectable, int $cursor, int $limit): array {
+    $storage = $this->entityTypeManager->getStorage('node');
+    if (!$storage instanceof SqlContentEntityStorage) {
+      return [];
+    }
+    $mapping = $storage->getTableMapping();
+    $definitions = $storage->getFieldStorageDefinitions();
+    if (!isset($definitions['field_status']) || !$mapping->requiresDedicatedTableStorage($definitions['field_status'])) {
+      return [];
+    }
+    $status_table = $mapping->getDedicatedDataTableName($definitions['field_status']);
+    $status_column = $mapping->getFieldColumnName($definitions['field_status'], 'target_id');
+
+    $nids = [];
+    foreach ($detectable as $field_name => $type) {
+      $definition = $definitions[$field_name];
+      if (!$mapping->requiresDedicatedTableStorage($definition)) {
+        continue;
+      }
+      $column = 'r.' . $mapping->getFieldColumnName($definition, 'value');
+      $query = $this->database->select($mapping->getDedicatedRevisionTableName($definition), 'r');
+      $query->join($status_table, 's', 's.entity_id = r.entity_id');
+      $query->addField('r', 'entity_id');
+      $query->condition('s.bundle', 'service_request')
+        ->condition('s.' . $status_column, $archived_status)
+        ->condition('r.entity_id', $cursor, '>')
+        ->condition($column, '', '<>');
+      if ($type === 'email') {
+        $query->condition($column, '%' . $this->database->escapeLike('@anonymized.off'), 'NOT LIKE');
+      }
+      else {
+        $query->condition($column, self::ANONYMIZED_PHONE, '<>');
+      }
+      $query->distinct()->orderBy('r.entity_id')->range(0, $limit);
+      $nids = array_merge($nids, array_map('intval', $query->execute()->fetchCol()));
+    }
+    $nids = array_values(array_unique($nids));
+    sort($nids);
+    return array_slice($nids, 0, $limit);
   }
 
   /**

@@ -818,6 +818,32 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
   }
 
   /**
+   * The backfill cleans plain contact data left in previous revisions.
+   */
+  public function testBackfillCleansPlainDataInPreviousRevisions(): void {
+    $this->createQueueRequest();
+    $this->config('markaspot_archive.settings')->set('anonymize', 0)->save();
+    $node = $this->createRequest([
+      'field_status' => $this->archivedStatusId(),
+      'field_e_mail' => 'old@example.org',
+    ]);
+    $first_revision = (int) $node->getRevisionId();
+    $node->setNewRevision(TRUE);
+    $node->set('field_e_mail', 'abc@anonymized.off');
+    $node->save();
+    $this->config('markaspot_archive.settings')->set('anonymize', 1)->save();
+
+    $count = $this->container->get('markaspot_archive.archive')
+      ->backfillArchived(10, 20);
+
+    self::assertSame(1, $count);
+    $current = Node::load($node->id())->get('field_e_mail')->value;
+    self::assertStringEndsWith('@anonymized.off', $current);
+    self::assertSame($current, $this->revisionFieldValue($first_revision, 'field_e_mail'));
+    self::assertSame(0, $this->container->get('markaspot_archive.archive')->backfillArchived(10, 20));
+  }
+
+  /**
    * The backfill honors its limit and starts over once it is exhausted.
    */
   public function testBackfillLimitAndCursorReset(): void {

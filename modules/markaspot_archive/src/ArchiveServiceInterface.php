@@ -79,8 +79,9 @@ interface ArchiveServiceInterface {
    * Anonymizes archived requests that still hold plain contact data.
    *
    * Picks up requests archived before transition anonymization existed or
-   * while anonymization was disabled. Only e-mail and telephone fields reveal
-   * plain data; the changed time of the requests is kept.
+   * while anonymization was disabled, including plain values left in previous
+   * revisions. Only e-mail and telephone fields reveal plain data; the changed
+   * time of the requests is kept.
    *
    * @param int $limit
    *   Maximum number of nodes to process.

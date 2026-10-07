@@ -37,8 +37,8 @@ This module works with:
   whether it comes from the queue worker, a manual status change or an Open311
   status update. Requires the "Anonymize" setting.
 - Every cron run anonymizes up to 50 archived requests that still hold plain
-  contact data (archived before this existed or while anonymization was off),
-  keeping their changed time. Only e-mail and telephone fields show whether a
+  contact data in the current or a previous revision (archived before this
+  existed or while anonymization was off), keeping their changed time. Only e-mail and telephone fields show whether a
   value is plain, so requests with a plain name but neither e-mail nor phone
   are not caught up.
 - Category-specific overrides via taxonomy term fields
