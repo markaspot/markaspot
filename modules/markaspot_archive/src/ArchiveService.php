@@ -12,6 +12,7 @@ use Drupal\Core\Entity\RevisionableInterface;
 use Drupal\Core\Entity\RevisionableStorageInterface;
 use Drupal\Core\Entity\Sql\SqlContentEntityStorage;
 use Drupal\Core\Entity\TranslatableInterface;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\node\NodeInterface;
@@ -487,10 +488,9 @@ class ArchiveService implements ArchiveServiceInterface {
    *   Field types keyed by field machine name.
    */
   protected function detectableFields(array $fields): array {
-    $definitions = $this->entityTypeManager->getStorage('node')->getFieldStorageDefinitions();
     $detectable = [];
     foreach ($this->fieldNames($fields) as $field_name) {
-      $type = isset($definitions[$field_name]) ? $definitions[$field_name]->getType() : NULL;
+      $type = $this->nodeFieldStorage($field_name)?->getType();
       if ($type === 'email' || $type === 'telephone') {
         $detectable[$field_name] = $type;
       }
@@ -522,17 +522,17 @@ class ArchiveService implements ArchiveServiceInterface {
       return [];
     }
     $mapping = $storage->getTableMapping();
-    $definitions = $storage->getFieldStorageDefinitions();
-    if (!isset($definitions['field_status']) || !$mapping->requiresDedicatedTableStorage($definitions['field_status'])) {
+    $status = $this->nodeFieldStorage('field_status');
+    if ($status === NULL || !$mapping->requiresDedicatedTableStorage($status)) {
       return [];
     }
-    $status_table = $mapping->getDedicatedDataTableName($definitions['field_status']);
-    $status_column = $mapping->getFieldColumnName($definitions['field_status'], 'target_id');
+    $status_table = $mapping->getDedicatedDataTableName($status);
+    $status_column = $mapping->getFieldColumnName($status, 'target_id');
 
     $nids = [];
     foreach ($detectable as $field_name => $type) {
-      $definition = $definitions[$field_name];
-      if (!$mapping->requiresDedicatedTableStorage($definition)) {
+      $definition = $this->nodeFieldStorage($field_name);
+      if ($definition === NULL || !$mapping->requiresDedicatedTableStorage($definition)) {
         continue;
       }
       $column = 'r.' . $mapping->getFieldColumnName($definition, 'value');
@@ -555,6 +555,16 @@ class ArchiveService implements ArchiveServiceInterface {
     $nids = array_values(array_unique($nids));
     sort($nids);
     return array_slice($nids, 0, $limit);
+  }
+
+  /**
+   * Returns the storage definition of a configurable node field.
+   */
+  protected function nodeFieldStorage(string $field_name): ?FieldStorageDefinitionInterface {
+    $definition = $this->entityTypeManager
+      ->getStorage('field_storage_config')
+      ->load('node.' . $field_name);
+    return $definition instanceof FieldStorageDefinitionInterface ? $definition : NULL;
   }
 
   /**
