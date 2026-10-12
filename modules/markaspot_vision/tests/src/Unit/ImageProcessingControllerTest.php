@@ -14,6 +14,8 @@ use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
+use Drupal\markaspot_vision\Service\MediaTenantScope;
+use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
@@ -164,6 +166,11 @@ class ImageProcessingControllerTest extends UnitTestCase {
         ['node', $this->nodeStorage],
       ]);
 
+    // Tenant binding has its own kernel coverage; these tests exercise the
+    // analysis pipeline of an install without jurisdictions.
+    $scopeResolver = $this->createMock(MediaTenantScopeResolver::class);
+    $scopeResolver->method('resolve')->willReturn(MediaTenantScope::unscoped());
+
     $this->controller = new ImageProcessingController(
       $this->imageProcessingService,
       $loggerFactory,
@@ -171,6 +178,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $featureScopeResolver,
       $this->mediaAnalysisAccessGuard,
       $configFactory,
+      $scopeResolver,
     );
 
     // Inject entityTypeManager via reflection (ControllerBase stores it

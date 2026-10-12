@@ -11,19 +11,17 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
-use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
+use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
 
 /**
  * Controller for processing images with AI vision services.
  */
 class ImageProcessingController extends ControllerBase {
-
-  use JurisdictionIdResolverTrait;
 
   /**
    * The Image Processing Service.
@@ -78,6 +76,11 @@ class ImageProcessingController extends ControllerBase {
   protected ConfigFactoryInterface $visionConfigFactory;
 
   /**
+   * Resolves the tenant the analyzed media belong to.
+   */
+  protected MediaTenantScopeResolver $mediaTenantScopeResolver;
+
+  /**
    * Constructs a new ImageProcessingController object.
    *
    * @param \Drupal\markaspot_vision\Service\ImageProcessingService $image_processing_service
@@ -92,6 +95,8 @@ class ImageProcessingController extends ControllerBase {
    *   Guards access to media analysis.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The configuration factory.
+   * @param \Drupal\markaspot_vision\Service\MediaTenantScopeResolver $media_tenant_scope_resolver
+   *   Resolves the tenant the analyzed media belong to.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
    * @param \Drupal\markaspot_vision\Service\OriginalImageStore|null $original_image_store
@@ -104,6 +109,7 @@ class ImageProcessingController extends ControllerBase {
     FeatureScopeResolver $feature_scope_resolver,
     MediaAnalysisAccessGuard $media_analysis_access_guard,
     ConfigFactoryInterface $config_factory,
+    MediaTenantScopeResolver $media_tenant_scope_resolver,
     ?TierConfigService $tier_config = NULL,
     ?OriginalImageStore $original_image_store = NULL,
   ) {
@@ -113,6 +119,7 @@ class ImageProcessingController extends ControllerBase {
     $this->featureScopeResolver = $feature_scope_resolver;
     $this->mediaAnalysisAccessGuard = $media_analysis_access_guard;
     $this->visionConfigFactory = $config_factory;
+    $this->mediaTenantScopeResolver = $media_tenant_scope_resolver;
     $this->tierConfig = $tier_config;
     $this->originalImageStore = $original_image_store;
   }
@@ -129,6 +136,7 @@ class ImageProcessingController extends ControllerBase {
       $container->get('markaspot_nuxt.feature_scope_resolver'),
       $container->get('markaspot_vision.media_analysis_access_guard'),
       $container->get('config.factory'),
+      $container->get('markaspot_vision.media_tenant_scope'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
@@ -172,51 +180,6 @@ class ImageProcessingController extends ControllerBase {
       return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
     }
 
-    // Feature flag gate: reject early when the jurisdiction has disabled
-    // AI analysis. Schema default is TRUE so an unconfigured tenant still
-    // gets the analysis; only an explicit `false` in field_nuxt_config
-    // blocks the call. This prevents the OpenAI request — and the cost —
-    // before any model is contacted.
-    $jurisdictionIdForFlag = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
-    $jurisdictionForFlag = $jurisdictionIdForFlag
-      ? $this->entityTypeManager()->getStorage('group')->load($jurisdictionIdForFlag)
-      : NULL;
-    if ($jurisdictionForFlag instanceof GroupInterface
-      && !$this->featureScopeResolver->isEnabledEffective('aiAnalysis', $jurisdictionForFlag, TRUE)) {
-      return new JsonResponse([
-        'error' => $this->t('AI analysis is disabled for this jurisdiction.'),
-      ], 403);
-    }
-
-    // AI budget check (only on SaaS with markaspot_fastmap installed).
-    $resolvedJurisdictionId = NULL;
-    if ($this->tierConfig) {
-      $resolvedJurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
-
-      if (!$resolvedJurisdictionId) {
-        return new JsonResponse(['error' => 'jurisdiction_id is required.'], 400);
-      }
-
-      $group = $this->entityTypeManager()->getStorage('group')->load($resolvedJurisdictionId);
-      if (!$group || !$group->hasField('field_tier')) {
-        return new JsonResponse(['error' => 'Invalid jurisdiction.'], 400);
-      }
-
-      $tier = !$group->get('field_tier')->isEmpty()
-        ? $group->get('field_tier')->value
-        : 'free';
-      if ($this->tierConfig->isAIBudgetExhausted((int) $resolvedJurisdictionId, $tier)) {
-        $this->logger->notice('AI budget exhausted for jurisdiction @jid (tier: @tier).', [
-          '@jid' => $resolvedJurisdictionId,
-          '@tier' => $tier,
-        ]);
-        return new JsonResponse([
-          'status' => 'budget_exhausted',
-          'message' => 'Monthly AI analysis budget exhausted.',
-        ], 429);
-      }
-    }
-
     try {
       if (empty($data['media_ids']) || !is_array($data['media_ids'])) {
         return new JsonResponse([
@@ -253,6 +216,58 @@ class ImageProcessingController extends ControllerBase {
         throw new \Exception('No valid media entities found for the provided media_ids.');
       }
 
+      // Tenant scope follows the media, not the caller: the jurisdiction of a
+      // report already referencing them, the binding of their first analysis,
+      // or the validated jurisdiction of this first request. Feature policy,
+      // provider context and budget all use this scope, and it is settled
+      // before any model is contacted or any budget is checked.
+      $scope = $this->mediaTenantScopeResolver->resolve(
+        $media_entities,
+        $data['jurisdiction_id'] ?? NULL,
+        $this->tierConfig !== NULL,
+      );
+      if (!$scope->isAllowed()) {
+        $this->logger->warning('Rejected vision analysis: @reason', ['@reason' => $scope->error]);
+        return new JsonResponse(['error' => $scope->error], $scope->status);
+      }
+      $jurisdiction = $scope->jurisdiction;
+
+      // Feature flag gate: schema default is TRUE so an unconfigured tenant
+      // still gets the analysis; only an explicit `false` in
+      // field_nuxt_config blocks the call, before any model is contacted.
+      if ($jurisdiction instanceof GroupInterface
+        && !$this->featureScopeResolver->isEnabledEffective('aiAnalysis', $jurisdiction, TRUE)) {
+        return new JsonResponse([
+          'error' => $this->t('AI analysis is disabled for this jurisdiction.'),
+        ], 403);
+      }
+
+      // AI budget check (only on SaaS with markaspot_fastmap installed).
+      if ($this->tierConfig) {
+        if (!$jurisdiction instanceof GroupInterface || !$jurisdiction->hasField('field_tier')) {
+          return new JsonResponse(['error' => 'Invalid jurisdiction.'], 400);
+        }
+
+        $tier = !$jurisdiction->get('field_tier')->isEmpty()
+          ? $jurisdiction->get('field_tier')->value
+          : 'free';
+        if ($this->tierConfig->isAIBudgetExhausted((int) $jurisdiction->id(), $tier)) {
+          $this->logger->notice('AI budget exhausted for jurisdiction @jid (tier: @tier).', [
+            '@jid' => $jurisdiction->id(),
+            '@tier' => $tier,
+          ]);
+          return new JsonResponse([
+            'status' => 'budget_exhausted',
+            'message' => 'Monthly AI analysis budget exhausted.',
+          ], 429);
+        }
+      }
+
+      if ($jurisdiction instanceof GroupInterface) {
+        $this->mediaTenantScopeResolver->bind($media_entities, $jurisdiction);
+      }
+      $jurisdictionId = $jurisdiction instanceof GroupInterface ? (int) $jurisdiction->id() : NULL;
+
       // Collect file URIs, keyed by media ID for blur result mapping.
       $file_uris = [];
       $media_uri_map = [];
@@ -273,10 +288,6 @@ class ImageProcessingController extends ControllerBase {
 
       // Get user's language preference from request (frontend sends this).
       $langcode = $data['language'] ?? NULL;
-
-      // Get jurisdiction ID for filtering categories in multi-tenant mode.
-      // Supports numeric IDs and slugs.
-      $jurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
 
       // Process images with ImageProcessingService.
       $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode, $jurisdictionId);
@@ -501,12 +512,12 @@ class ImageProcessingController extends ControllerBase {
         }
       }
 
-      // Record AI analysis for budget tracking.
-      if ($this->tierConfig && $resolvedJurisdictionId) {
-        $this->tierConfig->recordAIAnalysis((int) $resolvedJurisdictionId);
+      // Record AI analysis for budget tracking, charged to the media tenant.
+      if ($this->tierConfig && $jurisdictionId) {
+        $this->tierConfig->recordAIAnalysis($jurisdictionId);
         // Every privacy re-check is a model call of its own.
         for ($i = 0; $i < $escalation['rechecks']; $i++) {
-          $this->tierConfig->recordAIAnalysis((int) $resolvedJurisdictionId);
+          $this->tierConfig->recordAIAnalysis($jurisdictionId);
         }
       }
 

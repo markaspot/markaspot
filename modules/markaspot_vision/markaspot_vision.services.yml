@@ -27,6 +27,12 @@ services:
       - '@current_user'
       - '@keyvalue.expirable'
       - '@request_stack'
+  markaspot_vision.media_tenant_scope:
+    class: Drupal\markaspot_vision\Service\MediaTenantScopeResolver
+    arguments:
+      - '@entity_type.manager'
+      - '@keyvalue.expirable'
+      - '@config.factory'
   markaspot_vision.image_processing_controller:
     class: Drupal\markaspot_vision\Controller\ImageProcessingController
     arguments:
@@ -36,5 +42,6 @@ services:
       - '@markaspot_nuxt.feature_scope_resolver'
       - '@markaspot_vision.media_analysis_access_guard'
       - '@config.factory'
+      - '@markaspot_vision.media_tenant_scope'
     tags:
       - { name: controller.service_arguments }
