@@ -270,6 +270,7 @@ markaspot_ai.admin_duplicate_review:
     _title: 'Review Duplicate Match'
   requirements:
     _permission: 'review ai duplicates'
+    _custom_access: 'markaspot_ai.duplicate_match_access:accessReviewRoute'
     match: \d+
   options:
     _admin_route: TRUE

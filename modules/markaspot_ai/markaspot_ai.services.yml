@@ -25,6 +25,14 @@ services:
       - '@logger.factory'
       - '@?markaspot_group.hierarchy_resolver'
 
+  markaspot_ai.duplicate_match_access:
+    class: Drupal\markaspot_ai\Access\DuplicateMatchAccessPolicy
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@markaspot_ai.duplicate_detection'
+      - '@?markaspot_group.hierarchy_resolver'
+
   markaspot_ai.token_tracking:
     class: Drupal\markaspot_ai\Service\TokenTrackingService
     arguments:

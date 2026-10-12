@@ -10,11 +10,19 @@ use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
+use Drupal\markaspot_ai\Access\DuplicateMatchAccessPolicy;
 use Drupal\markaspot_ai\Service\DuplicateDetectionService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * Form for reviewing a single AI duplicate match.
+ *
+ * Both reports of the match must be visible to the reviewer (and within the
+ * reviewer's tenant scope and AI opt-in) before anything is rendered, and
+ * updatable before a review is stored. The route enforces the view check via
+ * DuplicateMatchAccessPolicy; the form repeats it so it never relies on the
+ * route alone.
  */
 class DuplicateReviewForm extends FormBase {
 
@@ -27,11 +35,14 @@ class DuplicateReviewForm extends FormBase {
    *   The entity type manager.
    * @param \Drupal\Core\Datetime\DateFormatterInterface $dateFormatter
    *   The date formatter service.
+   * @param \Drupal\markaspot_ai\Access\DuplicateMatchAccessPolicy $accessPolicy
+   *   The shared duplicate access policy.
    */
   public function __construct(
     protected DuplicateDetectionService $duplicateDetection,
     protected EntityTypeManagerInterface $entityTypeManager,
     protected DateFormatterInterface $dateFormatter,
+    protected DuplicateMatchAccessPolicy $accessPolicy,
   ) {}
 
   /**
@@ -42,6 +53,7 @@ class DuplicateReviewForm extends FormBase {
       $container->get('markaspot_ai.duplicate_detection'),
       $container->get('entity_type.manager'),
       $container->get('date.formatter'),
+      $container->get('markaspot_ai.duplicate_match_access'),
     );
   }
 
@@ -56,18 +68,14 @@ class DuplicateReviewForm extends FormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state, ?int $match = NULL): array {
-    if ($match === NULL) {
-      $this->messenger()->addError($this->t('No match ID provided.'));
-      return $form;
-    }
+    $matchRecord = $match === NULL ? NULL : $this->duplicateDetection->getMatch((int) $match);
+    $account = $this->currentUser();
 
-    $matchRecord = $this->duplicateDetection->getMatch($match);
-
-    if ($matchRecord === NULL) {
-      $this->messenger()->addError($this->t('Match record @id not found.', [
-        '@id' => $match,
-      ]));
-      return $form;
+    // Deny before any match data is rendered. Missing and foreign matches
+    // look the same, so the response does not confirm that a match exists.
+    if ($matchRecord === NULL
+      || !$this->accessPolicy->matchAccess($matchRecord, 'view', $account)->isAllowed()) {
+      throw new AccessDeniedHttpException();
     }
 
     $form['match_id'] = [
@@ -136,8 +144,11 @@ class DuplicateReviewForm extends FormBase {
     $form['actions'] = [
       '#type' => 'actions',
     ];
+    $form['#cache']['max-age'] = 0;
 
+    $canReview = $this->accessPolicy->matchAccess($matchRecord, 'update', $account)->isAllowed();
     $form['actions']['confirm'] = [
+      '#access' => $canReview,
       '#type' => 'submit',
       '#value' => $this->t('Confirm duplicate'),
       '#button_type' => 'primary',
@@ -145,6 +156,7 @@ class DuplicateReviewForm extends FormBase {
     ];
 
     $form['actions']['reject'] = [
+      '#access' => $canReview,
       '#type' => 'submit',
       '#value' => $this->t('Reject match'),
       '#name' => 'reject',
@@ -165,8 +177,23 @@ class DuplicateReviewForm extends FormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    if (!$this->canReviewMatch((int) $form_state->getValue('match_id'))) {
+      $form_state->setErrorByName('', $this->t('You are not allowed to review this duplicate match.'));
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $matchId = (int) $form_state->getValue('match_id');
+    // Re-check at the point of mutation: memberships, report access or the
+    // tenant opt-in may have changed since the form was built.
+    if (!$this->canReviewMatch($matchId)) {
+      throw new AccessDeniedHttpException();
+    }
+
     $triggeringElement = $form_state->getTriggeringElement();
     $action = $triggeringElement['#name'] ?? 'reject';
 
@@ -190,6 +217,14 @@ class DuplicateReviewForm extends FormBase {
     $form_state->setRedirectUrl(
       Url::fromRoute('markaspot_ai.admin_processing_status')
     );
+  }
+
+  /**
+   * Checks that the current user may review (update) both reports of a match.
+   */
+  protected function canReviewMatch(int $matchId): bool {
+    return $matchId > 0
+      && $this->accessPolicy->matchIdAccess($matchId, 'update', $this->currentUser())->isAllowed();
   }
 
   /**

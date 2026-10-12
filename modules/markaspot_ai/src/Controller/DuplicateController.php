@@ -8,7 +8,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\group\Entity\GroupMembership;
+use Drupal\markaspot_ai\Access\DuplicateMatchAccessPolicy;
 use Drupal\markaspot_ai\Service\DuplicateDetectionService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -47,12 +47,15 @@ class DuplicateController extends ControllerBase {
    *   The database connection.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchyResolver
    *   The jurisdiction hierarchy resolver.
+   * @param \Drupal\markaspot_ai\Access\DuplicateMatchAccessPolicy|null $accessPolicy
+   *   The shared duplicate access policy, also used by the review form.
    */
   public function __construct(
     DuplicateDetectionService $duplicate_detection_service,
     EntityTypeManagerInterface $entity_type_manager,
     protected Connection $database,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    protected ?DuplicateMatchAccessPolicy $accessPolicy = NULL,
   ) {
     $this->duplicateDetectionService = $duplicate_detection_service;
     $this->entityTypeManager = $entity_type_manager;
@@ -68,7 +71,20 @@ class DuplicateController extends ControllerBase {
       $container->get('database'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
-        : NULL
+        : NULL,
+      $container->get('markaspot_ai.duplicate_match_access'),
+    );
+  }
+
+  /**
+   * Returns the shared duplicate access policy.
+   */
+  protected function accessPolicy(): DuplicateMatchAccessPolicy {
+    return $this->accessPolicy ??= new DuplicateMatchAccessPolicy(
+      $this->entityTypeManager,
+      $this->configFactory(),
+      $this->duplicateDetectionService,
+      $this->hierarchyResolver,
     );
   }
 
@@ -404,87 +420,42 @@ class DuplicateController extends ControllerBase {
    * Checks the global duplicate detection task toggle.
    */
   protected function isDuplicateDetectionEnabled(): bool {
-    return (bool) $this->config('markaspot_ai.settings')
-      ->get('duplicate_detection.enabled');
+    return $this->accessPolicy()->isDuplicateDetectionEnabled();
   }
 
   /**
    * Checks if the current user can see all jurisdictions.
    */
   protected function currentUserCanSeeAllJurisdictions(): bool {
-    $currentUser = $this->currentUser();
-    return (int) $currentUser->id() === 1
-      || $currentUser->hasPermission('administer nodes');
+    return $this->accessPolicy()->canSeeAllJurisdictions($this->currentUser());
   }
 
   /**
    * Checks access and tenant opt-in for both nodes in a duplicate match.
    */
   protected function canAccessMatchNodes(array $match, string $operation): bool {
-    return $this->canAccessNodeId((int) $match['source_nid'], $operation)
-      && $this->canAccessNodeId((int) $match['match_nid'], $operation);
+    return $this->accessPolicy()->matchAccess($match, $operation, $this->currentUser())->isAllowed();
   }
 
   /**
    * Checks access and tenant opt-in for a service request node ID.
    */
   protected function canAccessNodeId(int $nid, string $operation): bool {
-    $node = $this->entityTypeManager->getStorage('node')->load($nid);
-    if (!$node || $node->bundle() !== 'service_request') {
-      return FALSE;
-    }
-
-    return $this->canAccessNode($node, $operation);
+    return $this->accessPolicy()->canAccessNodeId($nid, $operation, $this->currentUser());
   }
 
   /**
    * Checks node access, tenant membership and tenant duplicate opt-in.
    */
   protected function canAccessNode(NodeInterface $node, string $operation): bool {
-    if (!$node->access($operation)) {
-      return FALSE;
-    }
-
-    $jurisdiction_id = _markaspot_ai_get_jurisdiction_id_for_node($node);
-    return $this->currentUserCanAccessJurisdiction($jurisdiction_id)
-      && _markaspot_ai_is_duplicate_detection_enabled_for_node($node);
+    return $this->accessPolicy()->canAccessNode($node, $operation, $this->currentUser());
   }
 
   /**
    * Checks if the current user administers the requested jurisdiction scope.
    */
   protected function currentUserCanAccessJurisdiction(?int $jurisdiction_id): bool {
-    if ($jurisdiction_id === NULL) {
-      return FALSE;
-    }
-    if ($this->currentUserCanSeeAllJurisdictions()) {
-      return TRUE;
-    }
-
-    $account = $this->currentUser();
-    if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
-      return FALSE;
-    }
-
-    $memberships = GroupMembership::loadByUser($account, array_values(array_unique([
-      $this->getJurisdictionGroupType() . '-tenant_admin',
-      'jur-tenant_admin',
-    ])));
-    foreach ($memberships as $membership) {
-      $managed_group = $membership->getGroup();
-      if (!$this->isJurisdictionGroup($managed_group)) {
-        continue;
-      }
-      $managed_id = (int) $managed_group->id();
-      $scope_ids = $this->hierarchyResolver
-        ? $this->hierarchyResolver->getDescendantIds($managed_id)
-        : [$managed_id];
-      if (in_array($jurisdiction_id, $scope_ids, TRUE)) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return $this->accessPolicy()->canAccessJurisdiction($jurisdiction_id, $this->currentUser());
   }
 
   /**
