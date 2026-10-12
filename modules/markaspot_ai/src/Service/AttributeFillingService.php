@@ -14,8 +14,10 @@ use Drupal\group\Entity\GroupRelationship;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
+use Drupal\markaspot_ai\Privacy\RetainedPiiOriginal;
 use Drupal\markaspot_ai\Utility\BlurPolicy;
 use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use Drupal\paragraphs\ParagraphInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Component\Datetime\TimeInterface;
@@ -1809,9 +1811,9 @@ class AttributeFillingService {
     $paragraphs = array_reverse($paragraphs);
 
     foreach ($paragraphs as $paragraph) {
-      // Legacy field_notes was never prompt input. Moving it into paragraphs
-      // must not silently expose historical free text to an external AI.
-      if ($paragraph->getBehaviorSetting('markaspot_legacy_notes', 'exclude_from_ai', FALSE)) {
+      // Retained PII originals and migrated legacy notes are staff-only
+      // context, never prompt input (RetainedPiiOriginal).
+      if (!$paragraph instanceof ParagraphInterface || RetainedPiiOriginal::isExcludedFromAi($paragraph)) {
         continue;
       }
       if (count($lines) >= 10) {

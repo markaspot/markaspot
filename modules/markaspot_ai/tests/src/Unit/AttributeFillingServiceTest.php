@@ -138,8 +138,10 @@ class AttributeFillingServiceTest extends UnitTestCase {
     }
     // Most recent entry: its private text must never even be read.
     $legacy = $this->createMock(ParagraphInterface::class);
-    $legacy->method('getBehaviorSetting')
-      ->with('markaspot_legacy_notes', 'exclude_from_ai', FALSE)->willReturn(TRUE);
+    $legacy->method('getBehaviorSetting')->willReturnMap([
+      ['markaspot_ai', 'exclude_from_ai', FALSE, FALSE],
+      ['markaspot_legacy_notes', 'exclude_from_ai', FALSE, TRUE],
+    ]);
     $legacy->expects($this->never())->method('get');
     $remarks[] = $legacy;
     $items = $this->createMock(EntityReferenceFieldItemListInterface::class);

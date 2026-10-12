@@ -11,6 +11,7 @@
 declare(strict_types=1);
 
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_ai\Privacy\RetainedPiiOriginal;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 
@@ -119,9 +120,11 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
     ]);
 
     $paragraph->set('field_internal_remark_text', [
-      'value' => 'Original text (PII removed by system):' . "\n\n" . $body_text,
+      'value' => RetainedPiiOriginal::remarkText($body_text),
       'format' => 'plain_text',
     ]);
+    // Staff may read the original; AI prompts never get it back.
+    RetainedPiiOriginal::mark($paragraph);
 
     // Privacy / data-integrity policy (markaspot/markaspot-ui#344):
     // The original, unredacted text is intentionally RETAINED here for
