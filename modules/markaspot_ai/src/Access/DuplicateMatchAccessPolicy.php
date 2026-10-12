@@ -153,10 +153,7 @@ class DuplicateMatchAccessPolicy {
       return FALSE;
     }
 
-    $memberships = GroupMembership::loadByUser($account, array_values(array_unique([
-      $this->getJurisdictionGroupType() . '-tenant_admin',
-      'jur-tenant_admin',
-    ])));
+    $memberships = GroupMembership::loadByUser($account, $this->jurisdictionRoleIds('tenant_admin'));
     foreach ($memberships as $membership) {
       $managedGroup = $membership->getGroup();
       if (!$this->isJurisdictionGroup($managedGroup)) {
@@ -172,6 +169,13 @@ class DuplicateMatchAccessPolicy {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Resolves the jurisdiction of a report, as used by the access checks.
+   */
+  public function jurisdictionIdForNode(NodeInterface $node): ?int {
+    return $this->getJurisdictionIdForNode($node);
   }
 
   /**

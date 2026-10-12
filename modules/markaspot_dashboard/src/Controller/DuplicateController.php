@@ -13,7 +13,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\group\Entity\GroupMembership;
+use Drupal\markaspot_ai\Access\DuplicateMatchAccessPolicy;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\StatusTermScope;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -57,6 +57,14 @@ class DuplicateController extends ControllerBase {
   protected StatusTermScope $statusTermScope;
 
   /**
+   * The shared duplicate access policy; NULL when markaspot_ai is absent.
+   *
+   * The same policy guards the markaspot_ai review form and API, so every
+   * path that reads or writes match data applies identical rules.
+   */
+  protected ?DuplicateMatchAccessPolicy $duplicateAccessPolicy;
+
+  /**
    * Constructs a DuplicateController object.
    */
   public function __construct(
@@ -69,6 +77,7 @@ class DuplicateController extends ControllerBase {
     ModuleHandlerInterface $module_handler,
     StatusTermScope $status_term_scope,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
+    ?DuplicateMatchAccessPolicy $duplicate_access_policy = NULL,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
@@ -79,6 +88,7 @@ class DuplicateController extends ControllerBase {
     $this->moduleHandler = $module_handler;
     $this->statusTermScope = $status_term_scope;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->duplicateAccessPolicy = $duplicate_access_policy;
   }
 
   /**
@@ -96,7 +106,10 @@ class DuplicateController extends ControllerBase {
       $container->get('markaspot_group.status_term_scope'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
-        : NULL
+        : NULL,
+      $container->has('markaspot_ai.duplicate_match_access')
+        ? $container->get('markaspot_ai.duplicate_match_access')
+        : NULL,
     );
   }
 
@@ -275,6 +288,27 @@ class DuplicateController extends ControllerBase {
       ], 403);
     }
 
+    // Load the match record.
+    $match = $this->database->select('markaspot_ai_duplicate_matches', 'm')
+      ->fields('m')
+      ->condition('id', $match_id)
+      ->execute()
+      ->fetchObject();
+
+    // Both reports must be visible and updatable for the reviewer, inside
+    // its tenant scope and opt-in. A missing match, a deleted report and a
+    // foreign match all answer the same, so the API is no existence oracle.
+    if (!$match || !$this->duplicateAccessPolicy
+      || !$this->duplicateAccessPolicy->matchAccess([
+        'source_nid' => $match->source_nid,
+        'match_nid' => $match->match_nid,
+      ], 'update', $this->currentUser)->isAllowed()) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Access denied.',
+      ], 403);
+    }
+
     // Parse request body.
     $data = json_decode($request->getContent(), TRUE);
     if (!isset($data['status']) || !in_array($data['status'], ['confirmed', 'rejected'])) {
@@ -284,36 +318,9 @@ class DuplicateController extends ControllerBase {
     $new_status = $data['status'];
     $closed_tid = NULL;
 
-    // Load the match record.
-    $match = $this->database->select('markaspot_ai_duplicate_matches', 'm')
-      ->fields('m')
-      ->condition('id', $match_id)
-      ->execute()
-      ->fetchObject();
-
-    if (!$match) {
-      throw new NotFoundHttpException('Match not found');
-    }
-
-    // Load the duplicate node (match_nid).
-    $duplicate_node = $this->entityTypeManager->getStorage('node')->load($match->match_nid);
-    if (!$duplicate_node || $duplicate_node->bundle() !== 'service_request') {
-      throw new NotFoundHttpException('Duplicate service request not found');
-    }
-
-    // Load the source node for reference.
-    $source_node = $this->entityTypeManager->getStorage('node')->load($match->source_nid);
-    if (!$source_node) {
-      throw new NotFoundHttpException('Source service request not found');
-    }
-
-    if (!$this->canAccessNode($duplicate_node, 'update')
-      || !$this->canAccessNode($source_node, 'view')) {
-      return new JsonResponse([
-        'success' => FALSE,
-        'message' => 'Access denied.',
-      ], 403);
-    }
+    $node_storage = $this->entityTypeManager->getStorage('node');
+    $duplicate_node = $node_storage->load($match->match_nid);
+    $source_node = $node_storage->load($match->source_nid);
 
     if ($new_status === 'confirmed') {
       $closed_tid = $this->resolveClosedStatusTid($duplicate_node);
@@ -351,14 +358,12 @@ class DuplicateController extends ControllerBase {
    * Checks whether the AI duplicate feature is globally available.
    */
   protected function isDuplicateDetectionEnabled(): bool {
-    if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
+    if (!$this->duplicateAccessPolicy || !$this->moduleHandler->moduleExists('markaspot_ai')) {
       return FALSE;
     }
     $this->moduleHandler->loadInclude('markaspot_ai', 'module');
 
-    return (bool) $this->configFactory
-      ->get('markaspot_ai.settings')
-      ->get('duplicate_detection.enabled');
+    return $this->duplicateAccessPolicy->isDuplicateDetectionEnabled();
   }
 
   /**
@@ -398,87 +403,34 @@ class DuplicateController extends ControllerBase {
    * Checks whether the current user may see all jurisdictions.
    */
   protected function currentUserCanSeeAllJurisdictions(): bool {
-    return (int) $this->currentUser->id() === 1
-      || $this->currentUser->hasPermission('administer nodes');
+    return $this->duplicateAccessPolicy !== NULL
+      && $this->duplicateAccessPolicy->canSeeAllJurisdictions($this->currentUser);
   }
 
   /**
    * Checks node access, tenant membership and tenant AI opt-in.
    */
   protected function canAccessNode(NodeInterface $node, string $operation): bool {
-    if (!$node->access($operation)) {
-      return FALSE;
-    }
-    if (!$this->isNodeDuplicateDetectionEnabled($node)) {
+    if (!$this->isDuplicateDetectionEnabled()) {
       return FALSE;
     }
 
-    return $this->currentUserCanAccessJurisdiction($this->getJurisdictionIdForNode($node));
+    return $this->duplicateAccessPolicy->canAccessNode($node, $operation, $this->currentUser);
   }
 
   /**
-   * Checks whether a node belongs to a duplicate-detection-enabled tenant.
-   */
-  protected function isNodeDuplicateDetectionEnabled(NodeInterface $node): bool {
-    if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
-      return FALSE;
-    }
-    $this->moduleHandler->loadInclude('markaspot_ai', 'module');
-    if (!function_exists('_markaspot_ai_is_duplicate_detection_enabled_for_node')) {
-      return FALSE;
-    }
-
-    return _markaspot_ai_is_duplicate_detection_enabled_for_node($node);
-  }
-
-  /**
-   * Resolves a service request node's jurisdiction ID.
+   * Resolves a service request node's jurisdiction ID via the shared policy.
    */
   protected function getJurisdictionIdForNode(NodeInterface $node): ?int {
-    if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
-      return NULL;
-    }
-    $this->moduleHandler->loadInclude('markaspot_ai', 'module');
-    if (!function_exists('_markaspot_ai_get_jurisdiction_id_for_node')) {
-      return NULL;
-    }
-
-    return _markaspot_ai_get_jurisdiction_id_for_node($node);
+    return $this->duplicateAccessPolicy?->jurisdictionIdForNode($node);
   }
 
   /**
    * Checks if the current user administers the requested jurisdiction scope.
    */
   protected function currentUserCanAccessJurisdiction(?int $jurisdiction_id): bool {
-    if ($jurisdiction_id === NULL) {
-      return FALSE;
-    }
-    if ($this->currentUserCanSeeAllJurisdictions()) {
-      return TRUE;
-    }
-    if (!in_array('tenant_admin', $this->currentUser->getRoles(), TRUE)) {
-      return FALSE;
-    }
-
-    $memberships = GroupMembership::loadByUser(
-      $this->currentUser,
-      $this->jurisdictionRoleIds('tenant_admin')
-    );
-    foreach ($memberships as $membership) {
-      $managed_group = $membership->getGroup();
-      if (!$this->isJurisdictionGroup($managed_group)) {
-        continue;
-      }
-      $managed_id = (int) $managed_group->id();
-      $scope_ids = $this->hierarchyResolver
-        ? $this->hierarchyResolver->getDescendantIds($managed_id)
-        : [$managed_id];
-      if (in_array($jurisdiction_id, $scope_ids, TRUE)) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
+    return $this->duplicateAccessPolicy !== NULL
+      && $this->duplicateAccessPolicy->canAccessJurisdiction($jurisdiction_id, $this->currentUser);
   }
 
   /**
