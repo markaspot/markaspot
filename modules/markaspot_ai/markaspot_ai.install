@@ -791,6 +791,11 @@ function markaspot_ai_update_11901(): void {
  * revision cannot be recognised; the summary counts the stamped remarks
  * without corroborating provenance (no host report created within five
  * minutes of the remark) so operators can check those by hand.
+ *
+ * Only the default revision is stamped. Older revisions are left untouched
+ * (saving a non-default revision in place risks changing the default one);
+ * RetainedPiiOriginal::isExcludedFromAi() excludes any revision whose
+ * paragraph is marked on its default revision.
  */
 function markaspot_ai_update_11902(array &$sandbox): string {
   $entity_type_manager = \Drupal::entityTypeManager();

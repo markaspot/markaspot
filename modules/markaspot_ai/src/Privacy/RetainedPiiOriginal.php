@@ -96,13 +96,46 @@ final class RetainedPiiOriginal {
 
   /**
    * Whether a remark must stay out of every AI provider prompt.
+   *
+   * Exclusion is entity-wide: a host may still reference an older revision
+   * of a remark (entity_reference_revisions keeps target_revision_id), and
+   * that revision can predate the mark while holding the same PII. Such a
+   * revision is excluded when the default revision of the same paragraph is.
    */
   public static function isExcludedFromAi(ParagraphInterface $paragraph): bool {
+    if (self::revisionExcluded($paragraph)) {
+      return TRUE;
+    }
+    $default = self::defaultRevisionOf($paragraph);
+    return $default !== NULL && self::revisionExcluded($default);
+  }
+
+  /**
+   * Whether this very revision is marked, migrated or carries the marker.
+   */
+  private static function revisionExcluded(ParagraphInterface $paragraph): bool {
     return (bool) $paragraph->getBehaviorSetting(self::SETTINGS_KEY, 'exclude_from_ai', FALSE)
       // Legacy field_notes was never prompt input. Moving it into paragraphs
       // must not silently expose historical free text to an external AI.
       || (bool) $paragraph->getBehaviorSetting(self::LEGACY_NOTES_KEY, 'exclude_from_ai', FALSE)
       || self::isPiiOriginal($paragraph);
+  }
+
+  /**
+   * Loads the default revision when the given one is not it.
+   *
+   * Only reached for an unflagged revision, so ordinary remarks on their
+   * default revision cost nothing. Entity storage caches the load per request.
+   */
+  private static function defaultRevisionOf(ParagraphInterface $paragraph): ?ParagraphInterface {
+    if ($paragraph->isNew() || $paragraph->isDefaultRevision() || !\Drupal::hasContainer()) {
+      return NULL;
+    }
+    $default = \Drupal::entityTypeManager()->getStorage('paragraph')->load($paragraph->id());
+    if (!$default instanceof ParagraphInterface || $default->getRevisionId() === $paragraph->getRevisionId()) {
+      return NULL;
+    }
+    return $default;
   }
 
   /**

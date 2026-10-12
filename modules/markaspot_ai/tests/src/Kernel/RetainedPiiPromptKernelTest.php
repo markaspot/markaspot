@@ -312,6 +312,40 @@ final class RetainedPiiPromptKernelTest extends KernelTestBase {
   }
 
   /**
+   * A host pinned to an unmarked older revision of a marked original.
+   *
+   * The remark was edited with a new revision (marker gone, PII kept) and
+   * marked afterwards, but the report still references the first revision.
+   */
+  public function testHostReferencingUnmarkedOlderRevisionIsExcluded(): void {
+    $node = Node::create([
+      'type' => 'service_request',
+      'title' => 'Pinned revision',
+      'body' => ['value' => 'Fence down, contact [REDACTED email].', 'format' => 'plain_text'],
+    ]);
+    $node->save();
+    $pinned = $this->addRemark($node, 'Contact ' . self::EMAIL . ' or ' . self::PHONE . '.');
+    $pinnedRevision = (int) $pinned->getRevisionId();
+    $this->addRemark($node, 'Fence contractor booked.');
+
+    $pinned->setNewRevision(TRUE);
+    RetainedPiiOriginal::mark($pinned);
+    $pinned->save();
+    $this->assertNotSame($pinnedRevision, (int) $pinned->getRevisionId());
+
+    $stored = $this->reloadNode($node);
+    $referenced = $stored->get('field_internal_remark')->referencedEntities();
+    $this->assertSame($pinnedRevision, (int) $referenced[0]->getRevisionId(), 'The report still references the unmarked revision.');
+    $this->assertFalse(RetainedPiiOriginal::isMarked($referenced[0]));
+
+    $this->createService()->assistForm($stored, ['priority'], 'en', FALSE);
+
+    $prompt = $this->lastPrompt();
+    $this->assertNoRetainedPii($prompt);
+    $this->assertStringContainsString('Fence contractor booked.', $prompt);
+  }
+
+  /**
    * Migrated legacy notes stay out of the outbound prompt.
    */
   public function testMigratedLegacyNotesStayOutOfPrompt(): void {
