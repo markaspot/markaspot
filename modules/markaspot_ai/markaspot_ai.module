@@ -14,6 +14,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Privacy\RetainedPiiOriginal;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\paragraphs\ParagraphInterface;
 
 /**
  * Implements hook_node_presave().
@@ -165,6 +166,18 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
   \Drupal::logger('markaspot_ai')->debug('PII redacted from service request @key.', [
     '@key' => $node_key,
   ]);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for paragraph entities.
+ *
+ * Keeps the AI exclusion of retained PII originals across every edit path
+ * (dashboard remark API, JSON:API, forms): an edited text or overwritten
+ * behavior settings never turn an original back into prompt input.
+ */
+function markaspot_ai_paragraph_presave(ParagraphInterface $paragraph): void {
+  $original = $paragraph->isNew() ? NULL : $paragraph->getOriginal();
+  RetainedPiiOriginal::preserveOnSave($paragraph, $original instanceof ParagraphInterface ? $original : NULL);
 }
 
 /**

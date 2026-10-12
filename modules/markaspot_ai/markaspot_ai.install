@@ -8,7 +8,9 @@
 declare(strict_types=1);
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\markaspot_ai\Privacy\RetainedPiiOriginal;
 use Drupal\markaspot_ai\Service\AiClientService;
+use Drupal\paragraphs\ParagraphInterface;
 
 /**
  * Implements hook_schema().
@@ -775,4 +777,85 @@ function markaspot_ai_update_11901(): void {
   if ($config->get('providers.anthropic.chat_model') === 'claude-sonnet-4-20250514') {
     $config->set('providers.anthropic.chat_model', 'claude-sonnet-4-6')->save();
   }
+}
+
+/**
+ * Persist the AI exclusion on internal remarks that retain a PII original.
+ *
+ * Originals stored before the provenance mark existed are recognised by the
+ * system marker in their current text or in any stored revision (an edit
+ * that removed the marker leaves it in an older revision). Only the
+ * behavior-settings mark is added: text, authorship and access stay as they
+ * are, and an already marked remark is not saved again, so the update can run
+ * any number of times. Originals whose marker was edited away without a
+ * revision cannot be recognised; the summary counts the stamped remarks
+ * without corroborating provenance (no host report created within five
+ * minutes of the remark) so operators can check those by hand.
+ */
+function markaspot_ai_update_11902(array &$sandbox): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!isset($sandbox['ids'])) {
+    $field_storage = $entity_type_manager->hasDefinition('paragraph')
+      ? (\Drupal::service('entity_field.manager')->getFieldStorageDefinitions('paragraph')['field_internal_remark_text'] ?? NULL)
+      : NULL;
+    if ($field_storage === NULL) {
+      $sandbox['#finished'] = 1;
+      return 'No internal remarks to migrate.';
+    }
+    $query = $entity_type_manager->getStorage('paragraph')->getQuery()
+      ->accessCheck(FALSE)
+      ->allRevisions()
+      ->condition('type', RetainedPiiOriginal::BUNDLE)
+      ->condition('field_internal_remark_text.value', RetainedPiiOriginal::MARKER, 'CONTAINS');
+    $sandbox['ids'] = array_values(array_unique(array_map('intval', $query->execute())));
+    sort($sandbox['ids']);
+    $sandbox['position'] = 0;
+    $sandbox['stamped'] = 0;
+    $sandbox['already'] = 0;
+    $sandbox['uncorroborated'] = 0;
+  }
+
+  $paragraph_storage = $entity_type_manager->getStorage('paragraph');
+  $node_storage = $entity_type_manager->getStorage('node');
+  $batch = array_slice($sandbox['ids'], $sandbox['position'], 50);
+  foreach ($paragraph_storage->loadMultiple($batch) as $paragraph) {
+    if (!$paragraph instanceof ParagraphInterface) {
+      continue;
+    }
+    if (RetainedPiiOriginal::isMarked($paragraph)) {
+      $sandbox['already']++;
+      continue;
+    }
+    $host_ids = $node_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_internal_remark.target_id', $paragraph->id())
+      ->execute();
+    $corroborated = FALSE;
+    foreach ($node_storage->loadMultiple($host_ids) as $host) {
+      $created = (int) ($paragraph->get('created')->value ?? 0);
+      if ($created > 0 && abs($created - (int) $host->getCreatedTime()) <= 300) {
+        $corroborated = TRUE;
+      }
+    }
+    if (!$corroborated) {
+      $sandbox['uncorroborated']++;
+    }
+    RetainedPiiOriginal::mark($paragraph);
+    $paragraph->save();
+    $sandbox['stamped']++;
+  }
+  $sandbox['position'] += count($batch);
+
+  $total = count($sandbox['ids']);
+  $sandbox['#finished'] = $total === 0 ? 1 : min(1, $sandbox['position'] / $total);
+  if ($sandbox['#finished'] < 1) {
+    return '';
+  }
+  return sprintf(
+    'Retained PII originals: %d marked now, %d already marked; %d of the newly marked have no host report created within five minutes and are worth a manual look.',
+    $sandbox['stamped'],
+    $sandbox['already'],
+    $sandbox['uncorroborated'],
+  );
 }

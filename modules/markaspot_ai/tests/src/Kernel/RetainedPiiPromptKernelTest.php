@@ -235,6 +235,171 @@ final class RetainedPiiPromptKernelTest extends KernelTestBase {
   }
 
   /**
+   * Editing the heading of an unmarked legacy original keeps it excluded.
+   */
+  public function testEditedLegacyOriginalStaysExcluded(): void {
+    $node = $this->reportWithLegacyOriginal($legacy);
+    $this->assertFalse(RetainedPiiOriginal::isMarked($legacy));
+
+    // What InternalRemarkController::update() does: replace the text only.
+    $legacy->set('field_internal_remark_text', [
+      'value' => 'Checked on site. Contact: ' . self::EMAIL . ', ' . self::PHONE,
+      'format' => 'plain_text',
+    ]);
+    $this->saveThroughHooks($legacy);
+
+    $this->assertTrue(RetainedPiiOriginal::isMarked($this->reloadParagraph($legacy)));
+    $this->createService()->assistForm($this->reloadNode($node), ['priority'], 'en', FALSE);
+    $this->assertNoRetainedPii($this->lastPrompt());
+  }
+
+  /**
+   * Overwritten behavior settings cannot lift the exclusion.
+   */
+  public function testClearedProvenanceIsRestoredOnSave(): void {
+    $node = $this->submitWithPii();
+    $original = $this->retainedOriginal($node);
+    $original->set('field_internal_remark_text', ['value' => 'Contact ' . self::EMAIL, 'format' => 'plain_text']);
+    // A JSON:API PATCH can replace the serialized settings wholesale.
+    $original->set('behavior_settings', serialize([]));
+    $original->setAllBehaviorSettings([]);
+    $this->saveThroughHooks($original);
+
+    $this->assertTrue(RetainedPiiOriginal::isMarked($this->reloadParagraph($original)));
+    $this->createService()->assistForm($this->reloadNode($node), ['priority'], 'en', FALSE);
+    $this->assertNoRetainedPii($this->lastPrompt());
+  }
+
+  /**
+   * The update marks legacy originals once, then changes nothing.
+   */
+  public function testUpdateMarksLegacyOriginalsIdempotently(): void {
+    require_once dirname(__DIR__, 3) . '/markaspot_ai.install';
+    $this->reportWithLegacyOriginal($corroborated);
+    // Marker kept only in an older revision: an edit removed it.
+    $edited = $this->addRemark($this->reportWithLegacyOriginal($unused), RetainedPiiOriginal::remarkText('Call ' . self::PHONE));
+    $edited->setNewRevision(TRUE);
+    $edited->set('field_internal_remark_text', ['value' => 'Call the reporter back.', 'format' => 'plain_text']);
+    $edited->save();
+    // Marker without a host report created at the same time.
+    $late = Paragraph::create([
+      'type' => 'internal_remark',
+      'field_internal_remark_text' => [
+        'value' => RetainedPiiOriginal::remarkText(self::EMAIL),
+        'format' => 'plain_text',
+      ],
+      'created' => 1000,
+    ]);
+    $late->save();
+    $ordinary = Paragraph::create([
+      'type' => 'internal_remark',
+      'field_internal_remark_text' => ['value' => 'Cleaning crew notified.', 'format' => 'plain_text'],
+    ]);
+    $ordinary->save();
+
+    $first = $this->runUpdate();
+    $this->assertStringContainsString('4 marked now, 0 already marked; 1 of the newly marked', $first);
+    foreach ([$corroborated, $unused, $edited, $late] as $paragraph) {
+      $stored = $this->reloadParagraph($paragraph);
+      $this->assertTrue(RetainedPiiOriginal::isMarked($stored));
+    }
+    $storedEdited = $this->reloadParagraph($edited);
+    $this->assertSame('Call the reporter back.', $storedEdited->get('field_internal_remark_text')->value);
+    $this->assertFalse(RetainedPiiOriginal::isMarked($this->reloadParagraph($ordinary)));
+
+    $second = $this->runUpdate();
+    $this->assertStringContainsString('0 marked now, 4 already marked', $second);
+  }
+
+  /**
+   * Migrated legacy notes stay out of the outbound prompt.
+   */
+  public function testMigratedLegacyNotesStayOutOfPrompt(): void {
+    $node = Node::create([
+      'type' => 'service_request',
+      'title' => 'Migrated report',
+      'body' => ['value' => 'Tree branch on the road.', 'format' => 'plain_text'],
+    ]);
+    $node->save();
+    $note = Paragraph::create([
+      'type' => 'internal_remark',
+      'field_internal_remark_text' => [
+        'value' => 'Legacy note: neighbour ' . self::EMAIL . ' called twice.',
+        'format' => 'plain_text',
+      ],
+    ]);
+    $note->setBehaviorSettings('markaspot_legacy_notes', ['exclude_from_ai' => TRUE]);
+    $note->save();
+    $node->get('field_internal_remark')->appendItem($note);
+    $node->save();
+    $this->addRemark($node, 'Removed by the parks team.');
+
+    $this->createService()->assistForm($node, ['priority'], 'en', FALSE);
+
+    $prompt = $this->lastPrompt();
+    $this->assertStringNotContainsString(self::EMAIL, $prompt);
+    $this->assertStringNotContainsString('Legacy note', $prompt);
+    $this->assertStringContainsString('Removed by the parks team.', $prompt);
+  }
+
+  /**
+   * Creates a report whose original predates the provenance mark.
+   */
+  private function reportWithLegacyOriginal(?Paragraph &$legacy = NULL): NodeInterface {
+    $node = Node::create([
+      'type' => 'service_request',
+      'title' => 'Legacy report',
+      'body' => ['value' => 'Broken lamp, contact [REDACTED email].', 'format' => 'plain_text'],
+    ]);
+    $node->save();
+    $legacy = $this->addRemark($node, RetainedPiiOriginal::remarkText('Broken lamp, contact ' . self::EMAIL . ' or ' . self::PHONE . '.'));
+    return $node;
+  }
+
+  /**
+   * Saves a paragraph and runs markaspot_ai's presave hook as storage would.
+   *
+   * The markaspot_ai module is not installed in this test (its dependency
+   * chain is out of scope), so the hook is invoked explicitly with the stored
+   * version set as original, after Paragraph::preSave() would have run.
+   */
+  private function saveThroughHooks(Paragraph $paragraph): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('paragraph');
+    $paragraph->setOriginal($storage->loadUnchanged($paragraph->id()));
+    $paragraph->preSave($storage);
+    markaspot_ai_paragraph_presave($paragraph);
+    // Storage writes the field as it is after the hook; Paragraph::preSave()
+    // has already serialized, so the mark must be in the field itself.
+    $this->assertStringContainsString('pii_original', (string) $paragraph->get('behavior_settings')->value);
+    $paragraph->save();
+  }
+
+  /**
+   * Runs markaspot_ai_update_11902() to completion.
+   */
+  private function runUpdate(): string {
+    $sandbox = [];
+    do {
+      $message = markaspot_ai_update_11902($sandbox);
+    } while (($sandbox['#finished'] ?? 1) < 1);
+    return $message;
+  }
+
+  /**
+   * Reloads a paragraph from storage.
+   */
+  private function reloadParagraph(Paragraph $paragraph): Paragraph {
+    return $this->container->get('entity_type.manager')->getStorage('paragraph')->loadUnchanged($paragraph->id());
+  }
+
+  /**
+   * Reloads a report from storage.
+   */
+  private function reloadNode(NodeInterface $node): NodeInterface {
+    return $this->container->get('entity_type.manager')->getStorage('node')->loadUnchanged($node->id());
+  }
+
+  /**
    * Saves a synthetic submission through the real PII presave redaction.
    */
   private function submitWithPii(): NodeInterface {
