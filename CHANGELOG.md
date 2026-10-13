@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.212](https://github.com/markaspot/markaspot/compare/11.9.211...11.9.212) (2026-10-13)
+
+### Bug Fixes
+
+* allow scoped access to unpublished request images ([9f85ff5](https://github.com/markaspot/markaspot/commit/9f85ff530d923a8b2210b8de0c60aefd6220cd9c))
+* **vision:** blur residual personal data by default instead of holding photos ([b47a046](https://github.com/markaspot/markaspot/commit/b47a046e3d64acc58fc64efcecace79a6a5a0571))
+
 ## [11.9.211](https://github.com/markaspot/markaspot/compare/11.9.210...11.9.211) (2026-10-13)
 
 ### Bug Fixes
