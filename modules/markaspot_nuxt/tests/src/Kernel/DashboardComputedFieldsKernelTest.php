@@ -56,6 +56,7 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
     'node',
     'taxonomy',
     'media',
+    'markaspot_media',
     'entity_reference_revisions',
     'paragraphs',
     'field_permissions',
@@ -320,6 +321,45 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
     $this->container->get('current_user')->setAccount($viewer);
 
     $this->assertFalse($media->access('view', $viewer));
+    $this->assertTrue($node->get('dashboard_media')->isEmpty());
+  }
+
+  /**
+   * Staff can inspect withheld images through the dashboard reference field.
+   */
+  public function testDashboardMediaAllowsRequestEditors(): void {
+    FieldStorageConfig::create([
+      'field_name' => 'field_parent_jurisdiction',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+    ])->save();
+    $file = File::create(['uri' => 'public://withheld-photo.jpg', 'status' => 1, 'uid' => 0]);
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'request_image',
+      'name' => 'Withheld photograph',
+      'uid' => 0,
+      'status' => 0,
+      'field_media_image' => ['target_id' => $file->id(), 'alt' => 'Synthetic image'],
+    ]);
+    $media->save();
+    $node = $this->createRequest(['field_request_media' => [$media->id()]]);
+    $node->save();
+    $editor = $this->createUser([
+      'access content', 'view field_request_media', 'edit any service_request content',
+    ]);
+    $this->container->get('current_user')->setAccount($editor);
+    $this->assertTrue($node->access('view', $editor));
+    $this->assertTrue($node->access('update', $editor));
+    $this->assertTrue($media->access('view', $editor));
+    $value = json_decode((string) $node->get('dashboard_media')->value, TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame($media->uuid(), $value[0]['uuid']);
+    $this->assertFalse($media->isPublished());
+
+    $this->container->get('current_user')->setAccount(User::getAnonymousUser());
+    $node = $this->container->get('entity_type.manager')->getStorage('node')->loadUnchanged($node->id());
+    $this->assertFalse($media->access('view', User::getAnonymousUser()));
     $this->assertTrue($node->get('dashboard_media')->isEmpty());
   }
 

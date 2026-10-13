@@ -13,6 +13,7 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\file\Entity\File;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupRole;
@@ -71,6 +72,7 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     'file',
     'image',
     'media',
+    'markaspot_media',
     'entity_reference_revisions',
     'paragraphs',
     'taxonomy',
@@ -229,6 +231,56 @@ final class ContractorAccessKernelTest extends KernelTestBase {
       'reporter-b@example.test',
       TRUE,
     );
+  }
+
+  /**
+   * A workspace read denial also protects private images from its contractors.
+   */
+  public function testUnpublishedImageRespectsWorkspaceReadDenial(): void {
+    FieldStorageConfig::create([
+      'field_name' => 'field_visibility', 'entity_type' => 'group',
+      'type' => 'string',
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_visibility', 'entity_type' => 'group',
+      'bundle' => 'jur', 'label' => 'Visibility',
+    ])->save();
+    $file = File::create([
+      'uri' => 'private://workspace-evidence.png', 'uid' => 0, 'status' => 1,
+    ]);
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'request_image', 'name' => 'Reporter evidence',
+      'uid' => 0, 'status' => FALSE,
+      'field_media_image' => ['target_id' => $file->id(), 'alt' => 'Synthetic evidence'],
+    ]);
+    $media->save();
+    $this->organisationARequest->set('field_request_media', [$media->id()])->save();
+    $this->container->get('current_user')->setAccount($this->contractor);
+    $this->assertTrue($this->organisationARequest->access('view', $this->contractor));
+    $this->assertTrue($this->organisationARequest->access('update', $this->contractor));
+    $this->assertTrue($media->access('view', $this->contractor));
+    $this->assertTrue($file->access('download', $this->contractor));
+
+    // The same image shared with a foreign organisation must gain no grant.
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $this->organisationBRequest->set('field_request_media', [$media->id()])->save();
+    $this->container->get('entity_type.manager')->getAccessControlHandler('media')->resetCache();
+    $this->assertFalse($media->access('view', $this->contractor));
+    $this->organisationBRequest->set('field_request_media', [])->save();
+
+    $jurisdiction = $this->container->get('entity_type.manager')->getStorage('group')->loadUnchanged($this->jurisdiction->id());
+    $jurisdiction->set('field_visibility', 'blocked')->save();
+    $this->container->get('current_user')->setAccount($this->contractor);
+    $this->container->get('markaspot_group.workspace_visibility')->resetCache();
+    foreach (['node', 'media', 'file'] as $type) {
+      $this->container->get('entity_type.manager')->getAccessControlHandler($type)->resetCache();
+    }
+    $this->assertFalse($this->organisationARequest->access('update', $this->contractor));
+    $this->assertFalse($this->organisationARequest->access('view', $this->contractor));
+    $this->assertFalse($media->access('view', $this->contractor));
+    $this->assertFalse($file->access('view', $this->contractor));
+    $this->assertFalse($file->access('download', $this->contractor));
   }
 
   /**

@@ -5,11 +5,82 @@
  * Contains media-related hooks for Mark-a-Spot.
  */
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\image\Plugin\Field\FieldWidget\ImageWidget;
+use Drupal\markaspot_media\Plugin\Field\FieldWidget\SafeImageWidget;
+use Drupal\media\MediaInterface;
 
 /**
  * Implements hook_form_FORM_ID_alter() for editor_image_dialog.
  */
 function markaspot_media_form_editor_image_dialog_alter(&$form, FormStateInterface $form_state, $form_id) {
   $form['attributes']['alt']['#required'] = FALSE;
+}
+
+/**
+ * Implements hook_media_access().
+ *
+ * Allow staff to inspect unpublished request images without publishing them.
+ * The parent request supplies the authority, including tenant/workspace scope.
+ * This grant never replaces other modules' denials or core's existing grants.
+ */
+function markaspot_media_media_access(MediaInterface $media, $operation, AccountInterface $account) {
+  if ($operation !== 'view' || $media->bundle() !== 'request_image' || $media->isPublished() || $media->isNew() || $account->isAnonymous()) {
+    return AccessResult::neutral();
+  }
+
+  // Parent references and permissions can change independently of the image.
+  // Do not persist a decision across requests (also covers an orphan gaining a
+  // parent). Core still memoizes access checks within the current request.
+  $result = AccessResult::neutral()->cachePerUser()->setCacheMaxAge(0);
+  $fields = \Drupal::service('entity_field.manager')->getFieldStorageDefinitions('node');
+  if (!isset($fields['field_request_media'])) {
+    return $result;
+  }
+  $storage = \Drupal::entityTypeManager()->getStorage('node');
+  // Do not filter inaccessible parents out of the decision.
+  $ids = $storage->getQuery()->accessCheck(FALSE)
+    ->condition('field_request_media.target_id', $media->id())
+    ->execute();
+  if (!$ids) {
+    return $result;
+  }
+  $parents = $storage->loadMultiple($ids);
+  if (count($parents) !== count($ids)) {
+    return $result;
+  }
+  foreach ($parents as $parent) {
+    if ($parent->bundle() !== 'service_request' || !$parent->access('view', $account) || !$parent->access('update', $account) || !$parent->get('field_request_media')->access('view', $account)) {
+      return $result;
+    }
+  }
+  return AccessResult::allowed()->cachePerUser()->setCacheMaxAge(0);
+}
+
+/**
+ * Implements hook_field_widget_info_alter().
+ */
+function markaspot_media_field_widget_info_alter(array &$info) {
+  // Preserve overrides provided by other modules.
+  if (($info['image_image']['class'] ?? NULL) === ImageWidget::class) {
+    $info['image_image']['class'] = SafeImageWidget::class;
+  }
+}
+
+/**
+ * Implements hook_entity_bundle_field_info_alter().
+ */
+function markaspot_media_entity_bundle_field_info_alter(array &$fields, EntityTypeInterface $entity_type, $bundle) {
+  // Scope the legacy compatibility handler to this single reference field.
+  // Keep custom handlers (including 11.9's request_media:media) unchanged.
+  if ($entity_type->id() === 'node'
+    && $bundle === 'service_request'
+    && isset($fields['field_request_media'])
+    && $fields['field_request_media']->getSetting('target_type') === 'media'
+    && in_array($fields['field_request_media']->getSetting('handler'), ['default', 'default:media'], TRUE)) {
+    $fields['field_request_media']->setSetting('handler', 'existing_request_media:media');
+  }
 }
