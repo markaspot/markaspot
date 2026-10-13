@@ -1,5 +1,34 @@
 # Changelog
 
+## [11.9.211](https://github.com/markaspot/markaspot/compare/11.9.210...11.9.211) (2026-10-13)
+
+### Bug Fixes
+
+* **ai:** book provider token usage centrally for every limited workflow ([4c288ad](https://github.com/markaspot/markaspot/commit/4c288ad5602f569bebbb296a6c191fec190466bb))
+* **ai:** clear sentiment reasoning on account cancellation and dump scrubs ([cfef18f](https://github.com/markaspot/markaspot/commit/cfef18fee43c394c81c058eccd4d11ae0cdcb078))
+* **ai:** delete sentiment records with their report ([c821dff](https://github.com/markaspot/markaspot/commit/c821dffd00d25033c581519919412607aa4fb8d8))
+* **ai:** enforce tenant and report access in the duplicate review form ([e1c048f](https://github.com/markaspot/markaspot/commit/e1c048f0fe45ababd6252f1123357794abeb3669))
+* **ai:** exclude every revision of a retained PII original from prompts ([5417f71](https://github.com/markaspot/markaspot/commit/5417f71eabbe49f784cdc2625822a360e5ad91c6))
+* **ai:** hold reports whose personal-name screening failed ([bf9b1e0](https://github.com/markaspot/markaspot/commit/bf9b1e091c2c2ef7f0ec031e44d1db03c4bf4bd5))
+* **ai:** keep retained PII originals out of assistant prompts ([a6c6eec](https://github.com/markaspot/markaspot/commit/a6c6eec289bde241d78b7407371e357af4dbfd70))
+* **ai:** keep token bookings when the caller's transaction rolls back ([3ab3158](https://github.com/markaspot/markaspot/commit/3ab3158f569ebc38ab90e7a31c5dbce607c9659f))
+* **ai:** persist the AI exclusion of retained PII originals ([e750de8](https://github.com/markaspot/markaspot/commit/e750de81cb666d73f5b01683795c5e26d3569170))
+* **ai:** purge sentiment reasoning when a report is anonymized ([fd03188](https://github.com/markaspot/markaspot/commit/fd031886534f06d31aa6a99e16c0074cf3795b0d))
+* **ai:** require CSRF header tokens on cookie-authenticated AI write routes ([28de159](https://github.com/markaspot/markaspot/commit/28de1593bf53f266c0378552fdf810b1bac78d75))
+* **ai:** save screening remarks in presave and reject unusable detector answers ([55f4c00](https://github.com/markaspot/markaspot/commit/55f4c00e6e9abb29aeba334fb0668606ebd271f3))
+* **ai:** write token bookings on a second connection only where it cannot block ([f0f2f3d](https://github.com/markaspot/markaspot/commit/f0f2f3dd49e1996479ed2ae8bb7909f61362cb37))
+* **dashboard:** apply the duplicate match access policy to the review API ([1b56c1b](https://github.com/markaspot/markaspot/commit/1b56c1b526495906c9c4b2110bbb8908fb2f3a04))
+* **group:** drop the stale moderator dependency when restoring group roles ([03ee96e](https://github.com/markaspot/markaspot/commit/03ee96e4717363b8b8529b6a7b20b5b09c850b1a))
+* **group:** restore member-only moderator group roles on multi-tenant installs ([8bead65](https://github.com/markaspot/markaspot/commit/8bead6525da9232a2945a7a8b984bd352aeb98a3))
+* **mail-inbound:** reject invalid AI report verdicts before automatic promotion ([ebe1058](https://github.com/markaspot/markaspot/commit/ebe10580a42ad93d6be10c7ab06ceb2de2dd870c))
+* **tenant-import:** assign org-moderator, reject extra role mappings and name offending permissions ([933e066](https://github.com/markaspot/markaspot/commit/933e0665b47f9eb2dc80256285854898851318c9))
+* **tenant-import:** provision org_moderator as municipal moderator and add org_contractor ([1819e9d](https://github.com/markaspot/markaspot/commit/1819e9d95f7459bcf3843adbab6781787be0906b))
+* **vision:** bind analysis scope and budget charging to the media tenant ([c6e3e25](https://github.com/markaspot/markaspot/commit/c6e3e25474997289673b391230593d702909e37b))
+* **vision:** bind uploads to their tenant at upload time and resolve report scope strictly ([e20656f](https://github.com/markaspot/markaspot/commit/e20656fda78d39775a078b06b248b933503a7884))
+* **vision:** define the legacy upload cohort by media ID instead of created date ([ae5b5f1](https://github.com/markaspot/markaspot/commit/ae5b5f1cf520c1e4428875dbb96d94af8b90b300))
+* **vision:** limit first-analysis binding to uploads from before the cutoff ([0ce447b](https://github.com/markaspot/markaspot/commit/0ce447b779e14ace562a10f4120b374d999bc67a))
+* **vision:** mark every new upload so ID gaps below the cutoff are never legacy ([0c1f613](https://github.com/markaspot/markaspot/commit/0c1f613a25b712d4c69f7123c60e56704f82b90f))
+
 ## [11.9.210](https://github.com/markaspot/markaspot/compare/11.9.209...11.9.210) (2026-09-30)
 
 ### Features
