@@ -135,16 +135,30 @@ class TokenTrackingService {
   }
 
   /**
+   * Database types where a second connection can commit independently.
+   *
+   * A second writer commits while another connection holds a write
+   * transaction. SQLite is not one of them: Drupal opens its transactions
+   * with BEGIN IMMEDIATE, so the caller holds the database-wide write lock
+   * and a second writer would block until the busy timeout and then lose
+   * the row.
+   */
+  protected const INDEPENDENT_WRITER_TYPES = ['mysql', 'pgsql'];
+
+  /**
    * Returns the connection usage rows are written through.
    *
-   * Outside a transaction this is the default connection. Inside one, a
-   * dedicated connection with the same connection info commits the row on
-   * its own, so a rollback of the caller cannot undo the booking. The
-   * dedicated connection is opened only when needed. Reads (checkLimit())
-   * stay on the default connection.
+   * Outside a transaction this is the default connection. Inside one, on
+   * MySQL/MariaDB and PostgreSQL, a dedicated connection with the same
+   * connection info commits the row on its own, so a rollback of the caller
+   * cannot undo the booking; it is opened only when needed. On SQLite and
+   * unknown drivers the row is written on the default connection inside the
+   * caller's transaction: a rollback may then drop it, which is preferred
+   * over blocking on the database-wide write lock. Reads (checkLimit())
+   * always stay on the default connection.
    */
   protected function writeConnection(): Connection {
-    if (!$this->database->inTransaction() || $this->database->getTarget() === self::DEDICATED_CONNECTION_TARGET) {
+    if (!$this->usesDedicatedConnection()) {
       return $this->database;
     }
     $key = $this->database->getKey();
@@ -153,6 +167,15 @@ class TokenTrackingService {
       Database::addConnectionInfo($key, self::DEDICATED_CONNECTION_TARGET, $info[$this->database->getTarget()] ?? $info['default']);
     }
     return Database::getConnection(self::DEDICATED_CONNECTION_TARGET, $key);
+  }
+
+  /**
+   * Whether a usage row needs the dedicated connection.
+   */
+  protected function usesDedicatedConnection(): bool {
+    return $this->database->inTransaction()
+      && $this->database->getTarget() !== self::DEDICATED_CONNECTION_TARGET
+      && in_array($this->database->databaseType(), self::INDEPENDENT_WRITER_TYPES, TRUE);
   }
 
   /**

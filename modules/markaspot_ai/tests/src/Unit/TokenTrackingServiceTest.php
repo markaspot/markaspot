@@ -406,4 +406,38 @@ class TokenTrackingServiceTest extends UnitTestCase {
     $this->assertEquals(0, $deleted);
   }
 
+  /**
+   * Only drivers with independent writers get the dedicated connection.
+   *
+   * @covers ::usesDedicatedConnection
+   * @covers ::writeConnection
+   * @dataProvider dedicatedConnectionProvider
+   */
+  public function testDedicatedConnectionOnlyForIndependentWriters(bool $inTransaction, string $type, string $target, bool $expected): void {
+    $this->database->method('inTransaction')->willReturn($inTransaction);
+    $this->database->method('databaseType')->willReturn($type);
+    $this->database->method('getTarget')->willReturn($target);
+
+    $uses = new \ReflectionMethod($this->service, 'usesDedicatedConnection');
+    $this->assertSame($expected, $uses->invoke($this->service));
+    if (!$expected) {
+      $write = new \ReflectionMethod($this->service, 'writeConnection');
+      $this->assertSame($this->database, $write->invoke($this->service), 'The row is written on the default connection.');
+    }
+  }
+
+  /**
+   * Transaction state, database type, target and the expected choice.
+   */
+  public static function dedicatedConnectionProvider(): array {
+    return [
+      'mysql in transaction' => [TRUE, 'mysql', 'default', TRUE],
+      'pgsql in transaction' => [TRUE, 'pgsql', 'default', TRUE],
+      'sqlite in transaction' => [TRUE, 'sqlite', 'default', FALSE],
+      'unknown driver in transaction' => [TRUE, 'oracle', 'default', FALSE],
+      'mysql outside a transaction' => [FALSE, 'mysql', 'default', FALSE],
+      'already the dedicated target' => [TRUE, 'mysql', TokenTrackingService::DEDICATED_CONNECTION_TARGET, FALSE],
+    ];
+  }
+
 }
