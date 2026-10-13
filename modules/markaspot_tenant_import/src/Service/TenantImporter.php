@@ -36,6 +36,40 @@ class TenantImporter {
   ];
 
   /**
+   * Organisation-scoped import roles with their exact authority contract.
+   *
+   * Each grants one Drupal role, a jur-org_member membership and a plain
+   * membership in exactly one organisation; the insider group role derives
+   * from the Drupal role there. Restricted permissions are only accepted when
+   * the listed provider ships them, so drift in a role fails closed.
+   */
+  private const SCOPED_ORG_ROLES = [
+    // Municipal staff moderating the reports of their organisation.
+    'org_moderator' => [
+      'drupal_role' => 'moderator',
+      'group_role' => 'org-insider',
+      'scoped_permissions' => [
+        'access dashboard notifications' => 'markaspot_notification',
+        'add dashboard status notes' => 'markaspot_dashboard',
+        'assign service requests' => 'markaspot_group',
+        'bypass mas validation' => 'markaspot_validation',
+        'manage dashboard notes' => 'markaspot_dashboard',
+        'split service requests' => 'markaspot_dashboard',
+        'use service request management form' => 'markaspot_ui',
+      ],
+    ],
+    // External service providers without reporter contact data.
+    'org_contractor' => [
+      'drupal_role' => 'contractor',
+      'group_role' => 'org-contractor',
+      'scoped_permissions' => [
+        'add dashboard status notes' => 'markaspot_dashboard',
+        'use service request management form' => 'markaspot_ui',
+      ],
+    ],
+  ];
+
+  /**
    * Constructs a TenantImporter object.
    */
   public function __construct(
@@ -293,24 +327,29 @@ class TenantImporter {
             $errors[] = 'Drupal role tenant_admin is required by the existing membership sync hook.';
           }
         }
-        if (in_array($sourceRole, ['org_member', 'org_moderator'], TRUE)) {
+        if ($sourceRole === 'org_member' || isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
           $requiredRoles[] = 'org-member';
         }
-        if ($sourceRole === 'org_moderator') {
-          $requiredRoles[] = 'org-contractor';
-          $contractor = $this->entityTypeManager->getStorage('user_role')->load('contractor');
-          if (!$contractor) {
-            $errors[] = 'Drupal role contractor is required for org_moderator.';
+        if (isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
+          $scoped = self::SCOPED_ORG_ROLES[$sourceRole];
+          $requiredRoles[] = $scoped['group_role'];
+          $drupalRole = $this->entityTypeManager->getStorage('user_role')->load($scoped['drupal_role']);
+          if (!$drupalRole) {
+            $errors[] = sprintf('Drupal role %s is required for %s.', $scoped['drupal_role'], $sourceRole);
           }
-          elseif ($this->hasAdministrativeContractorPermissions($contractor)) {
-            $errors[] = 'Drupal role contractor must not grant administrative access.';
+          elseif ($this->hasAdministrativePermissions($drupalRole, $scoped['scoped_permissions'])) {
+            $errors[] = sprintf('Drupal role %s must not grant administrative access.', $scoped['drupal_role']);
           }
-          $contractorRole = $roleStorage->load('org-contractor');
-          if ($contractorRole && ($contractorRole->get('scope') !== 'insider'
-            || $contractorRole->get('global_role') !== 'contractor'
-            || $contractorRole->get('group_type') !== 'org'
-            || $contractorRole->isAdmin())) {
-            $errors[] = 'Group role org-contractor must map the Drupal contractor role to organisation insiders without administrative group access.';
+          $insiderRole = $roleStorage->load($scoped['group_role']);
+          if ($insiderRole && ($insiderRole->get('scope') !== 'insider'
+            || $insiderRole->get('global_role') !== $scoped['drupal_role']
+            || $insiderRole->get('group_type') !== 'org'
+            || $insiderRole->isAdmin())) {
+            $errors[] = sprintf(
+              'Group role %s must map the Drupal %s role to organisation insiders without administrative group access.',
+              $scoped['group_role'],
+              $scoped['drupal_role'],
+            );
           }
         }
       }
@@ -389,11 +428,11 @@ class TenantImporter {
         }
       }
       if ($existing instanceof UserInterface) {
-        if ($row['role'] === 'org_moderator') {
+        if (isset(self::SCOPED_ORG_ROLES[$row['role']])) {
           $organisation = $organisations[mb_strtolower((string) $row['organisation_code'])] ?? NULL;
-          $scopeError = $this->orgModeratorScopeError($existing, $jurisdictionId, $organisation);
+          $scopeError = $this->scopedOrgRoleError($existing, (string) $row['role'], $jurisdictionId, $organisation);
           if ($scopeError !== NULL) {
-            $errors[] = sprintf('User "%s" cannot be imported as org_moderator: %s Cross-tenant overrides do not apply.', $email, $scopeError);
+            $errors[] = sprintf('User "%s" cannot be imported as %s: %s Cross-tenant overrides do not apply.', $email, $row['role'], $scopeError);
           }
           continue;
         }
@@ -662,7 +701,7 @@ class TenantImporter {
       $existing = $existingUsers[mb_strtolower($email)];
       $notice = $context['user_notices'][mb_strtolower($email)] ?? '';
       if ($user['role'] === 'org_member') {
-        $notice .= ' Form-only report visibility additionally requires org-moderator or contractor; neither is granted by this import.';
+        $notice .= ' Form-only report visibility additionally requires the org_moderator or org_contractor import role; org_member grants neither.';
       }
       if ($existing instanceof UserInterface && $existing->isBlocked()) {
         $rows[] = $this->row('user', $email, 'skip', 'blocked, membership skipped.' . $notice);
@@ -1000,11 +1039,12 @@ class TenantImporter {
           foreach ($profileUpdates as $field => $value) {
             $user->set($field, $value);
           }
-          $needsContractor = $userRow['role'] === 'org_moderator' && !$user->hasRole('contractor');
-          if ($needsContractor) {
-            $user->addRole('contractor');
+          $scopedDrupalRole = self::SCOPED_ORG_ROLES[$userRow['role']]['drupal_role'] ?? NULL;
+          $needsScopedRole = $scopedDrupalRole !== NULL && !$user->hasRole($scopedDrupalRole);
+          if ($needsScopedRole) {
+            $user->addRole($scopedDrupalRole);
           }
-          if ($wasNew || $profileUpdates !== [] || $needsContractor) {
+          if ($wasNew || $profileUpdates !== [] || $needsScopedRole) {
             $this->validateUserBeforeSave($user, $index);
             $user->save();
           }
@@ -1029,7 +1069,7 @@ class TenantImporter {
             }
           }
 
-          if (in_array($sourceRole, ['org_member', 'org_moderator'], TRUE)) {
+          if ($sourceRole === 'org_member' || isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
             $organisationCode = mb_strtolower(trim((string) $userRow['organisation_code']));
             $organisation = $organisationEntities[$organisationCode] ?? NULL;
             if (!$organisation instanceof GroupInterface) {
@@ -1199,10 +1239,11 @@ class TenantImporter {
         }
       }
     }
-    if ($sourceRole === 'org_moderator' && !$user->hasRole('contractor')) {
-      $changes[] = 'Drupal contractor role';
+    $scopedDrupalRole = self::SCOPED_ORG_ROLES[$sourceRole]['drupal_role'] ?? NULL;
+    if ($scopedDrupalRole !== NULL && !$user->hasRole($scopedDrupalRole)) {
+      $changes[] = sprintf('Drupal %s role', $scopedDrupalRole);
     }
-    if (in_array($sourceRole, ['org_member', 'org_moderator'], TRUE)) {
+    if ($sourceRole === 'org_member' || isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
       $code = mb_strtolower(trim((string) $row['organisation_code']));
       $organisation = $organisations[$code] ?? NULL;
       if (!$organisation instanceof GroupInterface || !$organisation->getMember($user)) {
@@ -1281,18 +1322,14 @@ class TenantImporter {
   /**
    * Rejects platform authority without maintaining a module-specific denylist.
    */
-  private function hasAdministrativeContractorPermissions(RoleInterface $role): bool {
+  private function hasAdministrativePermissions(RoleInterface $role, array $scopedProviders): bool {
     if ($role->isAdmin()) {
       return TRUE;
     }
     $definitions = $this->permissionHandler->getPermissions();
-    $scopedProviders = [
-      'add dashboard status notes' => 'markaspot_dashboard',
-      'use service request management form' => 'markaspot_ui',
-    ];
     foreach ($role->getPermissions() as $permission) {
-      // These shipped contractor capabilities are restricted in Drupal, but
-      // their access checks enforce report/organisation scope independently.
+      // These shipped staff capabilities are restricted in Drupal, but their
+      // access checks enforce report/organisation scope independently.
       if (isset($scopedProviders[$permission])) {
         if (($definitions[$permission]['provider'] ?? NULL) !== $scopedProviders[$permission]) {
           return TRUE;
@@ -1310,20 +1347,37 @@ class TenantImporter {
   /**
    * Rejects any existing authority outside the declared organisation scope.
    *
-   * Unlike other import roles, org_moderator is an exact, fail-closed contract.
-   * It never removes authority or accepts a cross-tenant override.
+   * Unlike other import roles, the organisation-scoped roles are an exact,
+   * fail-closed contract. They never remove or swap authority or accept a
+   * cross-tenant override.
    */
-  private function orgModeratorScopeError(UserInterface $user, int $jurisdictionId, ?GroupInterface $organisation): ?string {
-    if ((int) $user->id() === 1
-      || array_diff($user->getRoles(), ['authenticated', 'contractor']) !== []
+  private function scopedOrgRoleError(UserInterface $user, string $sourceRole, int $jurisdictionId, ?GroupInterface $organisation): ?string {
+    $drupalRole = self::SCOPED_ORG_ROLES[$sourceRole]['drupal_role'];
+    if ((int) $user->id() === 1) {
+      return 'Existing account has elevated Drupal authority.';
+    }
+    foreach (self::SCOPED_ORG_ROLES as $otherSourceRole => $other) {
+      // Moderator and contractor are distinct trust levels: never fold one
+      // into the other. Accounts provisioned under the former org_moderator
+      // mapping hold contractor and must be migrated explicitly.
+      if ($other['drupal_role'] !== $drupalRole && $user->hasRole($other['drupal_role'])) {
+        return sprintf(
+          'Existing account holds the Drupal %s role of import role %s; change its role explicitly before importing it as %s.',
+          $other['drupal_role'],
+          $otherSourceRole,
+          $sourceRole,
+        );
+      }
+    }
+    if (array_diff($user->getRoles(), ['authenticated', $drupalRole]) !== []
       || $user->hasPermission('administer nodes')
       || ($user->hasField('field_all_groups_member')
         && (bool) $user->get('field_all_groups_member')->value)) {
       return 'Existing account has elevated Drupal authority.';
     }
     foreach (GroupMembership::loadByUser($user) as $membership) {
-      if (!$user->hasRole('contractor')) {
-        return 'Existing membership without contractor requires an explicit role migration.';
+      if (!$user->hasRole($drupalRole)) {
+        return sprintf('Existing membership without %s requires an explicit role migration.', $drupalRole);
       }
       $group = $membership->getGroup();
       if ($group->bundle() === 'jur' && (int) $group->id() === $jurisdictionId) {
@@ -1331,7 +1385,7 @@ class TenantImporter {
       }
       elseif ($group->bundle() === 'org' && $organisation !== NULL
         && (int) $group->id() === (int) $organisation->id()) {
-        // org-contractor is derived from the global role, not assigned here.
+        // The insider role is derived from the global role, not assigned here.
         $allowedRoles = ['org-member'];
       }
       else {

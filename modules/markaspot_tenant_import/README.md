@@ -57,41 +57,67 @@ nodes` permission are privileged too. Privileged and cross-root accounts never
 receive profile changes. Other existing accounts only receive first or last
 names when the corresponding stored field is empty.
 In form-only tenants, `org_member` alone is not sufficient for report visibility:
-`org-moderator` or `contractor` is additionally required. The plan points this
-out but the importer does not grant either role.
+the `org_moderator` or `org_contractor` import role is additionally required.
+The plan points this out but `org_member` grants neither.
 
-`org_moderator` is an explicit organisation-scoped alternative: it requires one
-`organisation_code`, grants the Drupal `contractor` role, a `jur-org_member`
-membership and a plain membership in exactly that organisation. The installed
-`org-contractor` insider role supplies report access through that membership.
-It does not grant global moderation, editorial or tenant-administration rights.
-Preflight rejects administrative contractor roles, permissions marked
-`restrict access`, and permissions beginning with `administer `. The two shipped
-scoped capabilities `add dashboard status notes` and
-`use service request management form` are explicit exceptions only when their
-definitions identify `markaspot_dashboard` and `markaspot_ui` respectively as the
-provider. Missing or conflicting definitions are rejected. Permission
-definitions cover new modules and custom restricted permissions without an
-evolving denylist. Permissions that an operator revoked are never restored.
-The contractor access model prevents access to other organisations' reports,
+Two organisation-scoped import roles exist. Both require one
+`organisation_code` and grant a `jur-org_member` membership plus a plain
+membership in exactly that organisation; the insider group role derived from
+the Drupal role there supplies report access:
+
+| Import role | Workbook label | Drupal role | Derived insider role |
+|---|---|---|---|
+| `org_moderator` | Moderation (zugewiesene Organisationen) | `moderator` | `org-insider` |
+| `org_contractor` | Dienstleister (zugewiesene Organisationen) | `contractor` | `org-contractor` |
+
+`org_moderator` is municipal staff: full moderation of the reports of its
+organisation, including reporter contact data, and read access elsewhere as
+the moderator role allows. `org_contractor` is an external service provider:
+the contractor access model prevents access to other organisations' reports,
 reporter contact data, internal remarks and responsibility reassignment.
+Neither grants jurisdiction-wide moderation, editorial or tenant-administration
+rights.
 
-Existing `org_moderator` accounts must have no other Drupal roles beyond
-`authenticated` and `contractor`, no elevated group roles, and no memberships
-outside the declared jurisdiction and organisation. UID 1 and all-groups
-accounts are also rejected. This guard cannot be overridden with
-`--allow-cross-tenant-users`. The importer neither removes existing authority
-nor silently migrates another import role into organisation moderation. V1
-rejects existing memberships without the `contractor` role rather than silently
+Preflight rejects an administrative Drupal role, permissions marked
+`restrict access`, and permissions beginning with `administer `. The shipped
+scoped capabilities of each role are explicit exceptions only when their
+definitions name the expected provider:
+
+- `org_moderator`: `access dashboard notifications` (`markaspot_notification`),
+  `add dashboard status notes`, `manage dashboard notes` and
+  `split service requests` (`markaspot_dashboard`), `assign service requests`
+  (`markaspot_group`), `bypass mas validation` (`markaspot_validation`) and
+  `use service request management form` (`markaspot_ui`).
+- `org_contractor`: `add dashboard status notes` (`markaspot_dashboard`) and
+  `use service request management form` (`markaspot_ui`).
+
+Missing or conflicting definitions are rejected. Permission definitions cover
+new modules and custom restricted permissions without an evolving denylist.
+Permissions that an operator revoked are never restored. The insider group
+role must map exactly that Drupal role to organisation insiders without
+administrative group access.
+
+Existing accounts for a scoped import role must have no other Drupal roles
+beyond `authenticated` and that role's Drupal role, no elevated group roles,
+and no memberships outside the declared jurisdiction and organisation. UID 1
+and all-groups accounts are also rejected. This guard cannot be overridden
+with `--allow-cross-tenant-users`. The importer neither removes existing
+authority nor silently migrates another import role into a scoped role.
+Moderator and contractor are distinct trust levels: an account holding the
+Drupal role of the other scoped import role is rejected with a message that
+names it. Accounts provisioned before `org_contractor` existed, when
+`org_moderator` still granted `contractor`, are therefore reported and must be
+changed explicitly (swap the Drupal role) before a re-import. V1 rejects
+existing memberships without the expected Drupal role rather than silently
 converting an `org_member` account. An unprivileged account without memberships
-can be assigned for the first time. V1
-accepts one organisation per account and rejects duplicate email rows.
+can be assigned for the first time. V1 accepts one organisation per account and
+rejects duplicate email rows.
 `tenant_admin` remains the jurisdiction-wide role for municipal administration.
 For dedicated installations, the installer provisions the technical UID 1
 administrator separately; the source `users` list contains municipal accounts.
 The generic import's existing `--allow-cross-tenant-users` semantics for other
 source roles remain unchanged, including privileged-account reuse. The strict
-`org_moderator` guard always rejects UID 1 regardless of that option. Optional
+scoped-role guard always rejects UID 1 regardless of that option. Optional
 top-level `provisioning` metadata is ignored by this module; only the dedicated
 installer consumes it.
 

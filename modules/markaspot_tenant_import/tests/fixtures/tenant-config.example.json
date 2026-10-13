@@ -182,6 +182,20 @@
       "last_name": "Erfurt",
       "role": "editorial",
       "organisation_code": null
+    },
+    {
+      "email": "gruenpflege@erfurt.de",
+      "first_name": "Grünpflege",
+      "last_name": "Gartenamt",
+      "role": "org_moderator",
+      "organisation_code": "GFA"
+    },
+    {
+      "email": "auftrag@stadtwerke-erfurt.de",
+      "first_name": "Auftragsannahme",
+      "last_name": "Stadtwerke",
+      "role": "org_contractor",
+      "organisation_code": "SWE"
     }
   ]
 }
