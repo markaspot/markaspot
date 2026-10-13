@@ -6205,6 +6205,73 @@ function markaspot_group_update_11954(): string {
 }
 
 /**
+ * Restore member-only moderator group roles on multi-tenant installs.
+ *
+ * Some installs drifted jur-moderator and org-moderator from the shipped
+ * individual scope to the outsider scope synchronized with the Drupal
+ * moderator role. An outsider role applies in every group the account is NOT
+ * a member of, so on a multi-tenant install every moderator could view
+ * (including unpublished) and create service requests in all other tenants.
+ * The roles go back to the shipped individual scope; Group's preSave() drops
+ * the global role with it. Their permissions are kept and only reported, so
+ * individually assigned memberships keep what they have today.
+ *
+ * Single-tenant installs are left alone: the drift stays inside the one
+ * tenant there, and moderators who are not jurisdiction members may rely on
+ * it for their daily work.
+ */
+function markaspot_group_update_11955(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->getStorage('group_type')->load('jur')) {
+    return 'Moderator group roles left unchanged: the jur group type does not exist.';
+  }
+  $jurisdictions = (int) $entity_type_manager->getStorage('group')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->count()
+    ->execute();
+  if ($jurisdictions <= 1) {
+    return sprintf('Moderator group roles left unchanged: %d jurisdiction(s), not a multi-tenant install.', $jurisdictions);
+  }
+
+  $role_storage = $entity_type_manager->getStorage('group_role');
+  $results = [];
+  foreach (['jur-moderator', 'org-moderator'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      $results[] = sprintf('%s missing', $role_id);
+      continue;
+    }
+    if ($role->getScope() !== 'outsider' || $role->getGlobalRoleId() !== 'moderator') {
+      $results[] = sprintf('%s unchanged (scope %s)', $role_id, $role->getScope());
+      continue;
+    }
+
+    $role->set('scope', 'individual');
+    $role->save();
+
+    $file = __DIR__ . '/config/install/group.role.' . $role_id . '.yml';
+    $shipped = is_file($file) ? Yaml::decode((string) file_get_contents($file)) : NULL;
+    $diff = '';
+    if (is_array($shipped) && isset($shipped['permissions'])) {
+      $current = $role->getPermissions();
+      $extra = array_values(array_diff($current, $shipped['permissions']));
+      $missing = array_values(array_diff($shipped['permissions'], $current));
+      if ($extra || $missing) {
+        $diff = sprintf(
+          '; permissions beyond shipped: %s; shipped but absent: %s',
+          $extra ? implode(', ', $extra) : 'none',
+          $missing ? implode(', ', $missing) : 'none',
+        );
+      }
+    }
+    $results[] = sprintf('%s restored to the individual scope%s', $role_id, $diff);
+  }
+
+  return sprintf('Moderator group roles on %d jurisdictions: %s.', $jurisdictions, implode('; ', $results));
+}
+
+/**
  * Names of the jurisdiction logo and font fields.
  *
  * @return string[]
