@@ -440,10 +440,14 @@ class EmbeddingService {
       return $deleted;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to delete embedding: @message', [
-        '@message' => $e->getMessage(),
+      // Rethrown: the caller runs inside the report's delete transaction and
+      // must roll back rather than leave derived data behind.
+      $this->logger->error('Failed to delete embeddings for @type @id (@class).', [
+        '@type' => $entityType,
+        '@id' => $entityId,
+        '@class' => get_class($e),
       ]);
-      return 0;
+      throw $e;
     }
   }
 

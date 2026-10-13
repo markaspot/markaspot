@@ -52,6 +52,10 @@ interface ArchiveServiceInterface {
   /**
    * Updates previous revision field tables with anonymized values.
    *
+   * Callers invoke this as the last step after saving the anonymized entity.
+   * When values were anonymized it also invokes
+   * hook_markaspot_report_anonymized() so modules can purge derived data.
+   *
    * @param \Drupal\Core\Entity\EntityInterface $archivable
    *   The saved entity whose previous revisions should be updated.
    * @param array $anonymized_values

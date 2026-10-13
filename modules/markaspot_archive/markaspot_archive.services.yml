@@ -11,3 +11,4 @@ services:
       - '@state'
       - '@logger.channel.markaspot_archive'
       - '@database'
+      - '@module_handler'

@@ -11,6 +11,7 @@ use Drupal\Core\Entity\RevisionableInterface;
 use Drupal\Core\Entity\RevisionableStorageInterface;
 use Drupal\Core\Entity\Sql\SqlContentEntityStorage;
 use Drupal\Core\Entity\TranslatableInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\node\NodeInterface;
@@ -64,6 +65,7 @@ class ArchiveService implements ArchiveServiceInterface {
     StateInterface $state,
     LoggerChannelInterface $logger,
     Connection $database,
+    protected ?ModuleHandlerInterface $moduleHandler = NULL,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
@@ -300,6 +302,14 @@ class ArchiveService implements ArchiveServiceInterface {
    * {@inheritdoc}
    */
   public function anonymizeRevisions(EntityInterface $archivable, array $anonymized_values): int {
+    // Both anonymisation paths (queue worker and drush) end here after saving
+    // the anonymised entity. Modules holding data derived from the report
+    // (e.g. AI reasoning that may quote the reporter) purge it now; the
+    // anonymisation itself never deletes the report.
+    if ($anonymized_values !== [] && $this->moduleHandler !== NULL) {
+      $this->moduleHandler->invokeAll('markaspot_report_anonymized', [$archivable]);
+    }
+
     if (
       !$archivable instanceof FieldableEntityInterface
       || !$archivable instanceof RevisionableInterface

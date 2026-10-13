@@ -362,10 +362,11 @@ function markaspot_ai_node_update(NodeInterface $node): void {
     }
   }
 
-  // The stored sentiment reasoning was derived from the title, description
-  // and feedback. When that text changes (an edit, or the archive anonymising
-  // the report, which saves the node rather than deleting it), the reasoning
-  // must not keep the old wording. The classification itself stays.
+  // The stored sentiment reasoning was derived from the title, description,
+  // feedback and request attributes. When that content changes, the
+  // reasoning must not keep the old wording. The classification itself
+  // stays. Anonymisation of contact data is handled by
+  // markaspot_ai_markaspot_report_anonymized().
   _markaspot_ai_clear_stale_sentiment_reasoning($node);
 
   // Only queue published nodes.
@@ -502,11 +503,40 @@ function markaspot_ai_node_delete(NodeInterface $node): void {
 }
 
 /**
+ * Fields whose content the sentiment analysis sends to the model.
+ *
+ * SentimentService reads the title, body and feedback;
+ * NodeAnalysisService::collectContext() also sends the request attributes.
+ *
+ * @return string[]
+ *   Field names besides the title.
+ */
+function _markaspot_ai_sentiment_source_fields(): array {
+  return ['body', 'field_feedback', 'field_request_attributes'];
+}
+
+/**
+ * Implements hook_markaspot_report_anonymized().
+ *
+ * Archive anonymisation and GDPR erasure keep the report and overwrite only
+ * contact fields, so neither the delete hook nor the text-change check runs.
+ * The stored reasoning can still quote the reporter: clear it.
+ */
+function markaspot_ai_markaspot_report_anonymized(EntityInterface $entity): void {
+  if (!$entity instanceof NodeInterface || $entity->bundle() !== 'service_request') {
+    return;
+  }
+  /** @var \Drupal\markaspot_ai\Service\SentimentService $sentiment_service */
+  $sentiment_service = \Drupal::service('markaspot_ai.sentiment');
+  $sentiment_service->clearReasoning((int) $entity->id());
+}
+
+/**
  * Clears sentiment reasoning whose source text changed on this save.
  *
- * Compares the fields the sentiment analysis reads (title, body, feedback)
- * with the original across all translations. Runs inside the node's save
- * transaction, so a failed save restores the reasoning as well.
+ * Compares the fields the sentiment analysis reads (title, body, feedback,
+ * request attributes) with the original across all translations. Runs inside
+ * the node's save transaction, so a failed save restores the reasoning too.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The updated service request.
@@ -528,9 +558,9 @@ function _markaspot_ai_clear_stale_sentiment_reasoning(NodeInterface $node): voi
       $changed = TRUE;
       break;
     }
-    foreach (['body', 'field_feedback'] as $field_name) {
+    foreach (_markaspot_ai_sentiment_source_fields() as $field_name) {
       if ($current->hasField($field_name)
-        && ($current->get($field_name)->value ?? '') !== ($before->get($field_name)->value ?? '')) {
+        && $current->get($field_name)->getValue() != $before->get($field_name)->getValue()) {
         $changed = TRUE;
         break 2;
       }

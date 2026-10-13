@@ -306,7 +306,7 @@ class EmbeddingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests delete handles database exception gracefully.
+   * Tests delete rethrows a database exception for the caller's rollback.
    *
    * @covers ::deleteEmbedding
    */
@@ -318,8 +318,8 @@ class EmbeddingServiceTest extends UnitTestCase {
     $this->database->method('delete')
       ->willReturn($delete);
 
-    $deleted = $this->service->deleteEmbedding(42);
-    $this->assertEquals(0, $deleted);
+    $this->expectException(\Exception::class);
+    $this->service->deleteEmbedding(42);
   }
 
   /**

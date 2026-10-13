@@ -316,7 +316,7 @@ class DuplicateDetectionServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests deleting matches handles database error.
+   * Tests deleting matches rethrows a database error for the caller's rollback.
    *
    * @covers ::deleteMatchesForNode
    */
@@ -336,8 +336,8 @@ class DuplicateDetectionServiceTest extends UnitTestCase {
       ->with('markaspot_ai_duplicate_matches')
       ->willReturn($delete);
 
-    $deleted = $this->service->deleteMatchesForNode(42);
-    $this->assertEquals(0, $deleted);
+    $this->expectException(\Exception::class);
+    $this->service->deleteMatchesForNode(42);
   }
 
   /**

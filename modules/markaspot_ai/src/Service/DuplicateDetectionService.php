@@ -737,11 +737,13 @@ class DuplicateDetectionService {
       return $deleted;
     }
     catch (\Exception $e) {
-      $this->logger->error('Failed to delete matches for node @nid: @message', [
+      // Rethrown: the caller runs inside the report's delete transaction and
+      // must roll back rather than leave derived data behind.
+      $this->logger->error('Failed to delete matches for node @nid (@class).', [
         '@nid' => $nid,
-        '@message' => $e->getMessage(),
+        '@class' => get_class($e),
       ]);
-      return 0;
+      throw $e;
     }
   }
 

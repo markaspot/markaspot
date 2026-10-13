@@ -5,6 +5,7 @@ namespace Drupal\markaspot_privacy\Form;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -59,6 +60,13 @@ class GDPRForm extends FormBase {
   protected $requestLinkService;
 
   /**
+   * The module handler, NULL when constructed without one.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface|null
+   */
+  protected ?ModuleHandlerInterface $moduleHandlerService = NULL;
+
+  /**
    * Constructs form object.
    *
    * @param \Drupal\Core\Messenger\MessengerInterface $messenger
@@ -70,12 +78,15 @@ class GDPRForm extends FormBase {
    * @param object|null $request_link_service
    *   The markaspot_dashboard.request_link service, or NULL when the
    *   markaspot_dashboard module is not installed.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface|null $module_handler
+   *   The module handler, used to announce the anonymization.
    */
-  public function __construct(MessengerInterface $messenger, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, $request_link_service = NULL) {
+  public function __construct(MessengerInterface $messenger, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, $request_link_service = NULL, ?ModuleHandlerInterface $module_handler = NULL) {
     $this->messenger = $messenger;
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory->getEditable('markaspot_privacy.settings');
     $this->requestLinkService = $request_link_service;
+    $this->moduleHandlerService = $module_handler;
   }
 
   /**
@@ -88,7 +99,8 @@ class GDPRForm extends FormBase {
       $container->get('config.factory'),
       $container->has('markaspot_dashboard.request_link')
         ? $container->get('markaspot_dashboard.request_link')
-        : NULL
+        : NULL,
+      $container->get('module_handler')
     );
   }
 
@@ -168,6 +180,9 @@ class GDPRForm extends FormBase {
     $node->setUnpublished();
     $node->set('field_e_mail', "anasasaonymous@example.off");
     $node->save();
+    // The report is kept, so entity delete hooks do not run: let modules
+    // purge data derived from it (see hook_markaspot_report_anonymized()).
+    $this->moduleHandlerService?->invokeAll('markaspot_report_anonymized', [$node]);
   }
 
   /**

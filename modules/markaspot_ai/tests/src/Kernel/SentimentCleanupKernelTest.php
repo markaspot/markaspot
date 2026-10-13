@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_ai\Kernel;
 
+use Drupal\Core\Form\FormState;
 use Drupal\Core\Logger\RfcLoggerTrait;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_ai\Service\SentimentService;
+use Drupal\markaspot_privacy\Form\GDPRForm;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
@@ -34,6 +36,7 @@ final class SentimentCleanupKernelTest extends KernelTestBase {
     'entity', 'flexible_permissions', 'group',
     'entity_reference_revisions', 'paragraphs',
     'markaspot_ai', 'markaspot_ai_pii_test',
+    'markaspot_archive', 'markaspot_privacy',
   ];
 
   /**
@@ -68,6 +71,9 @@ final class SentimentCleanupKernelTest extends KernelTestBase {
     NodeType::create(['type' => 'page', 'name' => 'Page'])->save();
     $this->addField('body', 'text_with_summary');
     $this->addField('field_feedback', 'text_long');
+    $this->addField('field_request_attributes', 'string_long');
+    $this->addField('field_e_mail', 'email');
+    $this->addField('field_first_name', 'string');
 
     User::create(['uid' => 0, 'name' => '', 'status' => 0])->save();
     User::create(['uid' => 1, 'name' => 'root', 'status' => 1])->save();
@@ -221,6 +227,103 @@ final class SentimentCleanupKernelTest extends KernelTestBase {
     $this->addSentiment((int) $third->id());
     $third->setTitle('Pothole on Main Street')->save();
     $this->assertNull($this->sentimentRow((int) $third->id())['reasoning']);
+  }
+
+  /**
+   * A failing embedding or match cleanup rolls the whole deletion back.
+   */
+  public function testRealCleanupFailuresRollBackTheDeletion(): void {
+    foreach (['markaspot_ai_duplicate_matches', 'markaspot_ai_embeddings'] as $broken) {
+      $report = $this->createReport('Blocked lane ' . $broken);
+      $this->addSentiment((int) $report->id());
+      $this->addEmbedding((int) $report->id());
+      // Make the real service fail on its table; the DDL happens before the
+      // delete transaction starts.
+      $schema = \Drupal::database()->schema();
+      $schema->renameTable($broken, $broken . '_off');
+
+      $thrown = FALSE;
+      try {
+        $report->delete();
+      }
+      catch (\Throwable) {
+        $thrown = TRUE;
+      }
+      $schema->renameTable($broken . '_off', $broken);
+
+      $this->assertTrue($thrown, "A failing $broken cleanup aborts the deletion.");
+      $this->container->get('entity_type.manager')->getStorage('node')->resetCache();
+      $this->assertNotNull(Node::load($report->id()));
+      $this->assertSame(1, $this->rowCount('markaspot_ai_sentiment', (int) $report->id()));
+      $this->assertSame(1, $this->rowCount('markaspot_ai_embeddings', (int) $report->id()), 'Embeddings deleted before the failure are rolled back.');
+    }
+    $this->assertReasoningNotLogged();
+  }
+
+  /**
+   * Changing only the request attributes clears the reasoning.
+   */
+  public function testAttributeOnlyChangeClearsReasoning(): void {
+    $report = $this->createReport('Blocked lane');
+    $report->set('field_request_attributes', '{"vehicle":"Erika\'s car"}')->save();
+    $this->addSentiment((int) $report->id());
+
+    $report->set('field_request_attributes', '{"vehicle":"[REDACTED]"}')->save();
+
+    $this->assertNull($this->sentimentRow((int) $report->id())['reasoning']);
+  }
+
+  /**
+   * The real archive anonymisation clears the reasoning of a kept report.
+   */
+  public function testArchiveAnonymisationClearsReasoning(): void {
+    $report = $this->createReport('Blocked lane');
+    $report->set('field_e_mail', 'erika@example.test')->set('field_first_name', 'Erika')->save();
+    $this->addSentiment((int) $report->id());
+    $kept = $this->createReport('Broken lamp');
+    $this->addSentiment((int) $kept->id());
+    $body = $report->get('body')->value;
+
+    // The same sequence as ArchiveQueueWorker and the drush command, with the
+    // shipped contact-field configuration.
+    $archive = $this->container->get('markaspot_archive.archive');
+    $values = $archive->anonymize($report, [
+      'field_e_mail' => 'field_e_mail',
+      'field_first_name' => 'field_first_name',
+    ]);
+    $this->assertNotSame([], $values);
+    $report->save();
+    $archive->anonymizeRevisions($report, $values);
+
+    $report = Node::load($report->id());
+    $this->assertSame($body, $report->get('body')->value, 'Anonymisation does not touch the analysed text.');
+    $this->assertNotSame('erika@example.test', $report->get('field_e_mail')->value);
+    $row = $this->sentimentRow((int) $report->id());
+    $this->assertNull($row['reasoning']);
+    $this->assertSame('frustrated', $row['sentiment']);
+    $this->assertSame(self::REASONING, $this->sentimentRow((int) $kept->id())['reasoning']);
+
+    // Nothing anonymized: no purge.
+    $third = $this->createReport('Pothole');
+    $this->addSentiment((int) $third->id());
+    $archive->anonymizeRevisions($third, []);
+    $this->assertSame(self::REASONING, $this->sentimentRow((int) $third->id())['reasoning']);
+  }
+
+  /**
+   * The GDPR erasure form clears the reasoning as well.
+   */
+  public function testGdprErasureClearsReasoning(): void {
+    $report = $this->createReport('Blocked lane');
+    $report->set('field_e_mail', 'erika@example.test')->save();
+    $this->addSentiment((int) $report->id());
+
+    $form_object = GDPRForm::create($this->container);
+    $form_state = (new FormState())->setValue('uuid', $report->uuid());
+    $form = [];
+    $form_object->submitForm($form, $form_state);
+
+    $this->assertNull($this->sentimentRow((int) $report->id())['reasoning']);
   }
 
   /**
