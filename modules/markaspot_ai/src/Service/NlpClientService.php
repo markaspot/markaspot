@@ -71,12 +71,19 @@ class NlpClientService {
    *
    * @return array
    *   An array with keys:
+   *   - ok: TRUE only when the service returned a usable result. A failed
+   *     request or an unusable payload returns FALSE together with the
+   *     unchanged text, so callers can tell "nothing found" from "not
+   *     screened".
+   *   - error: NULL, 'request_failed' or 'malformed'.
    *   - original: The original text.
    *   - redacted: The text with PII replaced.
    *   - entities_found: List of detected PII entities.
    */
   public function redactPii(string $text, string $language = 'de'): array {
-    $fallback = [
+    $fallback = static fn(string $error): array => [
+      'ok' => FALSE,
+      'error' => $error,
       'original' => $text,
       'redacted' => $text,
       'entities_found' => [],
@@ -89,22 +96,28 @@ class NlpClientService {
       ], 300);
 
       $data = json_decode((string) $response->getBody(), TRUE);
-      if (!is_array($data) || !isset($data['redacted'])) {
+      if (!is_array($data) || !is_string($data['redacted'] ?? NULL)
+        || (isset($data['entities_found']) && !is_array($data['entities_found']))) {
         $this->logger->warning('NLP redact endpoint returned unexpected response format.');
-        return $fallback;
+        return $fallback('malformed');
       }
 
       return [
+        'ok' => TRUE,
+        'error' => NULL,
         'original' => $data['original'] ?? $text,
         'redacted' => $data['redacted'],
         'entities_found' => $data['entities_found'] ?? [],
       ];
     }
     catch (GuzzleException $e) {
-      $this->logger->warning('NLP PII redaction failed: @message', [
-        '@message' => $e->getMessage(),
+      // The exception message can quote the request or response body, which
+      // holds citizen text: log the class and status code only.
+      $this->logger->warning('NLP PII redaction failed (@class, HTTP @code).', [
+        '@class' => (new \ReflectionClass($e))->getShortName(),
+        '@code' => (int) $e->getCode(),
       ]);
-      return $fallback;
+      return $fallback('request_failed');
     }
   }
 

@@ -524,7 +524,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $form['pii_redaction']['pii_use_llm'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Detect Names via Provider'),
-      '#description' => $this->t('Layer 2: invoke the selected provider (cloud LLM or self-hosted NLP) to detect names and addresses the regex layer cannot catch. Costs API tokens or container capacity per report.'),
+      '#description' => $this->t('Layer 2: invoke the selected provider (cloud LLM or self-hosted NLP) to detect names and addresses the regex layer cannot catch. Costs API tokens or container capacity per report. If screening fails (service down, timeout, unusable answer), the report is saved unpublished with a staff remark and is not published automatically; publishing it after review releases the hold. A failing cloud provider falls back to the self-hosted NLP service, never the other way round.'),
       '#default_value' => (bool) $detect_names_default,
       '#states' => [
         'visible' => [

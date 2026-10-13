@@ -131,7 +131,10 @@ class PublisherService implements PublisherServiceInterface {
         // The condition below ensures that nodes that were modified long after creation are excluded.
         ->condition('changed', strtotime('+' . $threshold_hours . ' hours', $date), '<=')
         // Limit to 20 nodes per category.
-        ->range(0, 20);
+        ->range(0, 20)
+        // Lets modules exclude reports that must stay unpublished until a
+        // person decides (e.g. markaspot_ai screening holds).
+        ->addTag('markaspot_publisher_candidates');
       $query->accessCheck(FALSE);
 
       $result = $query->execute();
