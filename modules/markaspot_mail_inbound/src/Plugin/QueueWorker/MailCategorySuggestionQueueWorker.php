@@ -173,8 +173,17 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
     $threshold = (float) ($settings->get('auto_promote_confidence_threshold') ?? 0.85);
     $confidence = $mail->getSuggestionConfidence();
 
-    // Vision path has no confidence (NULL); never auto-promote vision results.
+    // Vision path and non-report verdicts have no confidence (NULL); never
+    // auto-promote them.
     if ($confidence === NULL || $confidence < $threshold) {
+      return;
+    }
+    // The suggestion service only stores validated confidences, but the gate
+    // must not trust a stored value outside [0, 1] either.
+    if (!is_finite($confidence) || $confidence > 1.0) {
+      $this->logger->warning('Auto-promote skipped for mail @id: stored confidence is out of range.', [
+        '@id' => $mail->id(),
+      ]);
       return;
     }
 

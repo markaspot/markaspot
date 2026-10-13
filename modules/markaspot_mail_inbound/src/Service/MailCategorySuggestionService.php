@@ -284,9 +284,11 @@ class MailCategorySuggestionService {
    * The 'summary' field contains a concise, neutral problem description in the
    * language of the email, WITHOUT salutation, sign-off, names or other PII.
    *
-   * When is_report is FALSE in the AI response, no auto-promote will be
-   * triggered (gated in the queue worker). The suggestion is stored so triage
-   * staff see the AI's verdict.
+   * The answer is validated locally by MailClassificationVerdict; a malformed
+   * verdict marks the suggestion FAILED and never reaches auto-promote. When a
+   * valid verdict has is_report FALSE, no auto-promote is triggered (gated in
+   * the queue worker). The suggestion is stored so triage staff see the AI's
+   * verdict.
    */
   protected function suggestText(InboundMail $mail): void {
     $mailId = (int) $mail->id();
@@ -347,19 +349,30 @@ class MailCategorySuggestionService {
         return;
       }
 
-      // Finding #7: is_report gate. When is_report is FALSE the mail is not a
-      // citizen report; store the suggestion but log it so the queue worker
-      // can skip auto-promote. The 'is_report' value is stored in the result
-      // and checked in the queue worker's auto-promote path.
-      $isReport = isset($aiData['is_report']) ? (bool) $aiData['is_report'] : TRUE;
-      if (!$isReport) {
+      // Validate the whole verdict locally before anything is stored: the
+      // requested schema is not enforced by every adapter. A malformed answer
+      // (missing/NULL/string is_report, non-integer category, confidence that
+      // is not a number in [0, 1]) leaves the mail staged with a FAILED
+      // suggestion for manual triage and can never reach auto-promotion.
+      $verdict = MailClassificationVerdict::fromProviderData($aiData);
+      if (is_string($verdict)) {
+        $this->setStatus($mail, InboundMail::SUGGESTION_FAILED);
+        $this->logger->warning('Text suggestion failed for mail @id: AI verdict rejected (@reason).', [
+          '@id' => $mailId,
+          '@reason' => $verdict,
+        ]);
+        return;
+      }
+
+      if (!$verdict->isReport) {
         $this->logger->info('Text suggestion for mail @id: is_report=false (non-report mail); suggestion stored, auto-promote suppressed.', ['@id' => $mailId]);
       }
 
-      $tid = isset($aiData['category_tid']) ? (int) $aiData['category_tid'] : NULL;
-      if ($tid === NULL || $tid <= 0) {
+      // The category must be one the model was offered for this mail.
+      $tid = $verdict->categoryTid;
+      if (!in_array($tid, array_map('intval', array_column($categories, 'tid')), TRUE)) {
         $this->setStatus($mail, InboundMail::SUGGESTION_FAILED);
-        $this->logger->warning('Text suggestion failed for mail @id: no valid category_tid in response.', ['@id' => $mailId]);
+        $this->logger->warning('Text suggestion failed for mail @id: AI verdict rejected (category_not_offered).', ['@id' => $mailId]);
         return;
       }
 
@@ -374,28 +387,19 @@ class MailCategorySuggestionService {
         return;
       }
 
-      $confidence = isset($aiData['confidence']) ? (float) $aiData['confidence'] : NULL;
-      // Clamp to [0, 1] defensively.
-      if ($confidence !== NULL) {
-        $confidence = max(0.0, min(1.0, $confidence));
-      }
+      // A non-report verdict stores the category hint with a NULL confidence;
+      // the queue worker never auto-promotes a NULL confidence (vision path
+      // semantics), so triage staff still see the suggestion.
+      $confidence = $verdict->promotionConfidence();
 
-      // Finding #7: suppress auto-promote when is_report is FALSE by storing
-      // a sentinel confidence of NULL. The suggestion_status is still DONE so
-      // triage staff see the category hint; the queue worker's maybeAutoPromote
-      // checks confidence === NULL (vision path semantics) to skip promotion.
-      if (!$isReport) {
-        $confidence = NULL;
-      }
-
-      $address = isset($aiData['address']) && is_string($aiData['address']) && $aiData['address'] !== ''
-        ? $this->sanitizeAddress($aiData['address'])
+      $address = $verdict->address !== NULL && $verdict->address !== ''
+        ? $this->sanitizeAddress($verdict->address)
         : NULL;
 
       // Store the AI-generated neutral problem description. The promoter will
       // use it as the public node body instead of the raw mail text.
-      $suggestedDescription = isset($aiData['summary']) && is_string($aiData['summary']) && $aiData['summary'] !== ''
-        ? $this->sanitizeDescription($aiData['summary'])
+      $suggestedDescription = $verdict->summary !== NULL && $verdict->summary !== ''
+        ? $this->sanitizeDescription($verdict->summary)
         : NULL;
 
       $mail->setSuggestedCategoryTid($tid);

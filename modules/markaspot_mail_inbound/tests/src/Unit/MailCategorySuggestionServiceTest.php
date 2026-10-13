@@ -14,9 +14,12 @@ use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Plugin\QueueWorker\MailCategorySuggestionQueueWorker;
+use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
+use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 
@@ -27,7 +30,7 @@ use Drupal\Tests\UnitTestCase;
  * - Gates -> skipped (module setting, feature flag, token budget, service none)
  * - Vision vs text path selection
  * - Invalid tid from model -> failed
- * - Text path: confidence clamped, address stored, done status.
+ * - Text path: verdict validated, address stored, done status.
  * - Description storage: vision path reads 'description' from ai_result,
  *   text path reads 'summary'; both are sanitized before storing.
  * - sanitizeDescription: control chars stripped, length capped.
@@ -692,6 +695,181 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
       },
     );
     $this->assertTrue($svc->couldRun());
+  }
+
+  /**
+   * Provider answers fed through suggest() and the real promotion gate.
+   *
+   * Each answer runs the text path against a stateful mail, then the queue
+   * worker's maybeAutoPromote() with auto-promote enabled (threshold 0.85, a
+   * promotable category). Only a valid report verdict above the threshold may
+   * reach the promoter.
+   *
+   * @dataProvider verdictPromotionProvider
+   * @covers ::suggestText
+   */
+  public function testVerdictThroughSuggestionAndPromotion(array $answer, string $status, bool $promoted, ?float $storedConfidence): void {
+    $aiClient = new class($answer) {
+
+      /**
+       * Constructs the stub.
+       */
+      public function __construct(private array $answer) {}
+
+      /**
+       * Returns the configured answer as JSON content.
+       */
+      public function chat(array $messages, array $options = []): array {
+        return ['choices' => [['message' => ['content' => json_encode($this->answer)]]]];
+      }
+
+    };
+
+    $svc = $this->service(aiClient: $aiClient, categories: [
+      ['tid' => 7, 'path' => 'Streetlight', 'label' => 'Streetlight'],
+    ]);
+    $svc->overrideTerm = $this->createMock(TermInterface::class);
+    $svc->overrideTermId = 7;
+
+    $mail = $this->statefulMail();
+    $svc->suggest($mail);
+
+    $this->assertSame($status, $mail->getSuggestionStatus());
+    $this->assertSame($storedConfidence, $mail->getSuggestionConfidence());
+    if ($status !== InboundMail::SUGGESTION_DONE) {
+      // A rejected verdict stores no category hint either.
+      $this->assertNull($mail->getSuggestedCategoryTid());
+    }
+
+    $promoter = $this->createMock(InboundMailPromoter::class);
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn(500);
+    $promoter->expects($promoted ? $this->once() : $this->never())
+      ->method('promoteToServiceRequest')
+      ->willReturn($node);
+
+    // The worker only gates DONE suggestions (see processItem()).
+    if ($status === InboundMail::SUGGESTION_DONE) {
+      $gate = new \ReflectionMethod(MailCategorySuggestionQueueWorker::class, 'maybeAutoPromote');
+      $gate->invoke($this->promotionWorker($promoter), $mail);
+    }
+  }
+
+  /**
+   * Provider answers and their expected outcome.
+   */
+  public static function verdictPromotionProvider(): array {
+    $valid = [
+      'category_tid' => 7,
+      'confidence' => 0.95,
+      'address' => NULL,
+      'is_report' => TRUE,
+      'summary' => NULL,
+    ];
+    $missing = $valid;
+    unset($missing['is_report']);
+    $failed = InboundMail::SUGGESTION_FAILED;
+    $done = InboundMail::SUGGESTION_DONE;
+    return [
+      'valid report above threshold' => [$valid, $done, TRUE, 0.95],
+      'valid report below threshold' => [['confidence' => 0.5] + $valid, $done, FALSE, 0.5],
+      'valid non-report stays reviewable' => [['is_report' => FALSE] + $valid, $done, FALSE, NULL],
+      'missing is_report' => [$missing, $failed, FALSE, NULL],
+      'null is_report' => [['is_report' => NULL] + $valid, $failed, FALSE, NULL],
+      'string "false"' => [['is_report' => 'false'] + $valid, $failed, FALSE, NULL],
+      'string "true"' => [['is_report' => 'true'] + $valid, $failed, FALSE, NULL],
+      'numeric 1' => [['is_report' => 1] + $valid, $failed, FALSE, NULL],
+      'numeric 0' => [['is_report' => 0] + $valid, $failed, FALSE, NULL],
+      'array is_report' => [['is_report' => [TRUE]] + $valid, $failed, FALSE, NULL],
+      'inflated confidence' => [['confidence' => 1.7] + $valid, $failed, FALSE, NULL],
+      'string confidence' => [['confidence' => '0.99'] + $valid, $failed, FALSE, NULL],
+      'category not offered' => [['category_tid' => 99] + $valid, $failed, FALSE, NULL],
+    ];
+  }
+
+  /**
+   * Builds a mail double that keeps the suggestion state it is given.
+   */
+  protected function statefulMail(): InboundMail {
+    $state = new \ArrayObject([
+      'status' => InboundMail::SUGGESTION_PENDING,
+      'tid' => NULL,
+      'confidence' => NULL,
+      'address' => NULL,
+    ]);
+    $mail = $this->getMockBuilder(InboundMail::class)
+      ->disableOriginalConstructor()
+      ->onlyMethods([
+        'getJurisdictionId',
+        'getAttachmentFileIds',
+        'id',
+        'getSubject',
+        'getBody',
+        'setSuggestedCategoryTid',
+        'setSuggestionConfidence',
+        'setSuggestionStatus',
+        'setSuggestedAddress',
+        'setSuggestedDescription',
+        'getSuggestionStatus',
+        'getSuggestedCategoryTid',
+        'getSuggestionConfidence',
+        'getSuggestedAddress',
+        'save',
+      ])
+      ->getMock();
+    $mail->method('getJurisdictionId')->willReturn(1);
+    $mail->method('getAttachmentFileIds')->willReturn([]);
+    $mail->method('id')->willReturn(99);
+    $mail->method('getSubject')->willReturn('Streetlight');
+    $mail->method('getBody')->willReturn('The streetlight is out.');
+    $mail->method('setSuggestionStatus')->willReturnCallback(function ($value) use ($state, &$mail) {
+      $state['status'] = $value;
+      return $mail;
+    });
+    $mail->method('setSuggestedCategoryTid')->willReturnCallback(function ($value) use ($state, &$mail) {
+      $state['tid'] = $value;
+      return $mail;
+    });
+    $mail->method('setSuggestionConfidence')->willReturnCallback(function ($value) use ($state, &$mail) {
+      $state['confidence'] = $value;
+      return $mail;
+    });
+    $mail->method('setSuggestedAddress')->willReturnCallback(function ($value) use ($state, &$mail) {
+      $state['address'] = $value;
+      return $mail;
+    });
+    $mail->method('getSuggestionStatus')->willReturnCallback(fn() => $state['status']);
+    $mail->method('getSuggestedCategoryTid')->willReturnCallback(fn() => $state['tid']);
+    $mail->method('getSuggestionConfidence')->willReturnCallback(fn() => $state['confidence']);
+    $mail->method('getSuggestedAddress')->willReturnCallback(fn() => $state['address']);
+    return $mail;
+  }
+
+  /**
+   * A queue worker with auto-promote enabled and a promotable category.
+   */
+  protected function promotionWorker(InboundMailPromoter $promoter): MailCategorySuggestionQueueWorker {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnMap([
+      ['auto_promote_enabled', TRUE],
+      ['auto_promote_confidence_threshold', 0.85],
+    ]);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+    $categoryRepo = $this->createMock(PromotableCategoryRepository::class);
+    $categoryRepo->method('isPromotable')->willReturn(TRUE);
+
+    return new MailCategorySuggestionQueueWorker(
+      [],
+      'markaspot_mail_inbound_suggest',
+      [],
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(MailCategorySuggestionService::class),
+      $promoter,
+      $categoryRepo,
+      $configFactory,
+      $this->createMock(LoggerChannelInterface::class),
+    );
   }
 
 }
