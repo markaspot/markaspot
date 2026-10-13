@@ -157,10 +157,51 @@ final class ModeratorRoleDriftRepairKernelTest extends KernelTestBase {
     $this->assertTrue($this->can('update any group_node:service_request entity', $member, $own_org));
     $this->assertFalse($this->can('update any group_node:service_request entity', $member, $foreign_org));
 
+    $this->assertNoModeratorDependency();
+
     // A second run changes nothing.
     $second = markaspot_group_update_11955();
     $this->assertStringContainsString('jur-moderator unchanged (scope individual)', $second);
     $this->assertStringContainsString('org-moderator unchanged (scope individual)', $second);
+    $this->assertNoModeratorDependency();
+  }
+
+  /**
+   * An individually assigned org-moderator survives the scope change.
+   */
+  public function testIndividualMembershipSurvivesRepair(): void {
+    // The membership got org-moderator while the role was still individual;
+    // the role drifted afterwards.
+    GroupRole::create([
+      'id' => 'org-moderator',
+      'label' => 'Moderation',
+      'group_type' => 'org',
+      'scope' => 'individual',
+      'permissions' => self::DRIFTED_ORG_PERMISSIONS,
+    ])->save();
+    $this->group('jur', 'Tenant A');
+    $this->group('jur', 'Tenant B');
+    $org = $this->group('org', 'Tenant A works');
+    $staff = User::create(['name' => 'staff', 'status' => 1]);
+    $staff->save();
+    $org->addMember($staff, ['group_roles' => ['org-moderator']]);
+
+    // Group refuses to move an assigned role to the outsider scope, so the
+    // drift can only arrive as written config (e.g. a config import).
+    $this->container->get('config.factory')->getEditable('group.role.org-moderator')
+      ->set('scope', 'outsider')
+      ->set('global_role', 'moderator')
+      ->save();
+    $this->container->get('entity_type.manager')->getStorage('group_role')->resetCache();
+    $this->assertSame('outsider', GroupRole::load('org-moderator')->getScope());
+
+    markaspot_group_update_11955();
+
+    $membership = $org->getMember($staff);
+    $this->assertNotFalse($membership);
+    $this->assertArrayHasKey('org-moderator', $membership->getRoles(FALSE));
+    $this->assertTrue($this->can('create group_node:service_request entity', $staff, $org));
+    $this->assertNoModeratorDependency(['org-moderator']);
   }
 
   /**
@@ -201,6 +242,20 @@ final class ModeratorRoleDriftRepairKernelTest extends KernelTestBase {
     $message = markaspot_group_update_11955();
 
     $this->assertSame('Moderator group roles on 2 jurisdictions: jur-moderator unchanged (scope individual); org-moderator unchanged (scope individual).', $message);
+  }
+
+  /**
+   * Asserts the persisted roles no longer depend on the Drupal moderator role.
+   *
+   * @param string[] $role_ids
+   *   The group roles to check.
+   */
+  private function assertNoModeratorDependency(array $role_ids = ['jur-moderator', 'org-moderator']): void {
+    foreach ($role_ids as $role_id) {
+      $config = $this->container->get('config.factory')->get('group.role.' . $role_id);
+      $this->assertNull($config->get('global_role'), $role_id);
+      $this->assertNotContains('user.role.moderator', $config->get('dependencies.config') ?? [], $role_id);
+    }
   }
 
   /**

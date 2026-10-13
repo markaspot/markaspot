@@ -6247,7 +6247,12 @@ function markaspot_group_update_11955(): string {
       continue;
     }
 
+    // Clear the global role before saving: GroupRole::preSave() only drops it
+    // after parent::preSave() recalculated the config dependencies, which
+    // would otherwise keep a stale dependency on user.role.moderator, so
+    // deleting that Drupal role would delete these group roles too.
     $role->set('scope', 'individual');
+    $role->set('global_role', NULL);
     $role->save();
 
     $file = __DIR__ . '/config/install/group.role.' . $role_id . '.yml';
