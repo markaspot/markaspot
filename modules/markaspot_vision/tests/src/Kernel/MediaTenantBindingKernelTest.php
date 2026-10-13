@@ -170,8 +170,8 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    * A headerless upload made after the cutoff is refused on multi-tenant.
    */
   public function testHeaderlessUploadAfterCutoffIsRefused(): void {
-    $this->setCutoff(-3600);
     $request = $this->anonymousUploadRequest('upload-after-cutoff');
+    $this->recordCutoff();
     $unbound = $this->createUpload($request);
 
     $this->assertStatus(400, $this->analyze($request, [$unbound], $this->tenantA->id()));
@@ -193,9 +193,11 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     $state = $this->container->get('state');
     $this->assertNull($state->get(MediaTenantScopeResolver::CUTOFF_STATE));
 
+    $request = $this->anonymousUploadRequest('upload-update');
+    $this->createUpload($request);
+    $last = $this->createUpload($request);
     markaspot_vision_update_11808();
-    $cutoff = $state->get(MediaTenantScopeResolver::CUTOFF_STATE);
-    $this->assertSame($this->container->get('datetime.time')->getRequestTime(), $cutoff);
+    $this->assertSame((int) $last->id(), $state->get(MediaTenantScopeResolver::CUTOFF_STATE));
 
     $state->set(MediaTenantScopeResolver::CUTOFF_STATE, 1000);
     $this->assertStringStartsWith('Skipped', markaspot_vision_update_11808());
@@ -218,7 +220,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   public function testLegacyUploadBeforeCutoffIsClaimedOnce(): void {
     $request = $this->anonymousUploadRequest('upload-legacy');
     $media = $this->createUpload($request);
-    $this->setCutoff(3600);
+    $this->recordCutoff();
     $this->assertNull($this->binding($media));
 
     $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantA->id()));
@@ -367,11 +369,35 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A backdated `created` date does not make a new upload legacy.
+   */
+  public function testBackdatedUploadAfterCutoffIsNotLegacy(): void {
+    $request = $this->anonymousUploadRequest('upload-backdated');
+    $genuine = $this->createUpload($request);
+    $this->recordCutoff();
+
+    // JSON:API accepts attributes.created on create, also anonymously.
+    $backdated = $this->createUpload($request, NULL, NULL, ['created' => 1]);
+    $this->assertSame(1, (int) $backdated->getCreatedTime());
+    $this->assertStatus(400, $this->analyze($request, [$backdated], $this->tenantA->id()));
+
+    $bound = $this->createUpload($request, NULL, (string) $this->tenantB->id());
+    $this->assertStatus(400, $this->analyze($request, [$bound, $backdated], $this->tenantB->id()));
+    $this->assertNull($this->binding($backdated), 'Neither request bound the backdated upload.');
+    $this->assertSame([], $this->providerCalls);
+
+    // The genuine pre-cutoff upload is still claimable, once.
+    $this->assertStatus(200, $this->analyze($request, [$genuine], $this->tenantA->id()));
+    $this->assertStatus(403, $this->analyze($request, [$genuine], $this->tenantB->id()));
+    $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls);
+  }
+
+  /**
    * A bound image cannot carry a new headerless image into its tenant.
    */
   public function testMixedBoundAndUnboundBatchIsRefused(): void {
-    $this->setCutoff(-3600);
     $request = $this->anonymousUploadRequest('upload-bound-unbound');
+    $this->recordCutoff();
     $bound = $this->createUpload($request, NULL, (string) $this->tenantB->id());
     $unbound = $this->createUpload($request);
 
@@ -387,7 +413,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   public function testConcurrentFirstBindingRefusesTheLoser(): void {
     $request = $this->anonymousUploadRequest('upload-race');
     $media = $this->createUpload($request);
-    $this->setCutoff(3600);
+    $this->recordCutoff();
     $tenant_a = (int) $this->tenantA->id();
 
     // Request B resolved "unbound" and is about to claim, when request A's
@@ -600,10 +626,15 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * Records the upload binding cutoff relative to now.
+   * Records the cutoff at the highest existing media ID, as the update does.
    */
-  private function setCutoff(int $offset): void {
-    $this->container->get('state')->set(MediaTenantScopeResolver::CUTOFF_STATE, time() + $offset);
+  private function recordCutoff(): void {
+    $ids = $this->container->get('entity_type.manager')->getStorage('media')->getQuery()
+      ->accessCheck(FALSE)
+      ->sort('mid', 'DESC')
+      ->range(0, 1)
+      ->execute();
+    $this->container->get('state')->set(MediaTenantScopeResolver::CUTOFF_STATE, $ids ? (int) reset($ids) : 0);
   }
 
   /**
@@ -641,12 +672,14 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    *   The uploading account; anonymous when NULL.
    * @param string|null $jurisdiction
    *   The jurisdiction the upload request names in the upload header.
+   * @param array $values
+   *   Extra entity values, e.g. a client-supplied `created` date.
    */
-  private function createUpload(Request $request, ?AccountInterface $owner = NULL, ?string $jurisdiction = NULL): MediaInterface {
+  private function createUpload(Request $request, ?AccountInterface $owner = NULL, ?string $jurisdiction = NULL, array $values = []): MediaInterface {
     $source = $this->getTestFiles('image')[0];
     $file = File::create(['uri' => $source->uri, 'status' => 1]);
     $file->save();
-    $media = Media::create([
+    $media = Media::create($values + [
       'bundle' => 'request_image',
       'name' => 'upload',
       'uid' => $owner ? $owner->id() : 0,

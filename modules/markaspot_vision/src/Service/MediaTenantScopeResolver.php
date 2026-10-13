@@ -31,12 +31,16 @@ use Symfony\Component\HttpFoundation\Request;
  * analysis, budget check and charge on it.
  *
  * Legacy cohort: uploads made before this contract existed carry no binding.
- * The update that introduced it records a cutoff (CUTOFF_STATE); unbound
- * media created before the cutoff may be bound once, atomically, by their
- * first analysis to the validated jurisdiction it names. That cohort is
- * finite and only shrinks. Unbound media created at or after the cutoff on a
- * multi-tenant install are refused: every current client names the upload's
- * jurisdiction, and a missing cutoff means there is no legacy cohort at all.
+ * The update that introduced it records the highest media ID at that moment
+ * (CUTOFF_STATE). Unbound media with an ID at or below it may be bound once,
+ * atomically, by their first analysis to the validated jurisdiction it
+ * names. The ID is server-owned evidence: the database assigns it and
+ * JSON:API cannot set it, unlike the `created` date, which a client (or a
+ * date-preserving migration) can backdate. That cohort is finite and only
+ * shrinks. Every media inserted later is outside it whatever its dates, so
+ * an unbound one on a multi-tenant install is refused: every current client
+ * names the upload's jurisdiction, and a missing cutoff means there is no
+ * legacy cohort at all.
  * Single-tenant installs bind every upload to their only jurisdiction.
  */
 class MediaTenantScopeResolver {
@@ -54,9 +58,9 @@ class MediaTenantScopeResolver {
   public const UPLOAD_HEADER = 'X-Markaspot-Jurisdiction';
 
   /**
-   * State key: unbound media created before this time form the legacy cohort.
+   * State key: the highest media ID of the legacy (pre-binding) cohort.
    */
-  public const CUTOFF_STATE = 'markaspot_vision.upload_binding_cutoff';
+  public const CUTOFF_STATE = 'markaspot_vision.upload_binding_cutoff_mid';
 
   /**
    * Constructs the media tenant scope resolver.
@@ -159,9 +163,9 @@ class MediaTenantScopeResolver {
     // Unbound members are judged before any batch scope is accepted: on a
     // multi-tenant install only the legacy cohort may still be bound here.
     if ($unbound && $tenant_count > 1) {
-      $cutoff = (int) $this->state->get(self::CUTOFF_STATE, 0);
+      $cutoff = $this->state->get(self::CUTOFF_STATE);
       foreach ($unbound as $media) {
-        if ((int) $media->getCreatedTime() >= $cutoff) {
+        if ($cutoff === NULL || (int) $media->id() > (int) $cutoff) {
           return MediaTenantScope::refuse('The uploaded media are not bound to a jurisdiction.', 400);
         }
       }

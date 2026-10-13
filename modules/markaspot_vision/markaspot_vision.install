@@ -404,14 +404,21 @@ function markaspot_vision_requirements($phase): array {
  * Starts strict upload tenant binding and freezes the legacy upload cohort.
  */
 function markaspot_vision_update_11808(): string {
-  // Uploads created before this moment carry no tenant binding; they may be
-  // bound once by their first analysis. Every later upload on a multi-tenant
-  // install must be bound at upload (X-Markaspot-Jurisdiction) or is refused.
+  // Media that exist now carry no tenant binding; they may be bound once by
+  // their first analysis. The cohort is fixed by media ID, which the database
+  // assigns and clients cannot set (a `created` date can be backdated). Every
+  // later upload on a multi-tenant install must be bound at upload
+  // (X-Markaspot-Jurisdiction) or is refused.
   $state = \Drupal::state();
   if ($state->get(MediaTenantScopeResolver::CUTOFF_STATE) !== NULL) {
     return 'Skipped: the upload binding cutoff is already recorded.';
   }
-  $cutoff = \Drupal::time()->getRequestTime();
+  $ids = \Drupal::entityQuery('media')
+    ->accessCheck(FALSE)
+    ->sort('mid', 'DESC')
+    ->range(0, 1)
+    ->execute();
+  $cutoff = $ids ? (int) reset($ids) : 0;
   $state->set(MediaTenantScopeResolver::CUTOFF_STATE, $cutoff);
-  return sprintf('Recorded the upload binding cutoff (%s).', date('c', $cutoff));
+  return sprintf('Recorded the upload binding cutoff at media ID %d.', $cutoff);
 }
