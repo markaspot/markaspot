@@ -350,6 +350,29 @@ final class TokenAccountingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A booking survives the rollback of the caller's transaction.
+   *
+   * Provider calls can run inside an entity save or provisioning
+   * transaction; the provider consumed the tokens even when that
+   * transaction rolls back.
+   */
+  public function testBookingSurvivesCallerRollback(): void {
+    $this->handler->append(
+      $this->chatAnswer('ok', ['prompt_tokens' => 21, 'completion_tokens' => 4]),
+      $this->embedAnswer(['prompt_tokens' => 7, 'total_tokens' => 7]),
+    );
+    $transaction = $this->database->startTransaction();
+    $this->client->chat([['role' => 'user', 'content' => 'x']], ['operation' => 'pii_name_detection']);
+    $this->client->embed('x', ['operation' => 'embedding']);
+    $transaction->rollBack();
+    unset($transaction);
+
+    $this->assertFalse($this->database->inTransaction());
+    $this->assertSame([['pii_name_detection', 21, 4], ['embedding', 7, 0]], array_map($this->summary(...), $this->rows()));
+    $this->assertSame(32, $this->tracking->getDailyUsage()['total_tokens'], 'The daily counter keeps the rolled-back usage.');
+  }
+
+  /**
    * Workflows that used to book themselves are not counted twice.
    */
   public function testFormerSelfBookingWorkflowsBookOnce(): void {

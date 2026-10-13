@@ -6,6 +6,7 @@ namespace Drupal\markaspot_ai\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Database;
 use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
@@ -39,6 +40,16 @@ class TokenTrackingService {
    * @var \Psr\Log\LoggerInterface
    */
   protected LoggerInterface $logger;
+
+  /**
+   * Connection target for usage rows written during a caller's transaction.
+   *
+   * Provider calls can run inside an entity save or provisioning
+   * transaction. Their usage must survive a rollback of that transaction:
+   * the provider consumed the tokens either way. Same pattern as core's
+   * DbLog::DEDICATED_DBLOG_CONNECTION_TARGET.
+   */
+  public const DEDICATED_CONNECTION_TARGET = 'markaspot_ai_usage';
 
   /**
    * Constructs a new TokenTrackingService.
@@ -95,7 +106,7 @@ class TokenTrackingService {
     }
 
     try {
-      $this->database->insert('markaspot_ai_token_usage')
+      $this->writeConnection()->insert('markaspot_ai_token_usage')
         ->fields([
           'provider' => $provider,
           'model' => $model,
@@ -121,6 +132,27 @@ class TokenTrackingService {
         '@message' => $e->getMessage(),
       ]);
     }
+  }
+
+  /**
+   * Returns the connection usage rows are written through.
+   *
+   * Outside a transaction this is the default connection. Inside one, a
+   * dedicated connection with the same connection info commits the row on
+   * its own, so a rollback of the caller cannot undo the booking. The
+   * dedicated connection is opened only when needed. Reads (checkLimit())
+   * stay on the default connection.
+   */
+  protected function writeConnection(): Connection {
+    if (!$this->database->inTransaction() || $this->database->getTarget() === self::DEDICATED_CONNECTION_TARGET) {
+      return $this->database;
+    }
+    $key = $this->database->getKey();
+    $info = Database::getConnectionInfo($key);
+    if (!isset($info[self::DEDICATED_CONNECTION_TARGET])) {
+      Database::addConnectionInfo($key, self::DEDICATED_CONNECTION_TARGET, $info[$this->database->getTarget()] ?? $info['default']);
+    }
+    return Database::getConnection(self::DEDICATED_CONNECTION_TARGET, $key);
   }
 
   /**

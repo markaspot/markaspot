@@ -400,6 +400,56 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
   }
 
   /**
+   * Provider usage stays booked when the report save fails afterwards.
+   *
+   * Name detection runs inside the report's save transaction; its tokens are
+   * consumed either way, so the booking must not roll back with the report.
+   */
+  public function testProviderUsageSurvivesFailedReportSave(): void {
+    $this->installSchema('markaspot_ai', ['markaspot_ai_token_usage']);
+    putenv('MARKASPOT_AI_IONOS_KEY=test-key');
+    $this->useProvider('ionos');
+    $GLOBALS['config']['markaspot_ai.settings']['token_tracking'] = ['enabled' => TRUE, 'daily_limit' => 0];
+    $GLOBALS['config']['markaspot_ai.settings']['providers']['ionos'] = [
+      'api_url' => 'https://provider.test/v1',
+      'chat_model' => 'names-model',
+    ];
+    $answers = new MockHandler();
+    $this->container->set('markaspot_ai.client', new AiClientService(
+      new Client(['handler' => HandlerStack::create($answers)]),
+      $this->container->get('config.factory'),
+      $this->container->get('logger.factory'),
+      $this->container->get('markaspot_ai.token_tracking'),
+    ));
+    $answer = fn(): Response => new Response(200, [], json_encode([
+      'choices' => [['message' => ['content' => '{"names_found": []}'], 'finish_reason' => 'stop']],
+      'usage' => ['prompt_tokens' => 40, 'completion_tokens' => 5],
+    ]));
+
+    // A successful submission first, so every table a save touches exists:
+    // creating one lazily is DDL, which commits an open MySQL transaction.
+    $answers->append($answer());
+    $this->assertNotHeld($this->submit(self::PROBE . ' warm-up.'), 'The provider screened it clean.');
+    $this->assertSame(1, $this->usageRowCount());
+
+    $this->container->get('state')->set('markaspot_ai_pii_test.fail_report_save', TRUE);
+    $answers->append($answer());
+    $nodes = $this->nodeCount();
+    $this->assertSaveFails($this->newReport(self::PROBE . ' that fails to save.'));
+
+    $this->assertSame($nodes, $this->nodeCount(), 'The report rolled back.');
+    $this->assertSame(2, $this->usageRowCount(), 'The provider usage of the failed save stays booked.');
+    $this->assertSame(90, $this->container->get('markaspot_ai.token_tracking')->getDailyUsage()['total_tokens']);
+  }
+
+  /**
+   * Number of booked usage rows.
+   */
+  private function usageRowCount(): int {
+    return (int) $this->container->get('database')->select('markaspot_ai_token_usage')->countQuery()->execute()->fetchField();
+  }
+
+  /**
    * Content Moderation cannot re-publish a held report.
    */
   public function testModeratedReportStaysHeld(): void {
