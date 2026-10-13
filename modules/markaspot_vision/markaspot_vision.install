@@ -7,6 +7,7 @@
 
 use Drupal\Core\Config\FileStorage;
 use Drupal\markaspot_ai\Utility\BlurAdvisory;
+use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
 
 /**
@@ -400,15 +401,17 @@ function markaspot_vision_requirements($phase): array {
 }
 
 /**
- * Adds the setting that refuses analysis of uploads without a tenant binding.
+ * Starts strict upload tenant binding and freezes the legacy upload cohort.
  */
 function markaspot_vision_update_11808(): string {
-  $config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
-  if ($config->get('require_upload_jurisdiction') !== NULL) {
-    return 'Skipped: require_upload_jurisdiction is already set.';
+  // Uploads created before this moment carry no tenant binding; they may be
+  // bound once by their first analysis. Every later upload on a multi-tenant
+  // install must be bound at upload (X-Markaspot-Jurisdiction) or is refused.
+  $state = \Drupal::state();
+  if ($state->get(MediaTenantScopeResolver::CUTOFF_STATE) !== NULL) {
+    return 'Skipped: the upload binding cutoff is already recorded.';
   }
-  // Off until every client names the upload's jurisdiction; until then the
-  // first analysis binds an unbound upload once.
-  $config->set('require_upload_jurisdiction', FALSE)->save();
-  return 'Added require_upload_jurisdiction (off).';
+  $cutoff = \Drupal::time()->getRequestTime();
+  $state->set(MediaTenantScopeResolver::CUTOFF_STATE, $cutoff);
+  return sprintf('Recorded the upload binding cutoff (%s).', date('c', $cutoff));
 }

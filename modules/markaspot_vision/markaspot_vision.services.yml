@@ -33,6 +33,7 @@ services:
       - '@entity_type.manager'
       - '@keyvalue'
       - '@config.factory'
+      - '@state'
   markaspot_vision.image_processing_controller:
     class: Drupal\markaspot_vision\Controller\ImageProcessingController
     arguments:

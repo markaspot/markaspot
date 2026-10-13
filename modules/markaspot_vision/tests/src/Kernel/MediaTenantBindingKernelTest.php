@@ -135,14 +135,6 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected function tearDown(): void {
-    unset($GLOBALS['config']['markaspot_vision.settings']);
-    parent::tearDown();
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function register(ContainerBuilder $container): void {
     parent::register($container);
     // The module itself is not installed (it pulls in the whole Nuxt layer);
@@ -150,7 +142,8 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     $container->register('markaspot_vision_test.scope_resolver', MediaTenantScopeResolver::class)
       ->addArgument(new Reference('entity_type.manager'))
       ->addArgument(new Reference('keyvalue'))
-      ->addArgument(new Reference('config.factory'));
+      ->addArgument(new Reference('config.factory'))
+      ->addArgument(new Reference('state'));
   }
 
   /**
@@ -174,15 +167,18 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * With the setting on, an upload not bound at upload time is refused.
+   * A headerless upload made after the cutoff is refused on multi-tenant.
    */
-  public function testRequiredUploadJurisdictionRefusesUnboundUploads(): void {
-    $GLOBALS['config']['markaspot_vision.settings']['require_upload_jurisdiction'] = TRUE;
-    $request = $this->anonymousUploadRequest('upload-required');
+  public function testHeaderlessUploadAfterCutoffIsRefused(): void {
+    $this->setCutoff(-3600);
+    $request = $this->anonymousUploadRequest('upload-after-cutoff');
     $unbound = $this->createUpload($request);
 
     $this->assertStatus(400, $this->analyze($request, [$unbound], $this->tenantA->id()));
+    $this->assertStatus(400, $this->analyze($request, [$unbound], $this->tenantA->id(), TRUE));
     $this->assertNull($this->binding($unbound), 'A refused request binds nothing.');
+    $this->assertSame([], $this->providerCalls);
+    $this->assertSame([], $this->budgetChecks, 'Refused before the budget is consulted.');
 
     $bound = $this->createUpload($request, NULL, (string) $this->tenantA->id());
     $this->assertStatus(200, $this->analyze($request, [$bound], NULL));
@@ -190,11 +186,39 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * Transition: an upload made without the header is bound once by analysis.
+   * The update records the cutoff once and never moves it.
    */
-  public function testTransitionalUploadIsBoundOnceByItsFirstAnalysis(): void {
-    $request = $this->anonymousUploadRequest('upload-transition');
+  public function testUpdateRecordsTheCutoffOnce(): void {
+    require_once dirname(__DIR__, 3) . '/markaspot_vision.install';
+    $state = $this->container->get('state');
+    $this->assertNull($state->get(MediaTenantScopeResolver::CUTOFF_STATE));
+
+    markaspot_vision_update_11808();
+    $cutoff = $state->get(MediaTenantScopeResolver::CUTOFF_STATE);
+    $this->assertSame($this->container->get('datetime.time')->getRequestTime(), $cutoff);
+
+    $state->set(MediaTenantScopeResolver::CUTOFF_STATE, 1000);
+    $this->assertStringStartsWith('Skipped', markaspot_vision_update_11808());
+    $this->assertSame(1000, $state->get(MediaTenantScopeResolver::CUTOFF_STATE));
+  }
+
+  /**
+   * Without a recorded cutoff there is no legacy cohort at all.
+   */
+  public function testMissingCutoffMeansNoLegacyCohort(): void {
+    $request = $this->anonymousUploadRequest('upload-no-cutoff');
+    $unbound = $this->createUpload($request);
+    $this->assertStatus(400, $this->analyze($request, [$unbound], $this->tenantA->id()));
+    $this->assertSame([], $this->providerCalls);
+  }
+
+  /**
+   * A legacy upload from before the cutoff is bound once by its analysis.
+   */
+  public function testLegacyUploadBeforeCutoffIsClaimedOnce(): void {
+    $request = $this->anonymousUploadRequest('upload-legacy');
     $media = $this->createUpload($request);
+    $this->setCutoff(3600);
     $this->assertNull($this->binding($media));
 
     $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantA->id()));
@@ -267,6 +291,20 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
+   * One unresolved report among several blocks the media.
+   */
+  public function testOneUnresolvedParentAmongSeveralIsRefused(): void {
+    $request = $this->anonymousUploadRequest('upload-two-parents');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantB->id());
+    $this->createReport([$this->tenantB], [$media]);
+    $this->createReport([], [$media]);
+
+    $this->assertStatus(409, $this->analyze($request, [$media], $this->tenantB->id()));
+    $this->assertStatus(409, $this->analyze($request, [$media], NULL));
+    $this->assertSame([], $this->providerCalls);
+  }
+
+  /**
    * A report's Group relationship resolves its tenant.
    */
   public function testGroupRelationshipResolvesTheReportTenant(): void {
@@ -329,11 +367,27 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A bound image cannot carry a new headerless image into its tenant.
+   */
+  public function testMixedBoundAndUnboundBatchIsRefused(): void {
+    $this->setCutoff(-3600);
+    $request = $this->anonymousUploadRequest('upload-bound-unbound');
+    $bound = $this->createUpload($request, NULL, (string) $this->tenantB->id());
+    $unbound = $this->createUpload($request);
+
+    $this->assertStatus(400, $this->analyze($request, [$bound, $unbound], $this->tenantB->id()));
+    $this->assertStatus(400, $this->analyze($request, [$bound, $unbound], NULL));
+    $this->assertNull($this->binding($unbound), 'The headerless image was not adopted by the batch.');
+    $this->assertSame([], $this->providerCalls);
+  }
+
+  /**
    * Two first analyses racing for one unbound upload: the loser is refused.
    */
   public function testConcurrentFirstBindingRefusesTheLoser(): void {
     $request = $this->anonymousUploadRequest('upload-race');
     $media = $this->createUpload($request);
+    $this->setCutoff(3600);
     $tenant_a = (int) $this->tenantA->id();
 
     // Request B resolved "unbound" and is about to claim, when request A's
@@ -342,6 +396,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       $this->container->get('entity_type.manager'),
       $this->container->get('keyvalue'),
       $this->container->get('config.factory'),
+      $this->container->get('state'),
     ) extends MediaTenantScopeResolver {
 
       /**
@@ -542,6 +597,13 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     );
     $controller->setStringTranslation($this->container->get('string_translation'));
     return $controller->getAIResults($request);
+  }
+
+  /**
+   * Records the upload binding cutoff relative to now.
+   */
+  private function setCutoff(int $offset): void {
+    $this->container->get('state')->set(MediaTenantScopeResolver::CUTOFF_STATE, time() + $offset);
   }
 
   /**

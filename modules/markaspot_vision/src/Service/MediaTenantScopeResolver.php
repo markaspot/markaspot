@@ -6,6 +6,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\media\MediaInterface;
@@ -29,11 +30,14 @@ use Symfony\Component\HttpFoundation\Request;
  * prevent the choice but to fix it before any analysis and keep every later
  * analysis, budget check and charge on it.
  *
- * Transition: clients that do not send UPLOAD_HEADER yet leave uploads on
- * multi-tenant installs unbound. While `require_upload_jurisdiction` is off,
- * the first analysis of such an upload binds it (atomically, once) to the
- * validated jurisdiction it names; this is the bounded residual of the old
- * contract. With the setting on, unbound uploads are refused.
+ * Legacy cohort: uploads made before this contract existed carry no binding.
+ * The update that introduced it records a cutoff (CUTOFF_STATE); unbound
+ * media created before the cutoff may be bound once, atomically, by their
+ * first analysis to the validated jurisdiction it names. That cohort is
+ * finite and only shrinks. Unbound media created at or after the cutoff on a
+ * multi-tenant install are refused: every current client names the upload's
+ * jurisdiction, and a missing cutoff means there is no legacy cohort at all.
+ * Single-tenant installs bind every upload to their only jurisdiction.
  */
 class MediaTenantScopeResolver {
 
@@ -50,12 +54,18 @@ class MediaTenantScopeResolver {
   public const UPLOAD_HEADER = 'X-Markaspot-Jurisdiction';
 
   /**
+   * State key: unbound media created before this time form the legacy cohort.
+   */
+  public const CUTOFF_STATE = 'markaspot_vision.upload_binding_cutoff';
+
+  /**
    * Constructs the media tenant scope resolver.
    */
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
     protected KeyValueFactoryInterface $keyValue,
     protected ConfigFactoryInterface $configFactory,
+    protected StateInterface $state,
   ) {
   }
 
@@ -63,7 +73,7 @@ class MediaTenantScopeResolver {
    * Binds a freshly uploaded media item to the tenant of its upload request.
    *
    * Leaves the media unbound when the request names no valid jurisdiction on
-   * a multi-tenant install; see the class documentation for that transition.
+   * a multi-tenant install; analysis of such an upload is then refused.
    */
   public function bindUpload(MediaInterface $media, ?Request $request): void {
     if ($media->bundle() !== 'request_image' || $this->bindingStore()->has($media->uuid())) {
@@ -124,16 +134,16 @@ class MediaTenantScopeResolver {
     foreach ($media_entities as $media) {
       $parent = $parents[(int) $media->id()] ?? NULL;
       if ($parent !== NULL) {
-        if (!$parent && $tenant_count > 0) {
-          // A report exists but its tenant cannot be established: never let
-          // the caller supply it.
+        if ($parent['unresolved'] && $tenant_count > 0) {
+          // A referencing report has no establishable tenant: never let the
+          // caller or another report supply it.
           return MediaTenantScope::refuse('The report of one or more media items has no resolvable jurisdiction.', 409);
         }
-        if (count($parent) > 1) {
+        if (count($parent['ids']) > 1) {
           return MediaTenantScope::refuse('One or more media items belong to reports of different jurisdictions.', 409);
         }
-        if ($parent) {
-          $trusted[] = reset($parent);
+        if ($parent['ids']) {
+          $trusted[] = reset($parent['ids']);
           continue;
         }
       }
@@ -143,6 +153,17 @@ class MediaTenantScopeResolver {
       }
       else {
         $unbound[] = $media;
+      }
+    }
+
+    // Unbound members are judged before any batch scope is accepted: on a
+    // multi-tenant install only the legacy cohort may still be bound here.
+    if ($unbound && $tenant_count > 1) {
+      $cutoff = (int) $this->state->get(self::CUTOFF_STATE, 0);
+      foreach ($unbound as $media) {
+        if ((int) $media->getCreatedTime() >= $cutoff) {
+          return MediaTenantScope::refuse('The uploaded media are not bound to a jurisdiction.', 400);
+        }
       }
     }
 
@@ -171,11 +192,8 @@ class MediaTenantScopeResolver {
         return MediaTenantScope::refuse('Invalid jurisdiction.', 400);
       }
     }
-    elseif ($this->isUploadJurisdictionRequired()) {
-      return MediaTenantScope::refuse('The uploaded media are not bound to a jurisdiction.', 400);
-    }
     elseif ($requested_id !== NULL) {
-      // Transitional first binding of an upload made without UPLOAD_HEADER.
+      // Legacy cohort only (checked above): bound once by its first analysis.
       $jurisdiction_id = $requested_id;
     }
     else {
@@ -222,10 +240,10 @@ class MediaTenantScopeResolver {
    * @param \Drupal\media\MediaInterface[] $media_entities
    *   The media entities.
    *
-   * @return array<int, int[]>
-   *   Distinct jurisdiction IDs keyed by media ID, for media referenced by at
-   *   least one report. An empty list means a report exists but none of its
-   *   jurisdiction sources resolves.
+   * @return array<int, array{ids: int[], unresolved: bool}>
+   *   Keyed by media ID, for media referenced by at least one report: the
+   *   distinct jurisdiction IDs of those reports, and whether any of them has
+   *   no resolvable jurisdiction (independent of what the others resolve).
    */
   protected function parentJurisdictions(array $media_entities): array {
     $media_ids = array_map(static fn (MediaInterface $media): int => (int) $media->id(), $media_entities);
@@ -251,9 +269,12 @@ class MediaTenantScopeResolver {
         if (!in_array($media_id, $media_ids, TRUE)) {
           continue;
         }
-        $parents[$media_id] ??= [];
+        $parents[$media_id] ??= ['ids' => [], 'unresolved' => FALSE];
+        if (!$jurisdiction_ids) {
+          $parents[$media_id]['unresolved'] = TRUE;
+        }
         foreach ($jurisdiction_ids as $jurisdiction_id) {
-          $parents[$media_id][$jurisdiction_id] = $jurisdiction_id;
+          $parents[$media_id]['ids'][$jurisdiction_id] = $jurisdiction_id;
         }
       }
     }
@@ -354,13 +375,6 @@ class MediaTenantScopeResolver {
       $query->condition('status', 1);
     }
     return array_map('intval', array_values($query->execute()));
-  }
-
-  /**
-   * Whether unbound uploads on multi-tenant installs are refused.
-   */
-  protected function isUploadJurisdictionRequired(): bool {
-    return (bool) $this->configFactory->get('markaspot_vision.settings')->get('require_upload_jurisdiction');
   }
 
   /**
