@@ -41,6 +41,14 @@ use Symfony\Component\HttpFoundation\Request;
  * an unbound one on a multi-tenant install is refused: every current client
  * names the upload's jurisdiction, and a missing cutoff means there is no
  * legacy cohort at all.
+ *
+ * The media ID alone is not enough evidence: JSON:API create accepts the raw
+ * internal `mid` attribute without a field access check, so a client could
+ * fill a gap below the cutoff. Every insert since this code runs therefore
+ * leaves a server-side marker in the binding store: the bound jurisdiction,
+ * or UNBOUND_MARKER for an upload that named none. Legacy means no marker AND
+ * an ID at or below the cutoff; a marked upload is never legacy, which also
+ * covers uploads made between deploying this code and running the update.
  * Single-tenant installs bind every upload to their only jurisdiction.
  */
 class MediaTenantScopeResolver {
@@ -56,6 +64,15 @@ class MediaTenantScopeResolver {
    * Request header naming the jurisdiction of an upload.
    */
   public const UPLOAD_HEADER = 'X-Markaspot-Jurisdiction';
+
+  /**
+   * Binding-store value of an upload that named no valid jurisdiction.
+   *
+   * It marks the media as inserted under this contract (never legacy) and is
+   * never a binding: it is not a tenant, and only a single-tenant install may
+   * replace it with its only jurisdiction.
+   */
+  public const UNBOUND_MARKER = 'new-unbound';
 
   /**
    * State key: the highest media ID of the legacy (pre-binding) cohort.
@@ -76,8 +93,9 @@ class MediaTenantScopeResolver {
   /**
    * Binds a freshly uploaded media item to the tenant of its upload request.
    *
-   * Leaves the media unbound when the request names no valid jurisdiction on
-   * a multi-tenant install; analysis of such an upload is then refused.
+   * Leaves the media unbound, marked with UNBOUND_MARKER, when the request
+   * names no valid jurisdiction on a multi-tenant install; analysis of such
+   * an upload is then refused.
    */
   public function bindUpload(MediaInterface $media, ?Request $request): void {
     if ($media->bundle() !== 'request_image' || $this->bindingStore()->has($media->uuid())) {
@@ -89,9 +107,7 @@ class MediaTenantScopeResolver {
     if ($jurisdiction_id === NULL && $named === '') {
       $jurisdiction_id = $this->singleTenantJurisdictionId();
     }
-    if ($jurisdiction_id !== NULL) {
-      $this->bindingStore()->setIfNotExists($media->uuid(), $jurisdiction_id);
-    }
+    $this->bindingStore()->setIfNotExists($media->uuid(), $jurisdiction_id ?? self::UNBOUND_MARKER);
   }
 
   /**
@@ -135,6 +151,7 @@ class MediaTenantScopeResolver {
 
     $trusted = [];
     $unbound = [];
+    $marked = [];
     foreach ($media_entities as $media) {
       $parent = $parents[(int) $media->id()] ?? NULL;
       if ($parent !== NULL) {
@@ -157,6 +174,11 @@ class MediaTenantScopeResolver {
       }
       else {
         $unbound[] = $media;
+        if ($bound !== NULL) {
+          // UNBOUND_MARKER (or anything else that is not a tenant): inserted
+          // under this contract, never legacy.
+          $marked[$media->uuid()] = TRUE;
+        }
       }
     }
 
@@ -165,7 +187,7 @@ class MediaTenantScopeResolver {
     if ($unbound && $tenant_count > 1) {
       $cutoff = $this->state->get(self::CUTOFF_STATE);
       foreach ($unbound as $media) {
-        if ($cutoff === NULL || (int) $media->id() > (int) $cutoff) {
+        if (isset($marked[$media->uuid()]) || $cutoff === NULL || (int) $media->id() > (int) $cutoff) {
           return MediaTenantScope::refuse('The uploaded media are not bound to a jurisdiction.', 400);
         }
       }
@@ -211,7 +233,7 @@ class MediaTenantScopeResolver {
       return MediaTenantScope::refuse('Invalid jurisdiction.', 400);
     }
 
-    if ($unbound && !$this->claim($unbound, $jurisdiction_id)) {
+    if ($unbound && !$this->claim($unbound, $jurisdiction_id, $tenant_count === 1)) {
       return MediaTenantScope::refuse('The uploaded media were bound to another jurisdiction by a concurrent request.', 409);
     }
 
@@ -225,10 +247,16 @@ class MediaTenantScopeResolver {
    *   Media that had no binding when the scope was resolved.
    * @param int $jurisdiction_id
    *   The jurisdiction to bind them to.
+   * @param bool $replace_marker
+   *   Whether UNBOUND_MARKER may be replaced: only on a single-tenant
+   *   install, where no other tenant could compete for the media.
    */
-  protected function claim(array $media_entities, int $jurisdiction_id): bool {
+  protected function claim(array $media_entities, int $jurisdiction_id, bool $replace_marker = FALSE): bool {
     $bindings = $this->bindingStore();
     foreach ($media_entities as $media) {
+      if ($replace_marker && $bindings->get($media->uuid()) === self::UNBOUND_MARKER) {
+        $bindings->set($media->uuid(), $jurisdiction_id);
+      }
       $bindings->setIfNotExists($media->uuid(), $jurisdiction_id);
       $stored = $bindings->get($media->uuid());
       if ((int) $stored !== $jurisdiction_id) {

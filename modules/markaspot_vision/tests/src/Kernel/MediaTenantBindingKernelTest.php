@@ -12,6 +12,7 @@ use Drupal\file\Entity\File;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupType;
+use Drupal\jsonapi\JsonApiResource\JsonApiDocumentTopLevel;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
@@ -55,6 +56,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   protected static $modules = [
     'system', 'user', 'field', 'file', 'image', 'media', 'node', 'text',
     'filter', 'options', 'entity', 'flexible_permissions', 'group', 'gnode',
+    'serialization', 'jsonapi',
   ];
 
   /**
@@ -219,7 +221,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    */
   public function testLegacyUploadBeforeCutoffIsClaimedOnce(): void {
     $request = $this->anonymousUploadRequest('upload-legacy');
-    $media = $this->createUpload($request);
+    $media = $this->createUpload($request, NULL, NULL, [], TRUE);
     $this->recordCutoff();
     $this->assertNull($this->binding($media));
 
@@ -373,7 +375,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    */
   public function testBackdatedUploadAfterCutoffIsNotLegacy(): void {
     $request = $this->anonymousUploadRequest('upload-backdated');
-    $genuine = $this->createUpload($request);
+    $genuine = $this->createUpload($request, NULL, NULL, [], TRUE);
     $this->recordCutoff();
 
     // JSON:API accepts attributes.created on create, also anonymously.
@@ -389,6 +391,75 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     // The genuine pre-cutoff upload is still claimable, once.
     $this->assertStatus(200, $this->analyze($request, [$genuine], $this->tenantA->id()));
     $this->assertStatus(403, $this->analyze($request, [$genuine], $this->tenantB->id()));
+    $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls);
+  }
+
+  /**
+   * A new upload filling an ID gap below the cutoff is never legacy.
+   *
+   * JSON:API create accepts the raw internal `mid` attribute (it is not a
+   * public field name, so EntityResource skips its field access check, and
+   * the denormalizer maps it to the entity's ID). This drives the real
+   * JSON:API denormalizer; the insert marker, not the ID, decides.
+   */
+  public function testGapFillingUploadBelowCutoffIsNotLegacy(): void {
+    $request = $this->anonymousUploadRequest('upload-gap');
+    $first = $this->createUpload($request, NULL, NULL, [], TRUE);
+    $gone = $this->createUpload($request, NULL, NULL, [], TRUE);
+    $last = $this->createUpload($request, NULL, NULL, [], TRUE);
+    $gap = (int) $gone->id();
+    $gone->delete();
+    $this->recordCutoff();
+    $this->assertSame((int) $last->id(), (int) $this->container->get('state')->get(MediaTenantScopeResolver::CUTOFF_STATE));
+
+    $resource_type = $this->container->get('jsonapi.resource_type.repository')->get('media', 'request_image');
+    $media = $this->container->get('jsonapi.serializer')->denormalize([
+      'data' => [
+        'type' => 'media--request_image',
+        'attributes' => ['name' => 'gap', 'status' => FALSE, 'mid' => $gap],
+      ],
+    ], JsonApiDocumentTopLevel::class, 'api_json', ['resource_type' => $resource_type]);
+    $file = File::create(['uri' => $this->getTestFiles('image')[0]->uri, 'status' => 1]);
+    $file->save();
+    $media->set('field_media_image', ['target_id' => $file->id(), 'alt' => 'gap']);
+    $media->save();
+    $this->assertSame($gap, (int) $media->id(), 'The raw mid attribute reached storage (core behaviour).');
+    $this->guard()->recordUpload($media, $request);
+    $this->resolver()->bindUpload($media, $request);
+    $this->assertSame(MediaTenantScopeResolver::UNBOUND_MARKER, $this->storedValue($media));
+
+    $this->assertStatus(400, $this->analyze($request, [$media], $this->tenantA->id()));
+    $this->assertStatus(400, $this->analyze($request, [$media], $this->tenantA->id(), TRUE));
+    $this->assertNull($this->binding($media));
+
+    // The same through the entity API with an explicit ID.
+    $first_id = (int) $first->id();
+    $first->delete();
+    $explicit = $this->createUpload($request, NULL, NULL, ['mid' => $first_id]);
+    $this->assertSame($first_id, (int) $explicit->id());
+    $this->assertStatus(400, $this->analyze($request, [$explicit], $this->tenantB->id(), TRUE));
+
+    $this->assertSame([], $this->providerCalls);
+    $this->assertSame([], $this->budgetChecks);
+    $this->assertSame([], $this->charges);
+
+    // The marker goes with the media.
+    $this->resolver()->forget($media);
+    $this->assertNull($this->storedValue($media));
+  }
+
+  /**
+   * Only a single-tenant install may turn the marker into a binding.
+   */
+  public function testMarkerTurnsIntoBindingOnlyOnSingleTenant(): void {
+    $request = $this->anonymousUploadRequest('upload-marker');
+    $media = $this->createUpload($request);
+    $this->assertSame(MediaTenantScopeResolver::UNBOUND_MARKER, $this->storedValue($media));
+    $this->assertStatus(400, $this->analyze($request, [$media], $this->tenantA->id()));
+
+    $this->tenantB->delete();
+    $this->assertStatus(200, $this->analyze($request, [$media], NULL));
+    $this->assertSame((int) $this->tenantA->id(), $this->binding($media));
     $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls);
   }
 
@@ -412,7 +483,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    */
   public function testConcurrentFirstBindingRefusesTheLoser(): void {
     $request = $this->anonymousUploadRequest('upload-race');
-    $media = $this->createUpload($request);
+    $media = $this->createUpload($request, NULL, NULL, [], TRUE);
     $this->recordCutoff();
     $tenant_a = (int) $this->tenantA->id();
 
@@ -433,11 +504,11 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       /**
        * {@inheritdoc}
        */
-      protected function claim(array $media_entities, int $jurisdiction_id): bool {
+      protected function claim(array $media_entities, int $jurisdiction_id, bool $replace_marker = FALSE): bool {
         foreach ($media_entities as $media) {
           $this->keyValue->get(self::STORE)->setIfNotExists($media->uuid(), $this->competitor);
         }
-        return parent::claim($media_entities, $jurisdiction_id);
+        return parent::claim($media_entities, $jurisdiction_id, $replace_marker);
       }
 
     };
@@ -659,8 +730,15 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    * Returns the stored tenant binding of a media item.
    */
   private function binding(MediaInterface $media): ?int {
-    $bound = $this->container->get('keyvalue')->get(MediaTenantScopeResolver::STORE)->get($media->uuid());
-    return $bound === NULL ? NULL : (int) $bound;
+    $bound = $this->storedValue($media);
+    return is_int($bound) || (is_string($bound) && ctype_digit($bound)) ? (int) $bound : NULL;
+  }
+
+  /**
+   * Returns the raw binding-store value (binding or insert marker).
+   */
+  private function storedValue(MediaInterface $media): mixed {
+    return $this->container->get('keyvalue')->get(MediaTenantScopeResolver::STORE)->get($media->uuid());
   }
 
   /**
@@ -674,8 +752,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    *   The jurisdiction the upload request names in the upload header.
    * @param array $values
    *   Extra entity values, e.g. a client-supplied `created` date.
+   * @param bool $legacy
+   *   TRUE for media from before this code: no insert hook marked them.
    */
-  private function createUpload(Request $request, ?AccountInterface $owner = NULL, ?string $jurisdiction = NULL, array $values = []): MediaInterface {
+  private function createUpload(Request $request, ?AccountInterface $owner = NULL, ?string $jurisdiction = NULL, array $values = [], bool $legacy = FALSE): MediaInterface {
     $source = $this->getTestFiles('image')[0];
     $file = File::create(['uri' => $source->uri, 'status' => 1]);
     $file->save();
@@ -693,7 +773,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       $upload->headers->set(MediaTenantScopeResolver::UPLOAD_HEADER, $jurisdiction);
     }
     $this->guard()->recordUpload($media, $upload);
-    $this->resolver()->bindUpload($media, $upload);
+    if (!$legacy) {
+      // What markaspot_vision_media_insert() does for every new upload.
+      $this->resolver()->bindUpload($media, $upload);
+    }
     return $media;
   }
 
