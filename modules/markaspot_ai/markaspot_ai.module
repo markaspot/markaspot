@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Privacy\NameScreeningResult;
 use Drupal\markaspot_ai\Privacy\PiiScreeningHold;
@@ -122,9 +123,12 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
   // Mark as processing to prevent re-entry.
   $pii_processing[$node_key] = TRUE;
 
-  // Remarks are attached unsaved: entity_reference_revisions saves them with
-  // the report, inside its transaction, so a failed save leaves no orphaned
-  // paragraph holding the original text.
+  // Remarks are saved here, not left to entity_reference_revisions: field
+  // preSave() runs before hook_node_presave(), so an unsaved paragraph
+  // appended now would never be saved. SqlContentEntityStorage::save() opens
+  // the database transaction before presave, so these saves roll back with a
+  // failed report save and leave no orphaned paragraph holding the original
+  // text. ERR's postSave() then fills in the parent ID of the new report.
   if ($pii_found) {
     if ($node->hasField('field_internal_remark')) {
       $paragraph = Paragraph::create([
@@ -154,7 +158,7 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
       if ($author_uid !== NULL) {
         $paragraph->set('field_author', ['target_id' => $author_uid]);
       }
-      $node->get('field_internal_remark')->appendItem($paragraph);
+      _markaspot_ai_attach_remark($node, $paragraph);
     }
     else {
       \Drupal::logger('markaspot_ai')->warning('PII redacted from node @key but field_internal_remark missing. Original text not preserved.', [
@@ -187,6 +191,7 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
  */
 function _markaspot_ai_hold_unscreened_report(NodeInterface $node, string $reason, string $node_key): void {
   $node->setUnpublished();
+  _markaspot_ai_set_unpublished_moderation_state($node);
   $message = t('Automatic personal-name screening failed (@reason). The report was saved unpublished: check the description for personal names before publishing it.', [
     '@reason' => $reason,
   ], ['langcode' => $node->language()->getId()]);
@@ -202,7 +207,7 @@ function _markaspot_ai_hold_unscreened_report(NodeInterface $node, string $reaso
       'value' => (string) $message,
       'format' => 'plain_text',
     ]);
-    $node->get('field_internal_remark')->appendItem($notice);
+    _markaspot_ai_attach_remark($node, $notice);
   }
 
   // Diagnostics carry the node key and the reason, never the text.
@@ -210,6 +215,59 @@ function _markaspot_ai_hold_unscreened_report(NodeInterface $node, string $reaso
     '@key' => $node_key,
     '@reason' => $reason,
   ]);
+}
+
+/**
+ * Saves an internal remark and references it from a report in presave.
+ */
+function _markaspot_ai_attach_remark(NodeInterface $node, ParagraphInterface $paragraph): void {
+  $paragraph->set('parent_type', $node->getEntityTypeId());
+  $paragraph->set('parent_field_name', 'field_internal_remark');
+  if (!$node->isNew()) {
+    $paragraph->set('parent_id', $node->id());
+  }
+  $paragraph->save();
+  $node->get('field_internal_remark')->appendItem([
+    'target_id' => $paragraph->id(),
+    'target_revision_id' => $paragraph->getRevisionId(),
+  ]);
+}
+
+/**
+ * Moves a moderated report to an unpublished moderation state.
+ *
+ * Content Moderation derives the published flag from the moderation state
+ * in its generic entity presave, which runs after hook_node_presave(); a
+ * held report must therefore also carry an unpublished state.
+ */
+function _markaspot_ai_set_unpublished_moderation_state(NodeInterface $node): void {
+  if (!$node->hasField('moderation_state') || !\Drupal::hasService('content_moderation.moderation_information')) {
+    return;
+  }
+  $workflow = \Drupal::service('content_moderation.moderation_information')->getWorkflowForEntity($node);
+  if ($workflow === NULL) {
+    return;
+  }
+  foreach ($workflow->getTypePlugin()->getStates() as $state) {
+    if (!$state->isPublishedState()) {
+      $node->set('moderation_state', $state->id());
+      return;
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_presave().
+ *
+ * Runs after every hook_node_presave() and after Content Moderation's own
+ * entity presave (module order): whatever re-derived the published flag, a
+ * new report held after a failed name screening stays unpublished.
+ */
+function markaspot_ai_entity_presave(EntityInterface $entity): void {
+  if ($entity instanceof NodeInterface && $entity->bundle() === 'service_request'
+    && $entity->isNew() && $entity->isPublished() && PiiScreeningHold::isHeld($entity)) {
+    $entity->setUnpublished();
+  }
 }
 
 /**
@@ -961,23 +1019,20 @@ function _markaspot_ai_detect_names_via_nlp(string $text, string $node_key): Nam
       );
     }
 
-    $names = [];
-    foreach ($result['entities_found'] ?? [] as $entity) {
-      // Parse "type: value" or {"type": "name", "value": "..."} format.
-      if (is_string($entity) && preg_match('/^name:\s*(.+)$/i', $entity, $m)) {
-        $name = trim($m[1]);
-        if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
-          $names[] = $name;
-        }
+    // The client validated the entity shapes; collect the name entities.
+    $raw = [];
+    foreach ($result['entities_found'] as $entity) {
+      if (is_string($entity) && preg_match('/^\s*name\s*:\s*(.+)$/is', $entity, $m)) {
+        $raw[] = $m[1];
       }
-      elseif (is_array($entity) && strtolower((string) ($entity['type'] ?? '')) === 'name') {
-        $name = trim((string) ($entity['value'] ?? ''));
-        if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
-          $names[] = $name;
-        }
+      elseif (is_array($entity) && strtolower(trim($entity['type'])) === 'name') {
+        $raw[] = $entity['value'];
       }
     }
-    return NameScreeningResult::withNames(array_slice($names, 0, 10));
+    $names = _markaspot_ai_validate_names($raw);
+    return $names === NULL
+      ? NameScreeningResult::failed(NameScreeningResult::REASON_MALFORMED)
+      : NameScreeningResult::withNames($names);
   }
   catch (\Exception $e) {
     \Drupal::logger('markaspot_ai')->warning('PII NLP service failed for @key (@class).', [
@@ -1011,22 +1066,46 @@ function _markaspot_ai_parse_names_response(array $response): ?array {
   }
 
   $parsed = json_decode($json_match[0], TRUE);
-  if (json_last_error() !== JSON_ERROR_NONE || !is_array($parsed) || !is_array($parsed['names_found'] ?? NULL)) {
+  if (json_last_error() !== JSON_ERROR_NONE || !is_array($parsed) || !is_array($parsed['names_found'] ?? NULL)
+    || !array_is_list($parsed['names_found'])) {
     return NULL;
   }
 
-  // Guard against prompt injection: limit count and length.
+  return _markaspot_ai_validate_names($parsed['names_found']);
+}
+
+/**
+ * Validates a detector's name list.
+ *
+ * Any entry that is not a usable name makes the whole answer unusable: a
+ * partially understood list could silently leave names in the text. The
+ * bounds also guard against prompt injection steering the redaction.
+ *
+ * @param array $raw
+ *   Names as returned by the detector.
+ *
+ * @return string[]|null
+ *   Trimmed names (single characters skipped), or NULL when the list holds a
+ *   non-string, an empty or overlong entry, or more than 50 names.
+ */
+function _markaspot_ai_validate_names(array $raw): ?array {
+  if (count($raw) > 50) {
+    return NULL;
+  }
   $names = [];
-  foreach (array_slice($parsed['names_found'], 0, 10) as $name) {
+  foreach ($raw as $name) {
     if (!is_string($name)) {
-      continue;
+      return NULL;
     }
     $name = trim($name);
-    if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
+    $length = mb_strlen($name);
+    if ($length === 0 || $length > 100) {
+      return NULL;
+    }
+    if ($length >= 2) {
       $names[] = $name;
     }
   }
-
   return $names;
 }
 

@@ -1,0 +1,5 @@
+services:
+  # Stands in for markaspot_nuxt so markaspot_ai can be enabled in kernel
+  # tests: every tenant feature is on.
+  markaspot_nuxt.feature_scope_resolver:
+    class: Drupal\markaspot_ai_pii_test\AllFeaturesResolver

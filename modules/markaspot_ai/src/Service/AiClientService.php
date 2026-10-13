@@ -430,10 +430,13 @@ class AiClientService {
           // Exponential backoff: 2^attempt * base_seconds.
           $waitTime = (int) pow(2, $attempts) * 5;
 
-          $this->logger->warning('AI API request failed (attempt @attempt/@max): @message. Retrying in @wait seconds.', [
+          // Provider error text can quote the prompt (citizen text): log the
+          // exception class and code only.
+          $this->logger->warning('AI API request failed (attempt @attempt/@max, @class, code @code). Retrying in @wait seconds.', [
             '@attempt' => $attempts,
             '@max' => $maxAttempts,
-            '@message' => $e->getMessage(),
+            '@class' => (new \ReflectionClass($e))->getShortName(),
+            '@code' => (int) $e->getCode(),
             '@wait' => $waitTime,
           ]);
 
@@ -446,9 +449,10 @@ class AiClientService {
       }
     }
 
-    $this->logger->error('AI API request failed after @attempts attempts: @message', [
+    $this->logger->error('AI API request failed after @attempts attempts (@class, code @code).', [
       '@attempts' => $attempts,
-      '@message' => $lastException?->getMessage() ?? 'Unknown error',
+      '@class' => $lastException !== NULL ? (new \ReflectionClass($lastException))->getShortName() : 'unknown',
+      '@code' => (int) ($lastException?->getCode() ?? 0),
     ]);
 
     throw new \Exception(

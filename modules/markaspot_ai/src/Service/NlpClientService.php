@@ -97,7 +97,7 @@ class NlpClientService {
 
       $data = json_decode((string) $response->getBody(), TRUE);
       if (!is_array($data) || !is_string($data['redacted'] ?? NULL)
-        || (isset($data['entities_found']) && !is_array($data['entities_found']))) {
+        || !self::isEntityList($data['entities_found'] ?? NULL)) {
         $this->logger->warning('NLP redact endpoint returned unexpected response format.');
         return $fallback('malformed');
       }
@@ -107,7 +107,7 @@ class NlpClientService {
         'error' => NULL,
         'original' => $data['original'] ?? $text,
         'redacted' => $data['redacted'],
-        'entities_found' => $data['entities_found'] ?? [],
+        'entities_found' => $data['entities_found'],
       ];
     }
     catch (GuzzleException $e) {
@@ -119,6 +119,36 @@ class NlpClientService {
       ]);
       return $fallback('request_failed');
     }
+  }
+
+  /**
+   * Whether a redaction payload carries a structurally valid entity list.
+   *
+   * The list must be present (an empty list means "nothing found"); every
+   * entry is either a "type: value" string or a {type, value} object with
+   * non-empty strings. Anything else is an unusable answer, never "clean".
+   */
+  public static function isEntityList(mixed $entities): bool {
+    if (!is_array($entities) || !array_is_list($entities)) {
+      return FALSE;
+    }
+    foreach ($entities as $entity) {
+      if (is_string($entity)) {
+        if (!preg_match('/^\s*[a-z_]+\s*:\s*\S/i', $entity)) {
+          return FALSE;
+        }
+      }
+      elseif (is_array($entity)) {
+        if (!is_string($entity['type'] ?? NULL) || trim($entity['type']) === ''
+          || !is_string($entity['value'] ?? NULL) || trim($entity['value']) === '') {
+          return FALSE;
+        }
+      }
+      else {
+        return FALSE;
+      }
+    }
+    return TRUE;
   }
 
   /**

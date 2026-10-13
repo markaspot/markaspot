@@ -1,0 +1,22 @@
+<?php
+
+/**
+ * @file
+ * Test support for markaspot_ai PII screening.
+ */
+
+declare(strict_types=1);
+
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_node_presave().
+ *
+ * Runs after markaspot_ai_node_presave() (module order) and fails the report
+ * save on demand, after markaspot_ai has saved its remarks.
+ */
+function markaspot_ai_pii_test_node_presave(NodeInterface $node): void {
+  if (\Drupal::state()->get('markaspot_ai_pii_test.fail_report_save')) {
+    throw new \RuntimeException('Forced report save failure.');
+  }
+}

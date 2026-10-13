@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_ai\Kernel;
 
-use Drupal\Core\Database\Database;
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\KeyValueStore\KeyValueDatabaseFactory;
 use Drupal\Core\Logger\RfcLoggerTrait;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -21,6 +22,7 @@ use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\ParagraphsType;
+use Drupal\Tests\content_moderation\Traits\ContentModerationTestTrait;
 use Drupal\user\Entity\User;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
@@ -35,12 +37,16 @@ use Psr\Log\LoggerInterface;
 /**
  * A failed personal-name screening is never treated as a clean result.
  *
- * Runs the real presave redaction against the real NLP client, whose HTTP
- * transport is a Guzzle mock, and checks the persisted report state.
+ * Enables markaspot_ai and saves reports the ordinary way, so the real hook
+ * lifecycle runs (field preSave before hook_node_presave, then insert/update
+ * hooks); only the NLP container's HTTP transport (a Guzzle mock) and the
+ * external provider client are replaced.
  */
 #[TestGroup('markaspot_ai')]
 #[RunTestsInSeparateProcesses]
 final class PiiNameScreeningKernelTest extends KernelTestBase {
+
+  use ContentModerationTestTrait;
 
   /**
    * {@inheritdoc}
@@ -49,6 +55,8 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
     'system', 'user', 'field', 'node', 'text', 'filter', 'file', 'options',
     'entity', 'flexible_permissions', 'group',
     'entity_reference_revisions', 'paragraphs',
+    'workflows', 'content_moderation',
+    'markaspot_ai', 'markaspot_ai_pii_test',
   ];
 
   /**
@@ -90,12 +98,15 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
-    foreach (['user', 'node', 'group', 'group_relationship', 'group_config_wrapper', 'paragraph'] as $type) {
+    $types = [
+      'user', 'node', 'group', 'group_relationship', 'group_config_wrapper',
+      'paragraph', 'content_moderation_state',
+    ];
+    foreach ($types as $type) {
       $this->installEntitySchema($type);
     }
     $this->installSchema('node', ['node_access']);
     $this->installConfig(['system', 'user', 'field', 'node', 'filter', 'group']);
-    require_once dirname(__DIR__, 3) . '/markaspot_ai.module';
 
     NodeType::create(['type' => 'service_request', 'name' => 'Service Request'])->save();
     $this->addField('node', 'service_request', 'body', 'text_with_summary');
@@ -118,17 +129,8 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
     $this->jurisdiction = Group::create(['type' => 'jur', 'label' => 'Tenant']);
     $this->jurisdiction->save();
 
+    // Tenant features come from markaspot_ai_pii_test's resolver stub.
     $this->useProvider('local_nlp');
-    $this->container->set('markaspot_nuxt.feature_scope_resolver', new class {
-
-      /**
-       * Every tenant feature is on.
-       */
-      public function isEnabledEffective(string $dotPath, GroupInterface $jur, ?bool $default = NULL): bool {
-        return TRUE;
-      }
-
-    });
 
     $this->nlpHandler = new MockHandler();
     $this->container->set('markaspot_ai.nlp_client', new NlpClientService(
@@ -237,6 +239,20 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
     $this->nlpHandler->append($this->healthy(), new Response(200, [], 'not json'));
     $third = $this->submit(self::PROBE . ' (3)');
     $this->assertHeld($third, NameScreeningResult::REASON_MALFORMED);
+
+    // A redacted text without an entity list is not "nothing found".
+    foreach ([
+      '{"redacted": "[REDACTED name]"}',
+      '{"redacted": "x", "entities_found": null}',
+      '{"redacted": "x", "entities_found": [42]}',
+      '{"redacted": "x", "entities_found": [{"type": "name"}]}',
+      '{"redacted": "x", "entities_found": ["name: "]}',
+      '{"redacted": "x", "entities_found": {"a": "name: Erika"}}',
+    ] as $i => $payload) {
+      $this->nlpHandler->append($this->healthy(), new Response(200, [], $payload));
+      $node = $this->submit(self::PROBE . ' (payload ' . $i . ')');
+      $this->assertHeld($node, NameScreeningResult::REASON_MALFORMED);
+    }
   }
 
   /**
@@ -280,10 +296,10 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
     $later = $this->submit(self::PROBE . ' after recovery.');
     $this->assertNotHeld($later);
 
-    // Staff reviewed the text and publish it.
+    // Staff reviewed the text and publish it (hook_node_update releases).
     $held->setPublished();
     $held->save();
-    markaspot_ai_node_update($held);
+    $this->assertTrue(Node::load($held->id())->isPublished());
     $this->assertFalse(PiiScreeningHold::isHeld($held));
     $this->assertSame([], PiiScreeningHold::heldIds());
   }
@@ -309,6 +325,12 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
     $this->assertSame(2, $this->providerCalls);
     $this->assertNotHeld($clean, 'The local service screened it after the unusable answer.');
 
+    // A names_found list with a non-name entry is not clean either.
+    $this->providerAnswer = '{"names_found": [42]}';
+    $this->nlpHandler->append(new Response(503));
+    $odd = $this->submit(self::PROBE . ' odd.');
+    $this->assertHeld($odd, NameScreeningResult::REASON_UNAVAILABLE);
+
     // A parseable empty answer is clean without touching the local service.
     $this->providerAnswer = '{"names_found": []}';
     $direct = $this->submit(self::PROBE . ' once more.');
@@ -317,18 +339,89 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
   }
 
   /**
-   * Remarks are saved with the report, never ahead of it.
+   * Remarks are stored with an ordinary save and point at their report.
    */
-  public function testNoParagraphIsSavedBeforeTheReport(): void {
+  public function testRemarksAreStoredWithTheReport(): void {
     $this->nlpHandler->append($this->healthy(), $this->redacted(['name: ' . self::NAME]));
-    $node = $this->newReport(self::PROBE . ', ' . self::NAME . ', ' . self::EMAIL . '.');
+    $node = $this->submit(self::PROBE . ', ' . self::NAME . ', ' . self::EMAIL . '.');
 
-    markaspot_ai_node_presave($node);
-    $this->assertSame(0, $this->paragraphCount(), 'Presave leaves no stored paragraph behind.');
-
-    $node->save();
     $this->assertSame(1, $this->paragraphCount());
-    $this->assertNotNull($this->retainedOriginal($node));
+    $original = $this->retainedOriginal($node);
+    $this->assertNotNull($original);
+    $this->assertSame((string) $node->id(), (string) $original->get('parent_id')->value);
+    $this->assertSame('node', $original->get('parent_type')->value);
+    $this->assertSame('field_internal_remark', $original->get('parent_field_name')->value);
+    $this->assertTrue(RetainedPiiOriginal::isMarked($original));
+
+    // The failed-screening notice is stored the same way.
+    $this->nlpHandler->append(new Response(503));
+    $held = $this->submit(self::PROBE . ' held.');
+    $this->assertHeld($held, NameScreeningResult::REASON_UNAVAILABLE);
+    foreach ($held->get('field_internal_remark')->referencedEntities() as $remark) {
+      $this->assertSame((string) $held->id(), (string) $remark->get('parent_id')->value);
+    }
+  }
+
+  /**
+   * A failed report save rolls back the remarks and the hold.
+   */
+  public function testFailedReportSaveLeavesNothingBehind(): void {
+    // KernelTestBase keeps key/value in memory; a real site stores the holds
+    // in the database, inside the report's transaction.
+    $this->container->set('keyvalue', new KeyValueDatabaseFactory(
+      $this->container->get('serialization.phpserialize'),
+      $this->container->get('database'),
+    ));
+    // Successful submissions first, so every table a save touches exists:
+    // creating one lazily is DDL, which implicitly commits an open MySQL
+    // transaction and never happens on a real site.
+    $this->nlpHandler->append($this->healthy(), $this->redacted(['name: ' . self::NAME]));
+    $this->submit(self::PROBE . ', ' . self::NAME . ', warm-up.');
+    $this->nlpHandler->append(new Response(503));
+    $this->submit(self::PROBE . ' warm-up held.');
+    $paragraphs = $this->paragraphCount();
+    $nodes = $this->nodeCount();
+    $holds = count(PiiScreeningHold::heldIds());
+
+    $this->container->get('state')->set('markaspot_ai_pii_test.fail_report_save', TRUE);
+
+    $this->nlpHandler->append($this->healthy(), $this->redacted(['name: ' . self::NAME]));
+    $redacted = $this->newReport(self::PROBE . ', ' . self::NAME . '.');
+    $this->assertSaveFails($redacted);
+
+    $this->nlpHandler->append(new Response(503));
+    $held = $this->newReport(self::PROBE . ' held.');
+    $this->assertSaveFails($held);
+
+    $this->assertSame($paragraphs, $this->paragraphCount(), 'No orphaned paragraph holds the original text.');
+    $this->assertSame($nodes, $this->nodeCount());
+    $this->assertFalse(PiiScreeningHold::isHeld($held), 'The hold rolled back with the report.');
+    $this->assertCount($holds, PiiScreeningHold::heldIds());
+  }
+
+  /**
+   * Content Moderation cannot re-publish a held report.
+   */
+  public function testModeratedReportStaysHeld(): void {
+    $workflow = $this->createEditorialWorkflow();
+    $workflow->getTypePlugin()->addEntityTypeAndBundle('node', 'service_request');
+    $workflow->save();
+
+    $this->nlpHandler->append(new Response(503));
+    $node = $this->newReport(self::PROBE . ' moderated.');
+    $node->set('moderation_state', 'published');
+    $node->save();
+    $node = Node::load($node->id());
+
+    $this->assertHeld($node, NameScreeningResult::REASON_UNAVAILABLE);
+    $this->assertSame('draft', $node->get('moderation_state')->value);
+
+    // A screened moderated report keeps the requested state.
+    $this->nlpHandler->append($this->healthy(), $this->redacted([]));
+    $clean = $this->newReport(self::PROBE . ' moderated clean.');
+    $clean->set('moderation_state', 'published');
+    $clean->save();
+    $this->assertNotHeld(Node::load($clean->id()));
   }
 
   /**
@@ -338,15 +431,19 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
     $this->nlpHandler->append(new Response(503));
     $held = $this->submit(self::PROBE . ' held.');
 
+    // An unpublished report that was screened normally.
+    $this->nlpHandler->append($this->healthy(), $this->redacted([]));
     $waiting = $this->newReport(self::PROBE . ' waiting.');
     $waiting->setUnpublished();
     $waiting->save();
 
-    $query = Database::getConnection()->select('node', 'base_table')
-      ->fields('base_table', ['nid'])
-      ->addTag('markaspot_publisher_candidates');
-    markaspot_ai_query_markaspot_publisher_candidates_alter($query);
-    $nids = array_map('intval', $query->execute()->fetchCol());
+    // The same tagged entity query markaspot_publisher builds.
+    $nids = array_map('intval', $this->container->get('entity_type.manager')->getStorage('node')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('status', 0)
+      ->addTag('markaspot_publisher_candidates')
+      ->execute());
 
     $this->assertNotContains((int) $held->id(), $nids);
     $this->assertContains((int) $waiting->id(), $nids);
@@ -357,12 +454,22 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
    */
   private function submit(string $body): NodeInterface {
     $node = $this->newReport($body);
-    markaspot_ai_node_presave($node);
     $node->save();
-    if (PiiScreeningHold::isHeld($node)) {
-      markaspot_ai_node_insert($node);
-    }
+    $this->container->get('entity_type.manager')->getStorage('node')->resetCache();
     return Node::load($node->id());
+  }
+
+  /**
+   * Asserts a report save fails.
+   */
+  private function assertSaveFails(NodeInterface $node): void {
+    try {
+      $node->save();
+      $this->fail('The report save was expected to fail.');
+    }
+    catch (EntityStorageException $e) {
+      $this->assertSame('Forced report save failure.', $e->getMessage());
+    }
   }
 
   /**
@@ -432,6 +539,14 @@ final class PiiNameScreeningKernelTest extends KernelTestBase {
    */
   private function paragraphCount(): int {
     return (int) $this->container->get('entity_type.manager')->getStorage('paragraph')
+      ->getQuery()->accessCheck(FALSE)->count()->execute();
+  }
+
+  /**
+   * Number of stored reports.
+   */
+  private function nodeCount(): int {
+    return (int) $this->container->get('entity_type.manager')->getStorage('node')
       ->getQuery()->accessCheck(FALSE)->count()->execute();
   }
 
