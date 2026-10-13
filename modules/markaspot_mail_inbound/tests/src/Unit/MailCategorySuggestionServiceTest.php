@@ -700,10 +700,11 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
   /**
    * Provider answers fed through suggest() and the real promotion gate.
    *
-   * Each answer runs the text path against a stateful mail, then the queue
-   * worker's maybeAutoPromote() with auto-promote enabled (threshold 0.85, a
-   * promotable category). Only a valid report verdict above the threshold may
-   * reach the promoter.
+   * Each answer goes through the real queue worker processItem(): it loads a
+   * stateful staged mail, runs the real suggestion service and then its own
+   * auto-promote gate (auto-promote enabled, threshold 0.85, a promotable
+   * category). Only a valid report verdict above the threshold may reach the
+   * promoter; every other mail stays staged.
    *
    * @dataProvider verdictPromotionProvider
    * @covers ::suggestText
@@ -732,26 +733,25 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
     $svc->overrideTermId = 7;
 
     $mail = $this->statefulMail();
-    $svc->suggest($mail);
-
-    $this->assertSame($status, $mail->getSuggestionStatus());
-    $this->assertSame($storedConfidence, $mail->getSuggestionConfidence());
-    if ($status !== InboundMail::SUGGESTION_DONE) {
-      // A rejected verdict stores no category hint either.
-      $this->assertNull($mail->getSuggestedCategoryTid());
-    }
 
     $promoter = $this->createMock(InboundMailPromoter::class);
     $node = $this->createMock(NodeInterface::class);
     $node->method('id')->willReturn(500);
     $promoter->expects($promoted ? $this->once() : $this->never())
       ->method('promoteToServiceRequest')
-      ->willReturn($node);
+      ->willReturnCallback(function (InboundMail $promotedMail) use ($node) {
+        $promotedMail->setState(InboundMail::STATE_PROMOTED);
+        return $node;
+      });
 
-    // The worker only gates DONE suggestions (see processItem()).
-    if ($status === InboundMail::SUGGESTION_DONE) {
-      $gate = new \ReflectionMethod(MailCategorySuggestionQueueWorker::class, 'maybeAutoPromote');
-      $gate->invoke($this->promotionWorker($promoter), $mail);
+    $this->promotionWorker($promoter, $svc, $mail)->processItem(['mail_id' => 99]);
+
+    $this->assertSame($status, $mail->getSuggestionStatus());
+    $this->assertSame($storedConfidence, $mail->getSuggestionConfidence());
+    $this->assertSame($promoted ? InboundMail::STATE_PROMOTED : InboundMail::STATE_STAGED, $mail->getState());
+    if ($status !== InboundMail::SUGGESTION_DONE) {
+      // A rejected verdict stores no category hint either.
+      $this->assertNull($mail->getSuggestedCategoryTid());
     }
   }
 
@@ -792,6 +792,7 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
    */
   protected function statefulMail(): InboundMail {
     $state = new \ArrayObject([
+      'state' => InboundMail::STATE_STAGED,
       'status' => InboundMail::SUGGESTION_PENDING,
       'tid' => NULL,
       'confidence' => NULL,
@@ -814,9 +815,16 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
         'getSuggestedCategoryTid',
         'getSuggestionConfidence',
         'getSuggestedAddress',
+        'getState',
+        'setState',
         'save',
       ])
       ->getMock();
+    $mail->method('getState')->willReturnCallback(fn() => $state['state']);
+    $mail->method('setState')->willReturnCallback(function ($value) use ($state, &$mail) {
+      $state['state'] = $value;
+      return $mail;
+    });
     $mail->method('getJurisdictionId')->willReturn(1);
     $mail->method('getAttachmentFileIds')->willReturn([]);
     $mail->method('id')->willReturn(99);
@@ -846,9 +854,17 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
   }
 
   /**
-   * A queue worker with auto-promote enabled and a promotable category.
+   * The real queue worker around the given service and mail.
+   *
+   * Auto-promote is enabled with threshold 0.85 and every category counts as
+   * promotable, so only the verdict decides.
    */
-  protected function promotionWorker(InboundMailPromoter $promoter): MailCategorySuggestionQueueWorker {
+  protected function promotionWorker(InboundMailPromoter $promoter, MailCategorySuggestionService $suggestionService, InboundMail $mail): MailCategorySuggestionQueueWorker {
+    $mailStorage = $this->createMock(EntityStorageInterface::class);
+    $mailStorage->method('load')->willReturnMap([[99, $mail]]);
+    $etm = $this->createMock(EntityTypeManagerInterface::class);
+    $etm->method('getStorage')->willReturnMap([['inbound_mail', $mailStorage]]);
+
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnMap([
       ['auto_promote_enabled', TRUE],
@@ -863,8 +879,8 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
       [],
       'markaspot_mail_inbound_suggest',
       [],
-      $this->createMock(EntityTypeManagerInterface::class),
-      $this->createMock(MailCategorySuggestionService::class),
+      $etm,
+      $suggestionService,
       $promoter,
       $categoryRepo,
       $configFactory,
