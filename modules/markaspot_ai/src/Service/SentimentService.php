@@ -497,6 +497,33 @@ PROMPT;
   }
 
   /**
+   * Clears the stored reasoning of every report a user authored.
+   *
+   * Account cancellation reassigns or unpublishes the user's content through
+   * bulk updates that never change the analysed text, so neither the
+   * text-change check nor the anonymisation hook runs. One UPDATE with a
+   * node-revision subquery covers current and historical authorship.
+   *
+   * @param int $uid
+   *   The cancelled account's user ID.
+   *
+   * @return int
+   *   Number of updated rows.
+   */
+  public function clearReasoningForAuthor(int $uid): int {
+    $authored = $this->database->select('node_field_revision', 'r')
+      ->fields('r', ['nid'])
+      ->condition('r.uid', $uid)
+      ->distinct();
+    return (int) $this->database->update('markaspot_ai_sentiment')
+      ->fields(['reasoning' => NULL])
+      ->condition('entity_type', 'node')
+      ->condition('entity_id', $authored, 'IN')
+      ->isNotNull('reasoning')
+      ->execute();
+  }
+
+  /**
    * Deletes sentiment rows whose entity no longer exists, one batch at a time.
    *
    * Rows are walked in primary key order. Each entity type is checked against

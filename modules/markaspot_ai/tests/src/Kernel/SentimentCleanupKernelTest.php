@@ -60,6 +60,7 @@ final class SentimentCleanupKernelTest extends KernelTestBase {
       $this->installEntitySchema($type);
     }
     $this->installSchema('node', ['node_access']);
+    $this->installSchema('user', ['users_data']);
     $this->installSchema('markaspot_ai', [
       'markaspot_ai_embeddings',
       'markaspot_ai_duplicate_matches',
@@ -327,6 +328,95 @@ final class SentimentCleanupKernelTest extends KernelTestBase {
   }
 
   /**
+   * Account cancellation that keeps the reports clears their reasoning.
+   */
+  public function testUserCancelReassignAndUnpublishClearReasoning(): void {
+    foreach (['user_cancel_reassign', 'user_cancel_block_unpublish'] as $i => $method) {
+      $author = User::create(['name' => 'reporter' . $i, 'mail' => "r$i@example.test", 'status' => 1]);
+      $author->save();
+      $other = User::create(['name' => 'other' . $i, 'mail' => "o$i@example.test", 'status' => 1]);
+      $other->save();
+      $own = [
+        $this->createReport('Lane ' . $i, (int) $author->id()),
+        $this->createReport('Lamp ' . $i, (int) $author->id()),
+      ];
+      $foreign = $this->createReport('Pothole ' . $i, (int) $other->id());
+      foreach ([...$own, $foreign] as $node) {
+        $this->addSentiment((int) $node->id());
+      }
+
+      $this->cancelAccount((int) $author->id(), $method);
+
+      foreach ($own as $node) {
+        $row = $this->sentimentRow((int) $node->id());
+        $this->assertNull($row['reasoning'], "$method clears the reasoning of the user's reports.");
+        $this->assertSame('frustrated', $row['sentiment']);
+      }
+      $this->assertSame(self::REASONING, $this->sentimentRow((int) $foreign->id())['reasoning']);
+
+      $this->container->get('entity_type.manager')->getStorage('node')->resetCache();
+      $reloaded = Node::load($own[0]->id());
+      if ($method === 'user_cancel_reassign') {
+        $this->assertSame(0, (int) $reloaded->getOwnerId(), 'Core reassigned the report.');
+      }
+      else {
+        $this->assertFalse($reloaded->isPublished(), 'Core unpublished the report.');
+      }
+    }
+  }
+
+  /**
+   * Blocking an account without touching content keeps the reasoning.
+   */
+  public function testUserCancelBlockKeepsReasoning(): void {
+    $author = User::create(['name' => 'reporter', 'mail' => 'r@example.test', 'status' => 1]);
+    $author->save();
+    $report = $this->createReport('Lane', (int) $author->id());
+    $this->addSentiment((int) $report->id());
+
+    $this->cancelAccount((int) $author->id(), 'user_cancel_block');
+
+    $this->assertSame(self::REASONING, $this->sentimentRow((int) $report->id())['reasoning']);
+  }
+
+  /**
+   * The dump scrub detects and clears derived reasoning.
+   *
+   * --verify ends the process with exit(1) on any residue, so the gate is
+   * covered through the counter it uses rather than by running it here.
+   */
+  public function testScrubScriptClearsDerivedText(): void {
+    $report = $this->createReport('Lane');
+    $second = $this->createReport('Lamp');
+    $this->addSentiment((int) $report->id());
+    $this->addSentiment((int) $second->id());
+    \Drupal::database()->update('markaspot_ai_sentiment')
+      ->fields(['reasoning' => ''])
+      ->condition('entity_id', $second->id())
+      ->execute();
+
+    putenv('IS_DDEV_PROJECT=true');
+    // The script reads its drush arguments from $extra: none means dry run.
+    // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable
+    $extra = [];
+    ob_start();
+    include DRUPAL_ROOT . '/profiles/contrib/markaspot/scripts/scrub-pii.php';
+    $output = (string) ob_get_clean();
+
+    // The dry run reports the one non-empty reasoning and writes nothing.
+    $this->assertStringContainsString('Derived text markaspot_ai_sentiment (reasoning): 1 rows would be cleared', $output);
+    $this->assertSame(self::REASONING, $this->sentimentRow((int) $report->id())['reasoning']);
+
+    // The counter --verify uses sees the residue, the apply step removes it.
+    $this->assertSame(1, scrub_count_derived_text('markaspot_ai_sentiment', ['reasoning']));
+    scrub_clear_derived_text('markaspot_ai_sentiment', ['reasoning']);
+    $this->assertSame(0, scrub_count_derived_text('markaspot_ai_sentiment', ['reasoning']));
+    $this->assertNull($this->sentimentRow((int) $report->id())['reasoning']);
+    $this->assertSame('frustrated', $this->sentimentRow((int) $report->id())['sentiment']);
+    $this->assertNull(scrub_count_derived_text('markaspot_ai_missing_table', ['reasoning']));
+  }
+
+  /**
    * The update hook removes orphans only, per entity type, idempotently.
    */
   public function testOrphanCleanupUpdate(): void {
@@ -370,16 +460,26 @@ final class SentimentCleanupKernelTest extends KernelTestBase {
   /**
    * Creates a published report.
    */
-  private function createReport(string $title): NodeInterface {
+  private function createReport(string $title, int $uid = 1): NodeInterface {
     $node = Node::create([
       'type' => 'service_request',
       'title' => $title,
-      'uid' => 1,
+      'uid' => $uid,
       'status' => 1,
       'body' => ['value' => 'Description of ' . $title, 'format' => 'plain_text'],
     ]);
     $node->save();
     return $node;
+  }
+
+  /**
+   * Cancels an account through core's user_cancel() and runs its batch.
+   */
+  private function cancelAccount(int $uid, string $method): void {
+    user_cancel([], $uid, $method);
+    $batch = &batch_get();
+    $batch['progressive'] = FALSE;
+    batch_process();
   }
 
   /**

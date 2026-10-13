@@ -62,6 +62,14 @@ const SCRUB_PURGE_TABLES = [
   'devel_mail_logger',
 ];
 
+// Free-text columns holding model output derived from a report. The sentiment
+// reasoning can quote the description, and the storage sweep below rewrites
+// field tables without saving nodes, so no entity hook clears it. The columns
+// are set to NULL; the rows (category, score) stay for statistics.
+const SCRUB_DERIVED_TEXT_COLUMNS = [
+  'markaspot_ai_sentiment' => ['reasoning'],
+];
+
 // Carriers this tool knowingly does not rewrite. Verify refuses to pass while
 // any of them holds rows, unless the operator acknowledges them explicitly.
 const SCRUB_UNCOVERED_TABLES = [
@@ -171,6 +179,20 @@ if ($verify) {
   }
   else {
     print "ok   users_field_data\n";
+  }
+
+  foreach (SCRUB_DERIVED_TEXT_COLUMNS as $table => $columns) {
+    $rows = scrub_count_derived_text($table, $columns);
+    if ($rows === NULL) {
+      continue;
+    }
+    if ($rows > 0) {
+      $residual += $rows;
+      printf("FAIL %s: %d rows still hold derived text in %s\n", $table, $rows, implode(', ', $columns));
+    }
+    else {
+      printf("ok   %s\n", $table);
+    }
   }
 
   // Every table the apply path empties is checked, so the two cannot drift.
@@ -309,6 +331,24 @@ foreach ($fields as $field_name) {
       $apply ? ' rewritten' : ' would be rewritten'
     );
   }
+}
+
+// --- Derived free text ------------------------------------------------------
+foreach (SCRUB_DERIVED_TEXT_COLUMNS as $table => $columns) {
+  $rows = scrub_count_derived_text($table, $columns);
+  if ($rows === NULL || $rows === 0) {
+    continue;
+  }
+  if ($apply) {
+    scrub_clear_derived_text($table, $columns);
+  }
+  printf(
+    "Derived text %s (%s): %d rows%s\n",
+    $table,
+    implode(', ', $columns),
+    $rows,
+    $apply ? ' cleared' : ' would be cleared'
+  );
 }
 
 // --- User accounts ----------------------------------------------------------
@@ -752,4 +792,38 @@ function scrub_count_unscrubbed_accounts(bool $keep_admin): int {
     ->condition('u.uid', $keep_admin ? 1 : 0, '>')
     ->condition('u.mail', '%' . $database->escapeLike(SCRUB_MAIL_SUFFIX), 'NOT LIKE');
   return (int) $query->countQuery()->execute()->fetchField();
+}
+
+/**
+ * Counts rows that still hold derived text in any of the given columns.
+ *
+ * @return int|null
+ *   The row count, or NULL when the table does not exist on this site.
+ */
+function scrub_count_derived_text(string $table, array $columns): ?int {
+  $database = \Drupal::database();
+  if (!$database->schema()->tableExists($table)) {
+    return NULL;
+  }
+  $query = $database->select($table, 't');
+  $any = $query->orConditionGroup();
+  foreach ($columns as $column) {
+    $any->condition($database->condition('AND')
+      ->isNotNull($column)
+      ->condition($column, '', '<>'));
+  }
+  return (int) $query->condition($any)->countQuery()->execute()->fetchField();
+}
+
+/**
+ * Sets the given derived-text columns to NULL in every row.
+ */
+function scrub_clear_derived_text(string $table, array $columns): void {
+  $database = \Drupal::database();
+  foreach ($columns as $column) {
+    $database->update($table)
+      ->fields([$column => NULL])
+      ->isNotNull($column)
+      ->execute();
+  }
 }
