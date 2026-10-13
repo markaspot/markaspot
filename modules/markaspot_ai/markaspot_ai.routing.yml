@@ -30,6 +30,7 @@ markaspot_ai.duplicate_scan:
   methods: [POST]
   requirements:
     _permission: 'review ai duplicates'
+    _csrf_request_header_token: 'TRUE'
     node: \d+
   options:
     _auth: ['cookie', 'api_key_auth']
@@ -99,6 +100,7 @@ markaspot_ai.sentiment_analyze:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot ai'
+    _csrf_request_header_token: 'TRUE'
     node: \d+
   options:
     _auth: ['cookie', 'api_key_auth']
@@ -152,6 +154,7 @@ markaspot_ai.processing_queue:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot ai'
+    _csrf_request_header_token: 'TRUE'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'
@@ -164,6 +167,7 @@ markaspot_ai.processing_run:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot ai'
+    _csrf_request_header_token: 'TRUE'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'
@@ -189,6 +193,7 @@ markaspot_ai.attributes.fill:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot ai'
+    _csrf_request_header_token: 'TRUE'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'
@@ -201,6 +206,7 @@ markaspot_ai.attributes.queue:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot ai'
+    _csrf_request_header_token: 'TRUE'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'
@@ -226,6 +232,7 @@ markaspot_ai.attributes.describe:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot ai'
+    _csrf_request_header_token: 'TRUE'
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'

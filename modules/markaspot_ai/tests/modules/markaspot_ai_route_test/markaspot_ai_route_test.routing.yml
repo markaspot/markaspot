@@ -1,0 +1,2 @@
+route_callbacks:
+  - '\Drupal\markaspot_ai_route_test\AiRoutes::routes'

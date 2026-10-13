@@ -1,0 +1,5 @@
+name: 'Mark-a-Spot AI route test'
+type: module
+description: 'Compiles the markaspot_ai route definitions in kernel tests without the module service graph.'
+package: Testing
+hidden: true
