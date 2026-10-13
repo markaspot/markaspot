@@ -398,3 +398,17 @@ function markaspot_vision_requirements($phase): array {
   }
   return $requirements;
 }
+
+/**
+ * Adds the setting that refuses analysis of uploads without a tenant binding.
+ */
+function markaspot_vision_update_11808(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
+  if ($config->get('require_upload_jurisdiction') !== NULL) {
+    return 'Skipped: require_upload_jurisdiction is already set.';
+  }
+  // Off until every client names the upload's jurisdiction; until then the
+  // first analysis binds an unbound upload once.
+  $config->set('require_upload_jurisdiction', FALSE)->save();
+  return 'Added require_upload_jurisdiction (off).';
+}

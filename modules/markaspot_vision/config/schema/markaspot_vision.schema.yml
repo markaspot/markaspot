@@ -52,6 +52,9 @@ markaspot_vision.settings:
     retain_originals:
       type: boolean
       label: 'Keep unblurred originals of blurred photos for staff'
+    require_upload_jurisdiction:
+      type: boolean
+      label: 'Refuse analysis of uploads not bound to a jurisdiction at upload time'
     max_tokens_param:
       type: string
       label: 'Token limit parameter'

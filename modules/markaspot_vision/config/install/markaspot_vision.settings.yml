@@ -1,5 +1,6 @@
 multiple_uploads: 1
 rate_limit_max: 10
+require_upload_jurisdiction: false
 enable_blur_preprocessing: false
 blur_service_url: 'http://markaspot-vision:8200/blur'
 residual_privacy_handling: 'hold'

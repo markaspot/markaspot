@@ -31,7 +31,7 @@ services:
     class: Drupal\markaspot_vision\Service\MediaTenantScopeResolver
     arguments:
       - '@entity_type.manager'
-      - '@keyvalue.expirable'
+      - '@keyvalue'
       - '@config.factory'
   markaspot_vision.image_processing_controller:
     class: Drupal\markaspot_vision\Controller\ImageProcessingController

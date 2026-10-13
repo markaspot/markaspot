@@ -23,6 +23,7 @@ use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
+use Drupal\node\NodeInterface;
 use Drupal\Tests\media\Traits\MediaTypeCreationTrait;
 use Drupal\Tests\TestFileCreationTrait;
 use Drupal\user\Entity\Role;
@@ -36,10 +37,10 @@ use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 /**
  * Binds vision analysis scope and budget charging to the media tenant.
  *
- * Real media, reports, jurisdiction groups, upload fingerprints and tenant
- * bindings; only the AI provider, the tenant feature resolver and the SaaS
- * budget ledger are doubles, so every assertion about "no provider call" and
- * "no charge" is observable.
+ * Real media, reports, jurisdiction groups, Group relationships, upload
+ * fingerprints and tenant bindings; only the AI provider, the tenant feature
+ * resolver and the SaaS budget ledger are doubles, so every assertion about
+ * "no provider call" and "no charge" is observable.
  *
  * @group markaspot_vision
  */
@@ -53,7 +54,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    */
   protected static $modules = [
     'system', 'user', 'field', 'file', 'image', 'media', 'node', 'text',
-    'filter', 'options', 'entity', 'flexible_permissions', 'group',
+    'filter', 'options', 'entity', 'flexible_permissions', 'group', 'gnode',
   ];
 
   /**
@@ -115,8 +116,11 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     $this->createMediaType('image', ['id' => 'request_image', 'label' => 'Request image']);
     NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
-    $this->addField('node', 'service_request', 'field_request_media', 'entity_reference', ['target_type' => 'media']);
-    $this->addField('node', 'service_request', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
+    $relationship_types = $this->container->get('entity_type.manager')->getStorage('group_relationship_type');
+    $relationship_types->createFromPlugin(GroupType::load('jur'), 'group_node:service_request')->save();
+    $this->addField('node', 'service_request', 'field_request_media', 'entity_reference', ['target_type' => 'media'], -1);
+    // Reports may name several jurisdictions; the resolver must see all.
+    $this->addField('node', 'service_request', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group'], -1);
     $this->addField('group', 'jur', 'field_tier', 'string');
 
     $this->tenantA = $this->createTenant('Tenant A');
@@ -129,24 +133,94 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * A fresh anonymous upload is bound by its first validated analysis.
+   * {@inheritdoc}
    */
-  public function testAnonymousUploadIsBoundToItsFirstJurisdiction(): void {
-    $request = $this->anonymousUploadRequest('upload-a');
+  protected function tearDown(): void {
+    unset($GLOBALS['config']['markaspot_vision.settings']);
+    parent::tearDown();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+    // The module itself is not installed (it pulls in the whole Nuxt layer);
+    // register the real resolver the way its services.yml does.
+    $container->register('markaspot_vision_test.scope_resolver', MediaTenantScopeResolver::class)
+      ->addArgument(new Reference('entity_type.manager'))
+      ->addArgument(new Reference('keyvalue'))
+      ->addArgument(new Reference('config.factory'));
+  }
+
+  /**
+   * The upload request fixes the tenant; analysis can only follow it.
+   */
+  public function testUploadBindingIsFixedAtUploadTime(): void {
+    $request = $this->anonymousUploadRequest('upload-header');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantB->id());
+    $this->assertSame((int) $this->tenantB->id(), $this->binding($media));
+
+    $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantA->id()));
+    $this->assertStatus(200, $this->analyze($request, [$media], NULL));
+    $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantB->id()));
+    $this->assertSame([(int) $this->tenantB->id(), (int) $this->tenantB->id()], $this->providerCalls);
+    $this->assertSame((int) $this->tenantB->id(), $this->binding($media), 'The binding never moves.');
+
+    // An upload naming an unknown jurisdiction is left unbound, not bound to
+    // a fallback.
+    $other = $this->createUpload($request, NULL, '999999');
+    $this->assertNull($this->binding($other));
+  }
+
+  /**
+   * With the setting on, an upload not bound at upload time is refused.
+   */
+  public function testRequiredUploadJurisdictionRefusesUnboundUploads(): void {
+    $GLOBALS['config']['markaspot_vision.settings']['require_upload_jurisdiction'] = TRUE;
+    $request = $this->anonymousUploadRequest('upload-required');
+    $unbound = $this->createUpload($request);
+
+    $this->assertStatus(400, $this->analyze($request, [$unbound], $this->tenantA->id()));
+    $this->assertNull($this->binding($unbound), 'A refused request binds nothing.');
+
+    $bound = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $this->assertStatus(200, $this->analyze($request, [$bound], NULL));
+    $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls);
+  }
+
+  /**
+   * Transition: an upload made without the header is bound once by analysis.
+   */
+  public function testTransitionalUploadIsBoundOnceByItsFirstAnalysis(): void {
+    $request = $this->anonymousUploadRequest('upload-transition');
     $media = $this->createUpload($request);
+    $this->assertNull($this->binding($media));
 
     $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantA->id()));
-    $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls, 'The provider runs in the tenant context of the binding.');
-    $this->assertSame(
-      (int) $this->tenantA->id(),
-      $this->container->get('keyvalue.expirable')->get(MediaTenantScopeResolver::STORE)->get($media->uuid()),
-    );
-
-    // The same upload cannot be re-analysed under another tenant.
+    $this->assertSame((int) $this->tenantA->id(), $this->binding($media));
     $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantB->id()));
-    // Omitting the ID keeps the binding instead of escaping it.
     $this->assertStatus(200, $this->analyze($request, [$media], NULL));
     $this->assertSame([(int) $this->tenantA->id(), (int) $this->tenantA->id()], $this->providerCalls);
+  }
+
+  /**
+   * The binding outlives the upload session for owners and staff.
+   */
+  public function testBindingOutlivesTheUploadSession(): void {
+    $owner = $this->createUser('owner');
+    $request = $this->sessionRequest($owner);
+    $media = $this->createUpload($request, $owner, (string) $this->tenantA->id());
+
+    // The anonymous upload proof expires; cookie owners may still analyze.
+    $this->container->get('keyvalue.expirable')->get(MediaAnalysisAccessGuard::STORE)->delete($media->uuid());
+    $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantB->id()));
+    $this->assertStatus(200, $this->analyze($request, [$media], NULL));
+    $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls);
+
+    // The binding goes with the media (hook_media_delete calls forget()).
+    $this->resolver()->forget($media);
+    $this->assertNull($this->binding($media));
   }
 
   /**
@@ -156,7 +230,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     $owner = $this->createUser('owner');
     $request = $this->sessionRequest($owner);
     $media = $this->createUpload($request, $owner);
-    $this->createReport($this->tenantA, [$media]);
+    $this->createReport([$this->tenantA], [$media]);
 
     $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantB->id()));
     $this->assertSame([], $this->providerCalls, 'A conflicting tenant is refused before the provider.');
@@ -167,12 +241,52 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A report naming several jurisdictions is a conflict, not its first item.
+   */
+  public function testMultiValuedReportJurisdictionIsRefused(): void {
+    $request = $this->anonymousUploadRequest('upload-multi');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $this->createReport([$this->tenantA, $this->tenantB], [$media]);
+
+    $this->assertStatus(409, $this->analyze($request, [$media], $this->tenantA->id()));
+    $this->assertStatus(409, $this->analyze($request, [$media], NULL));
+    $this->assertSame([], $this->providerCalls);
+  }
+
+  /**
+   * A report without resolvable scope never adopts the caller's tenant.
+   */
+  public function testReportWithoutResolvableScopeIsRefused(): void {
+    $request = $this->anonymousUploadRequest('upload-orphan');
+    $media = $this->createUpload($request);
+    $this->createReport([], [$media]);
+
+    $this->assertStatus(409, $this->analyze($request, [$media], $this->tenantA->id()));
+    $this->assertNull($this->binding($media), 'The caller could not bind it either.');
+    $this->assertSame([], $this->providerCalls);
+  }
+
+  /**
+   * A report's Group relationship resolves its tenant.
+   */
+  public function testGroupRelationshipResolvesTheReportTenant(): void {
+    $request = $this->anonymousUploadRequest('upload-gnode');
+    $media = $this->createUpload($request);
+    $report = $this->createReport([], [$media]);
+    $this->tenantB->addRelationship($report, 'group_node:service_request');
+
+    $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantA->id()));
+    $this->assertStatus(200, $this->analyze($request, [$media], NULL));
+    $this->assertSame([(int) $this->tenantB->id()], $this->providerCalls);
+  }
+
+  /**
    * Staff re-analysis keeps the report tenant too.
    */
   public function testStaffReanalysisIsScopedToTheReportTenant(): void {
     $uploader = $this->anonymousUploadRequest('upload-staff');
     $media = $this->createUpload($uploader);
-    $this->createReport($this->tenantB, [$media]);
+    $this->createReport([$this->tenantB], [$media]);
 
     $staff = $this->createUser('staff', ['staff']);
     $request = $this->sessionRequest($staff);
@@ -190,7 +304,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     // Stateless API-key request: no session, but the same per-upload token.
     $request = $this->jsonRequest();
     $request->headers->set('X-CSRF-Token', 'integration-upload');
-    $media = $this->createUpload($request, $integration);
+    $media = $this->createUpload($request, $integration, (string) $this->tenantB->id());
 
     $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantB->id()));
     $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantA->id()));
@@ -204,19 +318,55 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     $request = $this->anonymousUploadRequest('upload-mixed');
     $first = $this->createUpload($request);
     $second = $this->createUpload($request);
-    $this->createReport($this->tenantA, [$first]);
-    $this->createReport($this->tenantB, [$second]);
-
+    $this->createReport([$this->tenantA], [$first]);
+    $this->createReport([$this->tenantB], [$second]);
     $this->assertStatus(409, $this->analyze($request, [$first, $second], $this->tenantA->id()));
-    $this->assertStatus(409, $this->analyze($request, [$first, $second], NULL));
 
-    // Bound fresh uploads mix the same way.
-    $third = $this->createUpload($request);
-    $fourth = $this->createUpload($request);
-    $this->assertStatus(200, $this->analyze($request, [$third], $this->tenantA->id()));
-    $this->assertStatus(200, $this->analyze($request, [$fourth], $this->tenantB->id()));
+    $third = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $fourth = $this->createUpload($request, NULL, (string) $this->tenantB->id());
     $this->assertStatus(409, $this->analyze($request, [$third, $fourth], NULL));
-    $this->assertCount(2, $this->providerCalls, 'Only the two single-tenant batches reached the provider.');
+    $this->assertSame([], $this->providerCalls);
+  }
+
+  /**
+   * Two first analyses racing for one unbound upload: the loser is refused.
+   */
+  public function testConcurrentFirstBindingRefusesTheLoser(): void {
+    $request = $this->anonymousUploadRequest('upload-race');
+    $media = $this->createUpload($request);
+    $tenant_a = (int) $this->tenantA->id();
+
+    // Request B resolved "unbound" and is about to claim, when request A's
+    // claim lands first.
+    $racing = new class(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('keyvalue'),
+      $this->container->get('config.factory'),
+    ) extends MediaTenantScopeResolver {
+
+      /**
+       * The jurisdiction the competing request binds first.
+       */
+      public int $competitor = 0;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function claim(array $media_entities, int $jurisdiction_id): bool {
+        foreach ($media_entities as $media) {
+          $this->keyValue->get(self::STORE)->setIfNotExists($media->uuid(), $this->competitor);
+        }
+        return parent::claim($media_entities, $jurisdiction_id);
+      }
+
+    };
+    $racing->competitor = $tenant_a;
+
+    $this->assertStatus(409, $this->analyze($request, [$media], $this->tenantB->id(), TRUE, $racing));
+    $this->assertSame([], $this->providerCalls);
+    $this->assertSame([], $this->budgetChecks, 'The loser is refused before its budget is consulted.');
+    $this->assertSame([], $this->charges);
+    $this->assertSame($tenant_a, $this->binding($media));
   }
 
   /**
@@ -225,38 +375,50 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   public function testDisabledTenantCannotBypassByOmittingOrChangingTheId(): void {
     $this->disabledTenants = [(int) $this->tenantA->id()];
     $request = $this->anonymousUploadRequest('upload-disabled');
-    $media = $this->createUpload($request);
-    $this->createReport($this->tenantA, [$media]);
+    $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
 
     $this->assertStatus(403, $this->analyze($request, [$media], NULL));
     $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantB->id()));
 
-    // A fresh upload on a multi-tenant install must name its tenant.
+    // A fresh unbound upload on a multi-tenant install must name its tenant.
     $fresh = $this->createUpload($request);
     $this->assertStatus(400, $this->analyze($request, [$fresh], NULL));
     $this->assertSame([], $this->providerCalls);
   }
 
   /**
-   * One published jurisdiction is the validated single-tenant fallback.
+   * One jurisdiction in total is the validated single-tenant fallback.
    */
-  public function testSingleTenantInstallFallsBackToItsJurisdiction(): void {
-    $this->tenantB->setUnpublished()->save();
+  public function testSingleTenantInstallBindsToItsJurisdiction(): void {
+    $this->tenantB->delete();
     $request = $this->anonymousUploadRequest('upload-single');
     $media = $this->createUpload($request);
+    $this->assertSame((int) $this->tenantA->id(), $this->binding($media), 'Single-tenant uploads are bound without a header.');
 
     $this->assertStatus(200, $this->analyze($request, [$media], NULL));
     $this->assertSame([(int) $this->tenantA->id()], $this->providerCalls);
 
     $this->disabledTenants = [(int) $this->tenantA->id()];
-    $other = $this->createUpload($request);
-    $this->assertStatus(403, $this->analyze($request, [$other], NULL), 'The fallback applies the tenant policy.');
-    // An unpublished jurisdiction cannot be named either.
-    $this->assertStatus(400, $this->analyze($request, [$this->createUpload($request)], $this->tenantB->id()));
+    $this->assertStatus(403, $this->analyze($request, [$this->createUpload($request)], NULL), 'The fallback applies the tenant policy.');
   }
 
   /**
-   * Installs without jurisdictions keep working unscoped.
+   * Unpublished tenants still count as tenants: never unscoped.
+   */
+  public function testUnpublishedTenantsAreNotTreatedAsNoTenants(): void {
+    $this->tenantB->delete();
+    $this->tenantA->setUnpublished()->save();
+    $request = $this->anonymousUploadRequest('upload-unpublished');
+    $media = $this->createUpload($request);
+    $this->assertNull($this->binding($media));
+
+    $this->assertStatus(400, $this->analyze($request, [$media], NULL));
+    $this->assertStatus(400, $this->analyze($request, [$media], $this->tenantA->id()));
+    $this->assertSame([], $this->providerCalls, 'The feature check cannot be skipped by unpublishing.');
+  }
+
+  /**
+   * Installs without any jurisdiction keep working unscoped.
    */
   public function testInstallWithoutJurisdictionsStaysUnscoped(): void {
     $this->tenantA->delete();
@@ -266,6 +428,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
 
     $this->assertStatus(200, $this->analyze($request, [$media], NULL));
     $this->assertSame([NULL], $this->providerCalls);
+    $this->assertStatus(400, $this->analyze($request, [$media], NULL, TRUE), 'Fastmap always needs a tenant.');
   }
 
   /**
@@ -274,7 +437,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   public function testFastmapChargesTheMediaTenantOnly(): void {
     $request = $this->anonymousUploadRequest('upload-fastmap');
     $media = $this->createUpload($request);
-    $this->createReport($this->tenantA, [$media]);
+    $this->createReport([$this->tenantA], [$media]);
 
     $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantB->id(), TRUE));
     $this->assertSame([], $this->budgetChecks, 'A foreign tenant is refused before its budget is consulted.');
@@ -286,16 +449,19 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * Fastmap refuses a fresh upload without a tenant and keeps the binding.
+   * Fastmap keeps an upload-bound tenant for policy and budget.
    */
-  public function testFastmapFreshUploadNeedsAndKeepsItsTenant(): void {
-    $request = $this->anonymousUploadRequest('upload-fastmap-fresh');
-    $media = $this->createUpload($request);
+  public function testFastmapUploadBindingDecidesTheBudget(): void {
+    $request = $this->anonymousUploadRequest('upload-fastmap-bound');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantB->id());
 
-    $this->assertStatus(400, $this->analyze($request, [$media], NULL, TRUE));
-    $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantB->id(), TRUE));
     $this->assertStatus(403, $this->analyze($request, [$media], $this->tenantA->id(), TRUE));
+    $this->assertStatus(200, $this->analyze($request, [$media], NULL, TRUE));
+    $this->assertSame([[(int) $this->tenantB->id(), 'pro']], $this->budgetChecks);
     $this->assertSame([(int) $this->tenantB->id()], $this->charges);
+
+    $unbound = $this->createUpload($request);
+    $this->assertStatus(400, $this->analyze($request, [$unbound], NULL, TRUE));
   }
 
   /**
@@ -304,8 +470,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   public function testInvalidJurisdictionAndForeignSessionAreRefused(): void {
     $request = $this->anonymousUploadRequest('upload-own');
     $media = $this->createUpload($request);
-
     $this->assertStatus(400, $this->analyze($request, [$media], 999999));
+
+    $this->tenantB->setUnpublished()->save();
+    $this->assertStatus(400, $this->analyze($request, [$media], $this->tenantB->id()));
 
     $stranger = $this->anonymousUploadRequest('upload-stranger');
     $this->assertStatus(403, $this->analyze($stranger, [$media], $this->tenantA->id()));
@@ -323,8 +491,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    *   The jurisdiction named by the caller.
    * @param bool $fastmap
    *   Whether the SaaS budget ledger is installed.
+   * @param \Drupal\markaspot_vision\Service\MediaTenantScopeResolver|null $resolver
+   *   A resolver replacing the registered one.
    */
-  private function analyze(Request $context, array $media, int|string|null $jurisdiction_id, bool $fastmap = FALSE): JsonResponse {
+  private function analyze(Request $context, array $media, int|string|null $jurisdiction_id, bool $fastmap = FALSE, ?MediaTenantScopeResolver $resolver = NULL): JsonResponse {
     $body = ['media_ids' => array_map(static fn (MediaInterface $item): string => $item->uuid(), $media)];
     if ($jurisdiction_id !== NULL) {
       $body['jurisdiction_id'] = $jurisdiction_id;
@@ -367,7 +537,7 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       $features,
       $this->guard(),
       $this->container->get('config.factory'),
-      $this->container->get('markaspot_vision_test.scope_resolver'),
+      $resolver ?? $this->resolver(),
       $tier,
     );
     $controller->setStringTranslation($this->container->get('string_translation'));
@@ -375,16 +545,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * {@inheritdoc}
+   * Returns the registered resolver.
    */
-  public function register(ContainerBuilder $container): void {
-    parent::register($container);
-    // The module itself is not installed (it pulls in the whole Nuxt layer);
-    // register the real resolver the way its services.yml does.
-    $container->register('markaspot_vision_test.scope_resolver', MediaTenantScopeResolver::class)
-      ->addArgument(new Reference('entity_type.manager'))
-      ->addArgument(new Reference('keyvalue.expirable'))
-      ->addArgument(new Reference('config.factory'));
+  private function resolver(): MediaTenantScopeResolver {
+    return $this->container->get('markaspot_vision_test.scope_resolver');
   }
 
   /**
@@ -399,9 +563,24 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
-   * Creates an uploaded request image tied to the request's upload context.
+   * Returns the stored tenant binding of a media item.
    */
-  private function createUpload(Request $request, ?AccountInterface $owner = NULL): MediaInterface {
+  private function binding(MediaInterface $media): ?int {
+    $bound = $this->container->get('keyvalue')->get(MediaTenantScopeResolver::STORE)->get($media->uuid());
+    return $bound === NULL ? NULL : (int) $bound;
+  }
+
+  /**
+   * Creates an upload the way the media insert hook records it.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The upload request (upload token or session).
+   * @param \Drupal\Core\Session\AccountInterface|null $owner
+   *   The uploading account; anonymous when NULL.
+   * @param string|null $jurisdiction
+   *   The jurisdiction the upload request names in the upload header.
+   */
+  private function createUpload(Request $request, ?AccountInterface $owner = NULL, ?string $jurisdiction = NULL): MediaInterface {
     $source = $this->getTestFiles('image')[0];
     $file = File::create(['uri' => $source->uri, 'status' => 1]);
     $file->save();
@@ -413,26 +592,34 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       'field_media_image' => ['target_id' => $file->id(), 'alt' => 'upload'],
     ]);
     $media->save();
-    $this->guard()->recordUpload($media, $request);
+    $upload = clone $request;
+    $upload->headers = clone $request->headers;
+    if ($jurisdiction !== NULL) {
+      $upload->headers->set(MediaTenantScopeResolver::UPLOAD_HEADER, $jurisdiction);
+    }
+    $this->guard()->recordUpload($media, $upload);
+    $this->resolver()->bindUpload($media, $upload);
     return $media;
   }
 
   /**
-   * Creates a report of a tenant referencing the media.
+   * Creates a report of the given tenants referencing the media.
    *
-   * @param \Drupal\group\Entity\GroupInterface $tenant
-   *   The tenant.
+   * @param \Drupal\group\Entity\GroupInterface[] $tenants
+   *   The tenants named in field_jurisdiction.
    * @param \Drupal\media\MediaInterface[] $media
    *   The referenced media.
    */
-  private function createReport(GroupInterface $tenant, array $media): void {
-    Node::create([
+  private function createReport(array $tenants, array $media): NodeInterface {
+    $report = Node::create([
       'type' => 'service_request',
       'title' => 'Report',
       'uid' => 1,
-      'field_jurisdiction' => $tenant->id(),
+      'field_jurisdiction' => array_map(static fn (GroupInterface $tenant): array => ['target_id' => $tenant->id()], $tenants),
       'field_request_media' => array_map(static fn (MediaInterface $item): array => ['target_id' => $item->id()], $media),
-    ])->save();
+    ]);
+    $report->save();
+    return $report;
   }
 
   /**
@@ -487,13 +674,13 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   /**
    * Adds a field to a bundle.
    */
-  private function addField(string $entity_type, string $bundle, string $name, string $type, array $settings = []): void {
+  private function addField(string $entity_type, string $bundle, string $name, string $type, array $settings = [], int $cardinality = 1): void {
     FieldStorageConfig::create([
       'field_name' => $name,
       'entity_type' => $entity_type,
       'type' => $type,
       'settings' => $settings,
-      'cardinality' => $type === 'entity_reference' && $name === 'field_request_media' ? -1 : 1,
+      'cardinality' => $cardinality,
     ])->save();
     FieldConfig::create([
       'field_name' => $name,

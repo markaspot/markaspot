@@ -217,10 +217,11 @@ class ImageProcessingController extends ControllerBase {
       }
 
       // Tenant scope follows the media, not the caller: the jurisdiction of a
-      // report already referencing them, the binding of their first analysis,
-      // or the validated jurisdiction of this first request. Feature policy,
-      // provider context and budget all use this scope, and it is settled
-      // before any model is contacted or any budget is checked.
+      // report already referencing them or the binding made at upload (see
+      // MediaTenantScopeResolver for the transitional first-analysis binding).
+      // Feature policy, provider context and budget all use this scope, and
+      // it is settled, unbound media included, before any model is contacted
+      // or any budget is checked.
       $scope = $this->mediaTenantScopeResolver->resolve(
         $media_entities,
         $data['jurisdiction_id'] ?? NULL,
@@ -263,9 +264,6 @@ class ImageProcessingController extends ControllerBase {
         }
       }
 
-      if ($jurisdiction instanceof GroupInterface) {
-        $this->mediaTenantScopeResolver->bind($media_entities, $jurisdiction);
-      }
       $jurisdictionId = $jurisdiction instanceof GroupInterface ? (int) $jurisdiction->id() : NULL;
 
       // Collect file URIs, keyed by media ID for blur result mapping.

@@ -37,6 +37,12 @@ function markaspot_vision_media_insert(EntityInterface $entity): void {
   }
 
   \Drupal::service('markaspot_vision.media_analysis_access_guard')->recordUpload($entity);
+  // Fix the upload's tenant at the earliest trusted point; analysis, policy
+  // and budget follow it from now on.
+  \Drupal::service('markaspot_vision.media_tenant_scope')->bindUpload(
+    $entity,
+    \Drupal::requestStack()->getCurrentRequest(),
+  );
 }
 
 /**
@@ -214,6 +220,7 @@ function markaspot_vision_cron(): void {
  */
 function markaspot_vision_media_delete(MediaInterface $media): void {
   \Drupal::service('markaspot_vision.original_image_store')->delete((int) $media->id());
+  \Drupal::service('markaspot_vision.media_tenant_scope')->forget($media);
 }
 
 /**
