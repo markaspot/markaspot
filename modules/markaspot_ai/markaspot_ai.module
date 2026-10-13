@@ -955,6 +955,8 @@ PROMPT;
         'temperature' => 0.1,
         'max_tokens' => 300,
         'provider' => $provider,
+        // AiClientService books the usage under this operation.
+        'operation' => 'pii_name_detection',
       ]);
 
       $names = _markaspot_ai_parse_names_response($response);

@@ -284,7 +284,10 @@ class SentimentServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests token usage is tracked.
+   * Tests token usage is attributed to sentiment and booked by the client.
+   *
+   * AiClientService owns token accounting; the service must name its
+   * operation and must not book a second time.
    *
    * @covers ::analyzeSentiment
    */
@@ -304,11 +307,12 @@ class SentimentServiceTest extends UnitTestCase {
       'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 30],
     ];
 
-    $this->aiClient->method('chat')->willReturn($aiResponse);
+    $this->aiClient->expects($this->once())
+      ->method('chat')
+      ->with($this->anything(), $this->callback(fn(array $options) => ($options['operation'] ?? NULL) === 'sentiment'))
+      ->willReturn($aiResponse);
 
-    $this->tokenTracking->expects($this->once())
-      ->method('logUsage')
-      ->with('openai', 'gpt-4o-mini', 'sentiment', 100, 30);
+    $this->tokenTracking->expects($this->never())->method('logUsage');
 
     $this->service->analyzeSentiment('test text');
   }

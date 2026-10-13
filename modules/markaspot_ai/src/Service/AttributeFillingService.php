@@ -307,19 +307,12 @@ class AttributeFillingService {
           'temperature' => 0.3,
           'max_tokens' => 500,
           'response_format' => ['type' => 'json_object'],
+          // AiClientService books the usage under this operation.
+          'operation' => 'attribute_filling',
+          'entity_type' => 'node',
+          'entity_id' => $nid,
         ]
       );
-
-      // Track token usage.
-      if (isset($response['usage'])) {
-        $this->tokenTracking->logUsage(
-          $provider,
-          $model,
-          'attribute_filling',
-          $response['usage']['prompt_tokens'] ?? 0,
-          $response['usage']['completion_tokens'] ?? 0
-        );
-      }
 
       // Check for refusal (OpenAI content moderation).
       $refusal = $response['choices'][0]['message']['refusal'] ?? NULL;
@@ -338,17 +331,10 @@ class AttributeFillingService {
           'temperature' => 0.3,
           'max_tokens' => 500,
           'response_format' => ['type' => 'json_object'],
+          'operation' => 'attribute_filling',
+          'entity_type' => 'node',
+          'entity_id' => $nid,
         ]);
-
-        if (isset($response['usage'])) {
-          $this->tokenTracking->logUsage(
-            $provider,
-            $model,
-            'attribute_filling',
-            $response['usage']['prompt_tokens'] ?? 0,
-            $response['usage']['completion_tokens'] ?? 0
-          );
-        }
 
         $content = $response['choices'][0]['message']['content'] ?? '';
       }
@@ -519,17 +505,11 @@ class AttributeFillingService {
         'model' => $model,
         'temperature' => 0.3,
         'max_tokens' => 300,
+        // AiClientService books the usage under this operation.
+        'operation' => 'description_generation',
+        'entity_type' => 'node',
+        'entity_id' => $nid,
       ]);
-
-      if (isset($response['usage'])) {
-        $this->tokenTracking->logUsage(
-          $provider,
-          $model,
-          'description_generation',
-          $response['usage']['prompt_tokens'] ?? 0,
-          $response['usage']['completion_tokens'] ?? 0
-        );
-      }
 
       $content = $response['choices'][0]['message']['content'] ?? '';
 
@@ -1555,17 +1535,11 @@ class AttributeFillingService {
         'temperature' => 0.3,
         'max_tokens' => 1200,
         'response_format' => ['type' => 'json_object'],
+        // AiClientService books the usage under this operation.
+        'operation' => 'form_assist',
+        'entity_type' => 'node',
+        'entity_id' => $nid,
       ]);
-
-      if (isset($response['usage'])) {
-        $this->tokenTracking->logUsage(
-          $provider,
-          $model,
-          'form_assist',
-          $response['usage']['prompt_tokens'] ?? 0,
-          $response['usage']['completion_tokens'] ?? 0
-        );
-      }
 
       $content = $response['choices'][0]['message']['content'] ?? '';
       $refusal = $response['choices'][0]['message']['refusal'] ?? NULL;

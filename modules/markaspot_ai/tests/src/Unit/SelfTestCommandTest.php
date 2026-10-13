@@ -53,7 +53,10 @@ class SelfTestCommandTest extends UnitTestCase {
         }
         return ['choices' => [['message' => ['content' => '{"ok":true}']]], 'usage' => ['prompt_tokens' => 5]];
       });
-      $embed = $client->expects($this->once())->method('embed')->with('Synthetic compatibility test.', ['provider' => 'openai']);
+      $embed = $client->expects($this->once())->method('embed')->with('Synthetic compatibility test.', [
+        'provider' => 'openai',
+        'operation' => 'selftest',
+      ]);
       if ($embedFails) {
         $embed->willThrowException(new \RuntimeException('Provider unavailable', 503));
       }
@@ -63,9 +66,9 @@ class SelfTestCommandTest extends UnitTestCase {
         ]);
       }
       $tracking = $this->createMock(TokenTrackingService::class);
-      $tracking->expects($this->exactly(($fails ? 0 : 2) + ($embedFails ? 0 : 1)))->method('logUsage')->with(
-        'openai', $this->callback('is_string'), 'selftest', $this->callback('is_int'), 0,
-      );
+      // Chat and embedding usage is booked inside AiClientService; the command
+      // books only the Vision check, which is skipped here.
+      $tracking->expects($this->never())->method('logUsage');
       $config = $this->getConfigFactoryStub(['markaspot_ai.settings' => [
         'default_provider' => 'openai', 'providers' => ['openai' => ['chat_model' => 'deployment']],
       ]]);

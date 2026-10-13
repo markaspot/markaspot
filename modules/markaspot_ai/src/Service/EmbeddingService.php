@@ -105,7 +105,8 @@ class EmbeddingService {
     }
 
     try {
-      $response = $this->aiClient->embed($text, $options);
+      // AiClientService books the usage under this operation.
+      $response = $this->aiClient->embed($text, $options + ['operation' => 'embedding']);
 
       if (!isset($response['data'][0]['embedding'])) {
         throw new \Exception('Invalid embedding response structure.');

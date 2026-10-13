@@ -327,6 +327,10 @@ class MailCategorySuggestionService {
             'strict' => TRUE,
           ],
         ],
+        // AiClientService books the usage under this operation.
+        'operation' => 'mail_category',
+        'entity_type' => 'inbound_mail',
+        'entity_id' => $mailId,
       ]);
 
       $content = $response['choices'][0]['message']['content'] ?? NULL;

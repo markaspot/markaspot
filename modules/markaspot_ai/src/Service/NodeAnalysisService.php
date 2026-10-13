@@ -395,20 +395,10 @@ PROMPT;
         'temperature' => 0.3,
         'max_tokens' => 300,
         'response_format' => ['type' => 'json_object'],
+        // AiClientService books the usage under this operation.
+        'operation' => 'node_analysis',
       ]
     );
-
-    // Track token usage.
-    if (isset($response['usage'])) {
-      $provider = $this->configFactory->get('markaspot_ai.settings')->get('default_provider') ?: 'openai';
-      $this->tokenTracking->logUsage(
-        $provider,
-        $model,
-        'node_analysis',
-        $response['usage']['prompt_tokens'] ?? 0,
-        $response['usage']['completion_tokens'] ?? 0
-      );
-    }
 
     $content = $response['choices'][0]['message']['content'] ?? '';
     $result = json_decode($content, TRUE);

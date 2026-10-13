@@ -273,6 +273,8 @@ class SpamRiskScannerService {
         'max_tokens' => 500,
         'response_format' => ['type' => 'json_object'],
         'provider' => $effectiveProvider,
+        // AiClientService books the usage under this operation.
+        'operation' => 'spam_scan',
       ];
 
       $response = $this->aiClient->chat([

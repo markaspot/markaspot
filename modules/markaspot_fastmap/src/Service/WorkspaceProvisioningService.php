@@ -1771,6 +1771,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'timeout' => 5,
         'connect_timeout' => 2,
         'max_attempts' => 1,
+        // AiClientService books the usage under this operation.
+        'operation' => 'workspace_demo_content',
       ]);
     }
     catch (\Exception $e) {

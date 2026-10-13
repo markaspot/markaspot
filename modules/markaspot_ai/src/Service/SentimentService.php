@@ -212,19 +212,10 @@ PROMPT;
           'temperature' => 0.3,
           'max_tokens' => 150,
           'response_format' => ['type' => 'json_object'],
+          // AiClientService books the usage under this operation.
+          'operation' => 'sentiment',
         ]
       );
-
-      // Track token usage.
-      if (isset($response['usage'])) {
-        $this->tokenTracking->logUsage(
-          $provider,
-          $model,
-          'sentiment',
-          $response['usage']['prompt_tokens'] ?? 0,
-          $response['usage']['completion_tokens'] ?? 0
-        );
-      }
 
       // Parse response.
       $content = $response['choices'][0]['message']['content'] ?? '';

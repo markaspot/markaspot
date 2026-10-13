@@ -86,7 +86,10 @@ class MarkaspotAiCommands extends DrushCommands {
         'operation' => 'selftest',
         'max_tokens' => 150,
       ]),
-      'embedding' => fn() => $this->aiClient->embed('Synthetic compatibility test.', ['provider' => $provider]),
+      'embedding' => fn() => $this->aiClient->embed('Synthetic compatibility test.', [
+        'provider' => $provider,
+        'operation' => 'selftest',
+      ]),
     ];
     if (empty($options['skip-vision']) && $this->moduleHandler->moduleExists('markaspot_vision') && $this->vision) {
       $vision_config = $this->configFactory->get('markaspot_vision.settings');
@@ -117,13 +120,17 @@ class MarkaspotAiCommands extends DrushCommands {
         $response = $name === 'vision' ? $result['response'] : $result;
         $used_model = $response['model'] ?? ($name === 'embedding' ? $this->aiClient->resolveEmbeddingModel(NULL, $provider) : $model);
         $usage = $response['usage'] ?? [];
-        $this->tokenTracking->logUsage(
-          $name === 'vision' ? 'vision' : $provider,
-          $used_model,
-          'selftest',
-          (int) ($usage['prompt_tokens'] ?? $usage['total_tokens'] ?? 0),
-          (int) ($usage['completion_tokens'] ?? 0),
-        );
+        // Chat and embedding usage is booked by AiClientService itself; only
+        // the Vision check bypasses that client.
+        if ($name === 'vision') {
+          $this->tokenTracking->logUsage(
+            'vision',
+            $used_model,
+            'selftest',
+            (int) ($usage['prompt_tokens'] ?? $usage['total_tokens'] ?? 0),
+            (int) ($usage['completion_tokens'] ?? 0),
+          );
+        }
         $content = $response['choices'][0]['message']['content'] ?? '';
         $valid = is_string($content) && trim($content) !== '';
         if ($name === 'chat JSON') {

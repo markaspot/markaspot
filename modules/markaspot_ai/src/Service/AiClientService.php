@@ -19,8 +19,50 @@ use Drupal\markaspot_ai\Exception\ProviderRequestException;
  * This service handles communication with various AI providers (OpenAI, Azure,
  * Anthropic, etc.) using a unified interface. It supports different
  * authentication methods and includes retry logic with exponential backoff.
+ *
+ * Token accounting: this client is the single owner of the daily token limit
+ * (TokenTrackingService). chat() and embed() check the limit before a request
+ * and book every provider response that came back, once per attempt, before
+ * the caller sees it: successful answers, refusals and token-exhausted
+ * answers alike, because each of them consumed tokens. Failed requests
+ * (transport errors, 4xx/5xx) return no usage and are not booked. Callers
+ * name their workflow with the 'operation' option (optionally 'entity_type'
+ * and 'entity_id') and must not book chat or embedding usage themselves.
+ * When a provider omits usage, a conservative estimate is booked instead
+ * (see estimateTokens()), so a provider without usage reporting cannot
+ * bypass the limit.
+ *
+ * The daily limit is the install-wide provider-cost ceiling for everything
+ * that goes through this client. Two separate limits sit next to it and are
+ * not replaced by it: Vision analysis (markaspot_vision) calls its own
+ * provider endpoint and is bounded by the per-jurisdiction SaaS analysis
+ * count; the Fastmap onboarding chat runs in the frontend with its own
+ * controls. Server-side Fastmap workspace provisioning does use this client
+ * and therefore counts against the daily limit.
  */
 class AiClientService {
+
+  /**
+   * Token estimate for one image part when a provider reports no usage.
+   *
+   * Matches a high-detail OpenAI image tile budget; deliberately generous.
+   */
+  protected const ESTIMATED_IMAGE_TOKENS = 765;
+
+  /**
+   * Payload keys that carry parameters, not prompt text, for the estimate.
+   */
+  protected const NON_PROMPT_KEYS = [
+    'model',
+    'temperature',
+    'top_p',
+    'max_tokens',
+    'max_completion_tokens',
+    'response_format',
+    'dimensions',
+    'role',
+    'type',
+  ];
 
   /**
    * Default chat model matching the untouched install configuration.
@@ -105,6 +147,9 @@ class AiClientService {
    *   - 'timeout': Per-attempt HTTP timeout in seconds, clamped to 1-120.
    *   - 'connect_timeout': Connection timeout, clamped to 1-30 and timeout.
    *   - 'max_attempts': Maximum attempts, clamped to 1-3 (default: 3).
+   *   - 'operation': Workflow name the token usage is booked under
+   *     (default: 'chat').
+   *   - 'entity_type', 'entity_id': Optional usage attribution.
    *
    * @return array
    *   The API response containing:
@@ -205,12 +250,11 @@ class AiClientService {
         }
         $exhausted = ($response['stop_reason'] ?? '') === 'max_tokens';
       }
+      // Every answer the provider returned consumed tokens, including
+      // refusals and token-exhausted answers: book it before anything else.
+      $this->bookUsage($provider, $model, $options, 'chat', $response, $payload, is_string($content) ? $content : '');
       if ($exhausted && (!is_string($content) || trim($content) === '')) {
         $message = "Token budget exhausted for {$provider}/{$model}; increase providers.{$provider}.max_tokens_min.";
-        if (isset($response['usage'])) {
-          $usage = $response['usage'];
-          $this->tokenTracking->logUsage($provider, $model, $options['operation'] ?? 'chat', (int) ($usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0), (int) ($usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0));
-        }
         $this->logger->error('@message', ['@message' => $message]);
         throw new \RuntimeException($message);
       }
@@ -269,6 +313,9 @@ class AiClientService {
    *   - 'model': Override the default embedding model.
    *   - 'dimensions': Number of dimensions for the embedding.
    *   - 'provider': Override the default provider.
+   *   - 'operation': Workflow name the token usage is booked under
+   *     (default: 'embed').
+   *   - 'entity_type', 'entity_id': Optional usage attribution.
    *
    * @return array
    *   The API response containing:
@@ -312,9 +359,97 @@ class AiClientService {
       $payload['dimensions'] = (int) $options['dimensions'];
     }
 
-    return $this->executeWithRetry(function () use ($endpoint, $headers, $payload) {
-      return $this->sendRequest('POST', $endpoint, $headers, $payload);
+    return $this->executeWithRetry(function () use ($endpoint, $headers, $payload, $provider, $model, $options) {
+      $response = $this->sendRequest('POST', $endpoint, $headers, $payload);
+      $this->bookUsage($provider, $model, $options, 'embed', $response, $payload, '');
+      return $response;
     });
+  }
+
+  /**
+   * Books one provider response against the daily token limit.
+   *
+   * The only place that records chat and embedding usage. Reads both the
+   * OpenAI (prompt/completion) and the Anthropic (input/output) usage shape;
+   * an embedding response may report only total_tokens. A response without
+   * usable numbers is booked with an estimate and logged, so the limit still
+   * advances.
+   *
+   * @param string $provider
+   *   The provider the request went to.
+   * @param string $model
+   *   The requested (configured) model or deployment.
+   * @param array $options
+   *   The caller options ('operation', 'entity_type', 'entity_id').
+   * @param string $defaultOperation
+   *   Operation name when the caller named none.
+   * @param array $response
+   *   The decoded provider response.
+   * @param array $payload
+   *   The request payload, used for the estimate only.
+   * @param string $outputText
+   *   The answer text, used for the estimate only.
+   */
+  protected function bookUsage(string $provider, string $model, array $options, string $defaultOperation, array $response, array $payload, string $outputText): void {
+    $usage = is_array($response['usage'] ?? NULL) ? $response['usage'] : [];
+    $input = $usage['prompt_tokens'] ?? $usage['input_tokens'] ?? NULL;
+    $output = $usage['completion_tokens'] ?? $usage['output_tokens'] ?? NULL;
+    if (!is_numeric($input) && is_numeric($usage['total_tokens'] ?? NULL)) {
+      $input = (int) $usage['total_tokens'] - (is_numeric($output) ? (int) $output : 0);
+    }
+
+    $operation = is_string($options['operation'] ?? NULL) && $options['operation'] !== '' ? $options['operation'] : $defaultOperation;
+    if (!is_numeric($input) && !is_numeric($output)) {
+      $input = $this->estimateTokens($payload);
+      $output = $this->estimateTokens($outputText);
+      $this->logger->notice('Provider @provider returned no token usage for @operation; booked an estimate of @tokens tokens.', [
+        '@provider' => $provider,
+        '@operation' => $operation,
+        '@tokens' => $input + $output,
+      ]);
+    }
+
+    // Unsaved drafts have no ID yet: book them without an entity reference.
+    $entity_id = is_numeric($options['entity_id'] ?? NULL) && (int) $options['entity_id'] > 0 ? (int) $options['entity_id'] : NULL;
+    $this->tokenTracking->logUsage(
+      $provider,
+      // The configured model or deployment name, as callers booked it
+      // before: provider-reported names carry version suffixes.
+      $model,
+      $operation,
+      max(0, (int) $input),
+      max(0, (int) $output),
+      $entity_id !== NULL && is_string($options['entity_type'] ?? NULL) ? $options['entity_type'] : NULL,
+      $entity_id,
+    );
+  }
+
+  /**
+   * Estimates tokens for text or a request payload (about 4 bytes a token).
+   *
+   * Images count with a fixed budget instead of their encoded size, so a
+   * base64 data URL cannot exhaust the daily limit on its own.
+   */
+  protected function estimateTokens(mixed $value): int {
+    if (is_string($value)) {
+      return (int) ceil(strlen($value) / 4);
+    }
+    if (!is_array($value)) {
+      return 0;
+    }
+    $type = $value['type'] ?? NULL;
+    if (in_array($type, ['image_url', 'image', 'input_image'], TRUE)) {
+      return self::ESTIMATED_IMAGE_TOKENS;
+    }
+    $tokens = 0;
+    foreach ($value as $key => $item) {
+      // Only text-bearing parts; model names and parameters are not prompt.
+      if (in_array($key, self::NON_PROMPT_KEYS, TRUE)) {
+        continue;
+      }
+      $tokens += $this->estimateTokens($item);
+    }
+    return $tokens;
   }
 
   /**
