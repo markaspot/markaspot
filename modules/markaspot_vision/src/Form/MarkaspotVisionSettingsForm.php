@@ -135,7 +135,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
         'hold' => $this->t('Hold the photo for moderation'),
         'reblur' => $this->t('Blur more strongly: faces, plates and text first, the whole photo as a last resort'),
       ],
-      '#default_value' => $config->get('residual_privacy_handling') ?? 'hold',
+      '#default_value' => $config->get('residual_privacy_handling') ?? 'reblur',
       '#description' => $this->t('Applies when the AI still sees personal data (for example a name on a letter) after faces and plates were blurred. Holding keeps the photo unpublished until staff review it. Blurring more strongly publishes it without those details; staff see them only where the original is kept (below).'),
       '#states' => [
         'visible' => [
