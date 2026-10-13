@@ -57,29 +57,45 @@ nodes` permission are privileged too. Privileged and cross-root accounts never
 receive profile changes. Other existing accounts only receive first or last
 names when the corresponding stored field is empty.
 In form-only tenants, `org_member` alone is not sufficient for report visibility:
-the `org_moderator` or `org_contractor` import role is additionally required.
-The plan points this out but `org_member` grants neither.
+`WorkspaceVisibilityService` scopes organisation reports only for memberships
+holding the individual `org-moderator` group role or for the Drupal
+`contractor` role. Use `org_moderator` or `org_contractor` instead; the plan
+points this out for `org_member` rows.
 
 Two organisation-scoped import roles exist. Both require one
-`organisation_code` and grant a `jur-org_member` membership plus a plain
-membership in exactly that organisation; the insider group role derived from
-the Drupal role there supplies report access:
+`organisation_code` and grant a `jur-org_member` membership plus a membership
+in exactly that organisation; the insider group role derived from the Drupal
+role there supplies report access. `org_moderator` additionally receives the
+individual `org-moderator` group role on that membership, as the invitation
+flow assigns it, so form-only jurisdictions scope the organisation's reports
+to the account:
 
-| Import role | Workbook label | Drupal role | Derived insider role |
-|---|---|---|---|
-| `org_moderator` | Moderation (zugewiesene Organisationen) | `moderator` | `org-insider` |
-| `org_contractor` | Dienstleister (zugewiesene Organisationen) | `contractor` | `org-contractor` |
+| Import role | Workbook label | Drupal role | Derived insider role | Individual org role |
+|---|---|---|---|---|
+| `org_moderator` | Moderation (zugewiesene Organisationen) | `moderator` | `org-insider` | `org-moderator` |
+| `org_contractor` | Dienstleister (zugewiesene Organisationen) | `contractor` | `org-contractor` | none |
 
-`org_moderator` is municipal staff: full moderation of the reports of its
-organisation, including reporter contact data, and read access elsewhere as
-the moderator role allows. `org_contractor` is an external service provider:
-the contractor access model prevents access to other organisations' reports,
-reporter contact data, internal remarks and responsibility reassignment.
-Neither grants jurisdiction-wide moderation, editorial or tenant-administration
-rights.
+`org_moderator` is municipal staff. Reports are grouped content of their
+jurisdiction and organisations (`group_node`), and Group's entity access
+(`group_entity_access()` with the relation's `AccessControl::entityAccess()`)
+answers `forbidden` for grouped nodes unless a group role in one of the node's
+groups grants the operation. That overrides the bundle-wide core permission
+`edit any service_request content` the moderator role carries. Updating
+therefore needs `update any group_node:service_request entity`, which the
+derived `org-insider` grants in the account's own organisation, while
+`jur-org_member` grants only `view`. The account edits the reports of its
+organisation and can view other reports of the jurisdiction (in form-only
+jurisdictions only those of its organisation), including reporter contact
+data, because field permissions follow the Drupal role.
+`org_contractor` is an external service provider: the contractor access model
+(`markaspot_group_node_access()`) prevents access to other organisations'
+reports, reporter contact data, internal remarks and responsibility
+reassignment. Neither grants jurisdiction-wide moderation, editorial or
+tenant-administration rights.
 
-Preflight rejects an administrative Drupal role, permissions marked
-`restrict access`, and permissions beginning with `administer `. The shipped
+Preflight rejects an administrative Drupal role, permissions without a
+definition, permissions marked `restrict access`, and permissions beginning
+with `administer `, and names the offending permissions. The shipped
 scoped capabilities of each role are explicit exceptions only when their
 definitions name the expected provider:
 
@@ -95,11 +111,16 @@ Missing or conflicting definitions are rejected. Permission definitions cover
 new modules and custom restricted permissions without an evolving denylist.
 Permissions that an operator revoked are never restored. The insider group
 role must map exactly that Drupal role to organisation insiders without
-administrative group access.
+administrative group access, and no other group role (for example a
+jurisdiction or outsider role) may derive from the same Drupal role. The
+individual `org-moderator` role must be a non-administrative organisation role
+without a global role whose permissions only view reports or create them.
 
 Existing accounts for a scoped import role must have no other Drupal roles
 beyond `authenticated` and that role's Drupal role, no elevated group roles,
-and no memberships outside the declared jurisdiction and organisation. UID 1
+and no memberships outside the declared jurisdiction and organisation (on that
+organisation only `org-moderator` for `org_moderator`). Blocked accounts are
+skipped as `blocked, membership skipped` instead of being checked. UID 1
 and all-groups accounts are also rejected. This guard cannot be overridden
 with `--allow-cross-tenant-users`. The importer neither removes existing
 authority nor silently migrates another import role into a scoped role.
@@ -116,7 +137,10 @@ rejects duplicate email rows.
 For dedicated installations, the installer provisions the technical UID 1
 administrator separately; the source `users` list contains municipal accounts.
 The generic import's existing `--allow-cross-tenant-users` semantics for other
-source roles remain unchanged, including privileged-account reuse. The strict
+source roles remain unchanged, including privileged-account reuse. The generic
+privilege check treats every Drupal role other than `tenant_admin` as
+privileged, so re-listing a scoped moderator or contractor under another
+import role needs `--allow-cross-tenant-users`. The strict
 scoped-role guard always rejects UID 1 regardless of that option. Optional
 top-level `provisioning` metadata is ignored by this module; only the dedicated
 installer consumes it.

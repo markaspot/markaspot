@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_tenant_import\Kernel;
 
 use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Extension\Extension;
@@ -142,6 +143,7 @@ final class TenantImporterTest extends KernelTestBase {
       'org-member' => ['org', 'insider', 'authenticated'],
       'org-contractor' => ['org', 'insider', 'contractor'],
       'org-insider' => ['org', 'insider', 'moderator'],
+      'org-moderator' => ['org', 'individual', NULL],
     ] as $id => [$groupType, $scope, $globalRole]) {
       GroupRole::create([
         'id' => $id,
@@ -319,8 +321,8 @@ final class TenantImporterTest extends KernelTestBase {
    */
   public static function scopedOrgRoleProvider(): array {
     return [
-      'municipal moderation' => ['org_moderator', 'moderator', 'org-insider'],
-      'external contractor' => ['org_contractor', 'contractor', 'org-contractor'],
+      'municipal moderation' => ['org_moderator', 'moderator', 'org-insider', ['org-moderator']],
+      'external contractor' => ['org_contractor', 'contractor', 'org-contractor', []],
     ];
   }
 
@@ -328,7 +330,7 @@ final class TenantImporterTest extends KernelTestBase {
    * A scoped import role grants only its Drupal role and the declared scope.
    */
   #[DataProvider('scopedOrgRoleProvider')]
-  public function testScopedOrgRoleImportIsScopedAndIdempotent(string $sourceRole, string $drupalRole, string $insiderRole): void {
+  public function testScopedOrgRoleImportIsScopedAndIdempotent(string $sourceRole, string $drupalRole, string $insiderRole, array $orgRoles): void {
     $configuration = $this->scopedOrgRoleConfiguration($sourceRole);
     $first = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
     $this->assertSame([], $first['errors']);
@@ -346,7 +348,9 @@ final class TenantImporterTest extends KernelTestBase {
     }
     $this->assertInstanceOf(GroupInterface::class, $organisation);
     $this->assertSame('SWE', $organisation->get('field_org_code')->getString());
-    $this->assertSame([], $this->storedMembershipRoles($organisation, $user));
+    // org_moderator mirrors the invitation flow's individual org-moderator
+    // role, which form-only jurisdictions use to scope organisation reports.
+    $this->assertSame($orgRoles, $this->storedMembershipRoles($organisation, $user));
     $derived = $organisation->getMember($user)->getRoles();
     $this->assertArrayHasKey($insiderRole, $derived);
     $this->assertArrayNotHasKey($insiderRole === 'org-insider' ? 'org-contractor' : 'org-insider', $derived);
@@ -363,7 +367,7 @@ final class TenantImporterTest extends KernelTestBase {
    * Missing organisation and dependencies are rejected before any writes.
    */
   #[DataProvider('scopedOrgRoleProvider')]
-  public function testScopedOrgRoleRequiresOrganisationAndRoles(string $sourceRole, string $drupalRole, string $insiderRole): void {
+  public function testScopedOrgRoleRequiresOrganisationAndRoles(string $sourceRole, string $drupalRole, string $insiderRole, array $orgRoles): void {
     $configuration = $this->scopedOrgRoleConfiguration($sourceRole);
     $configuration['users'][0]['organisation_code'] = NULL;
     $this->assertContains(sprintf('users[0].organisation_code is required for role %s.', $sourceRole), $this->importer->validate($configuration));
@@ -510,7 +514,7 @@ final class TenantImporterTest extends KernelTestBase {
    * Missing or wrongly mapped insider roles cannot widen authority.
    */
   #[DataProvider('scopedOrgRoleProvider')]
-  public function testScopedOrgRoleRejectsMissingOrInvalidInsiderRole(string $sourceRole, string $drupalRole, string $insiderRole): void {
+  public function testScopedOrgRoleRejectsMissingOrInvalidInsiderRole(string $sourceRole, string $drupalRole, string $insiderRole, array $orgRoles): void {
     $configuration = $this->scopedOrgRoleConfiguration($sourceRole);
     $denied = sprintf('%s must not grant administrative access', $drupalRole);
     $this->mockScopedPermissionDefinitions();
@@ -535,6 +539,7 @@ final class TenantImporterTest extends KernelTestBase {
       'switch users',
       'custom restricted capability',
       'administer unmarked custom capability',
+      'undefined harmless-sounding capability',
     ] as $permission) {
       // Inject config drift even when its provider (e.g. node) is not enabled.
       $role->setSyncing(TRUE);
@@ -546,6 +551,8 @@ final class TenantImporterTest extends KernelTestBase {
       }
       catch (TenantImportValidationException $exception) {
         $this->assertStringContainsString($denied, $exception->getMessage());
+        // The message names the offending permission so drift is actionable.
+        $this->assertStringContainsString($permission, $exception->getMessage());
       }
       $this->assertCount(1, Group::loadMultiple());
       $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
@@ -622,7 +629,7 @@ final class TenantImporterTest extends KernelTestBase {
    * An existing account gains only the declared scope and keeps its identity.
    */
   #[DataProvider('scopedOrgRoleProvider')]
-  public function testScopedOrgRoleAssignsExistingUnprivilegedAccount(string $sourceRole, string $drupalRole, string $insiderRole): void {
+  public function testScopedOrgRoleAssignsExistingUnprivilegedAccount(string $sourceRole, string $drupalRole, string $insiderRole, array $orgRoles): void {
     $configuration = $this->scopedOrgRoleConfiguration($sourceRole);
     $this->mockScopedPermissionDefinitions();
     // Preserve the shipped, restricted but organisation-scoped abilities.
@@ -655,7 +662,158 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertSame(['authenticated', $drupalRole], $user->getRoles());
     $this->assertCount(2, GroupMembership::loadByUser($user));
     $this->assertSame(['jur-org_member'], $this->storedMembershipRoles($this->jurisdiction, $user));
+    $this->assertSame($orgRoles, $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+  }
+
+  /**
+   * The individual org-moderator role must stay a narrow organisation role.
+   */
+  public function testOrgModeratorRequiresOrganisationScopedGroupRole(): void {
+    $configuration = $this->scopedOrgRoleConfiguration('org_moderator');
+    $role = GroupRole::load('org-moderator');
+    $role->set('admin', TRUE)->save();
+    $this->assertImportRejected($configuration, 'Group role org-moderator must be an individual, non-administrative organisation role');
+    $role->set('admin', FALSE)->save();
+    foreach (['administer members', 'update any group_node:service_request entity', 'edit group'] as $permission) {
+      $role->grantPermission($permission)->save();
+      $this->assertImportRejected($configuration, 'unexpected: ' . $permission);
+      $role->revokePermission($permission)->save();
+    }
+    // The shipped view/create permissions remain acceptable.
+    $role->grantPermissions([
+      'access group_node overview',
+      'create group_node:service_request entity',
+      'view group',
+      'view group_node:service_request entity',
+      'view unpublished group_node:service_request entity',
+    ])->save();
+    $this->assertSame([], $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE)['errors']);
+    $user = $this->loadUser($configuration['users'][0]['email']);
+    $this->assertSame(['org-moderator'], $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+    // Re-import accepts exactly that role on the declared organisation.
+    $second = $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $second['errors']);
+    $this->assertNotContains('update', array_column($second['rows'], 'action'));
+    $this->assertSame(['org-moderator'], $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+  }
+
+  /**
+   * Drifted outsider scope or a missing org-moderator role fail closed.
+   */
+  public function testOrgModeratorRejectsDriftedOrMissingGroupRole(): void {
+    $configuration = $this->scopedOrgRoleConfiguration('org_moderator');
+    $role = GroupRole::load('org-moderator');
+    $role->set('scope', 'outsider')->set('global_role', 'moderator')->save();
+    $this->assertImportRejected($configuration, 'Group role org-moderator also maps the Drupal moderator role');
+    $role->delete();
+    $this->assertImportRejected($configuration, 'Required group role org-moderator does not exist');
+    $this->assertFalse(user_load_by_mail($configuration['users'][0]['email']));
+  }
+
+  /**
+   * No group role other than the insider role may derive from a scoped role.
+   */
+  #[DataProvider('scopedOrgRoleProvider')]
+  public function testScopedOrgRoleRejectsAdditionalGlobalRoleMappings(string $sourceRole, string $drupalRole, string $insiderRole, array $orgRoles): void {
+    $configuration = $this->scopedOrgRoleConfiguration($sourceRole);
+    foreach ([
+      'jur-wide-' . $drupalRole => ['jur', 'insider', FALSE],
+      'jur-outside-' . $drupalRole => ['jur', 'outsider', FALSE],
+      // Group allows one role per type, scope and global role, so a second
+      // organisation insider mapping cannot exist; outsider roles can.
+      'org-admin-' . $drupalRole => ['org', 'outsider', TRUE],
+    ] as $id => [$groupType, $scope, $admin]) {
+      $extra = GroupRole::create([
+        'id' => $id,
+        'label' => $id,
+        'group_type' => $groupType,
+        'scope' => $scope,
+        'global_role' => $drupalRole,
+        'admin' => $admin,
+      ]);
+      $extra->save();
+      $this->assertImportRejected($configuration, sprintf('Group role %s also maps the Drupal %s role', $id, $drupalRole));
+      $extra->delete();
+    }
+    $this->assertSame([], $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE)['errors']);
+  }
+
+  /**
+   * The shipped moderator and contractor roles pass the scoped-role guard.
+   */
+  #[DataProvider('scopedOrgRoleProvider')]
+  public function testShippedRolePermissionsPassScopedGuard(string $sourceRole, string $drupalRole, string $insiderRole, array $orgRoles): void {
+    $file = dirname(__DIR__, 5) . '/config/optional/user.role.' . $drupalRole . '.yml';
+    $this->assertFileExists($file);
+    $shipped = Yaml::decode((string) file_get_contents($file));
+    $this->assertNotTrue($shipped['is_admin'] ?? FALSE);
+    $permissions = $shipped['permissions'];
+    $this->assertNotEmpty($permissions);
+    $this->assertSame([], array_values(array_filter($permissions, static fn ($permission) => str_starts_with($permission, 'administer '))));
+    // Every shipped permission is defined; only the allowlisted capabilities
+    // are restricted, as on the fleet.
+    $definitions = [];
+    foreach ($permissions as $permission) {
+      $definitions[$permission] = ['title' => $permission, 'provider' => 'system'];
+    }
+    foreach (self::SCOPED_PERMISSIONS[$sourceRole] as $permission => $provider) {
+      $definitions[$permission] = [
+        'title' => $permission,
+        'provider' => $provider,
+        'restrict access' => TRUE,
+      ];
+    }
+    $this->mockScopedPermissionDefinitions($definitions);
+    $role = Role::load($drupalRole);
+    $role->setSyncing(TRUE);
+    foreach ($permissions as $permission) {
+      $role->grantPermission($permission);
+    }
+    $role->save();
+    $result = $this->importer->import($this->scopedOrgRoleConfiguration($sourceRole), (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $result['errors']);
+    // Any restricted capability outside the allowlist still fails closed.
+    $outside = array_values(array_diff($permissions, array_keys(self::SCOPED_PERMISSIONS[$sourceRole])));
+    $this->assertNotEmpty($outside);
+    $restricted = [
+      'title' => $outside[0],
+      'provider' => 'system',
+      'restrict access' => TRUE,
+    ];
+    $this->mockScopedPermissionDefinitions([$outside[0] => $restricted] + $definitions);
+    $configuration = $this->scopedOrgRoleConfiguration($sourceRole);
+    $configuration['users'][0]['email'] = 'second-scoped@example.invalid';
+    $this->assertImportRejected($configuration, $outside[0]);
+  }
+
+  /**
+   * A blocked former contractor row is skipped instead of aborting the run.
+   */
+  public function testBlockedFormerContractorIsSkippedForOrgModerator(): void {
+    $former = $this->scopedOrgRoleConfiguration('org_contractor');
+    $this->assertSame([], $this->importer->import($former, (int) $this->jurisdiction->id(), [], TRUE)['errors']);
+    $user = $this->loadUser($former['users'][0]['email']);
+    $user->block()->save();
+    $result = $this->importer->import($this->scopedOrgRoleConfiguration('org_moderator'), (int) $this->jurisdiction->id(), [], TRUE);
+    $this->assertSame([], $result['errors']);
+    $this->assertStringContainsString('blocked, membership skipped', (string) json_encode($result['rows']));
+    $this->assertSame(['authenticated', 'contractor'], User::load($user->id())->getRoles());
     $this->assertSame([], $this->storedMembershipRoles($this->loadOrganisation('SWE'), $user));
+  }
+
+  /**
+   * Asserts that an apply run is rejected in preflight with a message.
+   */
+  private function assertImportRejected(array $configuration, string $message): void {
+    $groups = count(Group::loadMultiple());
+    try {
+      $this->importer->import($configuration, (int) $this->jurisdiction->id(), [], TRUE);
+      $this->fail('Import must be rejected: ' . $message);
+    }
+    catch (TenantImportValidationException $exception) {
+      $this->assertStringContainsString($message, $exception->getMessage());
+    }
+    $this->assertCount($groups, Group::loadMultiple());
   }
 
   /**
@@ -1261,6 +1419,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertSame(['authenticated', 'moderator'], $orgModerator->getRoles());
     $this->assertSame(['authenticated', 'contractor'], $orgContractor->getRoles());
     $this->assertArrayHasKey('org-insider', GroupMembership::loadSingle($this->loadOrganisation('GFA'), $orgModerator)->getRoles());
+    $this->assertSame(['org-moderator'], $this->storedMembershipRoles($this->loadOrganisation('GFA'), $orgModerator));
     $this->assertArrayHasKey('org-contractor', GroupMembership::loadSingle($swe, $orgContractor)->getRoles());
     $this->assertSame(
       ['jur-member', 'jur-org_member', 'jur-tenant_admin'],

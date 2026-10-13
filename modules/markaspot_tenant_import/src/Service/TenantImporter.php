@@ -12,6 +12,7 @@ use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Password\PasswordGeneratorInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\markaspot_tenant_import\Exception\TenantImportValidationException;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -40,14 +41,18 @@ class TenantImporter {
    *
    * Each grants one Drupal role, a jur-org_member membership and a plain
    * membership in exactly one organisation; the insider group role derives
-   * from the Drupal role there. Restricted permissions are only accepted when
-   * the listed provider ships them, so drift in a role fails closed.
+   * from the Drupal role there, plus the listed individual organisation roles.
+   * Restricted permissions are only accepted when the listed provider ships
+   * them, so drift in a role fails closed.
    */
   private const SCOPED_ORG_ROLES = [
     // Municipal staff moderating the reports of their organisation.
     'org_moderator' => [
       'drupal_role' => 'moderator',
       'group_role' => 'org-insider',
+      // Individual role the invitation flow assigns; form-only jurisdictions
+      // scope organisation reports by it (WorkspaceVisibilityService).
+      'org_group_roles' => ['org-moderator'],
       'scoped_permissions' => [
         'access dashboard notifications' => 'markaspot_notification',
         'add dashboard status notes' => 'markaspot_dashboard',
@@ -62,6 +67,7 @@ class TenantImporter {
     'org_contractor' => [
       'drupal_role' => 'contractor',
       'group_role' => 'org-contractor',
+      'org_group_roles' => [],
       'scoped_permissions' => [
         'add dashboard status notes' => 'markaspot_dashboard',
         'use service request management form' => 'markaspot_ui',
@@ -333,12 +339,50 @@ class TenantImporter {
         if (isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
           $scoped = self::SCOPED_ORG_ROLES[$sourceRole];
           $requiredRoles[] = $scoped['group_role'];
+          array_push($requiredRoles, ...$scoped['org_group_roles']);
           $drupalRole = $this->entityTypeManager->getStorage('user_role')->load($scoped['drupal_role']);
           if (!$drupalRole) {
             $errors[] = sprintf('Drupal role %s is required for %s.', $scoped['drupal_role'], $sourceRole);
           }
-          elseif ($this->hasAdministrativePermissions($drupalRole, $scoped['scoped_permissions'])) {
-            $errors[] = sprintf('Drupal role %s must not grant administrative access.', $scoped['drupal_role']);
+          elseif (($offending = $this->administrativePermissions($drupalRole, $scoped['scoped_permissions'])) !== []) {
+            $errors[] = sprintf(
+              'Drupal role %s must not grant administrative access: %s.',
+              $scoped['drupal_role'],
+              implode(', ', $offending),
+            );
+          }
+          // Only the expected insider role may derive from the Drupal role;
+          // any other mapping (e.g. a jurisdiction or outsider role) would
+          // widen the account's reach beyond its organisation.
+          foreach ($roleStorage->loadByProperties(['global_role' => $scoped['drupal_role']]) as $mappedRole) {
+            if ($mappedRole->id() !== $scoped['group_role']) {
+              $errors[] = sprintf(
+                'Group role %s also maps the Drupal %s role (%s, %s scope); only %s may derive from it.',
+                $mappedRole->id(),
+                $scoped['drupal_role'],
+                $mappedRole->get('group_type'),
+                $mappedRole->get('scope'),
+                $scoped['group_role'],
+              );
+            }
+          }
+          foreach ($scoped['org_group_roles'] as $orgRoleId) {
+            $orgRole = $roleStorage->load($orgRoleId);
+            if (!$orgRole instanceof GroupRoleInterface) {
+              continue;
+            }
+            $offending = $this->groupRolePermissionsOutsideOrganisationScope($orgRole);
+            if ($orgRole->get('group_type') !== 'org'
+              || $orgRole->get('scope') !== 'individual'
+              || $orgRole->get('global_role') !== NULL
+              || $orgRole->isAdmin()
+              || $offending !== []) {
+              $errors[] = sprintf(
+                'Group role %s must be an individual, non-administrative organisation role limited to viewing and creating reports%s.',
+                $orgRoleId,
+                $offending === [] ? '' : ' (unexpected: ' . implode(', ', $offending) . ')',
+              );
+            }
           }
           $insiderRole = $roleStorage->load($scoped['group_role']);
           if ($insiderRole && ($insiderRole->get('scope') !== 'insider'
@@ -429,6 +473,12 @@ class TenantImporter {
       }
       if ($existing instanceof UserInterface) {
         if (isset(self::SCOPED_ORG_ROLES[$row['role']])) {
+          if ($existing->isBlocked()) {
+            // Blocked accounts are skipped and never modified, so the plan
+            // reports them instead of aborting the whole import.
+            $profileProtected[$key] = TRUE;
+            continue;
+          }
           $organisation = $organisations[mb_strtolower((string) $row['organisation_code'])] ?? NULL;
           $scopeError = $this->scopedOrgRoleError($existing, (string) $row['role'], $jurisdictionId, $organisation);
           if ($scopeError !== NULL) {
@@ -701,7 +751,7 @@ class TenantImporter {
       $existing = $existingUsers[mb_strtolower($email)];
       $notice = $context['user_notices'][mb_strtolower($email)] ?? '';
       if ($user['role'] === 'org_member') {
-        $notice .= ' Form-only report visibility additionally requires the org_moderator or org_contractor import role; org_member grants neither.';
+        $notice .= ' Form-only report visibility additionally requires the individual org-moderator role (import role org_moderator) or the Drupal contractor role (import role org_contractor); org_member grants neither.';
       }
       if ($existing instanceof UserInterface && $existing->isBlocked()) {
         $rows[] = $this->row('user', $email, 'skip', 'blocked, membership skipped.' . $notice);
@@ -1070,12 +1120,18 @@ class TenantImporter {
           }
 
           if ($sourceRole === 'org_member' || isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
+            $orgGroupRoles = self::SCOPED_ORG_ROLES[$sourceRole]['org_group_roles'] ?? [];
             $organisationCode = mb_strtolower(trim((string) $userRow['organisation_code']));
             $organisation = $organisationEntities[$organisationCode] ?? NULL;
             if (!$organisation instanceof GroupInterface) {
               throw new \RuntimeException(sprintf('Organisation "%s" is unavailable.', $userRow['organisation_code']));
             }
-            $this->ensurePlainMembership($organisation, $user);
+            if ($orgGroupRoles === []) {
+              $this->ensurePlainMembership($organisation, $user);
+            }
+            else {
+              $this->ensureMembershipRoles($organisation, $user, $orgGroupRoles);
+            }
           }
         }
         catch (\Throwable $exception) {
@@ -1246,8 +1302,12 @@ class TenantImporter {
     if ($sourceRole === 'org_member' || isset(self::SCOPED_ORG_ROLES[$sourceRole])) {
       $code = mb_strtolower(trim((string) $row['organisation_code']));
       $organisation = $organisations[$code] ?? NULL;
+      $orgGroupRoles = self::SCOPED_ORG_ROLES[$sourceRole]['org_group_roles'] ?? [];
       if (!$organisation instanceof GroupInterface || !$organisation->getMember($user)) {
         $changes[] = 'organisation membership';
+      }
+      elseif ($orgGroupRoles !== [] && !$this->membershipHasRoles($organisation, $user, $orgGroupRoles)) {
+        $changes[] = 'organisation roles';
       }
     }
     return $changes;
@@ -1320,28 +1380,51 @@ class TenantImporter {
   }
 
   /**
-   * Rejects platform authority without maintaining a module-specific denylist.
+   * Lists platform authority without maintaining a module-specific denylist.
+   *
+   * @return string[]
+   *   Offending permission names (or "is_admin"), sorted; empty when none.
    */
-  private function hasAdministrativePermissions(RoleInterface $role, array $scopedProviders): bool {
+  private function administrativePermissions(RoleInterface $role, array $scopedProviders): array {
     if ($role->isAdmin()) {
-      return TRUE;
+      return ['is_admin'];
     }
     $definitions = $this->permissionHandler->getPermissions();
+    $offending = [];
     foreach ($role->getPermissions() as $permission) {
       // These shipped staff capabilities are restricted in Drupal, but their
       // access checks enforce report/organisation scope independently.
       if (isset($scopedProviders[$permission])) {
         if (($definitions[$permission]['provider'] ?? NULL) !== $scopedProviders[$permission]) {
-          return TRUE;
+          $offending[] = $permission;
         }
         continue;
       }
-      if (str_starts_with($permission, 'administer ')
+      // Undefined permissions are unknown authority: fail closed.
+      if (!isset($definitions[$permission])
+        || str_starts_with($permission, 'administer ')
         || !empty($definitions[$permission]['restrict access'])) {
-        return TRUE;
+        $offending[] = $permission;
       }
     }
-    return FALSE;
+    sort($offending);
+    return $offending;
+  }
+
+  /**
+   * Lists group permissions beyond viewing and creating organisation reports.
+   *
+   * @return string[]
+   *   Permissions outside that scope, sorted.
+   */
+  private function groupRolePermissionsOutsideOrganisationScope(GroupRoleInterface $role): array {
+    $offending = array_filter(
+      $role->getPermissions(),
+      static fn (string $permission): bool => !str_starts_with($permission, 'view ')
+        && !in_array($permission, ['access group_node overview', 'create group_node:service_request entity'], TRUE),
+    );
+    sort($offending);
+    return array_values($offending);
   }
 
   /**
@@ -1386,7 +1469,7 @@ class TenantImporter {
       elseif ($group->bundle() === 'org' && $organisation !== NULL
         && (int) $group->id() === (int) $organisation->id()) {
         // The insider role is derived from the global role, not assigned here.
-        $allowedRoles = ['org-member'];
+        $allowedRoles = ['org-member', ...self::SCOPED_ORG_ROLES[$sourceRole]['org_group_roles']];
       }
       else {
         return 'Existing group membership is outside the declared jurisdiction or organisation.';
