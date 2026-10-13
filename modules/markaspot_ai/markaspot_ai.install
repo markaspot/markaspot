@@ -864,3 +864,38 @@ function markaspot_ai_update_11902(array &$sandbox): string {
     $sandbox['uncorroborated'],
   );
 }
+
+/**
+ * Deletes sentiment records whose report no longer exists.
+ *
+ * Reports deleted before sentiment cleanup ran on node deletion left their
+ * free-text reasoning behind. Each row is checked against the storage of its
+ * own entity type; rows of an entity type not defined on this site are kept.
+ * Batched by primary key and safe to run any number of times.
+ */
+function markaspot_ai_update_11903(array &$sandbox): string {
+  if (!\Drupal::database()->schema()->tableExists('markaspot_ai_sentiment')) {
+    $sandbox['#finished'] = 1;
+    return 'No sentiment table, nothing to clean up.';
+  }
+
+  if (!isset($sandbox['last_id'])) {
+    $sandbox['last_id'] = 0;
+    $sandbox['scanned'] = 0;
+    $sandbox['deleted'] = 0;
+  }
+
+  /** @var \Drupal\markaspot_ai\Service\SentimentService $sentiment_service */
+  $sentiment_service = \Drupal::service('markaspot_ai.sentiment');
+  $batch = $sentiment_service->purgeOrphanedRecords((int) $sandbox['last_id'], 500);
+  $sandbox['last_id'] = $batch['last_id'];
+  $sandbox['scanned'] += $batch['scanned'];
+  $sandbox['deleted'] += $batch['deleted'];
+  $sandbox['#finished'] = $batch['scanned'] < 500 ? 1 : 0;
+
+  return sprintf(
+    'Sentiment records: %d scanned, %d orphaned records of deleted reports removed.',
+    $sandbox['scanned'],
+    $sandbox['deleted'],
+  );
+}

@@ -1,6 +1,6 @@
 name: 'Mark-a-Spot AI PII screening test'
 type: module
-description: 'Test support: tenant features without markaspot_nuxt and a forced report-save failure.'
+description: 'Test support: tenant features without markaspot_nuxt and forced report save/delete failures.'
 package: Testing
 hidden: true
 core_version_requirement: ^11

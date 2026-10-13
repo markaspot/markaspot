@@ -451,6 +451,116 @@ PROMPT;
   }
 
   /**
+   * Deletes the stored sentiment of an entity.
+   *
+   * The free-text reasoning can repeat what the report said, so it must not
+   * outlive the report. Database errors are not caught: the caller runs
+   * inside the entity's delete transaction and has to roll back with it.
+   *
+   * @param int $entityId
+   *   The entity ID.
+   * @param string $entityType
+   *   The entity type.
+   *
+   * @return int
+   *   Number of deleted rows.
+   */
+  public function deleteForEntity(int $entityId, string $entityType = 'node'): int {
+    return (int) $this->database->delete('markaspot_ai_sentiment')
+      ->condition('entity_type', $entityType)
+      ->condition('entity_id', $entityId)
+      ->execute();
+  }
+
+  /**
+   * Clears the stored reasoning while keeping the classification.
+   *
+   * Used when the text the reasoning was derived from changes, e.g. when the
+   * archive anonymises the report, which saves the node instead of deleting
+   * it. The category and score carry no report text and stay for statistics.
+   *
+   * @param int $entityId
+   *   The entity ID.
+   * @param string $entityType
+   *   The entity type.
+   *
+   * @return int
+   *   Number of updated rows.
+   */
+  public function clearReasoning(int $entityId, string $entityType = 'node'): int {
+    return (int) $this->database->update('markaspot_ai_sentiment')
+      ->fields(['reasoning' => NULL])
+      ->condition('entity_type', $entityType)
+      ->condition('entity_id', $entityId)
+      ->isNotNull('reasoning')
+      ->execute();
+  }
+
+  /**
+   * Deletes sentiment rows whose entity no longer exists, one batch at a time.
+   *
+   * Rows are walked in primary key order. Each entity type is checked against
+   * its own storage; rows of an entity type that is not defined on this site
+   * are left alone, because their existence cannot be decided.
+   *
+   * @param int $afterId
+   *   Only rows with a larger primary key are considered.
+   * @param int $limit
+   *   Maximum number of rows scanned in this batch.
+   *
+   * @return array{last_id: int, scanned: int, deleted: int}
+   *   The last scanned primary key, the scanned and the deleted row count.
+   */
+  public function purgeOrphanedRecords(int $afterId, int $limit = 500): array {
+    $rows = $this->database->select('markaspot_ai_sentiment', 's')
+      ->fields('s', ['id', 'entity_type', 'entity_id'])
+      ->condition('id', $afterId, '>')
+      ->orderBy('id')
+      ->range(0, $limit)
+      ->execute()
+      ->fetchAll();
+
+    $byType = [];
+    $lastId = $afterId;
+    foreach ($rows as $row) {
+      $byType[(string) $row->entity_type][(int) $row->id] = (int) $row->entity_id;
+      $lastId = max($lastId, (int) $row->id);
+    }
+
+    $orphanRowIds = [];
+    foreach ($byType as $entityType => $entityIds) {
+      if (!$this->entityTypeManager->hasDefinition($entityType)) {
+        continue;
+      }
+      $definition = $this->entityTypeManager->getDefinition($entityType);
+      $existing = $this->entityTypeManager->getStorage($entityType)
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition($definition->getKey('id'), array_values(array_unique($entityIds)), 'IN')
+        ->execute();
+      $existing = array_flip(array_map('intval', $existing));
+      foreach ($entityIds as $rowId => $entityId) {
+        if (!isset($existing[$entityId])) {
+          $orphanRowIds[] = $rowId;
+        }
+      }
+    }
+
+    $deleted = 0;
+    if ($orphanRowIds !== []) {
+      $deleted = (int) $this->database->delete('markaspot_ai_sentiment')
+        ->condition('id', $orphanRowIds, 'IN')
+        ->execute();
+    }
+
+    return [
+      'last_id' => $lastId,
+      'scanned' => count($rows),
+      'deleted' => $deleted,
+    ];
+  }
+
+  /**
    * Gets default result when analysis cannot be performed.
    *
    * @return array

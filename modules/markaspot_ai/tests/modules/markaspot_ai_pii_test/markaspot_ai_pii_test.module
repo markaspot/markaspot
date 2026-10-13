@@ -20,3 +20,15 @@ function markaspot_ai_pii_test_node_presave(NodeInterface $node): void {
     throw new \RuntimeException('Forced report save failure.');
   }
 }
+
+/**
+ * Implements hook_node_delete().
+ *
+ * Runs after markaspot_ai_node_delete() (module order) and fails the report
+ * deletion on demand, after markaspot_ai has removed the derived AI data.
+ */
+function markaspot_ai_pii_test_node_delete(NodeInterface $node): void {
+  if (\Drupal::state()->get('markaspot_ai_pii_test.fail_report_delete')) {
+    throw new \RuntimeException('Forced report delete failure.');
+  }
+}

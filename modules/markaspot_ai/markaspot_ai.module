@@ -362,6 +362,12 @@ function markaspot_ai_node_update(NodeInterface $node): void {
     }
   }
 
+  // The stored sentiment reasoning was derived from the title, description
+  // and feedback. When that text changes (an edit, or the archive anonymising
+  // the report, which saves the node rather than deleting it), the reasoning
+  // must not keep the old wording. The classification itself stays.
+  _markaspot_ai_clear_stale_sentiment_reasoning($node);
+
   // Only queue published nodes.
   if (!$node->isPublished()) {
     return;
@@ -442,7 +448,14 @@ function markaspot_ai_node_update(NodeInterface $node): void {
 /**
  * Implements hook_node_delete().
  *
- * Cleans up embeddings and duplicate matches when a node is deleted.
+ * Deletes the AI data derived from a report together with the report:
+ * embeddings, duplicate matches and the sentiment record, whose free-text
+ * reasoning can repeat what the report said.
+ *
+ * The hook runs inside the node storage's delete transaction. A cleanup
+ * failure is rethrown so the whole deletion rolls back instead of leaving a
+ * deleted report with its derived data behind; a failed node deletion rolls
+ * the cleanup back the same way.
  */
 function markaspot_ai_node_delete(NodeInterface $node): void {
   // Only process service_request nodes.
@@ -464,19 +477,70 @@ function markaspot_ai_node_delete(NodeInterface $node): void {
     $duplicate_service = \Drupal::service('markaspot_ai.duplicate_detection');
     $deleted_matches = $duplicate_service->deleteMatchesForNode($nid);
 
-    if ($deleted_embeddings > 0 || $deleted_matches > 0) {
-      \Drupal::logger('markaspot_ai')->info('Cleaned up AI data for deleted node @nid: @embeddings embeddings, @matches duplicate matches.', [
+    // Delete the sentiment record.
+    /** @var \Drupal\markaspot_ai\Service\SentimentService $sentiment_service */
+    $sentiment_service = \Drupal::service('markaspot_ai.sentiment');
+    $deleted_sentiment = $sentiment_service->deleteForEntity($nid);
+
+    if ($deleted_embeddings > 0 || $deleted_matches > 0 || $deleted_sentiment > 0) {
+      \Drupal::logger('markaspot_ai')->info('Cleaned up AI data for deleted node @nid: @embeddings embeddings, @matches duplicate matches, @sentiment sentiment records.', [
         '@nid' => $nid,
         '@embeddings' => $deleted_embeddings,
         '@matches' => $deleted_matches,
+        '@sentiment' => $deleted_sentiment,
       ]);
     }
   }
-  catch (\Exception $e) {
-    \Drupal::logger('markaspot_ai')->error('Failed to clean up AI data for deleted node @nid: @message', [
+  catch (\Throwable $e) {
+    // Exception messages can carry query arguments; log the class only.
+    \Drupal::logger('markaspot_ai')->error('Failed to clean up AI data for deleted node @nid (@class); the deletion is rolled back.', [
       '@nid' => $nid,
-      '@message' => $e->getMessage(),
+      '@class' => get_class($e),
     ]);
+    throw $e;
+  }
+}
+
+/**
+ * Clears sentiment reasoning whose source text changed on this save.
+ *
+ * Compares the fields the sentiment analysis reads (title, body, feedback)
+ * with the original across all translations. Runs inside the node's save
+ * transaction, so a failed save restores the reasoning as well.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The updated service request.
+ */
+function _markaspot_ai_clear_stale_sentiment_reasoning(NodeInterface $node): void {
+  $original = $node->getOriginal();
+  if (!$original instanceof NodeInterface) {
+    return;
+  }
+
+  $changed = FALSE;
+  foreach ($node->getTranslationLanguages() as $langcode => $language) {
+    $current = $node->getTranslation($langcode);
+    $before = $original->hasTranslation($langcode) ? $original->getTranslation($langcode) : NULL;
+    if ($before === NULL) {
+      continue;
+    }
+    if ($current->getTitle() !== $before->getTitle()) {
+      $changed = TRUE;
+      break;
+    }
+    foreach (['body', 'field_feedback'] as $field_name) {
+      if ($current->hasField($field_name)
+        && ($current->get($field_name)->value ?? '') !== ($before->get($field_name)->value ?? '')) {
+        $changed = TRUE;
+        break 2;
+      }
+    }
+  }
+
+  if ($changed) {
+    /** @var \Drupal\markaspot_ai\Service\SentimentService $sentiment_service */
+    $sentiment_service = \Drupal::service('markaspot_ai.sentiment');
+    $sentiment_service->clearReasoning((int) $node->id());
   }
 }
 
