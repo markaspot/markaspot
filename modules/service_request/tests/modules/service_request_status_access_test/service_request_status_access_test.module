@@ -1,0 +1,22 @@
+<?php
+
+/**
+ * @file
+ * Provides an entity-access denial to test publication field scope.
+ */
+
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_node_access().
+ */
+function service_request_status_access_test_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResult {
+  if ($operation === 'update' && $node->bundle() === 'service_request'
+    && $node->hasField('field_jurisdiction')
+    && (int) $node->get('field_jurisdiction')->value !== 1) {
+    return AccessResult::forbidden('Outside the permitted test jurisdiction.')->setCacheMaxAge(0);
+  }
+  return AccessResult::neutral();
+}
