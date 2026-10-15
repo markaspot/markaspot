@@ -96,6 +96,18 @@ final class TenantSettingsController extends ControllerBase {
   ];
 
   /**
+   * Boolean feature flags whose stored value may be a configuration object.
+   *
+   * The citizen frontend reads options next to 'enabled' (install prompt
+   * delay and dismissal, form-first layout and tab). A boolean from the
+   * settings page only switches 'enabled' and keeps those options.
+   */
+  const CONFIGURABLE_BOOLEAN_FLAGS = [
+    'pwaInstallPrompt',
+    'formFirst',
+  ];
+
+  /**
    * Feature flags stored below features.forms.
    *
    * Used to validate generic report-form behaviour flags. Client-specific
@@ -2492,15 +2504,22 @@ final class TenantSettingsController extends ControllerBase {
     }
 
     // Apply only known feature flags from the request, preserving all others.
-    // Special case: formFirst can be an object with config options. Preserve
-    // the existing object when the dashboard sends true.
+    // The settings page sends every editable flag on each save, so stored
+    // options next to 'enabled' (search mode, boundary validation, install
+    // prompt timing, form-first layout) must survive: merge, never replace.
     $allKnownFlags = array_merge(self::SIMPLE_FEATURE_FLAGS, self::NESTED_FEATURE_FLAGS);
     foreach ($data as $key => $value) {
-      if (in_array($key, $allKnownFlags, TRUE)) {
-        if ($key === 'formFirst' && $value === TRUE && is_array($config['features']['formFirst'] ?? NULL)) {
-          // Preserve existing formFirst config object when enabling.
-          continue;
-        }
+      if (!in_array($key, $allKnownFlags, TRUE)) {
+        continue;
+      }
+      $existing = $config['features'][$key] ?? NULL;
+      if (in_array($key, self::NESTED_FEATURE_FLAGS, TRUE) && is_array($existing)) {
+        $config['features'][$key] = array_replace($existing, $value);
+      }
+      elseif (in_array($key, self::CONFIGURABLE_BOOLEAN_FLAGS, TRUE) && is_array($existing)) {
+        $config['features'][$key] = array_replace($existing, ['enabled' => $value]);
+      }
+      else {
         $config['features'][$key] = $value;
       }
     }

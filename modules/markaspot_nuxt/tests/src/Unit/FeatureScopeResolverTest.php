@@ -387,6 +387,10 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $this->assertTrue($features['organisations']);
     $this->assertTrue($features['facilities']);
     $this->assertTrue($enterpriseResolver->isEditable('facilities', $optedInRoot));
+    // The dashboard flag gates the settings page that sets it, so a tenant
+    // admin must never be able to switch it off: operator-managed everywhere.
+    $this->assertFalse($enterpriseResolver->isEditable('dashboard', $optedInRoot));
+    $this->assertTrue($enterpriseResolver->isEditable('dashboardRequestCreate', $optedInRoot));
 
     // The frontend contract requires a scalar boolean even if stale config
     // stored the feature in the resolver's supported object form.

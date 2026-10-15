@@ -226,7 +226,7 @@ class FeatureScopeResolver {
    */
   public function isEditable(string $key, GroupInterface $jur): bool {
     $scope = self::SCOPE_MAP[$key] ?? NULL;
-    if ($scope === 'platform') {
+    if ($scope === 'platform' || in_array($key, self::OPERATOR_MANAGED, TRUE)) {
       return FALSE;
     }
     if ($key === 'moderation' && $this->moderationPlatformRule() !== NULL) {
@@ -330,6 +330,17 @@ class FeatureScopeResolver {
   public const SELF_SERVICE_EXCLUDED = [
     'organisations',
     'facilities',
+  ];
+
+  /**
+   * Tenant flags that only the operator may change.
+   *
+   * The dashboard flag gates every dashboard route, including the settings
+   * page that sets it: a tenant admin switching it off locks themselves out
+   * with no way back through the UI. Operators change it on the group entity.
+   */
+  public const OPERATOR_MANAGED = [
+    'dashboard',
   ];
 
   /**
