@@ -502,10 +502,8 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
     return;
   }
 
-  // Admins bypass tier limits.
-  $currentUser = \Drupal::currentUser();
-  if ($currentUser->hasPermission('bypass mas validation')
-    || $currentUser->hasPermission('administer nodes')) {
+  // Admins bypass tier limits; staff only inside their own workspaces.
+  if (_markaspot_fastmap_account_bypasses_tier_limit(\Drupal::currentUser(), _markaspot_fastmap_resolve_jurisdiction_group_for_node($node))) {
     return;
   }
 
@@ -866,6 +864,34 @@ function _markaspot_fastmap_jurisdiction_matches_category_root(int $jurisdiction
   /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
   $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
   return $resolver->getRootJurisdictionId($jurisdictionId) === $categoryRootId;
+}
+
+/**
+ * Checks whether an account may skip the published tier limit.
+ *
+ * 'administer nodes' is operator-level and always skips it. The global
+ * 'bypass mas validation' (e.g. moderators synced from any organisation) only
+ * counts inside workspaces the account belongs to: otherwise a staff user of
+ * one workspace could keep a report published in a foreign workspace where
+ * the same citizen report would be unpublished at the limit.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The acting account.
+ * @param \Drupal\group\Entity\GroupInterface|null $group
+ *   The report's resolved jurisdiction group, if any.
+ *
+ * @return bool
+ *   TRUE if the tier limit does not apply to this save.
+ */
+function _markaspot_fastmap_account_bypasses_tier_limit(AccountInterface $account, ?GroupInterface $group): bool {
+  if ($account->hasPermission('administer nodes')) {
+    return TRUE;
+  }
+  if (!$account->hasPermission('bypass mas validation')) {
+    return FALSE;
+  }
+  return !$group instanceof GroupInterface
+    || _markaspot_group_user_is_member_in_jurisdiction_scope($account, (int) $group->id());
 }
 
 /**

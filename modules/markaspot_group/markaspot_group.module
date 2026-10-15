@@ -2071,6 +2071,31 @@ function markaspot_group_entity_field_access(string $operation, FieldDefinitionI
       ->addCacheContexts(['user.roles']);
   }
 
+  // Moderators publish only where they are members. A new report has no group
+  // relationship yet, so the status grant in service_request (bundle create
+  // access only) cannot scope it: check the submitted jurisdictions here.
+  // Creating an unpublished report stays possible everywhere, as for citizens.
+  if ($is_service_request_field
+    && $operation === 'edit'
+    && $field_definition->getName() === 'status'
+    && $field_entity instanceof NodeInterface
+    && $field_entity->isNew()
+    && in_array('moderator', $account->getRoles(), TRUE)
+    && (bool) $items?->value) {
+    $jurisdiction_ids = _markaspot_group_field_target_ids($field_entity, 'field_jurisdiction');
+    $in_scope = $jurisdiction_ids !== [];
+    foreach ($jurisdiction_ids as $jurisdiction_id) {
+      if (!_markaspot_group_user_is_member_in_jurisdiction_scope($account, $jurisdiction_id)) {
+        $in_scope = FALSE;
+        break;
+      }
+    }
+    if (!$in_scope) {
+      return AccessResult::forbidden('Moderators may only publish new reports in jurisdictions they belong to.')
+        ->setCacheMaxAge(0);
+    }
+  }
+
   if ($field_definition->getTargetEntityTypeId() !== 'node'
     || $field_definition->getTargetBundle() !== 'service_request'
     || !in_array($field_definition->getName(), ['field_assignee', 'field_assigned_team', 'assignee_label'], TRUE)) {
@@ -3420,6 +3445,49 @@ function _markaspot_group_user_can_manage_jurisdiction(AccountInterface $account
     // access to a jurisdiction outside the user's managed subtree.
     $scope_ids = $hierarchy_resolver->getDescendantIds((int) $group->id());
     if (in_array($jurisdiction_id, $scope_ids, TRUE)) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Checks whether an account belongs to a jurisdiction's scope.
+ *
+ * Moderation acts only where the account is a member: everyone who may
+ * manage the jurisdiction, a jurisdiction membership on the target or an
+ * ancestor, or a membership in an organisation assigned to the target or its
+ * root. Gates publishing a new report, which has no group relationship yet.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The acting account.
+ * @param int $jurisdiction_id
+ *   The target jurisdiction group ID.
+ *
+ * @return bool
+ *   TRUE if the account belongs to the jurisdiction's scope.
+ */
+function _markaspot_group_user_is_member_in_jurisdiction_scope(AccountInterface $account, int $jurisdiction_id): bool {
+  if (_markaspot_group_user_can_manage_jurisdiction($account, $jurisdiction_id)) {
+    return TRUE;
+  }
+
+  $user = User::load($account->id());
+  if (!$user) {
+    return FALSE;
+  }
+
+  $hierarchy_resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  foreach (GroupMembershipEntity::loadByUser($user) as $membership) {
+    $group = $membership->getGroup();
+    if (_markaspot_group_is_jurisdiction_group($group)) {
+      if (in_array($jurisdiction_id, $hierarchy_resolver->getDescendantIds((int) $group->id()), TRUE)) {
+        return TRUE;
+      }
+      continue;
+    }
+    if ($group instanceof GroupInterface && _markaspot_group_org_group_matches_jurisdiction($group, $jurisdiction_id)) {
       return TRUE;
     }
   }
