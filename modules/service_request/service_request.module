@@ -7,18 +7,63 @@
  * This is a content type to run an georeport v2 server.
  */
 
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\File\Event\FileUploadSanitizeNameEvent;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\file\FileInterface;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\ParagraphInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
+
+/**
+ * Implements hook_entity_field_access().
+ *
+ * Dashboard creation sends the publication status even for unpublished reports.
+ * Grant moderators this field on service requests without the bundle-wide core
+ * permission. Entity access still controls which requests they may write, and
+ * the runtime grant survives tenant configuration imports.
+ */
+function service_request_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  $result = AccessResult::neutral()->addCacheContexts(['user.roles']);
+  $node = $items?->getEntity();
+  if ($operation !== 'edit'
+    || $field_definition->getTargetEntityTypeId() !== 'node'
+    || $field_definition->getName() !== 'status'
+    || !$node instanceof NodeInterface
+    || $node->bundle() !== 'service_request'
+    || !in_array('moderator', $account->getRoles(), TRUE)) {
+    return $result;
+  }
+
+  if ($node->isNew()) {
+    $access = \Drupal::entityTypeManager()->getAccessControlHandler('node')
+      ->createAccess('service_request', $account, [], TRUE);
+  }
+  else {
+    // JSON:API may already have changed the jurisdiction or author in memory.
+    // Check the persisted source so changing fields cannot confer write access.
+    $original = $node->original ?? \Drupal::entityTypeManager()->getStorage('node')->loadUnchanged($node->id());
+    if (!$original instanceof NodeInterface || $original->bundle() !== 'service_request') {
+      return $result->setCacheMaxAge(0);
+    }
+    $access = $original->access('update', $account, TRUE);
+    $result->addCacheableDependency($original);
+  }
+
+  return $result->orIf(AccessResult::allowedIf($access->isAllowed()))
+    ->addCacheableDependency($access)
+    ->addCacheableDependency($node)
+    ->setCacheMaxAge(0);
+}
 
 /**
  * Implements hook_entity_bundle_field_info_alter().

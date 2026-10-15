@@ -1,0 +1,4 @@
+name: Service request status access test
+type: module
+package: Testing
+core_version_requirement: ^11
