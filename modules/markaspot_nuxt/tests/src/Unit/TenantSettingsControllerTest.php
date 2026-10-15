@@ -2945,6 +2945,129 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Builds a JSON PATCH request for the features endpoint.
+   */
+  private function createFeaturePatchRequest(array $payload): Request {
+    return Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode($payload)
+    );
+  }
+
+  /**
+   * Tests a save keeps stored options next to 'enabled' on nested flags.
+   *
+   * The settings page sends every editable flag as {enabled} on each save;
+   * replacing the stored object dropped search mode and boundary validation.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsMergesNestedFlagOptions(): void {
+    $storedNuxtConfig = json_encode(['features' => [
+      'search' => ['enabled' => TRUE, 'mode' => 'fuzzy', 'minLength' => 2],
+      'boundaries' => ['enabled' => TRUE, 'strictValidation' => TRUE, 'showBoundaryOnMap' => TRUE],
+    ]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'search' => ['enabled' => FALSE],
+      'boundaries' => ['enabled' => TRUE],
+      'funFacts' => ['enabled' => TRUE],
+    ]), '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame(
+      ['enabled' => FALSE, 'mode' => 'fuzzy', 'minLength' => 2],
+      $updatedConfig['features']['search']
+    );
+    $this->assertSame(
+      ['enabled' => TRUE, 'strictValidation' => TRUE, 'showBoundaryOnMap' => TRUE],
+      $updatedConfig['features']['boundaries']
+    );
+    $this->assertSame(['enabled' => TRUE], $updatedConfig['features']['funFacts']);
+  }
+
+  /**
+   * Tests boolean saves keep install-prompt and form-first options.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsKeepsConfigurableBooleanOptions(): void {
+    $storedNuxtConfig = json_encode(['features' => [
+      'formFirst' => ['mobileLayout' => 'tabs', 'defaultTab' => 'photo'],
+      'pwaInstallPrompt' => ['enabled' => FALSE, 'showDelay' => 5000, 'dismissalDuration' => 14],
+    ]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'formFirst' => TRUE,
+      'pwaInstallPrompt' => TRUE,
+    ]), '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    // A legacy object without 'enabled' used to stay disabled on enable.
+    $this->assertSame(
+      ['mobileLayout' => 'tabs', 'defaultTab' => 'photo', 'enabled' => TRUE],
+      $updatedConfig['features']['formFirst']
+    );
+    $this->assertSame(
+      ['enabled' => TRUE, 'showDelay' => 5000, 'dismissalDuration' => 14],
+      $updatedConfig['features']['pwaInstallPrompt']
+    );
+  }
+
+  /**
+   * Tests a boolean flag without stored options stays a plain boolean.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsKeepsPlainConfigurableBoolean(): void {
+    $storedNuxtConfig = json_encode(['features' => ['pwaInstallPrompt' => FALSE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'pwaInstallPrompt' => TRUE,
+    ]), '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertTrue($updatedConfig['features']['pwaInstallPrompt']);
+  }
+
+  /**
+   * Tests tenant admins cannot switch off the dashboard they are using.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsIgnoresOperatorManagedDashboard(): void {
+    $storedNuxtConfig = json_encode(['features' => ['dashboard' => TRUE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'dashboard' => FALSE,
+      'dashboardRequestCreate' => FALSE,
+    ]), '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertTrue($updatedConfig['features']['dashboard']);
+    $this->assertFalse($updatedConfig['features']['dashboardRequestCreate']);
+    $this->assertNotContains('dashboard', $data['scopes']['editable']);
+  }
+
+  /**
    * Tests PATCH still rejects non-boolean scalar flag values.
    *
    * @covers ::updateFeatureSettings
