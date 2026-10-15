@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.213](https://github.com/markaspot/markaspot/compare/11.9.212...11.9.213) (2026-10-15)
+
+### Bug Fixes
+
+* allow scoped publication status access for moderators ([9d696a8](https://github.com/markaspot/markaspot/commit/9d696a8dd8b7f3cf523a72156988759ae596a28e))
+* keep feature options on save and make the dashboard flag operator-managed ([1231e87](https://github.com/markaspot/markaspot/commit/1231e87692400fbcbb3d9aadd1649262331bddb3))
+* let moderators publish new reports only in jurisdictions they belong to ([6d9e76b](https://github.com/markaspot/markaspot/commit/6d9e76bb259646ac216df528143af0fc7e5c1fb8))
+
 ## [11.9.212](https://github.com/markaspot/markaspot/compare/11.9.211...11.9.212) (2026-10-13)
 
 ### Bug Fixes
