@@ -175,6 +175,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     parent::setUp();
 
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
+    // No organisation groups unless a test says otherwise.
+    $emptyGroupQuery = $this->createMock(QueryInterface::class);
+    $emptyGroupQuery->method('accessCheck')->willReturnSelf();
+    $emptyGroupQuery->method('condition')->willReturnSelf();
+    $emptyGroupQuery->method('execute')->willReturn([]);
+    $this->groupStorage->method('getQuery')->willReturn($emptyGroupQuery);
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->userStorage = $this->createMock(EntityStorageInterface::class);
     $this->relationshipStorage = $this->createMock(EntityStorageInterface::class);
@@ -3134,6 +3140,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
        * {@inheritdoc}
        */
       public function rollBack() {
+        // No-op for testing.
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function commitOrRelease(): void {
         // No-op for testing.
       }
 

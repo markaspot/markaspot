@@ -1203,8 +1203,19 @@ function markaspot_fastmap_cron(): void {
           continue;
         }
         $logger->notice('Auto-deleting expired demo workspace @id.', ['@id' => $expiredGroupId]);
+        // One workspace that cannot be torn down must not block the rest:
+        // the service already rolled it back and logged the cause.
+        try {
+          $provisioning->teardownWorkspace((int) $expiredGroupId);
+        }
+        catch (\Throwable $e) {
+          $logger->error('Teardown of expired demo workspace @id failed: @message', [
+            '@id' => $expiredGroupId,
+            '@message' => $e->getMessage(),
+          ]);
+          continue;
+        }
         $state->delete('markaspot_fastmap.demo_reminder_sent.' . $expiredGroupId);
-        $provisioning->teardownWorkspace((int) $expiredGroupId);
       }
     }
   }

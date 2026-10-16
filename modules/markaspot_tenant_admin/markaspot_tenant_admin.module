@@ -24,6 +24,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_group\JurisdictionTeardownContext;
 use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -1093,6 +1094,16 @@ function _markaspot_tenant_admin_service_status_delete_block_reason(
   if ($is_referenced) {
     return 'This status is used by service requests or status history and '
       . 'cannot be deleted.';
+  }
+
+  // While the term's whole jurisdiction is torn down, its last status of
+  // each mapping goes with it, by design. References still block.
+  if (
+    $entity->hasField('field_jurisdiction')
+    && !$entity->get('field_jurisdiction')->isEmpty()
+    && JurisdictionTeardownContext::isActive((int) $entity->get('field_jurisdiction')->target_id)
+  ) {
+    return NULL;
   }
 
   $is_last_mapping = _markaspot_tenant_admin_status_term_is_last_required_mapping($entity);

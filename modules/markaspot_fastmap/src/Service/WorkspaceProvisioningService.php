@@ -7,8 +7,10 @@ namespace Drupal\markaspot_fastmap\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\TransactionException;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryException;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -20,6 +22,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
+use Drupal\markaspot_group\JurisdictionTeardownContext;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\language\Entity\ConfigurableLanguage;
@@ -580,6 +583,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
 
     $transaction = $this->database->startTransaction();
+    // Status integrity guards stand down for this jurisdiction only: its last
+    // initial/open/closed status has to go with it.
+    JurisdictionTeardownContext::enter($groupId);
 
     try {
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
@@ -590,20 +596,21 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         ? (int) $apiUser->id()
         : NULL;
 
-      // 1. Delete nodes belonging to this jurisdiction.
+      // 1. Delete all content of this jurisdiction (reports, pages,
+      // boilerplates, ...): ProtectedGroup refuses to delete a jurisdiction
+      // that any node still references.
       $nodeStorage = $this->entityTypeManager->getStorage('node');
-      foreach (['service_request', 'page'] as $bundle) {
-        $nids = $nodeStorage->getQuery()
-          ->accessCheck(FALSE)
-          ->condition('type', $bundle)
-          ->condition('field_jurisdiction', $groupId)
-          ->execute();
-        if (!empty($nids)) {
-          $chunks = array_chunk($nids, 50);
-          foreach ($chunks as $chunk) {
-            $nodeStorage->delete($nodeStorage->loadMultiple($chunk));
-          }
-        }
+      $nids = $nodeStorage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('field_jurisdiction', $groupId)
+        ->execute();
+      foreach (array_chunk($nids, 50) as $chunk) {
+        $paragraphIds = $this->loadChildParagraphIds($chunk);
+        $nodeStorage->delete($nodeStorage->loadMultiple($chunk));
+        // Composite paragraphs (status history) outlive their node until
+        // the orphan purger runs; they still reference the workspace's
+        // status terms and would block deleting those below.
+        $this->deleteParagraphs($paragraphIds);
       }
 
       // 2. Collect members before deleting relationships.
@@ -614,25 +621,36 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'plugin_id' => 'group_membership',
       ]);
       foreach ($memberships as $membership) {
-        $memberUserIds[] = (int) $membership->getEntity()->id();
+        $member = $membership->getEntity();
+        if ($member !== NULL) {
+          $memberUserIds[] = (int) $member->id();
+        }
         $membership->delete();
       }
 
-      // 3. Delete taxonomy terms belonging to this group.
-      foreach (['service_category', 'service_status'] as $vid) {
-        $termIds = $termStorage->getQuery()
-          ->accessCheck(FALSE)
-          ->condition('vid', $vid)
-          ->condition('field_jurisdiction', $groupId)
-          ->execute();
-        if (!empty($termIds)) {
-          $terms = $termStorage->loadMultiple($termIds);
-          $termStorage->delete($terms);
-        }
+      // 3. Delete the jurisdiction's taxonomy terms in every vocabulary.
+      // Statuses go last: categories and internal statuses may point at them.
+      $termIds = $termStorage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('field_jurisdiction', $groupId)
+        ->execute();
+      $terms = $termIds ? $termStorage->loadMultiple($termIds) : [];
+      $statusTerms = array_filter($terms, static fn($term) => $term->bundle() === 'service_status');
+      $otherTerms = array_diff_key($terms, $statusTerms);
+      if ($otherTerms !== []) {
+        $termStorage->delete($otherTerms);
+      }
+
+      // 3b. Delete the jurisdiction's organisations; their members count as
+      // workspace members below.
+      $memberUserIds = array_merge($memberUserIds, $this->deleteOrganisations($groupId));
+
+      if ($statusTerms !== []) {
+        $termStorage->delete($statusTerms);
       }
 
       // 4. Delete users that have no other group memberships.
-      foreach ($memberUserIds as $uid) {
+      foreach (array_unique($memberUserIds) as $uid) {
         if ($uid <= 1 || $uid === $apiUserId) {
           continue;
         }
@@ -703,18 +721,119 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
       }
 
+      // Commit here, so a failing commit lands in the catch below instead of
+      // the transaction destructor.
+      if (method_exists($transaction, 'commitOrRelease')) {
+        $transaction->commitOrRelease();
+      }
+
       $this->logger->info('Workspace torn down: group @id, @files branding files removed', [
         '@id' => $groupId,
         '@files' => count($brandingFiles),
       ]);
     }
-    catch (\Exception $e) {
-      $transaction->rollBack();
+    catch (\Throwable $e) {
+      // A failed entity delete may already have unwound the transaction
+      // stack. Never let the rollback error hide the actual cause.
+      try {
+        $transaction->rollBack();
+      }
+      catch (TransactionException $rollbackError) {
+        // The transaction may then still commit what was deleted so far.
+        $this->logger->error('Workspace teardown rollback failed for group @id, the workspace may be partly deleted: @msg', [
+          '@id' => $groupId,
+          '@msg' => $rollbackError->getMessage(),
+        ]);
+      }
       $this->logger->error('Workspace teardown failed for group @id: @msg', [
         '@id' => $groupId,
         '@msg' => $e->getMessage(),
       ]);
       throw new \RuntimeException('Workspace teardown failed: ' . $e->getMessage(), 0, $e);
+    }
+    finally {
+      JurisdictionTeardownContext::leave($groupId);
+    }
+  }
+
+  /**
+   * Deletes the organisation groups of a jurisdiction.
+   *
+   * @param int $jurisdictionId
+   *   The jurisdiction group ID.
+   *
+   * @return int[]
+   *   User IDs of the organisations' members.
+   */
+  protected function deleteOrganisations(int $jurisdictionId): array {
+    $groupStorage = $this->entityTypeManager->getStorage('group');
+    try {
+      $orgIds = $groupStorage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', 'org')
+        ->condition('field_jurisdiction', $jurisdictionId)
+        ->execute();
+    }
+    catch (QueryException) {
+      // No organisations on this site (no group field_jurisdiction).
+      return [];
+    }
+    if (empty($orgIds)) {
+      return [];
+    }
+
+    $memberUserIds = [];
+    $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
+    foreach ($groupStorage->loadMultiple($orgIds) as $organisation) {
+      $memberships = $relationshipStorage->loadByProperties([
+        'gid' => $organisation->id(),
+        'plugin_id' => 'group_membership',
+      ]);
+      foreach ($memberships as $membership) {
+        $member = $membership->getEntity();
+        if ($member !== NULL) {
+          $memberUserIds[] = (int) $member->id();
+        }
+        $membership->delete();
+      }
+      $organisation->delete();
+    }
+    return $memberUserIds;
+  }
+
+  /**
+   * Returns the IDs of paragraphs whose parent is one of the given nodes.
+   *
+   * @param int[]|string[] $nids
+   *   Node IDs.
+   *
+   * @return int[]
+   *   Paragraph IDs.
+   */
+  protected function loadChildParagraphIds(array $nids): array {
+    if ($nids === [] || !$this->entityTypeManager->hasDefinition('paragraph')) {
+      return [];
+    }
+    return array_map('intval', array_values($this->entityTypeManager->getStorage('paragraph')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('parent_type', 'node')
+      ->condition('parent_id', array_map('strval', $nids), 'IN')
+      ->execute()));
+  }
+
+  /**
+   * Deletes paragraphs by ID, in chunks.
+   *
+   * @param int[] $paragraphIds
+   *   Paragraph IDs.
+   */
+  protected function deleteParagraphs(array $paragraphIds): void {
+    if ($paragraphIds === []) {
+      return;
+    }
+    $storage = $this->entityTypeManager->getStorage('paragraph');
+    foreach (array_chunk($paragraphIds, 50) as $chunk) {
+      $storage->delete($storage->loadMultiple($chunk));
     }
   }
 
