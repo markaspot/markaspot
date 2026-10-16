@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.214](https://github.com/markaspot/markaspot/compare/11.9.213...11.9.214) (2026-10-16)
+
+### Features
+
+* **geocoder:** Photon provider for server-side geocoding ([b568f77](https://github.com/markaspot/markaspot/commit/b568f77be559f0aed95cf5d03b61ff971454e3ac))
+* import jurisdiction boundary file in dedicated tenant bootstrap ([6ca12e7](https://github.com/markaspot/markaspot/commit/6ca12e778af6b815db13388aab4393debe3e7906))
+
+### Bug Fixes
+
+* constrain vision hazard category to CAP codes so a free-text answer cannot fail the media save ([f11de8c](https://github.com/markaspot/markaspot/commit/f11de8c937a71a59995487370e79a4fbbb395570))
+* **geocoder:** Photon review fixes: masked errors, district aliases, empty admin levels ([b9e5246](https://github.com/markaspot/markaspot/commit/b9e524647c2bca78c888773a48780e063f5654cb))
+
 ## [11.9.213](https://github.com/markaspot/markaspot/compare/11.9.212...11.9.213) (2026-10-15)
 
 ### Bug Fixes
