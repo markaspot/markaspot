@@ -1097,11 +1097,23 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     // Make sure it's a content entity.
     if ($node instanceof ContentEntityInterface) {
       $this->enforceAnonymousPrivacyMediaBlock($node, $request_data);
+
+      // Resolve the jurisdiction's initial status before validation: the field
+      // default belongs to one jurisdiction, and an API user of another one
+      // may not reference it, so validating the default rejects the request.
+      $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
+      $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
+      if ($initialStatusTid !== NULL && $node->hasField('field_status')) {
+        $node->set('field_status', [['target_id' => $initialStatusTid]]);
+      }
+      else {
+        $this->logger->warning('No initial status for jurisdiction @jid: neither an "initial" Open311 mapping nor status_open_start is configured; validating the field default.', [
+          '@jid' => $jurisdictionId ?? 'none',
+        ]);
+      }
+
       $validation = $this->validate($node);
       if ($validation === TRUE) {
-        // Determine initial status (jurisdiction-aware).
-        $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
-        $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
 
         // Uses status term description as note text; falls back to the site
         // default language because service request nodes are language-neutral.
@@ -1121,13 +1133,6 @@ final class GeoreportRequestIndexResource extends ResourceBase {
           [
             'target_id' => $paragraph->id(),
             'target_revision_id' => $paragraph->getRevisionId(),
-          ],
-        ];
-
-        // Set the referenced term field.
-        $node->field_status = [
-          [
-            'target_id' => $initialStatusTid,
           ],
         ];
 
