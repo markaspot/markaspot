@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_geocoder\Unit;
 use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotPhoton;
 use Drupal\Tests\UnitTestCase;
 use Geocoder\Exception\InvalidServerResponse;
+use Geocoder\Exception\QuotaExceeded;
 use Geocoder\Query\GeocodeQuery;
 use Geocoder\Query\ReverseQuery;
 use GuzzleHttp\Psr7\Response;
@@ -71,6 +72,10 @@ final class MarkaspotPhotonProviderTest extends UnitTestCase {
       'city' => 'Bleckede',
       'county' => 'Landkreis Lüneburg',
       'state' => 'Niedersachsen',
+      'city_district' => 'Bleckede',
+      'suburb' => 'Bleckede',
+      'quarter' => 'Altstadt',
+      'neighbourhood' => 'Altstadt',
     ], $provider->getLastRawProperties());
 
     $uri = $this->lastRequest->getUri();
@@ -105,6 +110,62 @@ final class MarkaspotPhotonProviderTest extends UnitTestCase {
   }
 
   /**
+   * Tests the default district mappings find the Nominatim-compatible keys.
+   *
+   * The shipped defaults look for city_district|suburb|borough and
+   * quarter|neighbourhood. Without the aliases a Photon tenant would never
+   * match and a pin move would clear the district fields.
+   */
+  public function testRawPropertiesServeDefaultDistrictMappings(): void {
+    $provider = $this->provider(200, [
+      'features' => [[
+        'properties' => [
+          'type' => 'street',
+          'name' => 'Oxfordstraße',
+          'district' => 'Stadtbezirk Bonn',
+          'locality' => 'Bonn-Zentrum',
+        ],
+        'geometry' => ['coordinates' => [7.0981, 50.7373]],
+      ]],
+    ]);
+    $provider->reverseQuery(ReverseQuery::fromCoordinates(50.7374, 7.0982));
+    $raw = $provider->getLastRawProperties();
+
+    $firstMatch = static function (array $chain) use ($raw): ?string {
+      foreach ($chain as $key) {
+        if (isset($raw[$key])) {
+          return $raw[$key];
+        }
+      }
+      return NULL;
+    };
+    $this->assertSame('Stadtbezirk Bonn', $firstMatch(['city_district', 'suburb', 'borough']));
+    $this->assertSame('Bonn-Zentrum', $firstMatch(['quarter', 'neighbourhood']));
+  }
+
+  /**
+   * Tests a POI on a highway (bus stop) does not become the street.
+   */
+  public function testHighwayPoiNameIsNotStreet(): void {
+    $provider = $this->provider(200, [
+      'features' => [[
+        'properties' => [
+          'osm_key' => 'highway',
+          'osm_value' => 'bus_stop',
+          'type' => 'house',
+          'name' => 'Hauptbahnhof',
+          'city' => 'Erfurt',
+        ],
+        'geometry' => ['coordinates' => [11.0386, 50.9724]],
+      ]],
+    ]);
+
+    $address = $provider->reverseQuery(ReverseQuery::fromCoordinates(50.9724, 11.0386))->first();
+
+    $this->assertNull($address->getStreetName());
+  }
+
+  /**
    * Tests a POI name is never taken as the street name.
    */
   public function testReverseDoesNotUsePoiNameAsStreet(): void {
@@ -125,18 +186,23 @@ final class MarkaspotPhotonProviderTest extends UnitTestCase {
    * Tests an empty FeatureCollection is no result and clears raw properties.
    */
   public function testEmptyResultClearsRawProperties(): void {
-    $provider = $this->provider(200, [
-      'features' => [[
-        'properties' => ['district' => 'Altstadt'],
-        'geometry' => ['coordinates' => [11.0, 50.9]],
-      ]],
-    ]);
+    $provider = $this->provider(
+      200,
+      [
+        'features' => [[
+          'properties' => ['district' => 'Altstadt'],
+          'geometry' => ['coordinates' => [11.0, 50.9]],
+        ]],
+      ],
+      ['type' => 'FeatureCollection', 'features' => []],
+    );
+
     $provider->reverseQuery(ReverseQuery::fromCoordinates(50.9, 11.0));
     $this->assertNotSame([], $provider->getLastRawProperties());
 
-    $empty = $this->provider(200, ['type' => 'FeatureCollection', 'features' => []]);
-    $this->assertSame(0, $empty->reverseQuery(ReverseQuery::fromCoordinates(52.37, 4.89))->count());
-    $this->assertSame([], $empty->getLastRawProperties());
+    // Same provider instance, second response is empty.
+    $this->assertSame(0, $provider->reverseQuery(ReverseQuery::fromCoordinates(52.37, 4.89))->count());
+    $this->assertSame([], $provider->getLastRawProperties());
   }
 
   /**
@@ -213,20 +279,60 @@ final class MarkaspotPhotonProviderTest extends UnitTestCase {
   /**
    * Tests HTTP errors surface as server errors.
    */
-  public function testHttpErrorThrows(): void {
-    $provider = $this->provider(500, 'Internal Server Error');
+  public function testHttpErrorThrowsWithoutQueryInMessage(): void {
+    $provider = $this->provider(502, 'Bad Gateway');
 
-    $this->expectException(InvalidServerResponse::class);
+    try {
+      $provider->reverseQuery(ReverseQuery::fromCoordinates(50.123456, 11.654321));
+      $this->fail('Expected InvalidServerResponse.');
+    }
+    catch (InvalidServerResponse $exception) {
+      $this->assertStringNotContainsString('lat=', $exception->getMessage());
+      $this->assertStringNotContainsString('50.123456', $exception->getMessage());
+      $this->assertStringNotContainsString('10.10.1.3', $exception->getMessage());
+    }
+  }
+
+  /**
+   * Tests transport errors (timeouts, refused) do not leak the query either.
+   */
+  public function testTransportErrorThrowsWithoutQueryInMessage(): void {
+    $client = $this->createMock(ClientInterface::class);
+    $client->method('sendRequest')->willThrowException(
+      new \RuntimeException('cURL error 28: timeout for http://10.10.1.3:2322/api?q=Fischmarkt+1'),
+    );
+    $provider = new MarkaspotPhoton($client, 'http://10.10.1.3:2322');
+
+    try {
+      $provider->geocodeQuery(GeocodeQuery::create('Fischmarkt 1'));
+      $this->fail('Expected InvalidServerResponse.');
+    }
+    catch (InvalidServerResponse $exception) {
+      $this->assertStringNotContainsString('Fischmarkt', $exception->getMessage());
+      $this->assertStringContainsString('RuntimeException', $exception->getMessage());
+    }
+  }
+
+  /**
+   * Tests rate limiting keeps its own exception type.
+   */
+  public function testQuotaExceededIsRethrown(): void {
+    $provider = $this->provider(429, 'Too Many Requests');
+
+    $this->expectException(QuotaExceeded::class);
     $provider->reverseQuery(ReverseQuery::fromCoordinates(50.9, 11.0));
   }
 
   /**
-   * Creates a provider whose HTTP client answers with a fixed response.
+   * Creates a provider whose HTTP client answers with the given bodies.
+   *
+   * Each call consumes the next body; the last one repeats.
    */
-  private function provider(int $status, array|string $body): MarkaspotPhoton {
+  private function provider(int $status, array|string ...$bodies): MarkaspotPhoton {
     $client = $this->createMock(ClientInterface::class);
-    $client->method('sendRequest')->willReturnCallback(function (RequestInterface $request) use ($status, $body) {
+    $client->method('sendRequest')->willReturnCallback(function (RequestInterface $request) use ($status, &$bodies) {
       $this->lastRequest = $request;
+      $body = count($bodies) > 1 ? array_shift($bodies) : $bodies[0];
       return new Response($status, ['Content-Type' => 'application/json'], is_string($body) ? $body : json_encode($body));
     });
     return new MarkaspotPhoton($client, 'http://10.10.1.3:2322/');

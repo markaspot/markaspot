@@ -19,10 +19,17 @@ that do not have access to the runtime environment.
 ### ENV variables (recommended)
 
 ```
-GEOCODER_PROVIDER=nominatim|mapbox
+GEOCODER_PROVIDER=nominatim|mapbox|photon
 GEOCODER_API_KEY=your-mapbox-token
 GEOCODER_LANGUAGE=de
+GEOCODER_PHOTON_URL=http://10.10.1.3:2322   # photon only; empty = photon.komoot.io
 ```
+
+`photon` talks to a komoot Photon server. Hosted tenants use the fleet's own
+Photon on the private network; without `GEOCODER_PHOTON_URL` the public
+`photon.komoot.io` is used. Its district properties (`district`, `locality`)
+are also emitted as the Nominatim keys the default mappings expect
+(`city_district`, `suburb`, `quarter`, `neighbourhood`).
 
 When `GEOCODER_API_KEY` is set, the admin form disables its token field and
 the form submit no longer writes the Mapbox token to Drupal configuration.

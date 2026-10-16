@@ -231,6 +231,23 @@ final class MarkaspotGeocoderServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests a reverse result without admin levels still yields an address.
+   *
+   * AdminLevelCollection::first() throws on an empty collection; the
+   * service used to turn such results into "no address found".
+   */
+  public function testGetAddressFromCoordinatesWithoutAdminLevels(): void {
+    $provider = $this->createMock(Provider::class);
+    $provider->method('getName')->willReturn('mock');
+    $provider->method('reverseQuery')->willReturn(new AddressCollection([$this->createAddress(51.43, 6.76)]));
+    $result = $this->createService($provider)->getAddressFromCoordinates(51.43, 6.76);
+
+    $this->assertIsArray($result);
+    $this->assertSame('Friedrich-Ebert-Strasse 134', $result['address_line1']);
+    $this->assertSame('', $result['admin_area']);
+  }
+
+  /**
    * Tests GEOCODER_PROVIDER=photon selects the Photon provider.
    */
   public function testCreateProviderSelectsPhoton(): void {

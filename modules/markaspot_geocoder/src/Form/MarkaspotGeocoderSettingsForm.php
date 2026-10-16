@@ -85,7 +85,7 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
         $envProvider ? "GEOCODER_PROVIDER=$envProvider" : NULL,
         $envApiKey ? 'GEOCODER_API_KEY=(set)' : NULL,
         $envLanguage ? "GEOCODER_LANGUAGE=$envLanguage" : NULL,
-        $envPhotonUrl ? "GEOCODER_PHOTON_URL=$envPhotonUrl" : NULL,
+        $envPhotonUrl ? 'GEOCODER_PHOTON_URL=(set)' : NULL,
       ]);
       $form['env_notice'] = [
         '#type' => 'markup',
@@ -417,7 +417,7 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
     }
 
     $photonUrl = trim((string) ($form_state->getValue('photon_url') ?? ''));
-    if ($photonUrl !== '' && !MarkaspotGeocoderService::isValidPhotonUrl($photonUrl)) {
+    if ($provider === 'photon' && $photonUrl !== '' && !MarkaspotGeocoderService::isValidPhotonUrl($photonUrl)) {
       $form_state->setErrorByName('photon_url', $this->t('The Photon endpoint must be an http(s) URL without credentials, query or fragment.'));
     }
 

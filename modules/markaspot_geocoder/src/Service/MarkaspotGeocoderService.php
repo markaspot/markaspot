@@ -179,13 +179,16 @@ class MarkaspotGeocoderService {
     try {
       $result = $geocoder->reverseQuery(ReverseQuery::fromCoordinates($lat, $lng));
       $address = $result->first();
+      // AdminLevelCollection::first() throws on an empty collection, which
+      // would turn a result without state/county into "no address".
+      $adminLevels = $address->getAdminLevels();
 
       return [
         'country_code' => $address->getCountry()?->getCode() ?? 'DE',
         'locality' => $address->getLocality() ?? '',
         'address_line1' => ($address->getStreetName() ?? '') . ' ' . ($address->getStreetNumber() ?? ''),
         'postal_code' => $address->getPostalCode() ?? '',
-        'admin_area' => $address->getAdminLevels()?->first()?->getName() ?? '',
+        'admin_area' => $adminLevels->count() > 0 ? $adminLevels->first()->getName() : '',
         'district_properties' => $this->lastProvider?->getLastRawProperties() ?? [],
       ];
     }
@@ -222,7 +225,7 @@ class MarkaspotGeocoderService {
    * are not mutated unless a caller opts in.
    *
    * Supported options:
-   * - country: Provider-specific country filter, used by Mapbox.
+   * - country: ISO 3166-1 alpha-2 country filter, used by Mapbox and Photon.
    * - location_type: Provider-specific location type filter, used by Mapbox.
    * - fuzzy_match: Provider-specific fuzzy match toggle, used by Mapbox.
    */

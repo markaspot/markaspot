@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\markaspot_geocoder\Geocoder\Provider;
 
 use Geocoder\Collection;
+use Geocoder\Exception\InvalidCredentials;
 use Geocoder\Exception\InvalidServerResponse;
+use Geocoder\Exception\QuotaExceeded;
 use Geocoder\Http\Provider\AbstractHttpProvider;
 use Geocoder\Location;
 use Geocoder\Model\AddressBuilder;
@@ -23,11 +25,13 @@ use Psr\Http\Client\ClientInterface;
  * coordinates never leave our infrastructure. photon.komoot.io works as a
  * public fallback with the same API.
  *
- * Raw properties for the district mapping use Photon's own keys (see
- * RAW_PROPERTIES). They do not line up with Nominatim's: Photon's "district"
- * is the city district or suburb, "locality" the quarter or neighbourhood.
- * Tenants switching from Nominatim or Mapbox have to review their
- * district_mappings against real reports.
+ * Raw properties for the district mapping carry Photon's own keys (see
+ * RAW_PROPERTIES) plus Nominatim-compatible aliases (see RAW_ALIASES), the
+ * same way the Mapbox provider does. The shipped default mappings look for
+ * city_district/suburb and quarter/neighbourhood; without the aliases they
+ * would never match and a pin move would clear the district fields. Term
+ * names still differ between providers ("Stadtbezirk Bonn" vs "Bonn"), so a
+ * tenant switching providers reviews its taxonomy against real reports.
  */
 final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
 
@@ -37,9 +41,17 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
   public const RAW_PROPERTIES = ['district', 'locality', 'city', 'county', 'state'];
 
   /**
-   * Languages a default Photon index carries; others use local names.
+   * Nominatim-compatible aliases for Photon keys, used by default mappings.
    */
-  private const LANGUAGES = ['de', 'en', 'fr', 'it'];
+  public const RAW_ALIASES = [
+    'district' => ['city_district', 'suburb'],
+    'locality' => ['quarter', 'neighbourhood'],
+  ];
+
+  /**
+   * Languages photon.komoot.io and the fleet index answer; others get none.
+   */
+  private const LANGUAGES = ['de', 'en', 'fr'];
 
   /**
    * Upper bound for forward results requested from Photon.
@@ -58,6 +70,14 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
    */
   private array $lastRawProperties = [];
 
+  /**
+   * Constructs the provider.
+   *
+   * @param \Psr\Http\Client\ClientInterface $client
+   *   The HTTP client.
+   * @param string $rootUrl
+   *   Root URL of the Photon server, e.g. http://10.10.1.3:2322.
+   */
   public function __construct(ClientInterface $client, string $rootUrl) {
     parent::__construct($client);
     $this->rootUrl = rtrim($rootUrl, '/');
@@ -143,12 +163,22 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
    */
   private function fetchFeatures(string $path, array $params): array {
     $url = $this->rootUrl . $path . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
-    $content = $this->getUrlContents($url);
+
+    // The URL carries the queried address or coordinates (personal data).
+    // The base provider and the HTTP client put it into their exception
+    // messages, so every failure is rethrown with the exception type only.
+    try {
+      $content = $this->getUrlContents($url);
+    }
+    catch (InvalidCredentials | QuotaExceeded $e) {
+      throw $e;
+    }
+    catch (\Throwable $e) {
+      throw new InvalidServerResponse('Photon request failed (' . get_class($e) . ').');
+    }
 
     $payload = json_decode($content, TRUE);
     if (!is_array($payload) || !isset($payload['features']) || !is_array($payload['features'])) {
-      // The URL carries the queried address or coordinates: keep it out of
-      // the exception message, it may end up in logs.
       throw new InvalidServerResponse('Invalid Photon response (no FeatureCollection).');
     }
 
@@ -156,7 +186,7 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
       $point = $feature['geometry']['coordinates'] ?? NULL;
       return is_array($feature)
         && is_array($feature['properties'] ?? NULL)
-        && is_array($point) && count($point) >= 2
+        && is_array($point) && isset($point[0], $point[1])
         && is_numeric($point[0]) && is_numeric($point[1]);
     }));
   }
@@ -191,9 +221,10 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
       }
     }
 
-    // A street feature carries its name in "name", not in "street".
+    // A street feature carries its name in "name", not in "street". Photon's
+    // normalized type keeps POIs on a highway (bus stops) out of this.
     $street = $this->string($p, 'street');
-    if ($street === NULL && ($p['osm_key'] ?? NULL) === 'highway') {
+    if ($street === NULL && ($p['type'] ?? NULL) === 'street') {
       $street = $this->string($p, 'name');
     }
     $builder->setStreetName($street);
@@ -228,7 +259,8 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
    * Picks the district-mapping properties of one feature.
    *
    * @return array<string, string>
-   *   Non-empty string values keyed by Photon property name.
+   *   Non-empty string values keyed by Photon property name, plus the
+   *   Nominatim-compatible aliases of RAW_ALIASES.
    */
   private function rawProperties(array $properties): array {
     $raw = [];
@@ -236,6 +268,13 @@ final class MarkaspotPhoton extends AbstractHttpProvider implements Provider {
       $value = $this->string($properties, $key);
       if ($value !== NULL) {
         $raw[$key] = $value;
+      }
+    }
+    foreach (self::RAW_ALIASES as $key => $aliases) {
+      if (isset($raw[$key])) {
+        foreach ($aliases as $alias) {
+          $raw[$alias] ??= $raw[$key];
+        }
       }
     }
     return $raw;
