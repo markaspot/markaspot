@@ -58,6 +58,43 @@ class ImageProcessingService {
   public const BLUR_MODE_FULL = 'full';
 
   /**
+   * CAP hazard category codes the vision prompt asks for.
+   *
+   * The response schema enumerates them, so strict structured output cannot
+   * return anything else. validateSchema() deliberately ignores the enum:
+   * in the fallback modes a stray category must not discard the whole
+   * analysis, normalizeHazardCategory() drops it before the save instead.
+   */
+  public const HAZARD_CATEGORIES = [
+    'Infra',
+    'Transport',
+    'Safety',
+    'Env',
+    'Fire',
+    'Health',
+    'Geo',
+    'Met',
+    'Other',
+  ];
+
+  /**
+   * Spellings models use for CAP codes, lower case, mapped to the code.
+   *
+   * Mirrors the frontend's HAZARD_CATEGORY_CAP_CODES so the fallback modes
+   * keep the categories the dashboard already understood.
+   */
+  protected const HAZARD_CATEGORY_SYNONYMS = [
+    'environmental' => 'Env',
+    'infrastructure' => 'Infra',
+    'traffic' => 'Transport',
+    'public safety' => 'Safety',
+    'geophysical' => 'Geo',
+    'meteorological' => 'Met',
+    'weather' => 'Met',
+    'unknown' => 'Other',
+  ];
+
+  /**
    * The HTTP client.
    *
    * @var \GuzzleHttp\ClientInterface
@@ -918,7 +955,44 @@ class ImageProcessingService {
     if ($schema['type'] === 'array') {
       return '[' . $this->describeSchema($schema['items']) . ']';
     }
+    if (isset($schema['enum'])) {
+      return implode('|', array_map(static fn ($value) => json_encode($value), $schema['enum']));
+    }
     return implode('|', (array) $schema['type']);
+  }
+
+  /**
+   * Maps a model's hazard category onto a CAP code, NULL when it is none.
+   *
+   * Strict structured output enforces the schema enum, the json_object and
+   * prompt-only modes do not. Before the enum existed, a model wrote its own
+   * JSON repair note into this value, which overflowed the 64-character
+   * field and failed the whole media save, losing every AI result.
+   *
+   * @param mixed $value
+   *   The hazard_category value of the decoded model response.
+   *
+   * @return string|null
+   *   The canonical CAP code, or NULL for no or an unknown category.
+   */
+  public function normalizeHazardCategory(mixed $value): ?string {
+    $key = is_string($value) ? mb_strtolower(trim($value)) : '';
+    if ($key === '') {
+      return NULL;
+    }
+    foreach (self::HAZARD_CATEGORIES as $code) {
+      if ($key === mb_strtolower($code)) {
+        return $code;
+      }
+    }
+    if (isset(self::HAZARD_CATEGORY_SYNONYMS[$key])) {
+      return self::HAZARD_CATEGORY_SYNONYMS[$key];
+    }
+    // Content-free like the strict-schema warning: the value is model text.
+    $this->logger->warning('Vision returned an unknown hazard category (@length characters); stored none.', [
+      '@length' => mb_strlen($value),
+    ]);
+    return NULL;
   }
 
   /**
@@ -1220,6 +1294,7 @@ class ImageProcessingService {
         ],
         'hazard_category' => [
           'type' => ['string', 'null'],
+          'enum' => [...self::HAZARD_CATEGORIES, NULL],
         ],
         'attributes' => [
           'type' => 'array',

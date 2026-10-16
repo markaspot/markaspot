@@ -18,6 +18,7 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_ai\Service\NodeAnalysisService;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
@@ -436,6 +437,51 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $generic = $this->invokeMethod($service, 'buildPrivacyInstruction', [FALSE]);
     $this->assertStringContainsString('privacy_image_flags', $generic);
     $this->assertStringNotContainsString('exactly', $generic);
+  }
+
+  /**
+   * Strict output may only return a CAP hazard code or null.
+   */
+  public function testHazardCategoryIsEnumeratedInSchema(): void {
+    $service = $this->createService();
+    $payload = $this->invokeMethod($service, 'prepareRequestPayload', [[], ['model' => 'gpt-4o']]);
+    $definition = $payload['response_format']['json_schema']['schema']['properties']['hazard_category'];
+
+    $this->assertSame([...ImageProcessingService::HAZARD_CATEGORIES, NULL], $definition['enum']);
+    $this->assertTrue($this->invokeMethod($service, 'validateSchema', ['Env', $definition]));
+    $this->assertTrue($this->invokeMethod($service, 'validateSchema', [NULL, $definition]));
+    // A stray category must not discard a fallback-mode analysis; the
+    // controller normalizes it before the save.
+    $this->assertTrue($this->invokeMethod($service, 'validateSchema', ['Env,Safety', $definition]));
+    $this->assertSame('"Infra"|"Transport"|"Safety"|"Env"|"Fire"|"Health"|"Geo"|"Met"|"Other"|null', $this->invokeMethod($service, 'describeSchema', [$definition]));
+  }
+
+  /**
+   * Vision and node analysis accept the same CAP codes.
+   */
+  public function testHazardCategoriesMatchNodeAnalysis(): void {
+    $this->assertSame(NodeAnalysisService::VALID_HAZARD_CATEGORIES, ImageProcessingService::HAZARD_CATEGORIES);
+  }
+
+  /**
+   * Free-text hazard categories are stored as a CAP code or not at all.
+   */
+  public function testNormalizeHazardCategory(): void {
+    $service = $this->createService();
+
+    $this->assertSame('Env', $service->normalizeHazardCategory('Env'));
+    $this->assertSame('Safety', $service->normalizeHazardCategory(' safety '));
+    $this->assertSame('Env', $service->normalizeHazardCategory('Environmental'));
+    $this->assertSame('Met', $service->normalizeHazardCategory('weather'));
+    $this->assertNull($service->normalizeHazardCategory(NULL));
+    $this->assertNull($service->normalizeHazardCategory(''));
+    $this->assertNull($service->normalizeHazardCategory(['Env']));
+
+    // The value gpt-4.1-mini returned on cp2 (erfurt, solingen), which
+    // overflowed the 64-character field and failed the media save.
+    $this->logger->expects($this->once())->method('warning')
+      ->with($this->anything(), $this->callback(static fn (array $context): bool => array_keys($context) === ['@length']));
+    $this->assertNull($service->normalizeHazardCategory("Env,Safety}'} This response contains a syntax error in the last string value where it ends with `Env,Safety}` incorrectly. Let me fix that and provide a valid JSON response. Corrected version below: {"));
   }
 
   /**

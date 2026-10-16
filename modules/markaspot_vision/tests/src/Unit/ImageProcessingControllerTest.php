@@ -686,6 +686,49 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * The media field and the response carry the normalized hazard category.
+   */
+  public function testHazardCategoryIsNormalizedBeforeSave(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    $raw = "Env,Safety}'} This response contains a syntax error. Corrected version below: {";
+    $this->imageProcessingService->method('processImages')
+      ->willReturn(['ai_result' => json_encode([
+        'category' => 42,
+        'description' => 'Bulky waste on the pavement',
+        'alt_text' => [],
+        'hazard_flag' => FALSE,
+        'hazard_level' => 0,
+        'hazard_category' => $raw,
+        'hazard_issues' => [],
+        'privacy_flag' => FALSE,
+        'privacy_issues' => [],
+      ])]);
+    $this->imageProcessingService->expects($this->once())
+      ->method('normalizeHazardCategory')
+      ->with($raw)
+      ->willReturn('Env');
+
+    $stored = [];
+    $media->method('set')->willReturnCallback(function (string $field, $value) use (&$stored, $media) {
+      $stored[$field] = $value;
+      return $media;
+    });
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame('Env', $stored['field_ai_hazard_category']);
+    // The raw model output stays in the audit blob.
+    $this->assertSame($raw, json_decode($stored['field_ai_metadata'], TRUE)['hazard_category']);
+    $this->assertSame('Env', json_decode($response->getContent(), TRUE)['hazard_category']);
+  }
+
+  /**
    * Tests successful analysis includes blur handling metadata.
    */
   public function testSuccessfulAnalysisReturnsBlurHandlingMetadata(): void {

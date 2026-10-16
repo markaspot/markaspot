@@ -302,6 +302,9 @@ class ImageProcessingController extends ControllerBase {
       // persisted field_ai_metadata audit blob or the response; the
       // authoritative values are computed below.
       unset($decoded_result['privacy_handled_by_blur'], $decoded_result['blurred_previews'], $decoded_result['privacy_flags'], $decoded_result['privacy_reblurred'], $decoded_result['markaspot_privacy_escalation']);
+      // Normalized once: the media field holds 64 characters, and the raw
+      // model value stays in field_ai_metadata for the audit trail.
+      $hazard_category = $this->imageProcessingService->normalizeHazardCategory($decoded_result['hazard_category'] ?? NULL);
       $privacy_flag = !empty($decoded_result['privacy_flag']);
       $privacy_issues = $decoded_result['privacy_issues'] ?? [];
       if (!is_array($privacy_issues)) {
@@ -404,7 +407,7 @@ class ImageProcessingController extends ControllerBase {
           $media->set('field_ai_hazard_flag', $hazard_flag);
           $media->set('field_ai_hazard_issues', implode(', ', (array) $hazard_issues));
           $media->set('field_ai_hazard_level', $decoded_result['hazard_level'] ?? 0);
-          $media->set('field_ai_hazard_category', $decoded_result['hazard_category'] ?? NULL);
+          $media->set('field_ai_hazard_category', $hazard_category);
 
           // Replace original with blurred version if faces or plates were
           // detected on THIS media.
@@ -432,6 +435,9 @@ class ImageProcessingController extends ControllerBase {
             if ($field_media_image && !$field_media_image->isEmpty()) {
               // Use the corresponding alt text for this media entity.
               $alt_text = $decoded_result['alt_text'][$media_index] ?? $this->t('Documented situation as per description');
+              // The image alt column holds 512 characters; a longer model
+              // answer must not fail the save and lose every AI result.
+              $alt_text = mb_substr((string) $alt_text, 0, 512);
               $field_media_image->alt = $alt_text;
               $this->logger->notice('Alt text populated with AI description for media @id (index @index): @alt', [
                 '@id' => $media->id(),
@@ -526,6 +532,7 @@ class ImageProcessingController extends ControllerBase {
       // unblurred media. If every analysed media item was successfully blurred,
       // the response clears only issues covered by that blur operation.
       $response_result = $decoded_result;
+      $response_result['hazard_category'] = $hazard_category;
       // Strip any echo of our own response-only keys in case a non-compliant
       // provider returns them; the authoritative values are computed here.
       unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews'], $response_result['privacy_flags'], $response_result['privacy_reblurred']);
