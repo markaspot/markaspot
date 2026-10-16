@@ -23,6 +23,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
+use Drupal\markaspot_validation\ScopedValidationBypassTrait;
 
 /**
  * Class DoublePostConstraintValidator.
@@ -32,6 +33,7 @@ use Symfony\Component\Validator\ConstraintValidator;
  */
 class DoublePostConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
+  use ScopedValidationBypassTrait;
   use StringTranslationTrait;
 
   /**
@@ -146,8 +148,8 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
       return;
     }
 
-    // Users with bypass permission skip validation entirely.
-    if ($this->account->hasPermission('bypass mas validation')) {
+    // Staff skip the duplicate check inside their own jurisdictions.
+    if ($this->accountBypassesValidation($this->account, $field)) {
       return;
     }
 

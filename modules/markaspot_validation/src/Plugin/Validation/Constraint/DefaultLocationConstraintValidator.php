@@ -12,6 +12,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
+use Drupal\markaspot_validation\ScopedValidationBypassTrait;
 
 /**
  * Validates the LatLon constraint.
@@ -24,6 +25,7 @@ use Symfony\Component\Validator\ConstraintValidator;
  */
 class DefaultLocationConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
+  use ScopedValidationBypassTrait;
   use StringTranslationTrait;
 
   /**
@@ -101,11 +103,9 @@ class DefaultLocationConstraintValidator extends ConstraintValidator implements 
    * {@inheritdoc}
    */
   public function validate($field, Constraint $constraint) {
-    $user = $this->account;
-    $user->hasPermission('bypass mas validation');
     $defaultLocationCheck = $this->configFactory->get('defaultLocation') ? $this->configFactory->get('defaultLocation') : '0';
 
-    if (!$user->hasPermission('bypass mas validation') && $defaultLocationCheck == 1) {
+    if ($defaultLocationCheck == 1 && !$this->accountBypassesValidation($this->account, $field)) {
       $isDefaultLocation = $this->checkDefaultLocation(floatval($field->lng), floatval($field->lat));
       if ($isDefaultLocation === TRUE) {
         $message = $this->t('Please select the address and location of the issue.');

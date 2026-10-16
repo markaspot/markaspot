@@ -16,6 +16,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
+use Drupal\markaspot_validation\ScopedValidationBypassTrait;
 
 /**
  * Validates the LatLon constraint.
@@ -36,6 +37,7 @@ use Symfony\Component\Validator\ConstraintValidator;
  */
 class MultipleReportsConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
+  use ScopedValidationBypassTrait;
   use StringTranslationTrait;
 
   /**
@@ -151,8 +153,7 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
     if ($status === FALSE || $status === 0) {
       return;
     }
-    $user = $this->account;
-    if (!$user->hasPermission('bypass mas validation')) {
+    if (!$this->accountBypassesValidation($this->account, $field)) {
       $nids = $this->countReports();
     }
     else {

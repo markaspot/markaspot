@@ -76,14 +76,24 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
       return;
     }
 
-    // Admins bypass tier limits.
-    if ($this->currentUser->hasPermission('bypass mas validation')
-      || $this->currentUser->hasPermission('administer nodes')) {
+    // Operators (administer nodes: administrator, editorial_board) skip the
+    // tier check entirely, as before; they act globally by policy.
+    if ($this->currentUser->hasPermission('administer nodes')) {
       return;
     }
 
-    $group = $this->resolveJurisdictionGroup($value);
+    // Everyone else is resolved first, so the jurisdiction/category mismatch
+    // check also applies to staff filing new reports. On existing reports
+    // staff never saw that check, and inconsistent legacy data must not block
+    // their edits; the publish limit below still applies.
+    $isStaff = $this->currentUser->hasPermission('bypass mas validation');
+    $group = $this->resolveJurisdictionGroup($value, !$isStaff || $value->isNew());
     if (!$group) {
+      return;
+    }
+
+    // Staff skip the limit only inside workspaces they belong to.
+    if ($this->accountBypassesTierLimit($group)) {
       return;
     }
 
@@ -166,6 +176,19 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
   }
 
   /**
+   * Whether the current user may exceed the workspace's tier limit.
+   */
+  protected function accountBypassesTierLimit(GroupInterface $group): bool {
+    // Both module files are always loaded on a site; without them (unit
+    // tests) only operators bypass, never staff.
+    if (function_exists('_markaspot_fastmap_account_bypasses_tier_limit')
+      && function_exists('_markaspot_group_user_is_member_in_jurisdiction_scope')) {
+      return _markaspot_fastmap_account_bypasses_tier_limit($this->currentUser, $group);
+    }
+    return $this->currentUser->hasPermission('administer nodes');
+  }
+
+  /**
    * Builds citizen-facing tier-limit copy for the selected terminology.
    *
    * Constraint properties retain their original default-report strings for
@@ -211,21 +234,31 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
 
   /**
    * Resolves the jurisdiction group before node_insert hooks can stamp it.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The report under validation.
+   * @param bool $reportMismatch
+   *   Whether an inconsistent jurisdiction/category/boundary combination is
+   *   reported as a violation (otherwise it just resolves to NULL).
    */
-  protected function resolveJurisdictionGroup(NodeInterface $node): ?GroupInterface {
+  protected function resolveJurisdictionGroup(NodeInterface $node, bool $reportMismatch = TRUE): ?GroupInterface {
     $categoryRootInvalid = FALSE;
     $categoryRootId = $this->resolveCategoryRootJurisdictionId($node, $categoryRootInvalid);
     $boundaryJurisdictionId = $this->resolveBoundaryJurisdictionId($node);
     $requestJurisdictionId = $this->getRequestJurisdictionId();
 
     if ($categoryRootInvalid) {
-      $this->context->addViolation(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+      if ($reportMismatch) {
+        $this->context->addViolation(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+      }
       return NULL;
     }
 
     if ($boundaryJurisdictionId) {
       if ($this->resolveAllowedJurisdictionId($boundaryJurisdictionId, $categoryRootId, FALSE) === NULL) {
-        $this->context->addViolation(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+        if ($reportMismatch) {
+          $this->context->addViolation(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+        }
         return NULL;
       }
       return $this->loadJurisdictionGroup($boundaryJurisdictionId);
@@ -253,7 +286,9 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
           ? $group
           : $this->loadJurisdictionGroup($fieldJurisdictionId);
       }
-      $this->context->addViolation(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+      if ($reportMismatch) {
+        $this->context->addViolation(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+      }
       return NULL;
     }
 

@@ -587,11 +587,16 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
-   * Tests that bypass mas validation permission skips tier check.
+   * The global bypass permission alone no longer skips the tier limit.
+   *
+   * Without the membership check of markaspot_fastmap.module (not loaded in a
+   * unit test) a 'bypass mas validation' holder is limited like a citizen.
+   * The member/non-member split of that helper is covered by
+   * ModeratorNewRequestPublishScopeKernelTest::testFastmapTierLimitBypassFollowsMembership().
    *
    * @covers ::validate
    */
-  public function testBypassValidationPermission(): void {
+  public function testBypassValidationPermissionAloneDoesNotSkipLimit(): void {
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->currentUser->method('hasPermission')
       ->willReturnCallback(fn(string $perm) => $perm === 'bypass mas validation');
@@ -599,7 +604,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $node = $this->createPublishTransitionNode(1);
     $this->mockRequestCount(50);
 
-    $this->executionContext->expects($this->never())
+    $this->executionContext->expects($this->once())
       ->method('addViolation');
 
     $this->createValidator()->validate($node, $this->constraint);
