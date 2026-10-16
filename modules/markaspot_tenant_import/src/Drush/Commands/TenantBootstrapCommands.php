@@ -44,7 +44,7 @@ final class TenantBootstrapCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'markaspot:tenant:bootstrap', aliases: ['mas:tenant:bootstrap'])]
   #[CLI\Argument(name: 'path', description: 'Path to tenant-config.json.')]
-  #[CLI\Option(name: 'assets-dir', description: 'Explicit directory containing referenced PNG assets.')]
+  #[CLI\Option(name: 'assets-dir', description: 'Explicit directory containing referenced PNG logos and the GeoJSON boundary file.')]
   #[CLI\Option(name: 'apply', description: 'Apply the configuration; default is a read-only preview.')]
   #[CLI\FieldLabels(labels: [
     'jurisdiction_id' => 'Jurisdiction',
@@ -72,6 +72,9 @@ final class TenantBootstrapCommands extends DrushCommands {
     if (($options['format'] ?? 'table') === 'table') {
       foreach ($result['warnings'] as $warning) {
         $this->logger()->warning($warning);
+      }
+      if (isset($result['boundary'])) {
+        $this->logger()->notice(sprintf('Jurisdiction boundary: %s (sha256 %s).', $result['boundary']['action'], substr($result['boundary']['hash'], 0, 12)));
       }
       if ($result['rows'] !== []) {
         $this->io()->table(['Entity', 'Key', 'Action', 'Reason'], array_map('array_values', $result['rows']));

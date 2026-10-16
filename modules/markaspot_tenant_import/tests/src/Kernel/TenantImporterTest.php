@@ -1080,6 +1080,66 @@ final class TenantImporterTest extends KernelTestBase {
   }
 
   /**
+   * A boundary file is stored once, updated on change and kept without input.
+   */
+  public function testDedicatedBootstrapBoundary(): void {
+    $configuration = $this->prepareDedicatedBootstrap();
+    $directory = sys_get_temp_dir() . '/bootstrap-boundary-' . bin2hex(random_bytes(8));
+    mkdir($directory);
+    $square = static fn(float $size): string => json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [[[11 - $size, 50 - $size], [11 + $size, 50 - $size], [11 + $size, 50 + $size], [11 - $size, 50 + $size], [11 - $size, 50 - $size]]],
+    ]);
+    file_put_contents($directory . '/boundary.geojson', $square(0.1));
+    $configuration['tenant']['boundary_file'] = 'boundary.geojson';
+    $service = $this->container->get('markaspot_tenant_import.tenant_bootstrapper');
+    try {
+      $preview = $service->bootstrap($configuration, $directory);
+      $this->assertSame('create', $preview['boundary']['action']);
+      $this->assertNotContains('Packaged example geography will be removed. Without a jurisdiction boundary, report locations are not geographically restricted.', $preview['warnings']);
+      $this->assertSame([], Group::loadMultiple());
+
+      // A boundary that misses the configured map center aborts every write.
+      $outside = $configuration;
+      $outside['tenant']['map_center'] = [12.0, 50.0];
+      try {
+        $service->bootstrap($outside, $directory, TRUE);
+        $this->fail('Expected rejection of a map center outside the boundary.');
+      }
+      catch (\RuntimeException $exception) {
+        $this->assertStringContainsString('map_center lies outside', $exception->getMessage());
+      }
+      $this->assertSame([], Group::loadMultiple());
+
+      $first = $service->bootstrap($configuration, $directory, TRUE);
+      $group = Group::load($first['jurisdiction_id']);
+      $stored = $group->get('field_boundary')->value;
+      $this->assertSame('FeatureCollection', json_decode($stored, TRUE)['type']);
+      $this->assertSame(hash('sha256', $stored), $first['boundary']['hash']);
+
+      $second = $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertSame('unchanged', $second['boundary']['action']);
+
+      file_put_contents($directory . '/boundary.geojson', $square(0.2));
+      $third = $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertSame('update', $third['boundary']['action']);
+      $updated = Group::load($first['jurisdiction_id'])->get('field_boundary')->value;
+      $this->assertNotSame($stored, $updated);
+
+      // Without input the stored municipal boundary is never cleared.
+      unset($configuration['tenant']['boundary_file']);
+      $fourth = $service->bootstrap($configuration, $directory, TRUE);
+      $this->assertArrayNotHasKey('boundary', $fourth);
+      $this->assertSame($updated, Group::load($first['jurisdiction_id'])->get('field_boundary')->value);
+      $this->assertNotContains('No jurisdiction boundary: report locations are not geographically restricted and address search is not scoped to the municipality.', $fourth['warnings']);
+    }
+    finally {
+      unlink($directory . '/boundary.geojson');
+      rmdir($directory);
+    }
+  }
+
+  /**
    * Independent theme logos validate before writes and roll back together.
    */
   public function testDedicatedBootstrapSeparateThemeLogos(): void {
@@ -2488,6 +2548,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->createField('group', 'jur', 'field_nuxt_config', 'text_long');
     $this->createField('group', 'jur', 'field_logo_light', 'file', ['uri_scheme' => 'public']);
     $this->createField('group', 'jur', 'field_logo_dark', 'file', ['uri_scheme' => 'public']);
+    $this->createField('group', 'jur', 'field_boundary', 'text_long');
     $this->createField('group', 'jur', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'org', 'field_service_categories', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);
     $this->createField('group', 'jur', 'field_service_statuses', 'entity_reference', ['target_type' => 'taxonomy_term'], -1);

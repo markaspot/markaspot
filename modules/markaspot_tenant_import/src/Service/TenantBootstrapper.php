@@ -94,6 +94,7 @@ final class TenantBootstrapper {
       'dark' => TenantLogoAsset::read($tenant['logo_dark_file'] ?? '', $assetsDirectory),
     ];
     $assets = array_filter($assets, static fn(?array $asset): bool => $asset !== NULL);
+    $boundary = TenantBoundaryAsset::read($tenant['boundary_file'] ?? '', $assetsDirectory, $tenant['map_center']);
     $lockName = 'markaspot_tenant_import.bootstrap';
     if ($apply && !$this->lock->acquire($lockName, 3600.0)) {
       throw new \RuntimeException('Another dedicated bootstrap is running.');
@@ -125,6 +126,7 @@ final class TenantBootstrapper {
       $requiredFields = [
         'field_slug', 'field_nuxt_config', 'field_service_categories', 'field_service_statuses',
         ...($assets === [] ? [] : ['field_logo_light', 'field_logo_dark']),
+        ...($boundary === NULL ? [] : ['field_boundary']),
       ];
       foreach ($requiredFields as $field) {
         if (!$group->hasField($field)) {
@@ -157,8 +159,23 @@ final class TenantBootstrapper {
       // These options are applied below only after single-root ownership has
       // been verified. Generic imports report them as informational instead.
       $result['warnings'] = array_values(array_filter($result['warnings'], static fn(string $warning): bool => !str_starts_with($warning, 'tenant.ai ') && !str_starts_with($warning, 'tenant.boilerplates ')));
-      if ($validationPlan['clear'] !== [] && (!$group->hasField('field_boundary') || $group->get('field_boundary')->isEmpty())) {
+      $hasStoredBoundary = $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty();
+      if ($validationPlan['clear'] !== [] && $boundary === NULL && !$hasStoredBoundary) {
         $result['warnings'][] = 'Packaged example geography will be removed. Without a jurisdiction boundary, report locations are not geographically restricted.';
+      }
+      elseif ($boundary === NULL && !$hasStoredBoundary) {
+        // An operator-set global WKT still restricts locations; only the
+        // frontend search scope depends on the jurisdiction boundary.
+        $result['warnings'][] = trim((string) $validationConfig->get('wkt')) === ''
+          ? 'No jurisdiction boundary: report locations are not geographically restricted and address search is not scoped to the municipality.'
+          : 'No jurisdiction boundary: address search is not scoped to the municipality.';
+      }
+      if ($boundary !== NULL) {
+        $boundaryChanged = !$hasStoredBoundary || $group->get('field_boundary')->value !== $boundary['json'];
+        $result['boundary'] = [
+          'action' => !$hasStoredBoundary ? 'create' : ($boundaryChanged ? 'update' : 'unchanged'),
+          'hash' => $boundary['hash'],
+        ];
       }
       if (!$apply) {
         if (!$new) {
@@ -232,7 +249,13 @@ final class TenantBootstrapper {
           $group->set('field_logo_dark', ['target_id' => $file->id()]);
         }
       }
-      if ($assets !== []) {
+      // Explicit boundary input is the municipality's own area. It replaces
+      // the stored value like a logo; without input the stored value stays.
+      $boundaryChanged = $boundary !== NULL && $group->get('field_boundary')->value !== $boundary['json'];
+      if ($boundaryChanged) {
+        $group->set('field_boundary', $boundary['json']);
+      }
+      if ($assets !== [] || $boundaryChanged) {
         $group->save();
       }
       if ($validationPlan['clear'] !== []) {
@@ -286,7 +309,7 @@ final class TenantBootstrapper {
         'logo_dark_explicit' => isset($assets['dark']) || ($ownership['logo_dark_explicit'] ?? FALSE) === TRUE,
       ]);
       $result['rows'] = array_values(array_filter($import['rows'], static fn(array $row): bool => !($row['entity'] === 'runtime'
-        && in_array($row['key'], ['logo_file', 'logo_dark_file'], TRUE))));
+        && in_array($row['key'], ['logo_file', 'logo_dark_file', 'boundary_file'], TRUE))));
       unset($transaction);
       return $result;
     }

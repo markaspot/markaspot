@@ -114,7 +114,7 @@ final class TenantRuntimeConfiguration {
         $errors[] = "tenant.$key must be an absolute HTTP(S) URL.";
       }
     }
-    foreach (['logo_file', 'logo_dark_file'] as $key) {
+    foreach (['logo_file', 'logo_dark_file', 'boundary_file'] as $key) {
       if (isset($tenant[$key]) && !is_string($tenant[$key])) {
         $errors[] = "tenant.$key must be a relative file name.";
       }
@@ -203,7 +203,7 @@ final class TenantRuntimeConfiguration {
     $supported = [
       'slug', 'label', 'short_name', 'platform_name', 'email', 'address',
       'primary_color', 'secondary_color', 'font_family', 'map_center', 'map_zoom',
-      'languages', 'features', 'logo_file', 'logo_dark_file',
+      'languages', 'features', 'logo_file', 'logo_dark_file', 'boundary_file',
     ];
     $warnings = [];
     foreach ($tenant as $key => $value) {

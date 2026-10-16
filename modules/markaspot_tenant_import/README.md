@@ -292,6 +292,23 @@ Content-addressed files deduplicate identical PNGs. Failed writes roll back all
 new logo files, including bytes written before a file-entity save fails. Existing
 files and conflicting unowned paths are preserved.
 
+`tenant.boundary_file` supplies the municipality's area as GeoJSON (Polygon,
+MultiPolygon, Feature or FeatureCollection) inside `--assets-dir`. Bootstrap
+normalizes it with the same validator as the dashboard boundary editor and
+stores it in the jurisdiction's `field_boundary`. That one field restricts report
+locations, draws the area on the map and scopes address search to its bounding
+box. `map_center` must lie inside the boundary; otherwise bootstrap fails before
+any write, which catches a boundary of the wrong municipality. A changed file
+updates the stored boundary, an omitted key keeps it. The regular tenant import
+reports the key as skipped and points to bootstrap.
+
+The module never fetches geometry itself. For German municipalities the
+official source is the BKG WFS `https://sgx.geodatenzentrum.de/wfs_vg25`,
+feature type `vg25:vg25_gem` filtered by the 8-digit `ags`, requested as
+`application/json` in `EPSG:4326` (CC BY 4.0, attribution required on public
+maps). Elsewhere, draw or upload the boundary in the dashboard. Without a boundary, bootstrap warns that locations are unrestricted
+and address search covers the whole geocoder index.
+
 Unspecified runtime keys are preserved. Informational workbook values, including
 legal/privacy URLs, font descriptions, SMTP data and map addresses, are reported
 as unapplied warnings. Legal content still needs to be supplied separately.

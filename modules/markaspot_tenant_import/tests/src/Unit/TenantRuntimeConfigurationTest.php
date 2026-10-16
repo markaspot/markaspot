@@ -39,6 +39,7 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
     foreach ([
       ['logo_file' => ['invalid']],
       ['logo_dark_file' => ['invalid']],
+      ['boundary_file' => ['invalid']],
       ['font_family' => 'Arial; color:red'],
       ['font_family' => "Arial\nbody"],
       ['primary_color' => 'red'],
@@ -68,7 +69,7 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
    * Both local PNG references are accepted and not marked informational.
    */
   public function testSeparateThemeLogoConfiguration(): void {
-    $tenant = ['logo_file' => 'logos/light.png', 'logo_dark_file' => 'logos/dark.png'];
+    $tenant = ['logo_file' => 'logos/light.png', 'logo_dark_file' => 'logos/dark.png', 'boundary_file' => 'boundary.geojson'];
     $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
     $this->assertSame([], TenantRuntimeConfiguration::warnings($tenant));
   }

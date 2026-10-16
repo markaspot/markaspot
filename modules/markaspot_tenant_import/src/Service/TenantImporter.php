@@ -793,7 +793,7 @@ class TenantImporter {
     foreach (TenantRuntimeConfiguration::warnings($tenant) as $warning) {
       $rows[] = $this->row('runtime', 'warning', 'skip', $warning);
     }
-    foreach (['logo_file', 'logo_dark_file'] as $key) {
+    foreach (['logo_file', 'logo_dark_file', 'boundary_file'] as $key) {
       if (!empty($tenant[$key])) {
         $rows[] = $this->row('runtime', $key, 'skip', 'Asset import requires mas:tenant:bootstrap with --assets-dir.');
       }
