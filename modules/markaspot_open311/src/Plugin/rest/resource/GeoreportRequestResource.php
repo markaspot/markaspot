@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\Flood\FloodInterface;
+use Drupal\filter\FilterFormatRepositoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Utility\UrlHelper;
@@ -995,11 +996,27 @@ class GeoreportRequestResource extends ResourceBase {
     $request_data['service_request_id'] = $request_id;
     $values = $this->georeportProcessor->prepareNodeProperties($request_data, 'update');
 
-    // Process the update fields.
-    $this->processUpdateFields($node, $values);
+    try {
+      // Process the update fields.
+      $this->processUpdateFields($node, $values);
 
-    // Validation and saving logic.
-    if ($this->validateAndUpdateNode($node, $values)) {
+      // Validation and saving logic.
+      $updated = $this->validateAndUpdateNode($node, $values);
+    }
+    catch (\Throwable $e) {
+      // Rejected updates must not leave media_url downloads behind.
+      $this->georeportProcessor->discardImportedMedia();
+      throw $e;
+    }
+
+    if ($updated) {
+      $this->georeportProcessor->commitImportedMedia();
+    }
+    else {
+      $this->georeportProcessor->discardImportedMedia();
+    }
+
+    if ($updated) {
       $this->logger->notice('Updated entity %type with ID %request_id.', [
         '%type' => $node->getEntityTypeId(),
         '%request_id' => $request_id,
@@ -1072,8 +1089,14 @@ class GeoreportRequestResource extends ResourceBase {
           $node->set($field_name, $value);
         }
         else {
-          // Wrap plain string with user's default format.
-          $node->set($field_name, ['value' => $value, 'format' => filter_default_format()]);
+          // Wrap plain string with user's default format. The repository
+          // service exists from Drupal 11.4; older supported cores only have
+          // the function.
+          $format = \Drupal::hasService(FilterFormatRepositoryInterface::class)
+            ? \Drupal::service(FilterFormatRepositoryInterface::class)->getDefaultFormat()->id()
+            // @phpstan-ignore function.deprecated
+            : filter_default_format();
+          $node->set($field_name, ['value' => $value, 'format' => $format]);
         }
       }
       else {

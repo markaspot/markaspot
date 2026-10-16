@@ -11,7 +11,6 @@ use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
 use Drupal\Core\File\Exception\FileException;
 use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\TransferException;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -35,6 +34,7 @@ use Drupal\Core\Utility\Token;
 use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Component\Utility\Bytes;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -180,6 +180,32 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $hierarchyResolver;
 
   /**
+   * Fetch rejections that only drop the image, not the whole request.
+   */
+  private const SKIPPABLE_MEDIA_REASONS = [
+    'transfer',
+    'http_status',
+    'unresolvable',
+    'not_an_image',
+    'extension',
+    'too_large',
+  ];
+
+  /**
+   * The hardened downloader for media_url imports.
+   *
+   * @var \Drupal\markaspot_open311\Service\RemoteImageFetcher
+   */
+  protected RemoteImageFetcher $remoteImageFetcher;
+
+  /**
+   * Media and files created by the last media_url import, newest first.
+   *
+   * @var \Drupal\Core\Entity\EntityInterface[]
+   */
+  protected array $importedMedia = [];
+
+  /**
    * The logger channel.
    *
    * @var \Psr\Log\LoggerInterface
@@ -307,6 +333,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The logger channel.
    * @param \Drupal\Core\KeyValueStore\KeyValueFactoryInterface|null $keyValueFactory
    *   The keyvalue store factory.
+   * @param \Drupal\markaspot_open311\Service\RemoteImageFetcher|null $remoteImageFetcher
+   *   The hardened downloader for media_url imports.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -329,7 +357,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     ?LoggerInterface $logger = NULL,
     ?KeyValueFactoryInterface $keyValueFactory = NULL,
+    ?RemoteImageFetcher $remoteImageFetcher = NULL,
   ) {
+    $this->remoteImageFetcher = $remoteImageFetcher ?? new RemoteImageFetcher($httpClient, $logger);
     $this->configFactory = $configFactory;
     $this->currentUser = $currentUser;
     $this->time = $time;
@@ -458,10 +488,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // can optionally warn when the submitted point equals the default.
     $addressString = $requestData['address_string'] ?? ($requestData['address'] ?? NULL);
 
-    // Handle Media URL file creation.
-    if (array_key_exists('media_url', $requestData)) {
-      $values['field_request_media'] = $this->handleMediaUrls($requestData);
-    }
     // $values['created'] = isset($request_data['requested_datetime']) && $operation == 'update' ? strtotime($request_data['requested_datetime']) : '';
     if ($addressString) {
       // Resolve country_code: explicit param > jurisdiction config > site
@@ -603,6 +629,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           $values['field_request_attributes'] = ['value' => json_encode($decoded)];
         }
       }
+    }
+
+    // Import media_url last: every cheaper check above has passed, so a
+    // rejected payload never leaves downloaded media behind.
+    $this->importedMedia = [];
+    if (array_key_exists('media_url', $requestData)) {
+      $values['field_request_media'] = $this->handleMediaUrls($requestData);
     }
 
     return array_filter($values, function ($value) {
@@ -3919,89 +3952,197 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   }
 
   /**
-   * Handles media URLs in the request data.
+   * Imports the images referenced by media_url as request_image media.
+   *
+   * The URLs are untrusted client input: RemoteImageFetcher blocks
+   * non-public targets, caps the size and checks the payload is an image.
+   * The stored file gets a generated name with the detected extension, and
+   * the field validators of field_media_image run before anything is saved.
    *
    * @param array $requestData
    *   The request data array.
    *
    * @return array
-   *   An array of media URLs.
+   *   Media references for field_request_media.
    *
    * @throws \Drupal\markaspot_open311\Exception\GeoreportException
-   *   If an image cannot be retrieved via URL.
+   *   With code 400 when a URL or its payload is rejected.
    */
   private function handleMediaUrls(array $requestData): array {
     $mediaUrls = [];
+    $rawUrls = $requestData['media_url'] ?? NULL;
+    if ($rawUrls === NULL || (is_string($rawUrls) && trim($rawUrls) === '')) {
+      return $mediaUrls;
+    }
+    if (!is_string($rawUrls)) {
+      throw new GeoreportException('media_url must be a string of comma-separated URLs.', 400);
+    }
+    $urls = array_values(array_filter(array_map('trim', explode(',', $rawUrls)), 'strlen'));
 
-    if (isset($requestData['media_url'])) {
-      $urls = explode(',', $requestData['media_url']);
-      // Guard against an incompletely-installed media stack: on a fresh
-      // install where markaspot_media's config/install did not land, the
-      // media `field_media_image` storage definition is absent and calling
-      // ->getSetting() on the missing entry raises a fatal \Error that the
-      // POST handler can only surface as a redacted 502. Degrade gracefully
-      // by skipping image handling instead — the report itself still saves.
-      $mediaStorageDefinitions = $this->entityFieldManager->getFieldStorageDefinitions('media');
-      if (!isset($mediaStorageDefinitions['field_media_image'])) {
-        $this->logger?->warning(
-          'media_url received but the media field_media_image storage is missing; skipping image import. Run drush updb / re-import markaspot_media config to restore media support.'
-        );
-        return $mediaUrls;
+    // Guard against an incompletely-installed media stack: on a fresh
+    // install where markaspot_media's config/install did not land, the
+    // media `field_media_image` storage definition is absent and calling
+    // ->getSetting() on the missing entry raises a fatal \Error that the
+    // POST handler can only surface as a redacted 502. Degrade gracefully
+    // by skipping image handling instead — the report itself still saves.
+    $mediaStorageDefinitions = $this->entityFieldManager->getFieldStorageDefinitions('media');
+    if (!isset($mediaStorageDefinitions['field_media_image'])) {
+      $this->logger?->warning(
+        'media_url received but the media field_media_image storage is missing; skipping image import. Run drush updb / re-import markaspot_media config to restore media support.'
+      );
+      return $mediaUrls;
+    }
+
+    $maxUrls = $this->getMaxMediaUrls();
+    if (count($urls) > $maxUrls) {
+      throw new GeoreportException(sprintf('media_url accepts at most %d URLs.', $maxUrls), 400);
+    }
+
+    $storageSetting = $mediaStorageDefinitions['field_media_image']->getSetting('uri_scheme');
+    $wrapperScheme = $this->getWrapperScheme($storageSetting);
+    $fieldSettings = $this->configFactory->get('field.field.media.request_image.field_media_image')->get('settings') ?? [];
+    $fileDirectory = $this->token->replace($fieldSettings['file_directory'] ?? '');
+    $fileDirectory = trim($fileDirectory, '/');
+    $directoryPath = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '');
+    $allowedExtensions = preg_split('/\s+/', strtolower(trim((string) ($fieldSettings['file_extensions'] ?? 'png gif jpg jpeg'))), -1, PREG_SPLIT_NO_EMPTY);
+    $maxBytes = $this->getMaxMediaBytes((string) ($fieldSettings['max_filesize'] ?? ''));
+
+    // Download and check every URL before anything is stored, so one bad
+    // URL in a list does not leave the good ones behind.
+    $images = [];
+    foreach ($urls as $url) {
+      try {
+        $images[] = [$url, $this->remoteImageFetcher->fetch($url, $maxBytes, $allowedExtensions)];
       }
-      $storageSetting = $mediaStorageDefinitions['field_media_image']->getSetting('uri_scheme');
-      $wrapperScheme = $this->getWrapperScheme($storageSetting);
-      $fieldConfig = $this->configFactory->get('field.field.media.request_image.field_media_image');
-      $fieldSettings = $fieldConfig->get('settings');
-      $fileDirectory = $this->token->replace($fieldSettings['file_directory'] ?? '');
-      $fileDirectory = trim($fileDirectory, '/');
-      // Create the directory if it doesn't exist.
-      $directoryPath = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '');
-      $this->fileSystem->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
-
-      foreach ($urls as $url) {
-        $privacyFlagged = $this->isExistingMediaUrlPrivacyFlagged(trim($url));
-        $destination = $directoryPath . basename($url);
-
-        if (strstr($url, 'http')) {
-          try {
-            $data = (string) $this->httpClient->get(trim($url))->getBody();
-            $filePath = $this->fileSystem->saveData($data, $destination, FileExists::Rename);
-
-            if ($filePath) {
-              $file = File::create(['uri' => $filePath]);
-              $file->save();
-
-              if ($this->moduleHandler->moduleExists('markaspot_media')) {
-                $media = $this->createMediaEntity('request_image', $file, $privacyFlagged);
-                $mediaUrls[] = [
-                  'target_id' => $media->id(),
-                  'alt' => 'Open311 File',
-                ];
-              }
-              else {
-                $mediaUrls[] = [
-                  'target_id' => $file->id(),
-                  'alt' => 'Open311 File',
-                  'uri' => $file->getFileUri(),
-                ];
-              }
-            }
-            else {
-              throw new \Exception('Failed to save file', 400);
-            }
-          }
-          catch (TransferException $exception) {
-            $this->messenger->addError($this->t('Failed to fetch file due to error "%error"', ['%error' => $exception->getMessage()]));
-          }
-          catch (FileException | InvalidStreamWrapperException $e) {
-            $this->messenger->addError($this->t('Failed to save file due to error "%error"', ['%error' => $e->getMessage()]));
-            throw new \Exception('Image could not be retrieved via URL', 400);
-          }
+      catch (RemoteImageException $e) {
+        // An image that cannot be fetched or is not an acceptable image
+        // never blocked the report, and must not now: skip it, store
+        // nothing. URLs the SSRF policy forbids are the client's error.
+        if (in_array($e->getReason(), self::SKIPPABLE_MEDIA_REASONS, TRUE)) {
+          $this->logger?->warning('Open311 media_url skipped (@reason).', ['@reason' => $e->getReason()]);
+          continue;
         }
+        $this->logger?->notice('Open311 media_url rejected (@reason).', ['@reason' => $e->getReason()]);
+        throw new GeoreportException('media_url rejected: ' . $e->getMessage(), 400);
       }
     }
 
+    try {
+      foreach ($images as [$url, $image]) {
+        try {
+          $mediaUrls[] = $this->storeImportedImage($url, $image, $directoryPath);
+        }
+        catch (MediaFieldViolationException $e) {
+          // The field validators refused this image (e.g. its type or size):
+          // drop it like an image that could not be fetched.
+          $this->logger?->warning('Open311 media_url skipped, the image fails the field validation: @message', ['@message' => $e->getMessage()]);
+          $e->mediaFile->delete();
+          $this->importedMedia = array_values(array_filter($this->importedMedia, static fn($entity) => $entity !== $e->mediaFile));
+        }
+      }
+    }
+    catch (\Throwable $e) {
+      $this->discardImportedMedia();
+      throw $e;
+    }
+
     return $mediaUrls;
+  }
+
+  /**
+   * Stores one downloaded image as file and request_image media.
+   *
+   * @param string $url
+   *   The submitted URL (for the privacy flag lookup).
+   * @param array{data: string, extension: string, mime: string} $image
+   *   The checked image.
+   * @param string $directoryPath
+   *   Target directory URI with trailing slash.
+   *
+   * @return array
+   *   The field_request_media item.
+   */
+  private function storeImportedImage(string $url, array $image, string $directoryPath): array {
+    $privacyFlagged = $this->isExistingMediaUrlPrivacyFlagged($url);
+    $this->fileSystem->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
+    $destination = $directoryPath . 'open311-' . bin2hex(random_bytes(8)) . '.' . $image['extension'];
+
+    try {
+      $filePath = $this->fileSystem->saveData($image['data'], $destination, FileExists::Rename);
+    }
+    catch (FileException | InvalidStreamWrapperException $e) {
+      $this->logger?->error('Open311 media_url could not be stored: @message', ['@message' => $e->getMessage()]);
+      throw new GeoreportException('Image could not be retrieved via URL', 400);
+    }
+
+    $file = File::create([
+      'uri' => $filePath,
+      'filename' => basename($filePath),
+      'filemime' => $image['mime'],
+      'uid' => $this->currentUser->id(),
+    ]);
+    $file->setTemporary();
+    $file->save();
+    $this->importedMedia[] = $file;
+
+    if (!$this->moduleHandler->moduleExists('markaspot_media')) {
+      $file->setPermanent();
+      $file->save();
+      return [
+        'target_id' => $file->id(),
+        'alt' => 'Open311 File',
+        'uri' => $file->getFileUri(),
+      ];
+    }
+
+    $media = $this->createMediaEntity('request_image', $file, $privacyFlagged);
+    array_unshift($this->importedMedia, $media);
+    return [
+      'target_id' => $media->id(),
+      'alt' => 'Open311 File',
+    ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function discardImportedMedia(): void {
+    foreach ($this->importedMedia as $entity) {
+      try {
+        $entity->delete();
+      }
+      catch (\Throwable $e) {
+        $this->logger?->warning('Could not remove media imported for a rejected Open311 request: @message', ['@message' => $e->getMessage()]);
+      }
+    }
+    $this->importedMedia = [];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function commitImportedMedia(): void {
+    $this->importedMedia = [];
+  }
+
+  /**
+   * Maximum number of media_url entries, bounded by the field cardinality.
+   */
+  private function getMaxMediaUrls(): int {
+    $definitions = $this->entityFieldManager->getFieldStorageDefinitions('node');
+    $cardinality = isset($definitions['field_request_media'])
+      ? (int) $definitions['field_request_media']->getCardinality()
+      : 0;
+    return $cardinality > 0 ? $cardinality : 5;
+  }
+
+  /**
+   * Size limit for a downloaded image: the field limit, at most 20 MB.
+   */
+  private function getMaxMediaBytes(string $fieldLimit): int {
+    $hardLimit = 20 * 1024 * 1024;
+    $limit = $fieldLimit !== '' ? (int) Bytes::toNumber($fieldLimit) : 10 * 1024 * 1024;
+    return $limit > 0 ? min($limit, $hardLimit) : $hardLimit;
   }
 
   /**
@@ -4019,6 +4160,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the media entity.
+   * @throws \Drupal\markaspot_open311\Service\MediaFieldViolationException
+   *   When the file fails the field_media_image validators.
    */
   private function createMediaEntity(string $bundle, File $file, bool $privacyFlagged = FALSE): MediaInterface {
     $media = $this->entityTypeManager->getStorage('media')->create([
@@ -4036,8 +4179,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     $media->setName('media:' . $bundle . ':' . $media->uuid())
-      ->setPublished(!$privacyFlagged)
-      ->save();
+      ->setPublished(!$privacyFlagged);
+
+    // Media::save() does not validate, so the extension, size and image
+    // checks of field_media_image would never run for files created here.
+    $violations = $media->validate()->getByField('field_media_image');
+    if ($violations->count() > 0) {
+      throw new MediaFieldViolationException($file, strip_tags((string) $violations->get(0)->getMessage()));
+    }
+
+    $media->save();
 
     return $media;
   }

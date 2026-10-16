@@ -1096,47 +1096,64 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
     // Make sure it's a content entity.
     if ($node instanceof ContentEntityInterface) {
-      $this->enforceAnonymousPrivacyMediaBlock($node, $request_data);
+      try {
+        $this->enforceAnonymousPrivacyMediaBlock($node, $request_data);
 
-      // Resolve the jurisdiction's initial status before validation: the field
-      // default belongs to one jurisdiction, and an API user of another one
-      // may not reference it, so validating the default rejects the request.
-      $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
-      $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
-      if ($initialStatusTid !== NULL && $node->hasField('field_status')) {
-        $node->set('field_status', [['target_id' => $initialStatusTid]]);
-      }
-      else {
-        $this->logger->warning('No initial status for jurisdiction @jid: neither an "initial" Open311 mapping nor status_open_start is configured; validating the field default.', [
-          '@jid' => $jurisdictionId ?? 'none',
-        ]);
-      }
-
-      $validation = $this->validate($node);
-      if ($validation === TRUE) {
-
-        // Uses status term description as note text; falls back to the site
-        // default language because service request nodes are language-neutral.
-        $langcode = $this->languageManager->getDefaultLanguage()->getId();
-        $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
-          'status_term_id' => $initialStatusTid,
-        ], $langcode);
-        if ($paragraph->get('field_status_note')->isEmpty()) {
-          $paragraph->set('field_status_note', [
-            'value' => $this->t('The service request has been created.', [], ['langcode' => $langcode]),
-            'format' => 'plain_text',
+        // Resolve the jurisdiction's initial status before validation: the
+        // field default belongs to one jurisdiction, and an API user of
+        // another one may not reference it, so validating the default rejects
+        // the request.
+        $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
+        $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
+        if ($initialStatusTid !== NULL && $node->hasField('field_status')) {
+          $node->set('field_status', [['target_id' => $initialStatusTid]]);
+        }
+        else {
+          $this->logger->warning('No initial status for jurisdiction @jid: neither an "initial" Open311 mapping nor status_open_start is configured; validating the field default.', [
+            '@jid' => $jurisdictionId ?? 'none',
           ]);
-          $paragraph->save();
         }
 
-        $node->field_status_notes = [
-          [
-            'target_id' => $paragraph->id(),
-            'target_revision_id' => $paragraph->getRevisionId(),
-          ],
-        ];
+        $validation = $this->validate($node);
+        if ($validation === TRUE) {
+          // Uses status term description as note text; falls back to the site
+          // default language because service request nodes are language-neutral.
+          $langcode = $this->languageManager->getDefaultLanguage()->getId();
+          $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+            'status_term_id' => $initialStatusTid,
+          ], $langcode);
+          if ($paragraph->get('field_status_note')->isEmpty()) {
+            $paragraph->set('field_status_note', [
+              'value' => $this->t('The service request has been created.', [], ['langcode' => $langcode]),
+              'format' => 'plain_text',
+            ]);
+            $paragraph->save();
+          }
 
-        $node->save();
+          $node->field_status_notes = [
+            [
+              'target_id' => $paragraph->id(),
+              'target_revision_id' => $paragraph->getRevisionId(),
+            ],
+          ];
+
+          $node->save();
+        }
+      }
+      catch (\Throwable $e) {
+        // Rejected requests must not leave media_url downloads behind.
+        $this->georeportProcessor->discardImportedMedia();
+        throw $e;
+      }
+      if ($validation === TRUE) {
+        // The media now belong to the saved report.
+        $this->georeportProcessor->commitImportedMedia();
+      }
+      else {
+        $this->georeportProcessor->discardImportedMedia();
+      }
+
+      if ($validation === TRUE) {
         $this->logger->notice('Created entity %type with ID %request_id.', [
           '%type' => $node->getEntityTypeId(),
           '%request_id' => $node->request_id->value,

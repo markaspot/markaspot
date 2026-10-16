@@ -36,6 +36,19 @@ interface GeoreportProcessorServiceInterface {
   public function prepareNodeProperties(array $requestData, string $operation): array;
 
   /**
+   * Deletes media created by the last prepareNodeProperties() media_url import.
+   *
+   * Callers run it when the request is rejected after the import, so a
+   * failed request leaves no downloaded media behind.
+   */
+  public function discardImportedMedia(): void;
+
+  /**
+   * Keeps the media of the last import: the request using them was saved.
+   */
+  public function commitImportedMedia(): void;
+
+  /**
    * Maps a service code to a taxonomy term ID.
    *
    * @param string $serviceCode
