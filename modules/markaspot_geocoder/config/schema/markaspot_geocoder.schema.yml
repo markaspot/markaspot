@@ -11,6 +11,9 @@ markaspot_geocoder.settings:
     mapbox_token:
       type: string
       label: 'Mapbox access token'
+    photon_url:
+      type: string
+      label: 'Photon endpoint URL'
     district_mappings:
       type: sequence
       label: 'District taxonomy mappings'

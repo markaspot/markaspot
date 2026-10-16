@@ -7,6 +7,7 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -77,12 +78,14 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
     $envProvider = getenv('GEOCODER_PROVIDER');
     $envApiKey = getenv('GEOCODER_API_KEY');
     $envLanguage = getenv('GEOCODER_LANGUAGE');
+    $envPhotonUrl = getenv('GEOCODER_PHOTON_URL');
 
-    if ($envProvider || $envApiKey || $envLanguage) {
+    if ($envProvider || $envApiKey || $envLanguage || $envPhotonUrl) {
       $overrides = array_filter([
         $envProvider ? "GEOCODER_PROVIDER=$envProvider" : NULL,
         $envApiKey ? 'GEOCODER_API_KEY=(set)' : NULL,
         $envLanguage ? "GEOCODER_LANGUAGE=$envLanguage" : NULL,
+        $envPhotonUrl ? "GEOCODER_PHOTON_URL=$envPhotonUrl" : NULL,
       ]);
       $form['env_notice'] = [
         '#type' => 'markup',
@@ -98,7 +101,7 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
       '#type' => 'fieldset',
       '#title' => $this->t('Server-side Geocoder Settings'),
       '#collapsible' => TRUE,
-      '#description' => $this->t('Configure the geocoding provider for reverse geocoding coordinates to addresses. ENV variables (GEOCODER_PROVIDER, GEOCODER_API_KEY, GEOCODER_LANGUAGE) override these settings when set.'),
+      '#description' => $this->t('Configure the geocoding provider for reverse geocoding coordinates to addresses. ENV variables (GEOCODER_PROVIDER, GEOCODER_API_KEY, GEOCODER_LANGUAGE, GEOCODER_PHOTON_URL) override these settings when set.'),
       '#group' => 'settings',
     ];
 
@@ -108,6 +111,7 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
       '#options' => [
         'nominatim' => $this->t('Nominatim (OpenStreetMap, free, no API key)'),
         'mapbox' => $this->t('Mapbox (requires API key)'),
+        'photon' => $this->t('Photon (OpenStreetMap, own server or photon.komoot.io)'),
       ],
       '#default_value' => $config->get('provider') ?: 'nominatim',
       '#description' => $this->t('Select the geocoding provider. Nominatim is free and requires no API key.'),
@@ -143,6 +147,26 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
       $form['markaspot_geocoder']['mapbox_token']['#description'] = $this->t('A token is currently stored in configuration. Leave empty to keep it; enter a new value to replace it. Prefer the GEOCODER_API_KEY environment variable for production deployments.');
     }
 
+    $form['markaspot_geocoder']['photon_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Photon endpoint'),
+      '#default_value' => (string) ($config->get('photon_url') ?? ''),
+      '#description' => $this->t('Root URL of the Photon server, e.g. http://10.10.1.3:2322 for the fleet geo server. Leave empty to use the public server @default. The GEOCODER_PHOTON_URL environment variable takes precedence.', [
+        '@default' => MarkaspotGeocoderService::PHOTON_DEFAULT_URL,
+      ]),
+      '#states' => [
+        'visible' => [
+          ':input[name="provider"]' => [
+            ['value' => 'photon'],
+          ],
+        ],
+      ],
+    ];
+    if ($envPhotonUrl) {
+      $form['markaspot_geocoder']['photon_url']['#disabled'] = TRUE;
+      $form['markaspot_geocoder']['photon_url']['#description'] = $this->t('Managed via the GEOCODER_PHOTON_URL environment variable.');
+    }
+
     $form['markaspot_geocoder']['language'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Language'),
@@ -155,7 +179,7 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
     $form['district_mapping'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('District Taxonomy Mapping'),
-      '#description' => $this->t('Map geocoder response properties to taxonomy vocabularies. Each mapping defines which geocoder property populates which taxonomy field on service requests. Available properties depend on the provider: Nominatim returns suburb, quarter, neighbourhood, city_district, borough. Mapbox returns neighbourhood (neighborhood), suburb (locality), city_district (district).'),
+      '#description' => $this->t('Map geocoder response properties to taxonomy vocabularies. Each mapping defines which geocoder property populates which taxonomy field on service requests. Available properties depend on the provider: Nominatim returns suburb, quarter, neighbourhood, city_district, borough. Mapbox returns neighbourhood (neighborhood), suburb (locality), city_district (district). Photon returns district (city district or suburb), locality (quarter or neighbourhood), city, county, state; review the mappings when switching to Photon.'),
     ];
 
     $form['district_mapping']['mappings_wrapper'] = [
@@ -392,6 +416,11 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
       $form_state->setErrorByName('mapbox_token', $this->t('Mapbox provider requires an access token (or set the GEOCODER_API_KEY environment variable).'));
     }
 
+    $photonUrl = trim((string) ($form_state->getValue('photon_url') ?? ''));
+    if ($photonUrl !== '' && !MarkaspotGeocoderService::isValidPhotonUrl($photonUrl)) {
+      $form_state->setErrorByName('photon_url', $this->t('The Photon endpoint must be an http(s) URL without credentials, query or fragment.'));
+    }
+
     parent::validateForm($form, $form_state);
   }
 
@@ -404,6 +433,10 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
     $config
       ->set('provider', (string) $form_state->getValue('provider'))
       ->set('language', (string) $form_state->getValue('language'));
+
+    if (!getenv('GEOCODER_PHOTON_URL')) {
+      $config->set('photon_url', rtrim(trim((string) ($form_state->getValue('photon_url') ?? '')), '/'));
+    }
 
     // Token handling:
     // - ENV set: never write the config, ENV is the source of truth.

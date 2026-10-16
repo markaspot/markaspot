@@ -5,6 +5,7 @@ namespace Drupal\markaspot_geocoder\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotMapbox;
 use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotNominatim;
+use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotPhoton;
 use Geocoder\Exception\CollectionIsEmpty;
 use Geocoder\Provider\Provider;
 use Geocoder\Query\GeocodeQuery;
@@ -44,6 +45,11 @@ class MarkaspotGeocoderService {
   private const LOG_COORD_PRECISION = 3;
 
   /**
+   * Public Photon server, used when no own endpoint is configured.
+   */
+  public const PHOTON_DEFAULT_URL = 'https://photon.komoot.io';
+
+  /**
    * Geocoder configuration.
    */
   protected ConfigFactoryInterface $configFactory;
@@ -61,7 +67,7 @@ class MarkaspotGeocoderService {
   /**
    * The last created provider instance, for accessing raw properties.
    */
-  protected MarkaspotMapbox|MarkaspotNominatim|null $lastProvider = NULL;
+  protected MarkaspotMapbox|MarkaspotNominatim|MarkaspotPhoton|null $lastProvider = NULL;
 
   public function __construct(
     ConfigFactoryInterface $config_factory,
@@ -95,6 +101,7 @@ class MarkaspotGeocoderService {
     $this->lastProvider = match ($providerName) {
       'mapbox', 'mapbox_address' => new MarkaspotMapbox($adapter, $apiKey),
       'nominatim' => new MarkaspotNominatim($adapter, 'https://nominatim.openstreetmap.org'),
+      'photon' => new MarkaspotPhoton($adapter, $this->getPhotonUrl()),
       default => $this->fallbackToNominatim($adapter, $providerName),
     };
 
@@ -109,6 +116,45 @@ class MarkaspotGeocoderService {
       '@name' => $providerName,
     ]);
     return new MarkaspotNominatim($adapter, 'https://nominatim.openstreetmap.org');
+  }
+
+  /**
+   * Resolves the Photon endpoint.
+   *
+   * Fallback chain: ENV GEOCODER_PHOTON_URL > config photon_url > public
+   * photon.komoot.io. Only http(s) URLs with a host are accepted; anything
+   * else logs a warning and uses the public server, so a typo never blocks
+   * report saves (same fail-open rule as the provider name).
+   */
+  protected function getPhotonUrl(): string {
+    $config = $this->configFactory->get('markaspot_geocoder.settings');
+    $url = trim((string) (getenv('GEOCODER_PHOTON_URL') ?: $config->get('photon_url') ?: ''));
+    if ($url === '') {
+      return self::PHOTON_DEFAULT_URL;
+    }
+    if (!self::isValidPhotonUrl($url)) {
+      $this->logger->warning('Invalid Photon URL configured, falling back to @default.', [
+        '@default' => self::PHOTON_DEFAULT_URL,
+      ]);
+      return self::PHOTON_DEFAULT_URL;
+    }
+    return $url;
+  }
+
+  /**
+   * Checks that a Photon endpoint is an http(s) URL with a host.
+   *
+   * Userinfo, query and fragment are rejected: the provider appends its
+   * own path and query string to this root.
+   */
+  public static function isValidPhotonUrl(string $url): bool {
+    $parts = parse_url($url);
+    return is_array($parts)
+      && in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], TRUE)
+      && !empty($parts['host'])
+      && !isset($parts['user'])
+      && !isset($parts['query'])
+      && !isset($parts['fragment']);
   }
 
   /**

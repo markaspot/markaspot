@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_geocoder\Unit;
 
 use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotNominatim;
+use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotPhoton;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
@@ -230,6 +231,94 @@ final class MarkaspotGeocoderServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests GEOCODER_PROVIDER=photon selects the Photon provider.
+   */
+  public function testCreateProviderSelectsPhoton(): void {
+    $this->withEnv(['GEOCODER_PROVIDER' => 'photon', 'GEOCODER_PHOTON_URL' => NULL], function (): void {
+      $service = $this->exposingService(['photon_url' => 'http://10.10.1.3:2322']);
+      $this->assertInstanceOf(MarkaspotPhoton::class, $service->exposedCreateProvider());
+      $this->assertSame('http://10.10.1.3:2322', $service->exposedPhotonUrl());
+    });
+  }
+
+  /**
+   * Tests the Photon endpoint fallback chain: ENV, config, public server.
+   */
+  public function testPhotonUrlFallbackChain(): void {
+    $this->withEnv(['GEOCODER_PHOTON_URL' => 'http://10.10.1.3:2323'], function (): void {
+      $this->assertSame('http://10.10.1.3:2323', $this->exposingService(['photon_url' => 'http://other:2322'])->exposedPhotonUrl());
+    });
+    $this->withEnv(['GEOCODER_PHOTON_URL' => NULL], function (): void {
+      $this->assertSame('http://other:2322', $this->exposingService(['photon_url' => 'http://other:2322'])->exposedPhotonUrl());
+      $this->assertSame(MarkaspotGeocoderService::PHOTON_DEFAULT_URL, $this->exposingService([])->exposedPhotonUrl());
+    });
+  }
+
+  /**
+   * Tests an invalid Photon endpoint logs a warning and uses the public one.
+   */
+  public function testInvalidPhotonUrlFallsBackWithWarning(): void {
+    $this->withEnv(['GEOCODER_PHOTON_URL' => 'ftp://10.10.1.3:2322'], function (): void {
+      $logger = $this->createMock(LoggerInterface::class);
+      $logger->expects($this->once())->method('warning')->with($this->stringContains('Invalid Photon URL'));
+      $service = $this->exposingService([], $logger);
+      $this->assertSame(MarkaspotGeocoderService::PHOTON_DEFAULT_URL, $service->exposedPhotonUrl());
+    });
+  }
+
+  /**
+   * Tests which Photon endpoint URLs are accepted.
+   */
+  public function testIsValidPhotonUrl(): void {
+    $this->assertTrue(MarkaspotGeocoderService::isValidPhotonUrl('http://10.10.1.3:2322'));
+    $this->assertTrue(MarkaspotGeocoderService::isValidPhotonUrl('https://photon.komoot.io'));
+    $this->assertTrue(MarkaspotGeocoderService::isValidPhotonUrl('https://geocoder.infra.mark-a-spot.com/photon'));
+    $this->assertFalse(MarkaspotGeocoderService::isValidPhotonUrl('ftp://10.10.1.3'));
+    $this->assertFalse(MarkaspotGeocoderService::isValidPhotonUrl('http://user:secret@10.10.1.3:2322'));
+    $this->assertFalse(MarkaspotGeocoderService::isValidPhotonUrl('http://10.10.1.3:2322/?key=1'));
+    $this->assertFalse(MarkaspotGeocoderService::isValidPhotonUrl('http://10.10.1.3:2322/#x'));
+    $this->assertFalse(MarkaspotGeocoderService::isValidPhotonUrl('10.10.1.3:2322'));
+    $this->assertFalse(MarkaspotGeocoderService::isValidPhotonUrl(''));
+  }
+
+  /**
+   * Creates a service exposing provider creation, with the given config.
+   */
+  private function exposingService(array $settings, ?LoggerInterface $logger = NULL): ProviderExposingMarkaspotGeocoderService {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(static fn (string $key) => $settings[$key] ?? NULL);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->with('markaspot_geocoder.settings')->willReturn($config);
+
+    return new ProviderExposingMarkaspotGeocoderService(
+      $configFactory,
+      $this->createMock(ClientInterface::class),
+      $logger ?? $this->createMock(LoggerInterface::class),
+    );
+  }
+
+  /**
+   * Runs a callback with environment variables set (NULL unsets).
+   *
+   * The original values are restored afterwards.
+   */
+  private function withEnv(array $vars, callable $callback): void {
+    $original = [];
+    foreach ($vars as $name => $value) {
+      $original[$name] = getenv($name);
+      putenv($value === NULL ? $name : "$name=$value");
+    }
+    try {
+      $callback();
+    }
+    finally {
+      foreach ($original as $name => $value) {
+        putenv($value === FALSE ? $name : "$name=$value");
+      }
+    }
+  }
+
+  /**
    * Tests address-only node saves do not trigger forward geocoding.
    */
   public function testPresaveReturnsBeforeGeocoderServiceWhenGeolocationIsEmpty(): void {
@@ -331,6 +420,13 @@ final class ProviderExposingMarkaspotGeocoderService extends MarkaspotGeocoderSe
    */
   public function exposedCreateProvider(): Provider {
     return $this->createProvider();
+  }
+
+  /**
+   * Calls the protected getPhotonUrl() from outside the class.
+   */
+  public function exposedPhotonUrl(): string {
+    return $this->getPhotonUrl();
   }
 
 }

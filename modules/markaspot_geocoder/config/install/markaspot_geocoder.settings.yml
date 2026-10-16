@@ -1,6 +1,7 @@
 provider: 'nominatim'
 language: 'de'
 mapbox_token: ''
+photon_url: ''
 district_mappings:
   -
     field: field_district
