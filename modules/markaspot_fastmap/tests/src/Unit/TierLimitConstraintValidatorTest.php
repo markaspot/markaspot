@@ -587,27 +587,58 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
-   * The global bypass permission alone no longer skips the tier limit.
+   * The 'bypass mas validation' permission alone does not skip the limit.
    *
-   * Without the membership check of markaspot_fastmap.module (not loaded in a
-   * unit test) a 'bypass mas validation' holder is limited like a citizen.
-   * The member/non-member split of that helper is covered by
+   * The validator hands the decision to the membership check
+   * (accountBypassesTierLimit, backed by markaspot_fastmap.module); a staff
+   * user outside the workspace is limited like a citizen, a member is not.
+   * The membership check itself is covered by
    * ModeratorNewRequestPublishScopeKernelTest::testFastmapTierLimitBypassFollowsMembership().
    *
    * @covers ::validate
    */
-  public function testBypassValidationPermissionAloneDoesNotSkipLimit(): void {
+  public function testBypassValidationPermissionFollowsMembership(): void {
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->currentUser->method('hasPermission')
       ->willReturnCallback(fn(string $perm) => $perm === 'bypass mas validation');
-
-    $node = $this->createPublishTransitionNode(1);
     $this->mockRequestCount(50);
 
     $this->executionContext->expects($this->once())
       ->method('addViolation');
 
-    $this->createValidator()->validate($node, $this->constraint);
+    $this->membershipValidator(FALSE)->validate($this->createPublishTransitionNode(1), $this->constraint);
+    $this->membershipValidator(TRUE)->validate($this->createPublishTransitionNode(1), $this->constraint);
+  }
+
+  /**
+   * Builds a validator whose membership check returns a fixed answer.
+   */
+  protected function membershipValidator(bool $isMember): TierLimitConstraintValidator {
+    $validator = new class(
+      $this->currentUser,
+      $this->tierConfig,
+      NULL,
+      NULL,
+      NULL,
+      $this->createConfigFactory('jur'),
+    ) extends TierLimitConstraintValidator {
+
+      /**
+       * The fixed membership answer.
+       */
+      public bool $isMember = FALSE;
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function accountBypassesTierLimit(GroupInterface $group): bool {
+        return $this->isMember;
+      }
+
+    };
+    $validator->isMember = $isMember;
+    $validator->initialize($this->executionContext);
+    return $validator;
   }
 
   /**
