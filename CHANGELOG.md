@@ -1,5 +1,14 @@
 # Changelog
 
+## [11.9.215](https://github.com/markaspot/markaspot/compare/11.9.214...11.9.215) (2026-10-16)
+
+### Bug Fixes
+
+* **fastmap:** let workspace teardown complete with status history and minimal status sets ([d133b97](https://github.com/markaspot/markaspot/commit/d133b97690b1e8835b06cd116e6e56403fa149bd))
+* **open311:** harden media_url downloads against SSRF and unvalidated files ([60d0fc9](https://github.com/markaspot/markaspot/commit/60d0fc96def35323b7fc0deac0675ec394e34d01))
+* **open311:** validate new requests with the jurisdiction's initial status ([2e236ef](https://github.com/markaspot/markaspot/commit/2e236efcb7dec0e63fb573ea0dce48df76d61dc9))
+* **validation:** scope 'bypass mas validation' to the account's jurisdictions ([00f1dba](https://github.com/markaspot/markaspot/commit/00f1dba92d8fec5eb5430d800d70c9e7c02dc82c))
+
 ## [11.9.214](https://github.com/markaspot/markaspot/compare/11.9.213...11.9.214) (2026-10-16)
 
 ### Features
