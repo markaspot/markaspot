@@ -166,23 +166,28 @@ class MailCoverageCheck extends HealthCheckPluginBase {
    *   Error bucket, appended to by reference.
    */
   protected function checkFastmapMailTemplateCoverage(array &$errors): void {
-    $keys = $this->shippedFastmapMailKeys();
-    if ($keys === []) {
+    $shipped = $this->shippedFastmapMailTemplates();
+    if ($shipped === []) {
       return;
     }
 
     $activeConfig = $this->configFactory->get('markaspot_fastmap.mail');
-    foreach ($keys as $key) {
+    foreach ($shipped as $key => $shippedTemplate) {
       $template = $activeConfig->get($key);
-      $subject = is_array($template) ? trim((string) ($template['subject'] ?? '')) : '';
-      $body = is_array($template) ? trim((string) ($template['body'] ?? '')) : '';
-      if ($subject !== '' && $body !== '') {
+      $missing = [];
+      // Only fields the shipped template has are required: body-only
+      // fragments (e.g. workspace_deletion_scheduled_paid) carry no subject.
+      foreach (['subject', 'body'] as $field) {
+        if (trim((string) ($shippedTemplate[$field] ?? '')) === '') {
+          continue;
+        }
+        if (!is_array($template) || trim((string) ($template[$field] ?? '')) === '') {
+          $missing[] = $field;
+        }
+      }
+      if ($missing === []) {
         continue;
       }
-      $missing = array_values(array_filter([
-        $subject === '' ? 'subject' : NULL,
-        $body === '' ? 'body' : NULL,
-      ]));
       $errors[] = [
         'check' => 'markaspot_fastmap.mail',
         'key' => $key,
@@ -192,17 +197,17 @@ class MailCoverageCheck extends HealthCheckPluginBase {
   }
 
   /**
-   * Reads the top-level mail template keys from the shipped install YAML.
+   * Reads the top-level mail templates from the shipped install YAML.
    *
    * _markaspot_fastmap_shipped_mail_template() only resolves a single known
    * key; it has no "list every key" mode. Reading the same shipped file
    * directly keeps this check future-proof against a third mail key being
    * added without a matching health-check update.
    *
-   * @return list<string>
-   *   Top-level keys, excluding the "langcode" sibling key.
+   * @return array<string, array<string, mixed>>
+   *   Shipped templates keyed by mail key, without the "langcode" sibling.
    */
-  protected function shippedFastmapMailKeys(): array {
+  protected function shippedFastmapMailTemplates(): array {
     $path = $this->moduleExtensionList->getPath('markaspot_fastmap') . '/config/install/markaspot_fastmap.mail.yml';
     if (!is_file($path)) {
       return [];
@@ -212,7 +217,11 @@ class MailCoverageCheck extends HealthCheckPluginBase {
       return [];
     }
     unset($decoded['langcode']);
-    return array_values(array_filter(array_keys($decoded), 'is_string'));
+    return array_filter(
+      $decoded,
+      static fn($template, $key): bool => is_string($key) && is_array($template),
+      ARRAY_FILTER_USE_BOTH,
+    );
   }
 
   /**

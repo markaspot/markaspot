@@ -130,6 +130,65 @@ class MailCoverageCheckTest extends UnitTestCase {
   /**
    * @covers ::run
    */
+  public function testRunAcceptsBodyOnlyFastmapFragment(): void {
+    file_put_contents(
+      $this->fastmapModulePath . '/config/install/markaspot_fastmap.mail.yml',
+      <<<YAML
+      langcode: en
+      workspace_deletion_scheduled:
+        subject: 'Deletion scheduled'
+        body: 'Gone soon.'
+      workspace_deletion_scheduled_paid:
+        body: 'Your subscription has ended.'
+      YAML,
+    );
+
+    $mailConfig = $this->createMock(ImmutableConfig::class);
+    $mailConfig->method('get')->willReturnMap([
+      ['workspace_deletion_scheduled', ['subject' => 'Deletion scheduled', 'body' => 'Gone soon.']],
+      ['workspace_deletion_scheduled_paid', ['body' => 'Your subscription has ended.']],
+    ]);
+
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')->willReturnMap([
+      ['markaspot_fastmap.mail', $mailConfig],
+    ]);
+
+    $modules = $this->createMock(ModuleHandlerInterface::class);
+    $modules->method('moduleExists')->willReturnCallback(
+      static fn(string $module): bool => $module === 'markaspot_fastmap',
+    );
+
+    $extensionList = $this->createMock(ModuleExtensionList::class);
+    $extensionList->method('getPath')->with('markaspot_fastmap')->willReturn($this->fastmapModulePath);
+
+    $plugin = new MailCoverageCheck([], 'mail_coverage', $this->definition, $factory, $modules, $extensionList);
+    $result = $plugin->run();
+
+    $this->assertTrue($result->passed);
+
+    // The fragment still needs its body.
+    $emptyConfig = $this->createMock(ImmutableConfig::class);
+    $emptyConfig->method('get')->willReturnMap([
+      ['workspace_deletion_scheduled', ['subject' => 'Deletion scheduled', 'body' => 'Gone soon.']],
+      ['workspace_deletion_scheduled_paid', ['body' => '']],
+    ]);
+    $emptyFactory = $this->createMock(ConfigFactoryInterface::class);
+    $emptyFactory->method('get')->willReturnMap([
+      ['markaspot_fastmap.mail', $emptyConfig],
+    ]);
+    $plugin = new MailCoverageCheck([], 'mail_coverage', $this->definition, $emptyFactory, $modules, $extensionList);
+    $result = $plugin->run();
+
+    $this->assertFalse($result->passed);
+    $this->assertSame(1, $result->count);
+    $this->assertSame('workspace_deletion_scheduled_paid', $result->details[0]['key']);
+    $this->assertSame('body', $result->details[0]['missing_field']);
+  }
+
+  /**
+   * @covers ::run
+   */
   public function testRunFailsWhenFastmapActiveConfigMissesShippedKey(): void {
     $this->writeShippedYaml();
 
