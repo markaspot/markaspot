@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.216](https://github.com/markaspot/markaspot/compare/11.9.215...11.9.216) (2026-10-17)
+
+### Features
+
+* **fastmap:** self-service workspace deletion with confirmation link and grace period ([2cdb0e4](https://github.com/markaspot/markaspot/commit/2cdb0e4fdcd15cd62654a9a1828edf631f376e44))
+
+### Bug Fixes
+
+* **fastmap:** keep platform accounts when tearing down a workspace ([cd9f08f](https://github.com/markaspot/markaspot/commit/cd9f08fdd17af7bda4167d9a3a5beaaf5079dc75))
+
 ## [11.9.215](https://github.com/markaspot/markaspot/compare/11.9.214...11.9.215) (2026-10-16)
 
 ### Bug Fixes
