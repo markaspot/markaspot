@@ -1591,3 +1591,51 @@ function markaspot_fastmap_update_11928(): string {
   // settings must not be normalized. New provisioning sets these explicitly.
   return 'Page translation publication settings preserved; no data changes required.';
 }
+
+/**
+ * Backfills the workspace deletion mail templates and their translations.
+ *
+ * The English templates go into markaspot_fastmap.mail, each installed
+ * language gets its shipped translation as an override, so existing sites end
+ * up like a fresh install. Keys an admin already set are never overwritten.
+ */
+function markaspot_fastmap_update_11929(): string {
+  $messages = [markaspot_fastmap_update_11924()];
+
+  $keys = [
+    'workspace_deletion_confirm',
+    'workspace_deletion_scheduled',
+    'workspace_deletion_scheduled_paid',
+    'workspace_deletion_operator',
+  ];
+  $languageManager = \Drupal::languageManager();
+  $modulePath = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap');
+  $translated = [];
+  foreach (array_keys($languageManager->getLanguages()) as $langcode) {
+    if ($langcode === 'en') {
+      continue;
+    }
+    $path = $modulePath . '/config/install/language/' . $langcode . '/markaspot_fastmap.mail.yml';
+    $shipped = is_file($path) ? Yaml::decode(file_get_contents($path)) : NULL;
+    if (!is_array($shipped)) {
+      continue;
+    }
+    $override = $languageManager->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail');
+    $changed = FALSE;
+    foreach ($keys as $key) {
+      if (is_array($shipped[$key] ?? NULL) && $override->get($key) === NULL) {
+        $override->set($key, $shipped[$key]);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $override->save();
+      $translated[] = $langcode;
+    }
+  }
+  $messages[] = $translated === []
+    ? 'No deletion mail translations to backfill.'
+    : 'Backfilled deletion mail translations: ' . implode(', ', $translated) . '.';
+
+  return implode(' ', $messages);
+}
