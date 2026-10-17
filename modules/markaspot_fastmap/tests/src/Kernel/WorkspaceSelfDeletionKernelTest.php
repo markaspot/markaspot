@@ -17,6 +17,7 @@ use Drupal\markaspot_fastmap\Service\WorkspaceDeletionService;
 use Drupal\node\Entity\NodeType;
 use Drupal\paragraphs\Entity\ParagraphsType;
 use Drupal\taxonomy\Entity\Vocabulary;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\Group as TestGroup;
@@ -234,6 +235,31 @@ final class WorkspaceSelfDeletionKernelTest extends KernelTestBase {
     $this->assertSame(1, $service->processDue($confirmed['scheduled_for']));
     $this->assertNull($this->reloadWorkspace());
     $this->assertNull($service->getSchedule((int) $this->workspace->id()));
+  }
+
+  /**
+   * Support accounts in a workspace outlive its teardown; its members do not.
+   */
+  public function testTeardownKeepsPlatformAccounts(): void {
+    $role = Role::create(['id' => 'editorial_board', 'label' => 'Editorial board']);
+    $role->grantPermission('administer users')->save();
+    $support = $this->createUser('support@example.test');
+    $support->addRole('editorial_board');
+    $support->save();
+    $member = $this->createUser('member@example.test');
+    $this->workspace->addMember($support, ['group_roles' => ['jur-member']]);
+    $this->workspace->addMember($member, ['group_roles' => ['jur-member']]);
+
+    $service = $this->service();
+    $service->request($this->workspace, $this->admin, 'pothole-patrol', 'https://fastmap.test');
+    $confirmed = $service->confirm($this->tokenFromMail(), TRUE);
+    $this->assertSame(1, $service->processDue($confirmed['scheduled_for']));
+
+    $users = $this->container->get('entity_type.manager')->getStorage('user');
+    $users->resetCache();
+    $this->assertNotNull($users->load($support->id()));
+    $this->assertNull($users->load($member->id()));
+    $this->assertNull($users->load($this->admin->id()));
   }
 
   /**

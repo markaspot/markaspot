@@ -1596,6 +1596,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // User with no other memberships should be deleted.
     $deletableUser = $this->createMock(UserInterface::class);
     $deletableUser->expects($this->once())->method('delete');
+    $deletableUser->method('getRoles')->willReturn([]);
     $this->userStorage->method('load')->with(10)->willReturn($deletableUser);
 
     $group->expects($this->once())->method('delete');

@@ -658,6 +658,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         if (!$user) {
           continue;
         }
+        // Operator and support accounts added to a workspace for support
+        // outlive it: a tenant admin can trigger this teardown at will.
+        if ($this->isPlatformAccount($user)) {
+          $this->logger->notice('Kept platform account @uid while tearing down workspace @gid.', [
+            '@uid' => $uid,
+            '@gid' => $groupId,
+          ]);
+          continue;
+        }
 
         $otherMemberships = $this->entityTypeManager
           ->getStorage('group_relationship')
@@ -754,6 +763,19 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     finally {
       JurisdictionTeardownContext::leave($groupId);
     }
+  }
+
+  /**
+   * Whether an account belongs to the platform rather than to one workspace.
+   *
+   * Tenant users carry at most the scoped roles tenant_admin and moderator;
+   * anything that administers users or groups, or the administrator and
+   * editorial_board roles, marks an operator or support account.
+   */
+  protected function isPlatformAccount(UserInterface $user): bool {
+    return $user->hasPermission('administer users')
+      || $user->hasPermission('administer group')
+      || array_intersect($user->getRoles(TRUE), ['administrator', 'editorial_board']) !== [];
   }
 
   /**
