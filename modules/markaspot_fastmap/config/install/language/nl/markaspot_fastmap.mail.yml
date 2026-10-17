@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Log op elk moment in: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Bevestig het verwijderen van werkruimte "@workspace_name"'
+  body: |
+    Je hebt gevraagd om werkruimte "@workspace_name" te verwijderen.
+
+    Open deze link om het verwijderen te bevestigen:
+    @confirm_url
+
+    De link werkt maar één keer en verloopt over @minutes minuten.
+
+    Na je bevestiging gaat de werkruimte meteen offline en wordt die na @days dagen definitief verwijderd. Tot dan kan onze support de werkruimte herstellen. Een betaald abonnement eindigt direct. De lopende maand wordt niet terugbetaald.
+
+    Heb je dit niet aangevraagd, negeer dan deze e-mail. Er wordt niets verwijderd.
+workspace_deletion_scheduled:
+  subject: '@site_name: Werkruimte "@workspace_name" wordt op @deletion_date verwijderd'
+  body: |
+    Je werkruimte "@workspace_name" is nu offline. Op @deletion_date wordt die definitief verwijderd, met alle meldingen, pagina's, categorieën, statussen en huisstijl.
+
+    Bedacht je je? Mail naar @support_email vóór @deletion_date, dan herstellen we de werkruimte.
+workspace_deletion_scheduled_paid:
+  body: |
+    Je abonnement is beëindigd. De lopende maand wordt niet terugbetaald.

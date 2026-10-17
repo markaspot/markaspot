@@ -23,6 +23,12 @@ markaspot_fastmap.settings:
     checkout_grace_days:
       type: integer
       label: 'Checkout grace period in days'
+    deletion_grace_days:
+      type: integer
+      label: 'Days between a confirmed workspace deletion and the teardown'
+    support_email:
+      type: string
+      label: 'Support address named in workspace deletion mails'
     tier_limits:
       type: sequence
       label: 'Request limits per tier'
@@ -79,6 +85,43 @@ markaspot_fastmap.mail:
     workspace_welcome:
       type: mapping
       label: 'Workspace welcome email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'
+    workspace_deletion_confirm:
+      type: mapping
+      label: 'Workspace deletion confirmation email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'
+    workspace_deletion_scheduled:
+      type: mapping
+      label: 'Workspace deletion scheduled email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'
+    workspace_deletion_scheduled_paid:
+      type: mapping
+      label: 'Workspace deletion scheduled email: paragraph for paid subscriptions'
+      mapping:
+        body:
+          type: text
+          label: 'Paragraph'
+    workspace_deletion_operator:
+      type: mapping
+      label: 'Workspace deletion operator notification'
       mapping:
         subject:
           type: text

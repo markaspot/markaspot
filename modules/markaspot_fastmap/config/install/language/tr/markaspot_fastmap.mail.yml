@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     İstediğiniz zaman giriş yapın: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: "@workspace_name" çalışma alanının silinmesini onaylayın'
+  body: |
+    "@workspace_name" çalışma alanını silmeyi talep ettiniz.
+
+    Silme işlemini onaylamak için bu bağlantıyı açın:
+    @confirm_url
+
+    Bağlantı yalnızca bir kez çalışır ve @minutes dakika içinde sona erer.
+
+    Onayınızdan sonra çalışma alanı hemen çevrimdışı olur ve @days gün sonra kalıcı olarak silinir. O zamana kadar desteğimiz geri yükleyebilir. Ücretli abonelik hemen sona erer, geçerli ayın ücreti iade edilmez.
+
+    Bunu siz talep etmediyseniz bu e-postayı yok sayın. Hiçbir şey silinmeyecek.
+workspace_deletion_scheduled:
+  subject: '@site_name: "@workspace_name" çalışma alanı @deletion_date tarihinde silinecek'
+  body: |
+    "@workspace_name" çalışma alanınız şu anda çevrimdışı. @deletion_date tarihinde tüm bildirimler, sayfalar, kategoriler, durumlar ve marka ayarlarıyla birlikte kalıcı olarak silinecek.
+
+    Fikrinizi mi değiştirdiniz? @deletion_date tarihinden önce @support_email adresine yazın, çalışma alanını geri yükleyelim.
+workspace_deletion_scheduled_paid:
+  body: |
+    Aboneliğiniz sona erdi. Geçerli ayın ücreti iade edilmez.

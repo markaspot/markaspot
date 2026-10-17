@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Logga in när du vill: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: bekräfta borttagning av arbetsområdet "@workspace_name"'
+  body: |
+    Du har begärt att ta bort arbetsområdet "@workspace_name".
+
+    Öppna länken för att bekräfta borttagningen:
+    @confirm_url
+
+    Länken fungerar bara en gång och slutar gälla om @minutes minuter.
+
+    När du har bekräftat går arbetsområdet offline direkt och tas bort permanent efter @days dagar. Fram till dess kan vår support återställa det. En betald prenumeration upphör direkt, och innevarande månad återbetalas inte.
+
+    Om du inte har begärt detta kan du ignorera det här e-postmeddelandet. Inget tas bort.
+workspace_deletion_scheduled:
+  subject: '@site_name: arbetsområdet "@workspace_name" tas bort den @deletion_date'
+  body: |
+    Ditt arbetsområde "@workspace_name" är offline nu. Den @deletion_date tas det bort permanent, med alla ärenden, sidor, kategorier, statusar och profil.
+
+    Har du ändrat dig? Skriv till @support_email före @deletion_date, så återställer vi arbetsområdet.
+workspace_deletion_scheduled_paid:
+  body: |
+    Din prenumeration har upphört. Innevarande månad återbetalas inte.

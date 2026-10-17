@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Log ind, når du vil: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Bekræft sletning af arbejdsområdet "@workspace_name"'
+  body: |
+    Du har anmodet om at slette arbejdsområdet "@workspace_name".
+
+    Åbn dette link for at bekræfte sletningen:
+    @confirm_url
+
+    Linket virker kun én gang og udløber om @minutes minutter.
+
+    Når du har bekræftet, går arbejdsområdet offline med det samme og slettes permanent efter @days dage. Indtil da kan vores support gendanne det. Et betalt abonnement ophører med det samme. Den nuværende måned refunderes ikke.
+
+    Hvis du ikke har bedt om dette, kan du ignorere denne e-mail. Intet bliver slettet.
+workspace_deletion_scheduled:
+  subject: '@site_name: Arbejdsområdet "@workspace_name" slettes den @deletion_date'
+  body: |
+    Dit arbejdsområde "@workspace_name" er offline nu. Den @deletion_date fjernes det permanent, med alle indberetninger, sider, kategorier, statusser og branding.
+
+    Har du ombestemt dig? Skriv til @support_email før @deletion_date, så gendanner vi arbejdsområdet.
+workspace_deletion_scheduled_paid:
+  body: |
+    Dit abonnement er ophørt. Den nuværende måned refunderes ikke.

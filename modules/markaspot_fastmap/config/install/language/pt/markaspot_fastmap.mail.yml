@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Inicie sessão a qualquer momento: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Confirme a eliminação do espaço de trabalho "@workspace_name"'
+  body: |
+    Solicitou a eliminação do espaço de trabalho "@workspace_name".
+
+    Abra esta ligação para confirmar a eliminação:
+    @confirm_url
+
+    A ligação funciona apenas uma vez e expira em @minutes minutos.
+
+    Após a confirmação, o espaço de trabalho fica offline de imediato e é eliminado definitivamente após @days dias. Até lá, o nosso suporte pode restaurá-lo. Uma subscrição paga termina de imediato e o mês em curso não é reembolsado.
+
+    Se não fez este pedido, ignore este e-mail. Nada será eliminado.
+workspace_deletion_scheduled:
+  subject: '@site_name: O espaço de trabalho "@workspace_name" será eliminado em @deletion_date'
+  body: |
+    O seu espaço de trabalho "@workspace_name" está offline. Em @deletion_date será eliminado definitivamente, com todas as ocorrências, páginas, categorias, estados e a identidade visual.
+
+    Mudou de ideias? Escreva para @support_email antes de @deletion_date e restauraremos o espaço de trabalho.
+workspace_deletion_scheduled_paid:
+  body: |
+    A sua subscrição terminou. O mês em curso não é reembolsado.

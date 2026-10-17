@@ -6,6 +6,7 @@ namespace Drupal\markaspot_fastmap\Commands;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_fastmap\Service\WorkspaceDeletionService;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 
@@ -16,6 +17,7 @@ class WorkspaceCommands extends DrushCommands {
 
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
+    protected readonly WorkspaceDeletionService $deletion,
   ) {
     parent::__construct();
   }
@@ -72,6 +74,47 @@ class WorkspaceCommands extends DrushCommands {
       $group->id(),
       $group->label(),
       $visibility,
+    ));
+  }
+
+  /**
+   * Lists workspaces whose self-service deletion is scheduled.
+   */
+  #[CLI\Command(name: 'markaspot:workspace-deletions', aliases: ['mas:workspace-deletions'])]
+  #[CLI\Usage(name: 'markaspot:workspace-deletions', description: 'Show scheduled workspace deletions.')]
+  public function deletions(): void {
+    $schedules = $this->deletion->getSchedules();
+    if ($schedules === []) {
+      $this->output()->writeln('No workspace deletion is scheduled.');
+      return;
+    }
+    foreach ($schedules as $gid => $schedule) {
+      $this->output()->writeln(sprintf(
+        '%s  %s (%s)  confirmed %s  teardown %s',
+        $gid,
+        $schedule['label'] ?? '',
+        $schedule['slug'] ?? '',
+        date('Y-m-d H:i', (int) ($schedule['confirmed_at'] ?? 0)),
+        date('Y-m-d H:i', (int) ($schedule['scheduled_for'] ?? 0)),
+      ));
+    }
+  }
+
+  /**
+   * Cancels a scheduled self-service deletion and brings the workspace back.
+   */
+  #[CLI\Command(name: 'markaspot:workspace-restore', aliases: ['mas:workspace-restore'])]
+  #[CLI\Argument(name: 'workspace', description: 'Workspace group ID or field_slug.')]
+  #[CLI\Usage(name: 'markaspot:workspace-restore 42', description: 'Restore workspace 42 before its teardown.')]
+  public function restore(string $workspace): void {
+    $group = $this->loadWorkspace($workspace);
+    if (!$this->deletion->restore($group)) {
+      throw new \RuntimeException(sprintf('No deletion is scheduled for workspace %s.', $group->id()));
+    }
+    $this->output()->writeln(sprintf(
+      'Workspace %s (%s) is online again. A cancelled Stripe subscription stays cancelled; the workspace continues on the free tier.',
+      $group->id(),
+      $group->label(),
     ));
   }
 

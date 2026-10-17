@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Jelentkezz be bármikor: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Erősítsd meg a(z) "@workspace_name" munkaterület törlését'
+  body: |
+    Törölni kérted a(z) "@workspace_name" munkaterületet.
+
+    A törlés megerősítéséhez nyisd meg ezt a linket:
+    @confirm_url
+
+    A link csak egyszer használható, és @minutes perc múlva lejár.
+
+    A megerősítés után a munkaterület azonnal offline állapotba kerül, majd @days nap elteltével véglegesen törlődik. Addig az ügyfélszolgálatunk vissza tudja állítani. A fizetős előfizetés azonnal megszűnik, az aktuális hónap díját nem térítjük vissza.
+
+    Ha nem te kérted, hagyd figyelmen kívül ezt az e-mailt. Semmi sem törlődik.
+workspace_deletion_scheduled:
+  subject: '@site_name: A(z) "@workspace_name" munkaterület törlésének napja: @deletion_date'
+  body: |
+    A(z) "@workspace_name" munkaterületed most offline. @deletion_date napján véglegesen törlődik az összes bejelentéssel, oldallal, kategóriával, állapottal és arculattal együtt.
+
+    Meggondoltad magad? Írj a @support_email címre @deletion_date előtt, és visszaállítjuk a munkaterületet.
+workspace_deletion_scheduled_paid:
+  body: |
+    Az előfizetésed megszűnt. Az aktuális hónap díját nem térítjük vissza.

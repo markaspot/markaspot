@@ -43,3 +43,18 @@ services:
       - '@module_handler'
       - '@logger.channel.markaspot_fastmap'
       - '@?address.country_repository'
+
+  markaspot_fastmap.workspace_deletion:
+    class: Drupal\markaspot_fastmap\Service\WorkspaceDeletionService
+    arguments:
+      - '@entity_type.manager'
+      - '@keyvalue.expirable'
+      - '@keyvalue'
+      - '@lock'
+      - '@plugin.manager.mail'
+      - '@config.factory'
+      - '@datetime.time'
+      - '@date.formatter'
+      - '@logger.channel.markaspot_fastmap'
+      - '@markaspot_fastmap.workspace_provisioning'
+      - '@entity_field.manager'

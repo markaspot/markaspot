@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     سجّل الدخول في أي وقت: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: قم بتأكيد حذف مساحة العمل "@workspace_name"'
+  body: |
+    لقد طلبت حذف مساحة العمل "@workspace_name".
+
+    افتح هذا الرابط لتأكيد الحذف:
+    @confirm_url
+
+    يعمل الرابط مرة واحدة فقط وتنتهي صلاحيته خلال @minutes دقيقة.
+
+    بعد التأكيد، تتوقف مساحة العمل عن العمل فوراً وتُحذف نهائياً بعد @days أيام. حتى ذلك الحين يمكن لفريق الدعم لدينا استعادتها. ينتهي الاشتراك المدفوع فوراً، ولا يتم استرداد مبلغ الشهر الحالي.
+
+    إذا لم تطلب ذلك، تجاهل هذا البريد. لن يتم حذف أي شيء.
+workspace_deletion_scheduled:
+  subject: '@site_name: سيتم حذف "@workspace_name" في @deletion_date'
+  body: |
+    مساحة العمل "@workspace_name" متوقفة عن العمل الآن. في @deletion_date ستُحذف نهائياً مع جميع البلاغات والصفحات والفئات والحالات والهوية البصرية.
+
+    غيّرت رأيك؟ اكتب إلى @support_email قبل @deletion_date وسنستعيد مساحة العمل.
+workspace_deletion_scheduled_paid:
+  body: |
+    انتهى اشتراكك. لا يتم استرداد مبلغ الشهر الحالي.

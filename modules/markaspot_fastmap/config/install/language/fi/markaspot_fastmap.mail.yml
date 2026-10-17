@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Kirjaudu sisään milloin tahansa: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Vahvista työtilan "@workspace_name" poisto'
+  body: |
+    Pyysit työtilan "@workspace_name" poistamista.
+
+    Vahvista poisto avaamalla tämä linkki:
+    @confirm_url
+
+    Linkki toimii vain kerran ja vanhenee @minutes minuutin kuluttua.
+
+    Vahvistuksen jälkeen työtila siirtyy heti offline-tilaan ja poistetaan lopullisesti @days päivän kuluttua. Siihen asti tukemme voi palauttaa sen. Maksullinen tilaus päättyy heti, eikä kuluvan kuukauden maksua palauteta.
+
+    Jos et pyytänyt tätä, ohita tämä viesti. Mitään ei poisteta.
+workspace_deletion_scheduled:
+  subject: '@site_name: Työtila "@workspace_name" poistetaan @deletion_date'
+  body: |
+    Työtilasi "@workspace_name" on nyt offline-tilassa. @deletion_date se poistetaan lopullisesti kaikkine ilmoituksineen, sivuineen, luokkineen, tiloineen ja brändäyksineen.
+
+    Muutitko mielesi? Kirjoita osoitteeseen @support_email ennen päivää @deletion_date, niin palautamme työtilan.
+workspace_deletion_scheduled_paid:
+  body: |
+    Tilauksesi on päättynyt. Kuluvan kuukauden maksua ei palauteta.

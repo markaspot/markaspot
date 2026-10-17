@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Jederzeit anmelden: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Löschung von Workspace "@workspace_name" bestätigen'
+  body: |
+    Sie haben die Löschung des Workspace "@workspace_name" angefordert.
+
+    Öffnen Sie diesen Link, um die Löschung zu bestätigen:
+    @confirm_url
+
+    Der Link funktioniert nur einmal und ist @minutes Minuten gültig.
+
+    Nach Ihrer Bestätigung geht der Workspace sofort offline und wird nach @days Tagen endgültig gelöscht. Bis dahin kann unser Support ihn wiederherstellen. Ein kostenpflichtiges Abonnement endet sofort, der laufende Monat wird nicht erstattet.
+
+    Falls Sie das nicht veranlasst haben, ignorieren Sie diese E-Mail. Es wird nichts gelöscht.
+workspace_deletion_scheduled:
+  subject: '@site_name: Workspace "@workspace_name" wird am @deletion_date gelöscht'
+  body: |
+    Ihr Workspace "@workspace_name" ist jetzt offline. Am @deletion_date wird er endgültig gelöscht, samt aller Meldungen, Seiten, Kategorien, Status und Branding.
+
+    Anders entschieden? Schreiben Sie vor dem @deletion_date an @support_email, dann stellen wir den Workspace wieder her.
+workspace_deletion_scheduled_paid:
+  body: |
+    Ihr Abonnement ist beendet. Der laufende Monat wird nicht erstattet.

@@ -140,3 +140,42 @@ markaspot_fastmap.billing_admin:
     _permission: 'view fastmap billing admin'
   options:
     _admin_route: true
+
+markaspot_fastmap.workspace_deletion_request:
+  path: '/api/fastmap/workspace-deletion/request/{group}'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\WorkspaceDeletionController::request'
+    _title: 'Request workspace deletion'
+  methods: [POST]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _custom_access: '\Drupal\markaspot_fastmap\Controller\WorkspaceDeletionController::requestAccess'
+    _csrf_request_header_token: 'TRUE'
+    _format: 'json'
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
+
+markaspot_fastmap.workspace_deletion_peek:
+  path: '/api/fastmap/workspace-deletion/peek'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\WorkspaceDeletionController::peek'
+    _title: 'Resolve workspace deletion token'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_fastmap.workspace_deletion_confirm:
+  path: '/api/fastmap/workspace-deletion/confirm'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\WorkspaceDeletionController::confirm'
+    _title: 'Confirm workspace deletion'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: 'TRUE'

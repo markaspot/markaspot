@@ -12,6 +12,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Service\BillingStateResolver;
+use Drupal\markaspot_fastmap\Service\WorkspaceDeletionService;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -64,6 +65,13 @@ class BillingController extends ControllerBase {
   protected BillingStateResolver $billingStateResolver;
 
   /**
+   * The workspace deletion service, when registered.
+   *
+   * @var \Drupal\markaspot_fastmap\Service\WorkspaceDeletionService|null
+   */
+  protected ?WorkspaceDeletionService $workspaceDeletion = NULL;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
@@ -72,6 +80,9 @@ class BillingController extends ControllerBase {
     $instance->database = $container->get('database');
     $instance->requestStack = $container->get('request_stack');
     $instance->billingStateResolver = $container->get('markaspot_fastmap.billing_state_resolver');
+    $instance->workspaceDeletion = $container->has('markaspot_fastmap.workspace_deletion')
+      ? $container->get('markaspot_fastmap.workspace_deletion')
+      : NULL;
     return $instance;
   }
 
@@ -279,6 +290,10 @@ class BillingController extends ControllerBase {
       $data['stripe_subscription_id'],
       $data['expiry_date']
     );
+
+    // Lets the billing page tell up front whether the admin may delete the
+    // workspace (NULL), or must go through support ('support', 'pending').
+    $data['deletion_reason'] = $this->workspaceDeletion?->ineligibilityReason($entity);
 
     return new JsonResponse($data);
   }

@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Přihlaste se, kdykoli budete chtít: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Potvrďte smazání pracovního prostoru "@workspace_name"'
+  body: |
+    Požádali jste o smazání pracovního prostoru "@workspace_name".
+
+    Smazání potvrdíte kliknutím na tento odkaz:
+    @confirm_url
+
+    Odkaz lze použít jen jednou a vyprší za @minutes minut.
+
+    Po potvrzení se pracovní prostor okamžitě odpojí a po uplynutí @days dní bude trvale odstraněn. Do té doby jej může obnovit naše podpora. Placené předplatné skončí okamžitě, aktuální měsíc se nevrací.
+
+    Pokud jste o to nežádali, tento e-mail ignorujte. Nic se nesmaže.
+workspace_deletion_scheduled:
+  subject: '@site_name: Pracovní prostor "@workspace_name" bude smazán dne @deletion_date'
+  body: |
+    Váš pracovní prostor "@workspace_name" je nyní offline. Dne @deletion_date bude trvale odstraněn, včetně všech hlášení, stránek, kategorií, stavů a brandingu.
+
+    Rozmysleli jste si to? Napište na @support_email před @deletion_date a pracovní prostor obnovíme.
+workspace_deletion_scheduled_paid:
+  body: |
+    Vaše předplatné skončilo. Aktuální měsíc se nevrací.

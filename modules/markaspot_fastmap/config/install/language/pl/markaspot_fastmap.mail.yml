@@ -23,3 +23,25 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Zaloguj się w dowolnym momencie: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Potwierdź usunięcie przestrzeni roboczej "@workspace_name"'
+  body: |
+    Otrzymaliśmy prośbę o usunięcie przestrzeni roboczej "@workspace_name".
+
+    Kliknij ten link, aby potwierdzić usunięcie:
+    @confirm_url
+
+    Link działa tylko raz i wygaśnie za @minutes min.
+
+    Po potwierdzeniu przestrzeń robocza natychmiast przechodzi w tryb offline i zostanie trwale usunięta po upływie @days dni. Do tego czasu nasze wsparcie może ją przywrócić. Płatna subskrypcja kończy się od razu, a bieżący miesiąc nie jest zwracany.
+
+    Jeśli to nie ty, zignoruj tę wiadomość. Nic nie zostanie usunięte.
+workspace_deletion_scheduled:
+  subject: '@site_name: Przestrzeń robocza "@workspace_name" zostanie usunięta @deletion_date'
+  body: |
+    Twoja przestrzeń robocza "@workspace_name" jest teraz offline. W dniu @deletion_date zostanie trwale usunięta wraz ze wszystkimi zgłoszeniami, stronami, kategoriami, statusami i brandingiem.
+
+    Zmiana decyzji? Napisz na @support_email przed @deletion_date, a przywrócimy przestrzeń roboczą.
+workspace_deletion_scheduled_paid:
+  body: |
+    Twoja subskrypcja zakończyła się. Bieżący miesiąc nie jest zwracany.

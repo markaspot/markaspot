@@ -87,7 +87,14 @@ function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitio
  * Implements hook_mail().
  */
 function markaspot_fastmap_mail(string $key, array &$message, array $params): void {
-  if ($key === 'workspace_verification' || $key === 'workspace_welcome') {
+  $templated = [
+    'workspace_verification',
+    'workspace_welcome',
+    'workspace_deletion_confirm',
+    'workspace_deletion_scheduled',
+    'workspace_deletion_operator',
+  ];
+  if (in_array($key, $templated, TRUE)) {
     $langcode = $message['langcode'] ?? 'en';
     $template = _markaspot_fastmap_mail_template($key, $langcode);
 
@@ -113,21 +120,48 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
       return;
     }
 
-    $replacements = $key === 'workspace_verification'
-      ? [
-        '@site_name' => $params['site_name'] ?? 'FastMap',
-        '@workspace_name' => $params['workspace_name'] ?? '',
+    $replacements = [
+      '@site_name' => $params['site_name'] ?? 'FastMap',
+      // Labels are user input and end up in the subject header.
+      '@workspace_name' => str_replace(["\r", "\n", "\0"], ' ', (string) ($params['workspace_name'] ?? '')),
+    ];
+    $replacements += match ($key) {
+      'workspace_verification' => [
         '@verify_url' => $params['verify_url'] ?? '',
         '@cleanup_days' => $params['cleanup_days'] ?? '7',
-      ]
-      : [
-        '@site_name' => $params['site_name'] ?? 'FastMap',
-        '@workspace_name' => $params['workspace_name'] ?? '',
+      ],
+      'workspace_welcome' => [
         '@workspace_url' => $params['workspace_url'] ?? '',
-      ];
+      ],
+      'workspace_deletion_confirm' => [
+        '@confirm_url' => $params['confirm_url'] ?? '',
+        '@minutes' => $params['minutes'] ?? '15',
+        '@days' => $params['days'] ?? '7',
+      ],
+      'workspace_deletion_scheduled' => [
+        '@deletion_date' => $params['deletion_date'] ?? '',
+        '@support_email' => $params['support_email'] ?? '',
+      ],
+      'workspace_deletion_operator' => [
+        '@workspace_slug' => $params['workspace_slug'] ?? '',
+        '@workspace_id' => $params['workspace_id'] ?? '',
+        '@requested_by' => $params['requested_by'] ?? '',
+        '@deletion_date' => $params['deletion_date'] ?? '',
+      ],
+    };
 
     $message['subject'] = strtr($template['subject'], $replacements);
-    $message['body'][] = strtr($template['body'], $replacements);
+    $body = $template['body'];
+    // Only a workspace that had a paid subscription gets the paragraph about
+    // its end; it goes after the first paragraph of the scheduled mail.
+    if ($key === 'workspace_deletion_scheduled' && !empty($params['paid'])) {
+      $paid = trim(_markaspot_fastmap_mail_template('workspace_deletion_scheduled_paid', $langcode)['body']);
+      if ($paid !== '') {
+        $parts = preg_split('/\n\s*\n/', trim($body), 2);
+        $body = $parts[0] . "\n\n" . $paid . (isset($parts[1]) ? "\n\n" . $parts[1] : '') . "\n";
+      }
+    }
+    $message['body'][] = strtr($body, $replacements);
   }
   elseif ($key === 'demo_expiry_reminder') {
     // Bcc the technical admin (uid 1) when the cron passes one. Set on the
@@ -327,8 +361,13 @@ function _markaspot_fastmap_mail_template(string $key, string $langcode): array 
 
   $template = (is_array($override) ? $override : []) + (is_array($default) ? $default : []);
 
-  if (empty($template['subject']) || empty($template['body'])) {
-    $shipped = _markaspot_fastmap_shipped_mail_template($key);
+  // Keys added after a site was installed exist only in the shipped files:
+  // the shipped translation comes before the shipped English default.
+  foreach ([$langcode, 'en'] as $shippedLangcode) {
+    if (!empty($template['subject']) && !empty($template['body'])) {
+      break;
+    }
+    $shipped = _markaspot_fastmap_shipped_mail_template($key, $shippedLangcode);
     foreach (['subject', 'body'] as $field) {
       if (empty($template[$field]) && !empty($shipped[$field])) {
         $template[$field] = $shipped[$field];
@@ -349,16 +388,18 @@ function _markaspot_fastmap_mail_template(string $key, string $langcode): array 
  * a static file shipped with the module, safe to parse once and reuse for
  * every locale miss within the same request.
  */
-function _markaspot_fastmap_shipped_mail_template(string $key): array {
-  $shipped = &drupal_static(__FUNCTION__);
-  if ($shipped === NULL) {
+function _markaspot_fastmap_shipped_mail_template(string $key, string $langcode = 'en'): array {
+  $shipped = &drupal_static(__FUNCTION__, []);
+  $langcode = preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $langcode) ? $langcode : 'en';
+  if (!isset($shipped[$langcode])) {
     $path = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap')
-      . '/config/install/markaspot_fastmap.mail.yml';
+      . ($langcode === 'en' ? '' : '/config/install/language/' . $langcode)
+      . ($langcode === 'en' ? '/config/install/markaspot_fastmap.mail.yml' : '/markaspot_fastmap.mail.yml');
     $decoded = is_file($path) ? Yaml::decode(file_get_contents($path)) : NULL;
-    $shipped = is_array($decoded) ? $decoded : [];
+    $shipped[$langcode] = is_array($decoded) ? $decoded : [];
   }
 
-  $template = $shipped[$key] ?? [];
+  $template = $shipped[$langcode][$key] ?? [];
   return is_array($template) ? $template : [];
 }
 
@@ -1218,6 +1259,13 @@ function markaspot_fastmap_cron(): void {
         $state->delete('markaspot_fastmap.demo_reminder_sent.' . $expiredGroupId);
       }
     }
+  }
+
+  // --- Confirmed self-service deletions past their grace period (hourly). ---
+  $deletionLastRun = (int) $state->get('markaspot_fastmap.last_workspace_deletion_run', 0);
+  if (($now - $deletionLastRun) >= 3600) {
+    $state->set('markaspot_fastmap.last_workspace_deletion_run', $now);
+    \Drupal::service('markaspot_fastmap.workspace_deletion')->processDue($now);
   }
 
   // --- AI usage cleanup: delete records older than 2 months (once daily). ---

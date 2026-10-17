@@ -23,3 +23,36 @@ workspace_welcome:
     @workspace_url/dashboard
 
     Log in anytime: @workspace_url/auth/login
+workspace_deletion_confirm:
+  subject: '@site_name: Confirm deletion of "@workspace_name"'
+  body: |
+    You asked to delete the workspace "@workspace_name".
+
+    Open this link to confirm the deletion:
+    @confirm_url
+
+    The link works once and expires in @minutes minutes.
+
+    After you confirm, the workspace goes offline at once and is removed for good after @days days. Until then our support can restore it. A paid subscription ends immediately; the current month is not refunded.
+
+    If you did not ask for this, ignore this email. Nothing will be deleted.
+workspace_deletion_scheduled:
+  subject: '@site_name: "@workspace_name" will be deleted on @deletion_date'
+  body: |
+    Your workspace "@workspace_name" is offline now. On @deletion_date it will be removed for good, with all reports, pages, categories, statuses and branding.
+
+    Changed your mind? Write to @support_email before @deletion_date and we will restore the workspace.
+workspace_deletion_scheduled_paid:
+  body: |
+    Your subscription has ended. The current month is not refunded.
+workspace_deletion_operator:
+  subject: 'Workspace deletion confirmed: @workspace_name (@workspace_slug)'
+  body: |
+    Workspace: @workspace_name
+    Slug: @workspace_slug
+    Group ID: @workspace_id
+    Requested by: @requested_by
+    Teardown: @deletion_date
+
+    The workspace is offline. Restore before the teardown with:
+    drush markaspot:workspace-restore @workspace_id
