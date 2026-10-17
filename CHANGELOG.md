@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.217](https://github.com/markaspot/markaspot/compare/11.9.216...11.9.217) (2026-10-17)
+
+### Bug Fixes
+
+* **fastmap:** backfill the workspace deletion mail templates on existing sites ([7f2fcfb](https://github.com/markaspot/markaspot/commit/7f2fcfb8ae977d119801565ae0190ec695432b7f))
+* **health:** accept body-only fastmap mail fragments in the mail coverage check ([81fa197](https://github.com/markaspot/markaspot/commit/81fa1974961bab620c33d8f26b17c8c93472452c))
+
 ## [11.9.216](https://github.com/markaspot/markaspot/compare/11.9.215...11.9.216) (2026-10-17)
 
 ### Features
