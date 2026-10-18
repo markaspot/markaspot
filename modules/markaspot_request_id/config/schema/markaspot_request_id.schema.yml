@@ -1,0 +1,17 @@
+markaspot_request_id.settings:
+  type: config_object
+  label: 'Mark-a-Spot request ID settings'
+  mapping:
+    format:
+      type: string
+      label: 'Date format of the request ID suffix'
+    rollover:
+      type: integer
+      label: 'Restart the serial number every year'
+    delimiter:
+      type: string
+      label: 'Delimiter between serial number and suffix'
+    start:
+      type: string
+      label: 'Rollover start date'
+      nullable: true
