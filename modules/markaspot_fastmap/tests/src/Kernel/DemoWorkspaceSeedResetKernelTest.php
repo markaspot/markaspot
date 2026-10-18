@@ -187,6 +187,10 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->createField('node', 'service_request', 'field_organisation', 'entity_reference', ['target_type' => 'group'], -1);
     $this->createField('node', 'service_request', 'field_notification', 'boolean');
     $this->createField('node', 'service_request', 'field_e_mail', 'email');
+    $this->createField('node', 'service_request', 'field_priority', 'string');
+    ParagraphsType::create(['id' => 'internal_remark', 'label' => 'Internal remark'])->save();
+    $this->createField('paragraph', 'internal_remark', 'field_internal_remark_text', 'text_long');
+    $this->createField('node', 'service_request', 'field_internal_remark', 'entity_reference_revisions', ['target_type' => 'paragraph'], -1);
 
     $translation = $this->container->get('content_translation.manager');
     $translation->setEnabled('taxonomy_term', 'service_category', TRUE);
@@ -355,6 +359,12 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $visitorNote = $visitorReport->get('field_status_notes')->entity;
     // Dashboard changes to seeded content.
     $seeded = $this->seededEntity('node', 'report', 'dangerous-crossing');
+    $remark = Paragraph::create(['type' => 'internal_remark', 'field_internal_remark_text' => 'Staff only']);
+    $remark->save();
+    $seeded->set('field_internal_remark', [
+      ['target_id' => $remark->id(), 'target_revision_id' => $remark->getRevisionId()],
+    ]);
+    $seeded->set('field_priority', 'high');
     $seeded->set('body', ['value' => 'Edited by a visitor', 'format' => 'plain_text']);
     $seeded->set('field_status', $this->seededEntity('taxonomy_term', 'status', 'resolved')->id());
     $seeded->setNewRevision(TRUE);
@@ -394,6 +404,9 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertStringStartsWith('There is no crossing', (string) $restored->get('body')->value);
     $this->assertSame((int) $this->seededEntity('taxonomy_term', 'status', 'in-progress')->id(), (int) $restored->get('field_status')->target_id);
     $this->assertCount(3, $restored->get('field_status_notes'));
+    $this->assertTrue($restored->get('field_priority')->isEmpty(), 'Dashboard-only fields are cleared.');
+    $this->assertTrue($restored->get('field_internal_remark')->isEmpty());
+    $this->assertNull(Paragraph::load($remark->id()), 'Internal remarks on seeded reports are deleted.');
     $this->assertSame('Dangerous crossing', $this->seededEntity('taxonomy_term', 'category', 'crossing')->label());
     $this->assertSame(array_keys($requestIdsBefore), array_keys(DemoWorkspace::block(Group::load($demo->id()))['translations']));
     $this->assertCount(7, $this->reports((int) $demo->id()));

@@ -50,6 +50,17 @@ final class DemoWorkspaceSeeder {
   public const STATE_PREFIX = 'markaspot_fastmap.demo_seed.';
 
   /**
+   * Report fields only the dashboard writes; a re-seed restores their default.
+   */
+  private const DASHBOARD_FIELDS = [
+    'field_assignee',
+    'field_assigned_team',
+    'field_status_internal_term',
+    'field_priority',
+    'field_internal_remark',
+  ];
+
+  /**
    * Seconds between seeded reports that share the same day offset.
    */
   private const REPORT_TIME_STEP = 1800;
@@ -93,35 +104,48 @@ final class DemoWorkspaceSeeder {
       throw new \RuntimeException(sprintf('Another seed run for "%s" is in progress.', $slug));
     }
 
-    // Presave hooks and group reference handling consult the current user.
-    // Drush and cron both start anonymous; the seed is an operator action.
-    $operator = $this->entityTypeManager->getStorage('user')->load(1);
-    $switched = FALSE;
-    if ($operator instanceof UserInterface && $operator->isActive()) {
-      $this->accountSwitcher->switchTo($operator);
-      $switched = TRUE;
-    }
-
-    $transaction = $this->database->startTransaction();
     try {
-      $result = $this->apply($seed);
-      $this->state->set(self::STATE_PREFIX . $slug, $seed->toStorage());
-      unset($transaction);
-      return $result;
-    }
-    catch (\Throwable $e) {
-      $transaction->rollBack();
-      $this->logger->error('Demo workspace seed for @slug failed: @msg', [
-        '@slug' => $slug,
-        '@msg' => $e->getMessage(),
-      ]);
-      throw new \RuntimeException(sprintf('Seeding "%s" failed: %s', $slug, $e->getMessage()), 0, $e);
+      return $this->asOperator(function () use ($seed, $slug): array {
+        $transaction = $this->database->startTransaction();
+        try {
+          $result = $this->apply($seed);
+          $this->state->set(self::STATE_PREFIX . $slug, $seed->toStorage());
+          unset($transaction);
+          return $result;
+        }
+        catch (\Throwable $e) {
+          $transaction->rollBack();
+          $this->logger->error('Demo workspace seed for @slug failed: @msg', [
+            '@slug' => $slug,
+            '@msg' => $e->getMessage(),
+          ]);
+          throw new \RuntimeException(sprintf('Seeding "%s" failed: %s', $slug, $e->getMessage()), 0, $e);
+        }
+      });
     }
     finally {
-      if ($switched) {
-        $this->accountSwitcher->switchBack();
-      }
       $this->lock->release($lockName);
+    }
+  }
+
+  /**
+   * Runs a callback as the technical operator account (uid 1).
+   *
+   * Presave hooks and group reference handling consult the current user.
+   * Drush and cron both start anonymous; seeding and resetting a demo are
+   * operator actions.
+   */
+  public function asOperator(callable $callback): mixed {
+    $operator = $this->entityTypeManager->getStorage('user')->load(1);
+    if (!$operator instanceof UserInterface || !$operator->isActive()) {
+      return $callback();
+    }
+    $this->accountSwitcher->switchTo($operator);
+    try {
+      return $callback();
+    }
+    finally {
+      $this->accountSwitcher->switchBack();
     }
   }
 
@@ -539,9 +563,13 @@ final class DemoWorkspaceSeeder {
       $values['field_address'] = $report['address'];
     }
 
+    // Status history is rebuilt below; internal remarks added in the
+    // dashboard are dropped. Both old paragraph sets go after the save.
     $oldParagraphIds = [];
-    if ($node !== NULL && $node->hasField('field_status_notes')) {
-      $oldParagraphIds = array_map('intval', array_column($node->get('field_status_notes')->getValue(), 'target_id'));
+    foreach (['field_status_notes', 'field_internal_remark'] as $field) {
+      if ($node !== NULL && $node->hasField($field)) {
+        $oldParagraphIds = array_merge($oldParagraphIds, array_map('intval', array_column($node->get($field)->getValue(), 'target_id')));
+      }
     }
 
     $notes = [];
@@ -573,6 +601,14 @@ final class DemoWorkspaceSeeder {
     else {
       // Hourly resets must not grow the revision history of seeded reports.
       $node->setNewRevision(FALSE);
+      // Dashboard-only processing data goes back to the field defaults.
+      foreach (self::DASHBOARD_FIELDS as $field) {
+        // Not applyDefaultValue(): that only resets the first item and keeps
+        // loaded references.
+        if ($node->hasField($field)) {
+          $node->set($field, $node->getFieldDefinition($field)->getDefaultValue($node));
+        }
+      }
     }
     foreach ($values as $field => $value) {
       $this->setIfField($node, $field, $value);

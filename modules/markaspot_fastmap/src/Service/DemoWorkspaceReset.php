@@ -128,7 +128,7 @@ final class DemoWorkspaceReset {
       throw new \RuntimeException(sprintf('Another reset of "%s" is in progress.', $slug));
     }
     try {
-      $removed = $this->purgeVisitorContent($group, $seed);
+      $removed = $this->seeder->asOperator(fn(): array => $this->purgeVisitorContent($group, $seed));
       $result = $this->seeder->seed($seed);
     }
     finally {
