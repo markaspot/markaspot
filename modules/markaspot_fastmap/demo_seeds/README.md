@@ -11,6 +11,14 @@ drush mas:seed-demo-workspace path/to/demo-school-routes.yml --reset  # remove v
 drush mas:reset-demo-workspaces [--slug=demo-school-routes]          # reset allowlisted demos
 ```
 
+Seeding alone does not publish a demo. The slug must also be listed in
+`markaspot_fastmap.settings:demo_workspaces`; only then does the settings API
+deliver the translations and the task, and only then does the reset touch it:
+
+```bash
+drush cset markaspot_fastmap.settings demo_workspaces '["demo-school-routes"]' --input-format=yaml -y
+```
+
 ## What a seed run does
 
 - Creates or updates the group with slug `slug`. A workspace with that slug
@@ -33,14 +41,16 @@ drush mas:reset-demo-workspaces [--slug=demo-school-routes]          # reset all
 
 | Key | Default | Meaning |
 |---|---|---|
-| `demo_workspaces` | `[]` | Slugs the reset may touch. Reset needs the slug here AND the demo block on the group. |
+| `demo_workspaces` | `[]` | Allowlisted demo slugs. Delivery of the `demo` key and the reset both need the slug here AND the demo block on the group. |
 | `demo_seed_dir` | `''` | Directory with `<slug>.yml` files for the reset. Empty: the reset re-applies the copy of the last seed run stored in State. |
 | `demo_reset_interval` | `0` | Seconds between cron resets. `0` turns the cron reset off. |
 
 ## Contract with the frontend
 
-`/api/mark-a-spot-settings?jurisdiction=<id>` returns, for demo workspaces
-only, a top-level `demo` key:
+`/api/mark-a-spot-settings?jurisdiction=<id>` returns a top-level `demo` key
+only for workspaces that carry the demo block AND are allowlisted in
+`demo_workspaces` (the response depends on that config, so changing the
+allowlist invalidates it):
 
 ```json
 {
