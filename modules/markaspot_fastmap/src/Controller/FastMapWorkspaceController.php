@@ -15,6 +15,7 @@ use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
@@ -230,6 +231,12 @@ class FastMapWorkspaceController extends ControllerBase {
 
     if (!preg_match('/^[a-z0-9-]{2,30}$/', $slug)) {
       return new JsonResponse(['error' => 'slug must be 2-30 chars, lowercase alphanumeric and hyphens'], 400);
+    }
+
+    // Template demos are recognised and reset by slug; keep customers out of
+    // that namespace.
+    if (str_starts_with($slug, DemoWorkspace::SLUG_PREFIX)) {
+      return new JsonResponse(['error' => 'slug prefix "' . DemoWorkspace::SLUG_PREFIX . '" is reserved'], 400);
     }
 
     if (empty($categories) || !is_array($categories)) {

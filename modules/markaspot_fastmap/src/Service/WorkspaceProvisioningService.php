@@ -20,6 +20,7 @@ use Drupal\file\FileRepositoryInterface;
 use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
+use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
 use Drupal\markaspot_group\JurisdictionTeardownContext;
@@ -384,6 +385,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
     if (!preg_match('/^[a-z0-9-]{2,30}$/', $slug)) {
       throw new \RuntimeException('slug must be 2-30 chars, lowercase alphanumeric and hyphens');
+    }
+
+    if (str_starts_with($slug, DemoWorkspace::SLUG_PREFIX)) {
+      throw new \RuntimeException('slug prefix "' . DemoWorkspace::SLUG_PREFIX . '" is reserved for template demos');
     }
 
     if (empty($categories) || !is_array($categories)) {

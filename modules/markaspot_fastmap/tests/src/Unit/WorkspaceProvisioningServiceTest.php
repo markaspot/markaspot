@@ -1123,6 +1123,18 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * The demo- prefix is reserved for template demos.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testProvisionWorkspaceRejectsReservedDemoPrefix(): void {
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('reserved for template demos');
+
+    $this->service->provisionWorkspace($this->validData(['slug' => 'demo-mine']));
+  }
+
+  /**
    * Data provider for invalid slugs.
    *
    * @return array

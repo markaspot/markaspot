@@ -192,6 +192,35 @@ class FastMapWorkspaceCreateWorkspaceTest extends UnitTestCase {
   }
 
   /**
+   * Customer signups cannot claim the template demo slug prefix.
+   */
+  public function testCreateWorkspaceRejectsReservedDemoPrefix(): void {
+    $database = $this->createMock(Connection::class);
+    $database->expects($this->never())->method('insert');
+    $controller = $this->buildController($database);
+    $request = Request::create(
+      '/api/fastmap/create-workspace',
+      'POST',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'service_key' => 'test-service-key-123',
+        'name' => 'Sneaky',
+        'slug' => 'demo-school-routes',
+        'email' => 'user@example.com',
+        'categories' => ['Road Damage'],
+      ])
+    );
+
+    $response = $controller->createWorkspace($request);
+
+    $this->assertSame(400, $response->getStatusCode());
+    $this->assertStringContainsString('reserved', (string) $response->getContent());
+  }
+
+  /**
    * Builds a controller with only createWorkspace dependencies configured.
    */
   private function buildController(Connection $database): FastMapWorkspaceController {
