@@ -1,5 +1,26 @@
 # Changelog
 
+## [11.9.218](https://github.com/markaspot/markaspot/compare/11.9.217...11.9.218) (2026-10-18)
+
+### Features
+
+* **fastmap:** seed and reset multilingual template demo workspaces ([d66b3b8](https://github.com/markaspot/markaspot/commit/d66b3b883a8693c6196fb5c3429c864b886056b4))
+* **fastmap:** tell the school route demo as a parents' initiative ([861aea5](https://github.com/markaspot/markaspot/commit/861aea56ff8b1faba91dc08294cf8e64fef77a84))
+
+### Bug Fixes
+
+* add the missing config schema for request id settings ([7332744](https://github.com/markaspot/markaspot/commit/733274436e46171887818398c554555c304f67e0))
+* **fastmap:** clear dashboard-only report data on demo reset and purge as operator ([a76e8a7](https://github.com/markaspot/markaspot/commit/a76e8a767fa65b50ce73553866fc1742aafc0629))
+* **fastmap:** deliver the demo block only for allowlisted demo workspaces ([bde1bd9](https://github.com/markaspot/markaspot/commit/bde1bd915d43b50e55a43101fde4aee255314c93))
+* **fastmap:** drop organisations from the school route demo ([15f684a](https://github.com/markaspot/markaspot/commit/15f684a405aa5da09960ad2169c50c676d3570b7))
+* **fastmap:** harden demo reset against shared media, unrestorable photos and markup ([dede24c](https://github.com/markaspot/markaspot/commit/dede24ce488aa9de10b7f3436a88c9710eb1fde7))
+* **fastmap:** reserve the demo- slug prefix for template demos ([7108e6a](https://github.com/markaspot/markaspot/commit/7108e6a7f13c3e1e28c7c3420723d37ee5e5a829))
+* keep the api_user service account name when scrubbing ([f398f50](https://github.com/markaspot/markaspot/commit/f398f504d1d261de992506c6c4012991edeede24))
+
+### Documentation
+
+* **fastmap:** document the demo allowlist as a delivery requirement ([dc577b4](https://github.com/markaspot/markaspot/commit/dc577b42bf264ef9f3eeb7baf7c174baa31d4d24))
+
 ## [11.9.217](https://github.com/markaspot/markaspot/compare/11.9.216...11.9.217) (2026-10-17)
 
 ### Bug Fixes
