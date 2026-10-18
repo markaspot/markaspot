@@ -379,8 +379,11 @@ foreach (array_chunk($uids, SCRUB_BATCH) as $chunk) {
     $account->setEmail($token . SCRUB_MAIL_SUFFIX);
     $account->set('init', $token . SCRUB_MAIL_SUFFIX);
     // Uid 1 is the operator account, not a citizen; its name stays readable so
-    // the scrubbed dump is still usable to log in and work with.
-    if (!$keep_usernames && !$is_admin) {
+    // the scrubbed dump is still usable to log in and work with. The API key
+    // owner is a service account that workspace provisioning finds by name;
+    // renaming it leaves new workspaces without read access.
+    $is_service = $account->hasRole('api_user');
+    if (!$keep_usernames && !$is_admin && !$is_service) {
       $account->setUsername('user_' . $account->id() . '_' . $token);
     }
     foreach ($user_fields as $field_name) {
