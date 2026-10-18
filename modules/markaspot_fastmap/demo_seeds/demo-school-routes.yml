@@ -3,10 +3,12 @@
 # demo areas are decided; the school, the people and all incidents are
 # fictional. No addresses are given on purpose: the geocoder fills the real
 # address of each pin, so the address never contradicts the map tiles.
+# Story: a parents' initiative runs the map on its own. It sorts the reports,
+# asks back, solves what it can and takes the rest to the school and the city.
 version: 1
 slug: demo-school-routes
 template: safe-routes
-seed_version: 1
+seed_version: 2
 default_language: en
 languages: [en, es, fr, de]
 wording: report
@@ -71,8 +73,12 @@ categories:
     name: { en: 'Dark spot', es: 'Zona oscura', fr: 'Zone mal éclairée', de: 'Dunkle Stelle' }
 
 organisations:
-  - key: traffic
-    name: 'Traffic Department'
+  # The initiative works on its own reports. The city takes part as an
+  # invited organisation and gets only what the parents hand over.
+  - key: initiative
+    name: 'Lindenhof Parents'' Initiative'
+  - key: city
+    name: 'City Traffic Office'
 
 start_page:
   title:
@@ -81,21 +87,21 @@ start_page:
     fr: 'Bienvenue sur la carte des trajets scolaires'
     de: 'Willkommen bei der Schulwegkarte'
   body:
-    en: '<p>Parents, children and neighbours collect dangerous spots on the way to Lindenhof Primary School. The school and the city see every report and answer right here on the map.</p><p>This is a demo. Everything you add is removed at the next regular reset.</p>'
-    es: '<p>Familias, niños y vecinos reúnen aquí los puntos peligrosos del camino a la escuela primaria Lindenhof. La escuela y el ayuntamiento ven cada aviso y responden directamente en el mapa.</p><p>Esto es una demostración. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
-    fr: '<p>Parents, enfants et riverains recensent ici les endroits dangereux sur le chemin de l''école primaire Lindenhof. L''école et la ville voient chaque signalement et répondent directement sur la carte.</p><p>Ceci est une démo. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
-    de: '<p>Eltern, Kinder und Nachbarn sammeln hier Gefahrenstellen auf dem Weg zur Grundschule Lindenhof. Schule und Stadt sehen jede Meldung und antworten direkt auf der Karte.</p><p>Dies ist eine Demo. Alles, was Sie eintragen, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+    en: '<p>Parents, children and neighbours collect dangerous spots on the way to Lindenhof Primary School. The parents'' initiative reads every report, asks back when something is unclear and answers right here on the map. What parents cannot fix themselves, they take to the school and the city.</p><p>This is a demo. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Familias, niños y vecinos reúnen aquí los puntos peligrosos del camino a la escuela primaria Lindenhof. La iniciativa de madres y padres lee cada aviso, pregunta cuando algo no está claro y responde directamente en el mapa. Lo que las familias no pueden resolver por sí mismas lo llevan a la escuela y al ayuntamiento.</p><p>Esto es una demostración. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Parents, enfants et riverains recensent ici les endroits dangereux sur le chemin de l''école primaire Lindenhof. L''initiative de parents lit chaque signalement, pose des questions quand quelque chose n''est pas clair et répond directement sur la carte. Ce que les parents ne peuvent pas régler eux-mêmes, ils le portent à l''école et à la ville.</p><p>Ceci est une démo. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Eltern, Kinder und Nachbarn sammeln hier Gefahrenstellen auf dem Weg zur Grundschule Lindenhof. Die Elterninitiative liest jede Meldung, fragt nach, wenn etwas unklar ist, und antwortet direkt auf der Karte. Was Eltern nicht selbst lösen können, bringen sie zur Schule und zur Stadt.</p><p>Dies ist eine Demo. Alles, was Sie eintragen, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
 
 task:
-  en: 'Open the dangerous crossing and read how the city followed up. Then report another spot on your way to school.'
-  es: 'Abre el cruce peligroso y lee cómo respondió el ayuntamiento. Después señala otro punto de tu camino al colegio.'
-  fr: 'Ouvrez la traversée dangereuse et lisez la réponse de la ville. Signalez ensuite un autre endroit sur le chemin de l''école.'
-  de: 'Öffne die gefährliche Querung und lies, wie die Stadt reagiert hat. Melde dann eine weitere Stelle auf dem Schulweg.'
+  en: 'Open the dangerous crossing and read how the parents'' initiative followed up. Then report another spot on your way to school.'
+  es: 'Abre el cruce peligroso y lee cómo respondió la iniciativa de madres y padres. Después señala otro punto de tu camino al colegio.'
+  fr: 'Ouvrez la traversée dangereuse et lisez la réponse de l''initiative de parents. Signalez ensuite un autre endroit sur le chemin de l''école.'
+  de: 'Öffne die gefährliche Querung und lies, wie die Elterninitiative reagiert hat. Melde dann eine weitere Stelle auf dem Schulweg.'
 
 reports:
   - key: dangerous-crossing
     category: crossing
-    organisation: traffic
+    organisation: city
     lat: 50.8301
     lng: 6.9052
     title:
@@ -126,13 +132,14 @@ reports:
       - status: in-progress
         days_ago: 12
         note:
-          en: 'Thanks for your answer. The traffic department will count traffic at school start next week and is checking a crossing guard for the mornings.'
-          es: 'Gracias por tu respuesta. El departamento de tráfico contará el tráfico a la entrada del colegio la próxima semana y estudia poner un vigilante de cruce por las mañanas.'
-          fr: 'Merci pour votre réponse. Le service de la circulation comptera le trafic à l''heure d''entrée la semaine prochaine et étudie la mise en place d''un agent de traversée le matin.'
-          de: 'Danke für die Antwort. Die Verkehrsabteilung zählt nächste Woche den Verkehr zu Schulbeginn und prüft einen Schülerlotsen für die Morgenstunden.'
+          en: 'Thanks for your answer: it happens mostly between 7:40 and 8:00. Parents counted the cars on two mornings. We have sent the numbers to the city and asked for a crossing guard. Until then, parents take turns at the gate.'
+          es: 'Gracias por tu respuesta: pasa sobre todo entre las 7:40 y las 8:00. Algunas familias contaron los coches durante dos mañanas. Hemos enviado las cifras al ayuntamiento y pedido un vigilante de cruce. Mientras tanto, madres y padres se turnan en la puerta.'
+          fr: 'Merci pour votre réponse : cela arrive surtout entre 7 h 40 et 8 h. Des parents ont compté les voitures pendant deux matins. Nous avons envoyé les chiffres à la ville et demandé un agent de traversée. En attendant, des parents se relaient devant l''entrée.'
+          de: 'Danke für die Antwort: Es passiert vor allem zwischen 7:40 und 8:00 Uhr. Eltern haben an zwei Morgen die Autos gezählt. Wir haben die Zahlen an die Stadt geschickt und einen Schülerlotsen beantragt. Bis dahin stehen Eltern abwechselnd am Tor.'
 
   - key: blocked-sidewalk
     category: sidewalk
+    organisation: initiative
     lat: 50.8289
     lng: 6.9039
     title:
@@ -156,10 +163,10 @@ reports:
       - status: in-progress
         days_ago: 9
         note:
-          en: 'We have contacted the construction company and asked for a safe walkway.'
-          es: 'Hemos contactado con la empresa constructora y le hemos pedido un paso seguro.'
-          fr: 'Nous avons contacté l''entreprise de travaux et demandé un passage sécurisé.'
-          de: 'Wir haben die Baufirma angeschrieben und einen sicheren Durchgang verlangt.'
+          en: 'We have spoken to the site manager and asked for a safe walkway.'
+          es: 'Hemos hablado con el jefe de obra y le hemos pedido un paso seguro.'
+          fr: 'Nous avons parlé au chef de chantier et demandé un passage sécurisé.'
+          de: 'Wir haben mit der Bauleitung gesprochen und um einen sicheren Durchgang gebeten.'
       - status: resolved
         days_ago: 2
         note:
@@ -170,6 +177,7 @@ reports:
 
   - key: hedge-corner
     category: visibility
+    organisation: initiative
     lat: 50.8306
     lng: 6.9031
     title:
@@ -193,10 +201,10 @@ reports:
       - status: in-progress
         days_ago: 6
         note:
-          en: 'We have asked the owner to trim the hedge within two weeks.'
-          es: 'Hemos pedido al propietario que recorte el seto en un plazo de dos semanas.'
-          fr: 'Nous avons demandé au propriétaire de tailler la haie sous deux semaines.'
-          de: 'Wir haben den Eigentümer gebeten, die Hecke innerhalb von zwei Wochen zu schneiden.'
+          en: 'We rang the owner''s doorbell. He did not know about the problem and will trim the hedge this month.'
+          es: 'Llamamos a la puerta del propietario. No conocía el problema y recortará el seto este mes.'
+          fr: 'Nous avons sonné chez le propriétaire. Il ne connaissait pas le problème et taillera la haie ce mois-ci.'
+          de: 'Wir haben beim Eigentümer geklingelt. Er wusste nichts davon und schneidet die Hecke noch diesen Monat.'
 
   - key: parked-cars
     category: visibility
