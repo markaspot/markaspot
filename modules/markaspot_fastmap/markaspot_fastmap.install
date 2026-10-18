@@ -1639,3 +1639,29 @@ function markaspot_fastmap_update_11929(): string {
 
   return implode(' ', $messages);
 }
+
+/**
+ * Adds the template demo workspace settings, all off by default.
+ */
+function markaspot_fastmap_update_11930(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  $defaults = [
+    'demo_workspaces' => [],
+    'demo_seed_dir' => '',
+    'demo_reset_interval' => 0,
+  ];
+  $added = [];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $added[] = $key;
+    }
+  }
+  if ($added !== []) {
+    $config->save();
+  }
+
+  return $added === []
+    ? 'Demo workspace settings already present.'
+    : 'Added demo workspace settings: ' . implode(', ', $added) . '.';
+}

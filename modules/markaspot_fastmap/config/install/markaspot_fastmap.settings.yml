@@ -18,6 +18,9 @@ tier_limits:
     period: published
 demo_expiry_days: 5
 checkout_grace_days: 14
+demo_workspaces: {  }
+demo_seed_dir: ''
+demo_reset_interval: 0
 member_limits:
   free: 1
   starter: 5

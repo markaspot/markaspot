@@ -58,3 +58,32 @@ services:
       - '@logger.channel.markaspot_fastmap'
       - '@markaspot_fastmap.workspace_provisioning'
       - '@entity_field.manager'
+
+  markaspot_fastmap.demo_workspace_seeder:
+    class: Drupal\markaspot_fastmap\Service\DemoWorkspaceSeeder
+    arguments:
+      - '@entity_type.manager'
+      - '@entity_field.manager'
+      - '@config.factory'
+      - '@markaspot_fastmap.workspace_provisioning'
+      - '@file_system'
+      - '@keyvalue'
+      - '@state'
+      - '@lock'
+      - '@database'
+      - '@datetime.time'
+      - '@account_switcher'
+      - '@logger.channel.markaspot_fastmap'
+      - '@?markaspot_fastmap.legal_notice_generator'
+
+  markaspot_fastmap.demo_workspace_reset:
+    class: Drupal\markaspot_fastmap\Service\DemoWorkspaceReset
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@markaspot_fastmap.demo_workspace_seeder'
+      - '@state'
+      - '@lock'
+      - '@file.usage'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_fastmap'

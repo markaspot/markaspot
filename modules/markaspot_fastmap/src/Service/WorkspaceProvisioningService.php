@@ -197,7 +197,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Color palette for auto-assigning category colors.
    */
-  private const CATEGORY_COLORS = [
+  public const CATEGORY_COLORS = [
     '#E53E3E', '#DD6B20', '#D69E2E', '#38A169',
     '#319795', '#3182CE', '#5A67D8', '#805AD5',
     '#D53F8C', '#718096', '#2B6CB0', '#C05621',
@@ -286,7 +286,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     'initial', 'initial', 'initial', 'open', 'open', 'closed', 'closed', 'initial',
   ];
 
-  private const ALLOWED_LANGS = [
+  public const ALLOWED_LANGS = [
     'en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
     'hu', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
   ];
@@ -294,7 +294,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Theme presets by template name.
    */
-  private const THEME_TEMPLATES = [
+  public const THEME_TEMPLATES = [
     'crisis-map' => ['primary' => 'red', 'secondary' => 'orange', 'neutral' => 'slate'],
     'civic-report' => ['primary' => 'blue', 'secondary' => 'cyan', 'neutral' => 'slate'],
     'safe-routes' => ['primary' => 'amber', 'secondary' => 'orange', 'neutral' => 'stone'],
@@ -895,7 +895,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Builds the Nuxt configuration JSON for a workspace.
    */
-  private function buildNuxtConfig(string $name, string $slug, float $lat, float $lng, int $zoom, string $template, array $languages, string $defaultLang): array {
+  public function buildNuxtConfig(string $name, string $slug, float $lat, float $lng, int $zoom, string $template, array $languages, string $defaultLang): array {
     $themeColors = self::THEME_TEMPLATES[$template] ?? self::THEME_TEMPLATES['civic-report'];
 
     return [
@@ -985,7 +985,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * would not throw, Drupal discards it silently, so the guard is what keeps
    * field_favicon from becoming a line that looks effective and is not.
    */
-  private function attachPlaceholderSignet(GroupInterface $group, string $slug, string $template): void {
+  public function attachPlaceholderSignet(GroupInterface $group, string $slug, string $template): void {
     // Same directory a tenant-uploaded logo lands in, so the placeholder and
     // its eventual replacement share one location.
     $directory = 'public://jurisdictions/' . $group->id() . '/logos';
@@ -1043,7 +1043,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Builds a GeoJSON FeatureCollection from a boundary geometry.
    */
-  private function buildBoundaryJson(mixed $boundary, string $name): ?string {
+  public function buildBoundaryJson(mixed $boundary, string $name): ?string {
     if (!is_array($boundary) || !in_array($boundary['type'] ?? '', ['Polygon', 'MultiPolygon'], TRUE)) {
       return NULL;
     }
@@ -1320,7 +1320,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * @param string[] $labels
    *   Category labels to match against, one per available language.
    */
-  private function guessIcon(array $labels): string {
+  public function guessIcon(array $labels): string {
     $lowerLabels = array_map(
       static fn(string $label): string => mb_strtolower($label, 'UTF-8'),
       array_filter($labels, 'is_string')
@@ -1393,7 +1393,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Adds the API key owner as a jurisdiction member when it exists.
    */
-  private function addApiUserMembership(GroupInterface $group): void {
+  public function addApiUserMembership(GroupInterface $group): void {
     $userStorage = $this->entityTypeManager->getStorage('user');
     $apiUsers = (array) $userStorage->loadByProperties(['name' => 'api_user']);
     $apiUser = reset($apiUsers);
@@ -1450,7 +1450,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Returns the configured jurisdiction group bundle.
    */
-  private function jurisdictionGroupType(): string {
+  public function jurisdictionGroupType(): string {
     $configured = $this->configFactory
       ->get('markaspot_open311.settings')
       ->get('jurisdiction_group_type');
@@ -2231,7 +2231,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * @return array
    *   GeoJSON Polygon geometry.
    */
-  private function generateCircleBoundary(float $lat, float $lng, float $radiusKm, int $points = 32): array {
+  public function generateCircleBoundary(float $lat, float $lng, float $radiusKm, int $points = 32): array {
     $coords = [];
     $latOffset = $radiusKm / 111.0;
     $lngOffset = abs($lat) < 89.9 ? $radiusKm / (111.0 * cos(deg2rad($lat))) : $latOffset;
@@ -2258,7 +2258,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * @param string[] $langcodes
    *   Language codes to ensure exist.
    */
-  private function ensureLanguagesExist(array $langcodes): void {
+  public function ensureLanguagesExist(array $langcodes): void {
     $installed = array_keys($this->languageManager->getLanguages());
     foreach ($langcodes as $langcode) {
       if (in_array($langcode, $installed, TRUE)) {

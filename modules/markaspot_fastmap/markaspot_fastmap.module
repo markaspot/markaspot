@@ -15,6 +15,7 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\user\EntityOwnerInterface;
@@ -1067,6 +1068,16 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
       'remaining' => $aiBudget === 0 ? -1 : max(0, $aiBudget - $aiUsage),
     ];
   }
+
+  // Template demo overlay: per-language texts of the seeded reports, keyed by
+  // service_request_id, plus the mini task. Only groups carrying the demo
+  // block get the key; it is reduced to the public contract shape.
+  if ($group instanceof GroupInterface) {
+    $demo = DemoWorkspace::sanitizeForDelivery(DemoWorkspace::block($group));
+    if ($demo !== NULL) {
+      $settings['demo'] = $demo;
+    }
+  }
 }
 
 /**
@@ -1075,6 +1086,7 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
  * Two hourly tasks:
  * 1. Enforces tier published-report limits retroactively (FIFO unpublish).
  * 2. Sends expiry reminders and deletes expired demo workspaces.
+ * Plus the template demo reset, every demo_reset_interval seconds when set.
  *
  * Each task tracks its own last-run timestamp independently.
  */
@@ -1162,6 +1174,14 @@ function markaspot_fastmap_cron(): void {
         );
       }
     }
+  }
+
+  // --- Template demo workspace reset (off unless demo_reset_interval > 0). ---
+  try {
+    \Drupal::service('markaspot_fastmap.demo_workspace_reset')->runIfDue();
+  }
+  catch (\Throwable $e) {
+    $logger->error('Demo workspace reset failed: @message', ['@message' => $e->getMessage()]);
   }
 
   // --- Demo workspace cleanup (once per hour). ---

@@ -1,0 +1,116 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\markaspot_fastmap\Unit;
+
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
+use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
+/**
+ * Tests the demo block contract helpers.
+ */
+#[CoversClass(DemoWorkspace::class)]
+#[Group('markaspot_fastmap')]
+final class DemoWorkspaceTest extends UnitTestCase {
+
+  /**
+   * Seed UUIDs are stable, scoped and valid UUID strings.
+   */
+  public function testUuidIsDeterministicAndScoped(): void {
+    $uuid = DemoWorkspace::uuid('site-a', 'demo-x', 'report', 'one');
+
+    $this->assertSame($uuid, DemoWorkspace::uuid('site-a', 'demo-x', 'report', 'one'));
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/', $uuid);
+    $this->assertNotSame($uuid, DemoWorkspace::uuid('site-b', 'demo-x', 'report', 'one'));
+    $this->assertNotSame($uuid, DemoWorkspace::uuid('site-a', 'demo-y', 'report', 'one'));
+    $this->assertNotSame($uuid, DemoWorkspace::uuid('site-a', 'demo-x', 'media', 'one'));
+  }
+
+  /**
+   * Only groups with a demo block are demo workspaces.
+   */
+  public function testBlockDetection(): void {
+    $this->assertNull(DemoWorkspace::block($this->group(NULL)));
+    $this->assertNull(DemoWorkspace::block($this->group('not json')));
+    $this->assertNull(DemoWorkspace::block($this->group('{"theme":{}}')));
+    $this->assertNull(DemoWorkspace::block($this->group('{"demo":{"seedVersion":1}}')));
+    $this->assertSame(
+      ['template' => 'safe-routes'],
+      DemoWorkspace::block($this->group('{"demo":{"template":"safe-routes"}}')),
+    );
+  }
+
+  /**
+   * Delivery keeps the contract shape and drops everything else.
+   */
+  public function testSanitizeForDelivery(): void {
+    $this->assertNull(DemoWorkspace::sanitizeForDelivery(NULL));
+    $this->assertNull(DemoWorkspace::sanitizeForDelivery(['template' => '<b>x</b>']));
+
+    $result = DemoWorkspace::sanitizeForDelivery([
+      'template' => 'safe-routes',
+      'seedVersion' => 3,
+      'secret' => 'not delivered',
+      'translations' => [
+        '12-2026' => [
+          'es' => [
+            'title' => 'Cruce',
+            'description' => 'Texto',
+            'statusNotes' => ['uno', ['nested'], 'tres'],
+            'extra' => 'dropped',
+          ],
+          'not a langcode!' => ['title' => 'x'],
+        ],
+        'bad id with spaces' => ['es' => ['title' => 'x']],
+      ],
+      'task' => ['es' => 'Abre', 'de' => ['nested']],
+    ]);
+
+    $this->assertSame([
+      'template' => 'safe-routes',
+      'seedVersion' => 3,
+      'translations' => [
+        '12-2026' => [
+          'es' => [
+            'title' => 'Cruce',
+            'description' => 'Texto',
+            // Position matters: notes are index-aligned with status_notes.
+            'statusNotes' => ['uno', '', 'tres'],
+          ],
+        ],
+      ],
+      'task' => ['es' => 'Abre'],
+    ], $result);
+  }
+
+  /**
+   * Empty maps stay JSON objects for the frontend.
+   */
+  public function testEmptyMapsEncodeAsObjects(): void {
+    $result = DemoWorkspace::sanitizeForDelivery(['template' => 'crisis-map']);
+
+    $this->assertSame(
+      '{"template":"crisis-map","seedVersion":0,"translations":{},"task":{}}',
+      json_encode($result),
+    );
+  }
+
+  /**
+   * Builds a group double with the given field_nuxt_config value.
+   */
+  private function group(?string $config): GroupInterface {
+    $items = $this->createMock(FieldItemListInterface::class);
+    $items->method('isEmpty')->willReturn($config === NULL);
+    $items->method('__get')->with('value')->willReturn($config);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
+    $group->method('get')->with('field_nuxt_config')->willReturn($items);
+    return $group;
+  }
+
+}

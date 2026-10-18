@@ -23,6 +23,18 @@ markaspot_fastmap.settings:
     checkout_grace_days:
       type: integer
       label: 'Checkout grace period in days'
+    demo_workspaces:
+      type: sequence
+      label: 'Template demo workspaces the reset may touch (slugs)'
+      sequence:
+        type: string
+        label: 'Demo workspace slug'
+    demo_seed_dir:
+      type: string
+      label: 'Directory with <slug>.yml seed files for the demo reset (empty: use the stored seed)'
+    demo_reset_interval:
+      type: integer
+      label: 'Seconds between cron resets of the demo workspaces (0 = off)'
     deletion_grace_days:
       type: integer
       label: 'Days between a confirmed workspace deletion and the teardown'

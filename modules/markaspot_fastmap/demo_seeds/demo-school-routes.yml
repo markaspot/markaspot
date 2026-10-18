@@ -1,0 +1,291 @@
+# Template demo: safe-routes ("School route map", DE "Schulwegkarte").
+# Format: README.md in this directory. The area is a placeholder until the
+# demo areas are decided; the school, the people and all incidents are
+# fictional. No addresses are given on purpose: the geocoder fills the real
+# address of each pin, so the address never contradicts the map tiles.
+version: 1
+slug: demo-school-routes
+template: safe-routes
+seed_version: 1
+default_language: en
+languages: [en, es, fr, de]
+wording: report
+name: 'Lindenhof School Routes'
+claim:
+  en: 'Report dangerous spots on the way to school'
+  es: 'Señala los puntos peligrosos del camino al colegio'
+  fr: 'Signalez les endroits dangereux sur le chemin de l''école'
+  de: 'Gefahrenstellen auf dem Schulweg melden'
+map:
+  lat: 50.8296
+  lng: 6.9047
+  zoom: 16
+boundary:
+  radius_km: 0.8
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: received
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-plus
+    name: { en: 'Received', es: 'Recibido', fr: 'Reçu', de: 'Eingegangen' }
+  - key: question
+    mapping: open
+    hex: '#7C3AED'
+    icon: i-lucide-message-circle-question
+    name: { en: 'Question to reporter', es: 'Consulta al remitente', fr: 'Question à l''auteur', de: 'Rückfrage' }
+  - key: in-progress
+    mapping: open
+    hex: '#2563EB'
+    icon: i-lucide-clock
+    name: { en: 'In progress', es: 'En curso', fr: 'En cours', de: 'In Bearbeitung' }
+  - key: resolved
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-check
+    name: { en: 'Resolved', es: 'Resuelto', fr: 'Résolu', de: 'Erledigt' }
+
+categories:
+  - key: crossing
+    icon: i-lucide-traffic-cone
+    name: { en: 'Dangerous crossing', es: 'Cruce peligroso', fr: 'Traversée dangereuse', de: 'Gefährliche Querung' }
+  - key: sidewalk
+    icon: i-lucide-footprints
+    name: { en: 'Missing or blocked sidewalk', es: 'Acera inexistente o bloqueada', fr: 'Trottoir absent ou encombré', de: 'Fehlender oder zugestellter Gehweg' }
+  - key: visibility
+    icon: i-lucide-eye-off
+    name: { en: 'Poor visibility', es: 'Mala visibilidad', fr: 'Mauvaise visibilité', de: 'Schlechte Sicht' }
+  - key: speed
+    icon: i-lucide-gauge
+    name: { en: 'Speeding', es: 'Exceso de velocidad', fr: 'Vitesse excessive', de: 'Zu schnelles Fahren' }
+  - key: lighting
+    icon: i-lucide-lightbulb
+    name: { en: 'Dark spot', es: 'Zona oscura', fr: 'Zone mal éclairée', de: 'Dunkle Stelle' }
+
+organisations:
+  - key: traffic
+    name: 'Traffic Department'
+
+start_page:
+  title:
+    en: 'Welcome to the school route map'
+    es: 'Bienvenido al mapa de caminos escolares'
+    fr: 'Bienvenue sur la carte des trajets scolaires'
+    de: 'Willkommen bei der Schulwegkarte'
+  body:
+    en: '<p>Parents, children and neighbours collect dangerous spots on the way to Lindenhof Primary School. The school and the city see every report and answer right here on the map.</p><p>This is a demo. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Familias, niños y vecinos reúnen aquí los puntos peligrosos del camino a la escuela primaria Lindenhof. La escuela y el ayuntamiento ven cada aviso y responden directamente en el mapa.</p><p>Esto es una demostración. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Parents, enfants et riverains recensent ici les endroits dangereux sur le chemin de l''école primaire Lindenhof. L''école et la ville voient chaque signalement et répondent directement sur la carte.</p><p>Ceci est une démo. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Eltern, Kinder und Nachbarn sammeln hier Gefahrenstellen auf dem Weg zur Grundschule Lindenhof. Schule und Stadt sehen jede Meldung und antworten direkt auf der Karte.</p><p>Dies ist eine Demo. Alles, was Sie eintragen, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the dangerous crossing and read how the city followed up. Then report another spot on your way to school.'
+  es: 'Abre el cruce peligroso y lee cómo respondió el ayuntamiento. Después señala otro punto de tu camino al colegio.'
+  fr: 'Ouvrez la traversée dangereuse et lisez la réponse de la ville. Signalez ensuite un autre endroit sur le chemin de l''école.'
+  de: 'Öffne die gefährliche Querung und lies, wie die Stadt reagiert hat. Melde dann eine weitere Stelle auf dem Schulweg.'
+
+reports:
+  - key: dangerous-crossing
+    category: crossing
+    organisation: traffic
+    lat: 50.8301
+    lng: 6.9052
+    title:
+      en: 'Children cross between parked cars'
+      es: 'Los niños cruzan entre coches aparcados'
+      fr: 'Les enfants traversent entre des voitures garées'
+      de: 'Kinder queren zwischen parkenden Autos'
+    description:
+      en: 'There is no crossing near the school gate. In the morning the children squeeze between parked cars to get to the other side, and drivers cannot see them.'
+      es: 'No hay paso de peatones cerca de la puerta del colegio. Por la mañana los niños pasan entre coches aparcados para cruzar y los conductores no los ven.'
+      fr: 'Il n''y a pas de passage piéton près de l''entrée de l''école. Le matin, les enfants se faufilent entre les voitures garées pour traverser et les conducteurs ne les voient pas.'
+      de: 'In der Nähe des Schultors gibt es keinen Überweg. Morgens zwängen sich die Kinder zwischen parkenden Autos hindurch, und die Autofahrer sehen sie nicht.'
+    history:
+      - status: received
+        days_ago: 21
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+      - status: question
+        days_ago: 19
+        note:
+          en: 'Thank you for the report. Does this happen mainly before school starts, or also in the afternoon?'
+          es: 'Gracias por el aviso. ¿Ocurre sobre todo antes de que empiecen las clases o también por la tarde?'
+          fr: 'Merci pour ce signalement. Cela se produit-il surtout avant le début des cours ou aussi l''après-midi ?'
+          de: 'Danke für die Meldung. Passiert das vor allem vor Schulbeginn oder auch am Nachmittag?'
+      - status: in-progress
+        days_ago: 12
+        note:
+          en: 'Thanks for your answer. The traffic department will count traffic at school start next week and is checking a crossing guard for the mornings.'
+          es: 'Gracias por tu respuesta. El departamento de tráfico contará el tráfico a la entrada del colegio la próxima semana y estudia poner un vigilante de cruce por las mañanas.'
+          fr: 'Merci pour votre réponse. Le service de la circulation comptera le trafic à l''heure d''entrée la semaine prochaine et étudie la mise en place d''un agent de traversée le matin.'
+          de: 'Danke für die Antwort. Die Verkehrsabteilung zählt nächste Woche den Verkehr zu Schulbeginn und prüft einen Schülerlotsen für die Morgenstunden.'
+
+  - key: blocked-sidewalk
+    category: sidewalk
+    lat: 50.8289
+    lng: 6.9039
+    title:
+      en: 'Construction fence blocks the sidewalk'
+      es: 'Una valla de obra bloquea la acera'
+      fr: 'Une clôture de chantier bloque le trottoir'
+      de: 'Bauzaun versperrt den Gehweg'
+    description:
+      en: 'A construction fence takes up the whole sidewalk. Children have to walk on the road for about 50 metres.'
+      es: 'Una valla de obra ocupa toda la acera. Los niños tienen que caminar por la calzada unos 50 metros.'
+      fr: 'Une clôture de chantier occupe tout le trottoir. Les enfants doivent marcher sur la chaussée sur environ 50 mètres.'
+      de: 'Ein Bauzaun nimmt den ganzen Gehweg ein. Die Kinder müssen etwa 50 Meter auf der Fahrbahn laufen.'
+    history:
+      - status: received
+        days_ago: 16
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+      - status: in-progress
+        days_ago: 9
+        note:
+          en: 'We have contacted the construction company and asked for a safe walkway.'
+          es: 'Hemos contactado con la empresa constructora y le hemos pedido un paso seguro.'
+          fr: 'Nous avons contacté l''entreprise de travaux et demandé un passage sécurisé.'
+          de: 'Wir haben die Baufirma angeschrieben und einen sicheren Durchgang verlangt.'
+      - status: resolved
+        days_ago: 2
+        note:
+          en: 'The fence has been moved. A marked temporary walkway is in place again until the work is finished.'
+          es: 'La valla se ha desplazado. Hasta el final de la obra vuelve a haber un paso provisional señalizado.'
+          fr: 'La clôture a été déplacée. Un passage provisoire balisé est de nouveau en place jusqu''à la fin des travaux.'
+          de: 'Der Zaun wurde versetzt. Bis zum Ende der Arbeiten gibt es wieder einen markierten Notgehweg.'
+
+  - key: hedge-corner
+    category: visibility
+    lat: 50.8306
+    lng: 6.9031
+    title:
+      en: 'Hedge hides the corner'
+      es: 'Un seto tapa la esquina'
+      fr: 'Une haie masque le virage'
+      de: 'Hecke verdeckt die Ecke'
+    description:
+      en: 'The hedge at this corner has grown so tall that children and drivers cannot see each other until the last moment.'
+      es: 'El seto de esta esquina ha crecido tanto que niños y conductores no se ven hasta el último momento.'
+      fr: 'La haie à ce coin est devenue si haute que les enfants et les conducteurs ne se voient qu''au dernier moment.'
+      de: 'Die Hecke an dieser Ecke ist so hoch gewachsen, dass sich Kinder und Autofahrer erst im letzten Moment sehen.'
+    history:
+      - status: received
+        days_ago: 10
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+      - status: in-progress
+        days_ago: 6
+        note:
+          en: 'We have asked the owner to trim the hedge within two weeks.'
+          es: 'Hemos pedido al propietario que recorte el seto en un plazo de dos semanas.'
+          fr: 'Nous avons demandé au propriétaire de tailler la haie sous deux semaines.'
+          de: 'Wir haben den Eigentümer gebeten, die Hecke innerhalb von zwei Wochen zu schneiden.'
+
+  - key: parked-cars
+    category: visibility
+    lat: 50.8293
+    lng: 6.9061
+    title:
+      en: 'Cars parked right up to the crossing'
+      es: 'Coches aparcados justo hasta el cruce'
+      fr: 'Des voitures garées jusqu''au passage'
+      de: 'Autos parken bis direkt an den Überweg'
+    description:
+      en: 'Cars park right up to the zebra crossing. Small children are hidden behind them when they step onto the road.'
+      es: 'Los coches aparcan justo hasta el paso de cebra. Los niños pequeños quedan ocultos detrás cuando bajan a la calzada.'
+      fr: 'Des voitures se garent jusqu''au passage piéton. Les petits enfants sont cachés derrière elles quand ils s''engagent sur la chaussée.'
+      de: 'Autos parken bis direkt an den Zebrastreifen. Kleine Kinder sind dahinter verdeckt, wenn sie auf die Fahrbahn treten.'
+    history:
+      - status: received
+        days_ago: 7
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+
+  - key: speeding
+    category: speed
+    lat: 50.8284
+    lng: 6.9055
+    title:
+      en: 'Cars drive too fast in front of the school'
+      es: 'Los coches van demasiado rápido delante del colegio'
+      fr: 'Les voitures roulent trop vite devant l''école'
+      de: 'Vor der Schule wird zu schnell gefahren'
+    description:
+      en: 'Many cars ignore the 30 km/h limit, especially when parents are late in the morning.'
+      es: 'Muchos coches no respetan el límite de 30 km/h, sobre todo cuando los padres van con prisa por la mañana.'
+      fr: 'Beaucoup de voitures ne respectent pas la limite de 30 km/h, surtout le matin quand les parents sont pressés.'
+      de: 'Viele Autos halten sich nicht an Tempo 30, vor allem morgens, wenn Eltern spät dran sind.'
+    history:
+      - status: received
+        days_ago: 5
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+
+  - key: dark-footpath
+    category: lighting
+    lat: 50.8312
+    lng: 6.9044
+    title:
+      en: 'Footpath through the park is dark'
+      es: 'El camino del parque está a oscuras'
+      fr: 'Le chemin du parc n''est pas éclairé'
+      de: 'Fußweg durch den Park ist dunkel'
+    description:
+      en: 'In winter it is still dark on the way to school. The footpath through the park has no light at all.'
+      es: 'En invierno todavía es de noche camino del colegio. El camino del parque no tiene ninguna farola.'
+      fr: 'En hiver, il fait encore nuit sur le chemin de l''école. Le chemin du parc n''a aucun éclairage.'
+      de: 'Im Winter ist es auf dem Schulweg noch dunkel. Der Fußweg durch den Park hat überhaupt keine Beleuchtung.'
+    history:
+      - status: received
+        days_ago: 3
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+
+  - key: bus-stop
+    category: crossing
+    lat: 50.8299
+    lng: 6.9068
+    title:
+      en: 'Children run across behind the bus'
+      es: 'Los niños cruzan corriendo por detrás del autobús'
+      fr: 'Les enfants traversent en courant derrière le bus'
+      de: 'Kinder rennen hinter dem Bus über die Straße'
+    description:
+      en: 'After school the children get off the bus and run across the road behind it. Cars overtake the bus at the same moment.'
+      es: 'Al salir del colegio los niños bajan del autobús y cruzan corriendo por detrás. Al mismo tiempo los coches adelantan al autobús.'
+      fr: 'Après l''école, les enfants descendent du bus et traversent en courant derrière lui. Au même moment, des voitures doublent le bus.'
+      de: 'Nach der Schule steigen die Kinder aus dem Bus und rennen dahinter über die Straße. Gleichzeitig überholen Autos den Bus.'
+    history:
+      - status: received
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
