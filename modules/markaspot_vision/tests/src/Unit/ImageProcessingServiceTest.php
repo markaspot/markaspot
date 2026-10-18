@@ -10,9 +10,7 @@ use Psr\Http\Message\RequestInterface;
 use GuzzleHttp\Client;
 use Drupal\taxonomy\TermInterface;
 use Drupal\group\Entity\GroupInterface;
-use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
-use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\file\FileInterface;
 use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\media\MediaSourceInterface;
@@ -641,10 +639,10 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * A blur overwrites the media's own file in whatever scheme Drupal uses.
+   * A blur overwrites the media's own file wherever Drupal stores it.
    */
-  #[DataProvider('configuredStorageProvider')]
-  public function testSaveBlurredImageFollowsTheConfiguredStorage(string $uri, string $configuredScheme): void {
+  #[DataProvider('storedFileProvider')]
+  public function testSaveBlurredImageFollowsTheStoredFile(string $uri): void {
     $service = $this->createService();
     // saveData throwing proves the safeguard let the overwrite through,
     // without running image_path_flush() in a unit test.
@@ -654,7 +652,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
       ->willThrowException(new \RuntimeException('overwrite reached'));
 
     try {
-      $service->saveBlurredImage($this->createImageMedia($uri, $configuredScheme), 'blurred-bytes', $uri);
+      $service->saveBlurredImage($this->createImageMedia($uri), 'blurred-bytes', $uri);
       $this->fail('saveData was not reached.');
     }
     catch (\RuntimeException $e) {
@@ -663,29 +661,53 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Storage configurations a blur must write to.
+   * Files a blur must write to.
    */
-  public static function configuredStorageProvider(): array {
+  public static function storedFileProvider(): array {
     return [
-      'local public' => ['public://2026-10/photo.jpg', 'public'],
-      'private, local or s3fs takeover' => ['private://2026-10/photo.jpg', 'private'],
-      's3fs scheme' => ['s3://2026-10/photo.jpg', 's3'],
+      'local public' => ['public://2026-10/photo.jpg'],
+      'private, local or s3fs takeover' => ['private://2026-10/photo.jpg'],
+      's3fs scheme' => ['s3://2026-10/photo.jpg'],
     ];
   }
 
   /**
-   * A blur never overwrites a file the media's configuration does not name.
+   * A newer media pointing at the same photo cannot block its owner's blur.
+   */
+  public function testSaveBlurredImageIgnoresNewerReferences(): void {
+    $this->fileUsageList = ['file' => ['media' => [123 => 1, 456 => 1]]];
+    $service = $this->createService();
+    $this->fileSystem->expects($this->once())
+      ->method('saveData')
+      ->willThrowException(new \RuntimeException('overwrite reached'));
+
+    try {
+      $service->saveBlurredImage($this->createImageMedia('public://photo.jpg'), 'blurred-bytes', 'public://photo.jpg');
+      $this->fail('saveData was not reached.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertSame('overwrite reached', $e->getPrevious()?->getMessage());
+    }
+  }
+
+  /**
+   * A blur never overwrites a file that is not the media's own.
    */
   #[DataProvider('refusedOverwriteProvider')]
-  public function testSaveBlurredImageRefusesAnyOtherFile(string $uri, ?string $storedUri, string $configuredScheme, ?array $usage = NULL): void {
+  public function testSaveBlurredImageRefusesAnyOtherFile(string $uri, ?string $storedUri, ?array $usage = NULL): void {
     if ($usage !== NULL) {
       $this->fileUsageList = $usage;
     }
     $service = $this->createService();
     $this->fileSystem->expects($this->never())->method('saveData');
 
-    $this->expectException(\RuntimeException::class);
-    $service->saveBlurredImage($this->createImageMedia($storedUri, $configuredScheme), 'blurred-bytes', $uri);
+    try {
+      $service->saveBlurredImage($this->createImageMedia($storedUri), 'blurred-bytes', $uri);
+      $this->fail('The overwrite was not refused.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertStringStartsWith('GDPR blur refused', (string) $e->getPrevious()?->getMessage());
+    }
   }
 
   /**
@@ -693,25 +715,22 @@ class ImageProcessingServiceTest extends UnitTestCase {
    */
   public static function refusedOverwriteProvider(): array {
     return [
-      'another file' => ['private://other.jpg', 'private://photo.jpg', 'private'],
-      'scheme other than configured' => ['public://photo.jpg', 'public://photo.jpg', 'private'],
-      'no scheme configured' => ['private://photo.jpg', 'private://photo.jpg', ''],
-      'media without a file' => ['private://photo.jpg', NULL, 'private'],
+      'another public file' => ['public://other.jpg', 'public://photo.jpg'],
+      'another private file' => ['private://other.jpg', 'private://photo.jpg'],
+      'media without a file' => ['private://photo.jpg', NULL],
       // Someone else's photo re-referenced by a new media: the blur through
       // that media must not rewrite the victim's file.
-      'file shared with another media' => [
+      'file of an older media' => [
         'private://photo.jpg',
         'private://photo.jpg',
-        'private',
         ['file' => ['media' => [123 => 1, 77 => 1]]],
       ],
       'file used by another entity type' => [
         'public://photo.jpg',
         'public://photo.jpg',
-        'public',
         ['file' => ['media' => [123 => 1], 'node' => [5 => 1]]],
       ],
-      'file without recorded usage' => ['private://photo.jpg', 'private://photo.jpg', 'private', []],
+      'file without recorded usage' => ['private://photo.jpg', 'private://photo.jpg', []],
     ];
   }
 
@@ -720,22 +739,15 @@ class ImageProcessingServiceTest extends UnitTestCase {
    *
    * @param string|null $storedUri
    *   URI of the stored file, or NULL for a media without one.
-   * @param string $configuredScheme
-   *   The uri_scheme setting of the source field storage.
    */
-  private function createImageMedia(?string $storedUri, string $configuredScheme): MediaInterface {
+  private function createImageMedia(?string $storedUri): MediaInterface {
     $file = NULL;
     if ($storedUri !== NULL) {
       $file = $this->createMock(FileInterface::class);
       $file->method('getFileUri')->willReturn($storedUri);
     }
-    $storage = $this->createMock(FieldStorageDefinitionInterface::class);
-    $storage->method('getSetting')->with('uri_scheme')->willReturn($configuredScheme);
-    $definition = $this->createMock(FieldDefinitionInterface::class);
-    $definition->method('getFieldStorageDefinition')->willReturn($storage);
     $items = $this->createMock(FieldItemListInterface::class);
     $items->method('__get')->with('entity')->willReturn($file);
-    $items->method('getFieldDefinition')->willReturn($definition);
 
     $source = $this->createMock(MediaSourceInterface::class);
     $source->method('getConfiguration')->willReturn(['source_field' => 'field_media_image']);

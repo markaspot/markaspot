@@ -412,6 +412,9 @@ class ImageProcessingController extends ControllerBase {
           // Replace original with blurred version if faces or plates were
           // detected on THIS media.
           if ($media_was_blurred) {
+            // Refuse before keeping anything: a media pointing at someone
+            // else's photo must not get a copy of its original either.
+            $this->imageProcessingService->assertOverwritable($media, $media_uri);
             // Staff keep the unblurred original where the site opted in;
             // the file on disk is still unblurred until the next line.
             $this->originalImageStore?->retain($media, $media_uri);

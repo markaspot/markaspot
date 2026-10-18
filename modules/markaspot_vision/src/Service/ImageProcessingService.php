@@ -9,7 +9,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\file\FileInterface;
 use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -395,34 +394,34 @@ class ImageProcessingService {
   /**
    * GDPR safeguard: a blur may overwrite only the media's own source file.
    *
-   * The URI must be the file the media's source field stores, in the scheme
-   * that field is configured to write to. Which backend serves the scheme
-   * (local disk, s3fs) is the site's configuration, not this module's.
-   * The file must also belong to this media alone: anyone may create a media
-   * pointing at a file they can view, and a blur through that media must not
-   * rewrite someone else's photo.
+   * The URI must be the file the media's source field stores, wherever Drupal
+   * put it: the scheme and the backend serving it (local disk, s3fs) are the
+   * site's configuration, and older photos may still sit in the scheme the
+   * field used before. The file must also belong to this media: anyone may
+   * create a media pointing at a file they can view, and a blur through that
+   * media must not rewrite someone else's photo. Such a media is always newer
+   * than the one the photo was uploaded with, so only the oldest media using
+   * the file may overwrite it, and a stray newer reference cannot block that
+   * media's blur.
    *
    * @throws \RuntimeException
    *   Thrown for any other URI.
    */
-  protected function assertOverwritable(MediaInterface $media, string $uri): void {
+  public function assertOverwritable(MediaInterface $media, string $uri): void {
     $source_field = $media->getSource()->getConfiguration()['source_field'] ?? '';
     $items = $source_field !== '' && $media->hasField($source_field) ? $media->get($source_field) : NULL;
     $file = $items?->entity;
     $stored_uri = $file instanceof FileInterface ? $file->getFileUri() : NULL;
-    $configured_scheme = $items?->getFieldDefinition()->getFieldStorageDefinition()->getSetting('uri_scheme');
-    $scheme = StreamWrapperManager::getScheme($uri);
-    if ($stored_uri !== $uri || !$configured_scheme || $scheme !== $configured_scheme) {
+    if ($stored_uri === NULL || $stored_uri !== $uri) {
       throw new \RuntimeException(sprintf(
-        'GDPR blur refused: "%s" is not the file media %s stores in its configured "%s" scheme.',
+        'GDPR blur refused: "%s" is not the file media %s stores.',
         $uri,
         (string) $media->id(),
-        (string) $configured_scheme,
       ));
     }
-    if (!$this->usedOnlyBy($file, $media)) {
+    if (!$this->isOldestUser($file, $media)) {
       throw new \RuntimeException(sprintf(
-        'GDPR blur refused: "%s" is also used outside media %s.',
+        'GDPR blur refused: "%s" belongs to another entity than media %s.',
         $uri,
         (string) $media->id(),
       ));
@@ -430,24 +429,22 @@ class ImageProcessingService {
   }
 
   /**
-   * Whether a file is recorded as used by this media and nothing else.
+   * Whether this media is the oldest recorded user of a file, and only media.
    */
-  protected function usedOnlyBy(FileInterface $file, MediaInterface $media): bool {
+  protected function isOldestUser(FileInterface $file, MediaInterface $media): bool {
     if (!$this->fileUsage) {
       return FALSE;
     }
-    $found = FALSE;
+    $media_ids = [];
     foreach ($this->fileUsage->listUsage($file) as $types) {
       foreach ($types as $type => $ids) {
-        foreach (array_keys($ids) as $id) {
-          if ($type !== 'media' || (string) $id !== (string) $media->id()) {
-            return FALSE;
-          }
-          $found = TRUE;
+        if ($type !== 'media') {
+          return FALSE;
         }
+        $media_ids = array_merge($media_ids, array_map('intval', array_keys($ids)));
       }
     }
-    return $found;
+    return $media_ids && min($media_ids) === (int) $media->id();
   }
 
   /**
