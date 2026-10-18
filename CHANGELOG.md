@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.220](https://github.com/markaspot/markaspot/compare/11.9.219...11.9.220) (2026-10-18)
+
+### Bug Fixes
+
+* **group:** keep private service request fields out of cross-jurisdiction JSON:API filters ([f52bf73](https://github.com/markaspot/markaspot/commit/f52bf73182058fd6709021bb17d50b5450691e8b))
+* **group:** scope private service request fields to the report's jurisdiction ([aedf172](https://github.com/markaspot/markaspot/commit/aedf1723b80f42a12ea0601ae5ccb10b9b6ee6b4))
+* **vision:** blur and keep originals wherever the site stores request images ([a6b7f54](https://github.com/markaspot/markaspot/commit/a6b7f5438ae42d5f1168574afd68e5564899d532))
+* **vision:** let only the oldest media of a file blur it, checked before keeping the original ([73d6960](https://github.com/markaspot/markaspot/commit/73d69605354cadb3168989371fb5f042b3667156))
+* **vision:** refuse blur overwrite of files used outside the analysed media ([a4618ea](https://github.com/markaspot/markaspot/commit/a4618ea3ceab6b1f82ed711aa8639e9f227d07a9))
+
 ## [11.9.219](https://github.com/markaspot/markaspot/compare/11.9.218...11.9.219) (2026-10-18)
 
 ### Features
