@@ -10,7 +10,11 @@ use Psr\Http\Message\RequestInterface;
 use GuzzleHttp\Client;
 use Drupal\taxonomy\TermInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\file\FileInterface;
+use Drupal\media\MediaSourceInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\image\ImageStyleInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -625,16 +629,92 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Persisting blurred images fails closed for non-public URIs.
+   * A blur overwrites the media's own file in whatever scheme Drupal uses.
    */
-  public function testSaveBlurredImageThrowsForNonPublicUri(): void {
-    $media = $this->createMock(MediaInterface::class);
-    $media->method('id')->willReturn(123);
-
+  #[DataProvider('configuredStorageProvider')]
+  public function testSaveBlurredImageFollowsTheConfiguredStorage(string $uri, string $configuredScheme): void {
     $service = $this->createService();
+    // saveData throwing proves the safeguard let the overwrite through,
+    // without running image_path_flush() in a unit test.
+    $this->fileSystem->expects($this->once())
+      ->method('saveData')
+      ->with('blurred-bytes', $uri)
+      ->willThrowException(new \RuntimeException('overwrite reached'));
+
+    try {
+      $service->saveBlurredImage($this->createImageMedia($uri, $configuredScheme), 'blurred-bytes', $uri);
+      $this->fail('saveData was not reached.');
+    }
+    catch (\RuntimeException $e) {
+      $this->assertSame('overwrite reached', $e->getPrevious()?->getMessage());
+    }
+  }
+
+  /**
+   * Storage configurations a blur must write to.
+   */
+  public static function configuredStorageProvider(): array {
+    return [
+      'local public' => ['public://2026-10/photo.jpg', 'public'],
+      'private, local or s3fs takeover' => ['private://2026-10/photo.jpg', 'private'],
+      's3fs scheme' => ['s3://2026-10/photo.jpg', 's3'],
+    ];
+  }
+
+  /**
+   * A blur never overwrites a file the media's configuration does not name.
+   */
+  #[DataProvider('refusedOverwriteProvider')]
+  public function testSaveBlurredImageRefusesAnyOtherFile(string $uri, ?string $storedUri, string $configuredScheme): void {
+    $service = $this->createService();
+    $this->fileSystem->expects($this->never())->method('saveData');
 
     $this->expectException(\RuntimeException::class);
-    $service->saveBlurredImage($media, 'blurred-bytes', 'private://test.jpg');
+    $service->saveBlurredImage($this->createImageMedia($storedUri, $configuredScheme), 'blurred-bytes', $uri);
+  }
+
+  /**
+   * URIs a blur must refuse.
+   */
+  public static function refusedOverwriteProvider(): array {
+    return [
+      'another file' => ['private://other.jpg', 'private://photo.jpg', 'private'],
+      'scheme other than configured' => ['public://photo.jpg', 'public://photo.jpg', 'private'],
+      'no scheme configured' => ['private://photo.jpg', 'private://photo.jpg', ''],
+      'media without a file' => ['private://photo.jpg', NULL, 'private'],
+    ];
+  }
+
+  /**
+   * Builds an image media whose source field stores a file.
+   *
+   * @param string|null $storedUri
+   *   URI of the stored file, or NULL for a media without one.
+   * @param string $configuredScheme
+   *   The uri_scheme setting of the source field storage.
+   */
+  private function createImageMedia(?string $storedUri, string $configuredScheme): MediaInterface {
+    $file = NULL;
+    if ($storedUri !== NULL) {
+      $file = $this->createMock(FileInterface::class);
+      $file->method('getFileUri')->willReturn($storedUri);
+    }
+    $storage = $this->createMock(FieldStorageDefinitionInterface::class);
+    $storage->method('getSetting')->with('uri_scheme')->willReturn($configuredScheme);
+    $definition = $this->createMock(FieldDefinitionInterface::class);
+    $definition->method('getFieldStorageDefinition')->willReturn($storage);
+    $items = $this->createMock(FieldItemListInterface::class);
+    $items->method('__get')->with('entity')->willReturn($file);
+    $items->method('getFieldDefinition')->willReturn($definition);
+
+    $source = $this->createMock(MediaSourceInterface::class);
+    $source->method('getConfiguration')->willReturn(['source_field' => 'field_media_image']);
+    $media = $this->createMock(MediaInterface::class);
+    $media->method('id')->willReturn(123);
+    $media->method('getSource')->willReturn($source);
+    $media->method('hasField')->with('field_media_image')->willReturn(TRUE);
+    $media->method('get')->with('field_media_image')->willReturn($items);
+    return $media;
   }
 
   /**

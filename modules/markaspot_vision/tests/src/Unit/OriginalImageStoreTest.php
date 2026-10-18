@@ -22,6 +22,8 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\StreamWrapper\LocalStream;
+use Drupal\Core\StreamWrapper\StreamWrapperInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
@@ -68,6 +70,11 @@ class OriginalImageStoreTest extends UnitTestCase {
    * Whether the private file system works.
    */
   private bool $privateOk = TRUE;
+
+  /**
+   * The wrapper serving private://; a local one unless a test swaps it.
+   */
+  private ?StreamWrapperInterface $privateWrapper = NULL;
 
   /**
    * Whether a database transaction is open.
@@ -141,6 +148,62 @@ class OriginalImageStoreTest extends UnitTestCase {
   }
 
   /**
+   * Remote private storage (s3fs) is checked through its stream wrapper.
+   */
+  public function testWritableAsksRemoteStorageThroughItsStreamWrapper(): void {
+    if (in_array('private', stream_get_wrappers(), TRUE)) {
+      $this->markTestSkipped('The private scheme is already registered.');
+    }
+    $wrapper = new class() {
+
+      /**
+       * Stat results by URI; missing URIs do not exist.
+       *
+       * @var array<string, array>
+       */
+      public static array $stats = [];
+
+      /**
+       * The stream context PHP sets.
+       *
+       * @var resource|null
+       */
+      public $context;
+
+      /**
+       * Answers stat calls from the table.
+       */
+      // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
+      public function url_stat(string $uri, int $flags): array|false {
+        return self::$stats[$uri] ?? FALSE;
+      }
+
+    };
+    stream_wrapper_register('private', $wrapper::class);
+    try {
+      $this->privateWrapper = $this->createMock(StreamWrapperInterface::class);
+      $store = $this->store();
+      $this->fileSystem->expects($this->never())->method('realpath');
+      $dir = static fn (int $mode): array => ['mode' => 0040000 | $mode];
+
+      $wrapper::$stats = ['private://' => $dir(0777)];
+      self::assertTrue($store->isWritable(), 'writable bucket, no originals directory yet');
+
+      $wrapper::$stats += [
+        'private://markaspot_vision' => $dir(0777),
+        'private://markaspot_vision/originals' => $dir(0555),
+      ];
+      self::assertFalse($store->isWritable(), 'read-only originals directory');
+
+      $wrapper::$stats = [];
+      self::assertFalse($store->isWritable(), 'unreachable storage');
+    }
+    finally {
+      stream_wrapper_unregister('private');
+    }
+  }
+
+  /**
    * Builds the store over in-memory rows, reports and state.
    */
   private function store(bool $contractor = FALSE): OriginalImageStore {
@@ -196,6 +259,8 @@ class OriginalImageStoreTest extends UnitTestCase {
     $this->fileSystem = $this->createMock(FileSystemInterface::class);
     $streamWrappers = $this->createMock(StreamWrapperManagerInterface::class);
     $streamWrappers->method('isValidScheme')->with('private')->willReturnCallback(fn () => $this->privateOk);
+    $streamWrappers->method('getViaScheme')->with('private')
+      ->willReturnCallback(fn () => $this->privateWrapper ??= $this->createMock(LocalStream::class));
     $time = $this->createMock(TimeInterface::class);
     $time->method('getRequestTime')->willReturn(self::NOW);
     $state = $this->createMock(StateInterface::class);

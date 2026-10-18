@@ -12,6 +12,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\StreamWrapper\LocalStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\media\MediaInterface;
@@ -99,20 +100,30 @@ class OriginalImageStore {
    *
    * Checks the deepest directory that already exists on the way down, so a
    * private root owned by another user shows before the first photo does.
+   * A local private file system is checked on disk; remote storage such as
+   * s3fs has no real path and answers through its stream wrapper.
    */
   public function isWritable(): bool {
     if (!$this->streamWrapperManager->isValidScheme('private')) {
       return FALSE;
     }
-    $path = $this->fileSystem->realpath('private://');
+    if ($this->streamWrapperManager->getViaScheme('private') instanceof LocalStream) {
+      $path = $this->fileSystem->realpath('private://');
+      $separator = '/';
+    }
+    else {
+      $path = 'private://';
+      $separator = '';
+    }
     if (!$path || !is_dir($path)) {
       return FALSE;
     }
     foreach (explode('/', substr(self::DIRECTORY, strlen('private://'))) as $segment) {
-      if (!is_dir($path . '/' . $segment)) {
+      if (!is_dir($path . $separator . $segment)) {
         break;
       }
-      $path .= '/' . $segment;
+      $path .= $separator . $segment;
+      $separator = '/';
     }
     return is_writable($path);
   }

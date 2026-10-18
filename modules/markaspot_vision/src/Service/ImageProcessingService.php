@@ -9,6 +9,8 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManager;
+use Drupal\file\FileInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\media\MediaInterface;
 use GuzzleHttp\ClientInterface;
@@ -325,8 +327,9 @@ class ImageProcessingService {
   /**
    * Saves a blurred image as a managed file on a media entity.
    *
-   * Replaces the original image on field_media_image with the blurred version.
-   * Does not call $media->save() so the caller can batch field changes.
+   * Replaces the original image of the media's source field with the blurred
+   * version, wherever the site stores it. Does not call $media->save() so the
+   * caller can batch field changes.
    *
    * @param \Drupal\media\MediaInterface $media
    *   The media entity to update.
@@ -340,20 +343,12 @@ class ImageProcessingService {
    */
   public function saveBlurredImage(MediaInterface $media, string $contents, string $originalUri): void {
     try {
-      // GDPR safeguard: only allow overwriting files in the public filesystem.
-      $scheme = parse_url($originalUri, PHP_URL_SCHEME);
-      if ($scheme !== 'public') {
-        throw new \RuntimeException(sprintf(
-          'GDPR blur refused: URI scheme "%s" is not allowed for media %s. Only public:// URIs may be overwritten.',
-          (string) $scheme,
-          (string) $media->id(),
-        ));
-      }
+      $this->assertOverwritable($media, $originalUri);
 
       // GDPR Article 5(2) audit trail: record original file fingerprint
-      // before overwriting so the transformation is accountable.
-      $realPath = $this->fileSystem->realpath($originalUri);
-      $originalHash = $realPath && file_exists($realPath) ? md5_file($realPath) : 'unreadable';
+      // before overwriting so the transformation is accountable. Read through
+      // the stream wrapper: remote storage such as s3fs has no real path.
+      $originalHash = @md5_file($originalUri) ?: 'unreadable';
 
       $this->logger->notice(
         'GDPR audit: blur overwrite for media @id | uri=@uri | original_md5=@hash | timestamp=@time',
@@ -387,6 +382,33 @@ class ImageProcessingService {
         ['@id' => $media->id()]
       );
       throw new \RuntimeException('Failed to persist blurred image for media ' . $media->id() . '.', 0, $e);
+    }
+  }
+
+  /**
+   * GDPR safeguard: a blur may overwrite only the media's own source file.
+   *
+   * The URI must be the file the media's source field stores, in the scheme
+   * that field is configured to write to. Which backend serves the scheme
+   * (local disk, s3fs) is the site's configuration, not this module's.
+   *
+   * @throws \RuntimeException
+   *   Thrown for any other URI.
+   */
+  protected function assertOverwritable(MediaInterface $media, string $uri): void {
+    $source_field = $media->getSource()->getConfiguration()['source_field'] ?? '';
+    $items = $source_field !== '' && $media->hasField($source_field) ? $media->get($source_field) : NULL;
+    $file = $items?->entity;
+    $stored_uri = $file instanceof FileInterface ? $file->getFileUri() : NULL;
+    $configured_scheme = $items?->getFieldDefinition()->getFieldStorageDefinition()->getSetting('uri_scheme');
+    $scheme = StreamWrapperManager::getScheme($uri);
+    if ($stored_uri !== $uri || !$configured_scheme || $scheme !== $configured_scheme) {
+      throw new \RuntimeException(sprintf(
+        'GDPR blur refused: "%s" is not the file media %s stores in its configured "%s" scheme.',
+        $uri,
+        (string) $media->id(),
+        (string) $configured_scheme,
+      ));
     }
   }
 
