@@ -18,9 +18,9 @@ template is a tool for citizens, initiatives and associations that work
 without one: they read the reports, ask back, solve what they can and hand
 the rest over. The administration benefits but makes no service promise.
 Write notes, start pages and tasks from the point of view of the group that
-runs the map. A city may appear as an invited organisation that receives
-handed-over reports (see `organisations` in `demo-school-routes.yml`), never
-as the party that has to answer.
+runs the map. A city appears only as the recipient of what is handed over,
+never as the party that has to answer. CivicSpot workspaces have no
+organisations feature, so CivicSpot demos leave `organisations` empty.
 
 Seeding alone does not publish a demo. The slug must also be listed in
 `markaspot_fastmap.settings:demo_workspaces`; only then does the settings API

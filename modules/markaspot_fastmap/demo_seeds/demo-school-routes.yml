@@ -72,13 +72,10 @@ categories:
     icon: i-lucide-lightbulb
     name: { en: 'Dark spot', es: 'Zona oscura', fr: 'Zone mal éclairée', de: 'Dunkle Stelle' }
 
-organisations:
-  # The initiative works on its own reports. The city takes part as an
-  # invited organisation and gets only what the parents hand over.
-  - key: initiative
-    name: 'Lindenhof Parents'' Initiative'
-  - key: city
-    name: 'City Traffic Office'
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature. The city appears only in the notes, as the recipient of what the
+# parents hand over.
+organisations: []
 
 start_page:
   title:
@@ -101,7 +98,6 @@ task:
 reports:
   - key: dangerous-crossing
     category: crossing
-    organisation: city
     lat: 50.8301
     lng: 6.9052
     title:
@@ -139,7 +135,6 @@ reports:
 
   - key: blocked-sidewalk
     category: sidewalk
-    organisation: initiative
     lat: 50.8289
     lng: 6.9039
     title:
@@ -177,7 +172,6 @@ reports:
 
   - key: hedge-corner
     category: visibility
-    organisation: initiative
     lat: 50.8306
     lng: 6.9031
     title:

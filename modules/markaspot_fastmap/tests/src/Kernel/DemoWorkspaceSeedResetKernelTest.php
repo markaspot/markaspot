@@ -242,7 +242,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertSame(['en', 'es', 'fr', 'de'], $config['languages']['available']);
     $this->assertSame('en', $config['languages']['default']);
     $this->assertSame('safe-routes', $config['demo']['template']);
-    $this->assertSame(1, $config['demo']['seedVersion']);
+    $this->assertSame(Yaml::decode((string) file_get_contents($this->seedDir . '/demo-school-routes.yml'))['seed_version'], $config['demo']['seedVersion']);
     $this->assertStringStartsWith('Öffne die gefährliche Querung', $config['demo']['task']['de']);
     $this->assertSame('Gefahrenstellen auf dem Schulweg melden', $config['client']['claim']['de']);
 
@@ -659,6 +659,10 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   private function writeSeed(string $slug): void {
     $raw = Yaml::decode((string) file_get_contents(dirname(__DIR__, 3) . '/demo_seeds/demo-school-routes.yml'));
     $raw['slug'] = $slug;
+    // CivicSpot demos have no organisations; the seeder still supports them
+    // for installations with the organisations feature.
+    $raw['organisations'] = [['key' => 'traffic', 'name' => 'Traffic Department']];
+    $raw['reports'][0]['organisation'] = 'traffic';
     $raw['reports'][0]['photo'] = [
       'file' => 'images/crossing.png',
       'alt' => [
