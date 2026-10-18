@@ -2167,15 +2167,7 @@ function markaspot_group_entity_field_access(string $operation, FieldDefinitionI
  *   NULL when the field is not a private field, otherwise the scoped result.
  */
 function _markaspot_group_service_request_private_field_view_access(FieldDefinitionInterface $field_definition, AccountInterface $account, NodeInterface $node): ?AccessResult {
-  $storage = $field_definition->getFieldStorageDefinition();
-  if (!method_exists($storage, 'getThirdPartySetting')
-    || $storage->getThirdPartySetting('field_permissions', 'permission_type') !== 'custom') {
-    return NULL;
-  }
-
-  // Fields anonymous visitors may view are public and stay unscoped.
-  $anonymous = Role::load(AccountInterface::ANONYMOUS_ROLE);
-  if ($anonymous instanceof Role && $anonymous->hasPermission('view ' . $field_definition->getName())) {
+  if (!_markaspot_group_is_private_service_request_field($field_definition)) {
     return NULL;
   }
 
@@ -2185,11 +2177,8 @@ function _markaspot_group_service_request_private_field_view_access(FieldDefinit
     ->addCacheableDependency($node);
 
   if ($account->isAnonymous()
-    || (int) $account->id() === 1
-    || array_intersect(['administrator', 'editorial_board'], $account->getRoles())
-    || $account->hasPermission('bypass node access')
-    || (int) $node->getOwnerId() === (int) $account->id()
-    || _markaspot_group_jurisdiction_group_count() <= 1) {
+    || _markaspot_group_account_bypasses_private_field_scope($account)
+    || (int) $node->getOwnerId() === (int) $account->id()) {
     return $result;
   }
 
@@ -2203,6 +2192,37 @@ function _markaspot_group_service_request_private_field_view_access(FieldDefinit
 
   return AccessResult::forbidden('Private service request fields are restricted to staff of the report jurisdiction.')
     ->addCacheableDependency($result);
+}
+
+/**
+ * Checks whether a field holds private, permission-gated report data.
+ *
+ * Private means custom field permissions that the anonymous role lacks;
+ * fields anonymous visitors may view are public and stay unscoped.
+ */
+function _markaspot_group_is_private_service_request_field(FieldDefinitionInterface $field_definition): bool {
+  $storage = $field_definition->getFieldStorageDefinition();
+  if ($field_definition->getTargetEntityTypeId() !== 'node'
+    || !method_exists($storage, 'getThirdPartySetting')
+    || $storage->getThirdPartySetting('field_permissions', 'permission_type') !== 'custom') {
+    return FALSE;
+  }
+
+  $anonymous = Role::load(AccountInterface::ANONYMOUS_ROLE);
+  return !($anonymous instanceof Role && $anonymous->hasPermission('view ' . $field_definition->getName()));
+}
+
+/**
+ * Checks whether an account sees private report fields of every jurisdiction.
+ *
+ * Installs with a single jurisdiction have no second tenant to protect and
+ * keep their staff, who are often not group members, unscoped.
+ */
+function _markaspot_group_account_bypasses_private_field_scope(AccountInterface $account): bool {
+  return (int) $account->id() === 1
+    || array_intersect(['administrator', 'editorial_board'], $account->getRoles()) !== []
+    || $account->hasPermission('bypass node access')
+    || _markaspot_group_jurisdiction_group_count() <= 1;
 }
 
 /**
@@ -2298,6 +2318,18 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
     && $field_definition->getName() === 'field_assigned_team') {
     return AccessResult::forbidden('field_assigned_team JSON:API filters require request-scoped assignment access.')
       ->cachePerPermissions();
+  }
+
+  // A filter or sort runs across every jurisdiction's published reports, so
+  // it would turn private fields into a cross-tenant lookup oracle.
+  if ($field_definition->getTargetBundle() === 'service_request'
+    && _markaspot_group_is_private_service_request_field($field_definition)) {
+    $result = _markaspot_group_account_bypasses_private_field_scope($account)
+      ? AccessResult::neutral()
+      : AccessResult::forbidden('Private service request fields cannot be used as JSON:API filters across jurisdictions.');
+    return $result
+      ->addCacheContexts(['user'])
+      ->addCacheTags(['group_list', 'config:user.role.anonymous']);
   }
 
   return AccessResult::neutral();

@@ -211,6 +211,48 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Allowed results vary per user, and one of several jurisdictions suffices.
+   */
+  public function testAllowedResultVariesPerUserAndAcceptsAnyJurisdiction(): void {
+    $allowed = $this->reportA->get('field_e_mail')->access('view', $this->adminA, TRUE);
+    $this->assertTrue($allowed->isAllowed());
+    $this->assertContains('user', $allowed->getCacheContexts());
+
+    $shared = $this->report($this->tenantB);
+    $shared->set('field_jurisdiction', [$this->tenantB->id(), $this->tenantA->id()]);
+    $this->assertTrue($shared->get('field_e_mail')->access('view', $this->adminA));
+  }
+
+  /**
+   * Private fields cannot serve as a cross-tenant JSON:API filter oracle.
+   */
+  public function testPrivateFieldsAreNotFilterableAcrossJurisdictions(): void {
+    $definition = $this->reportB->get('field_e_mail')->getFieldDefinition();
+    $public = $this->reportB->get('field_status_notes')->getFieldDefinition();
+
+    $denied = markaspot_group_jsonapi_entity_field_filter_access($definition, $this->adminA);
+    $this->assertTrue($denied->isForbidden());
+    $this->assertContains('user', $denied->getCacheContexts());
+    $this->assertTrue(markaspot_group_jsonapi_entity_field_filter_access($public, $this->adminA)->isNeutral());
+
+    $editorial = $this->account('editorial-filter', ['editorial_board']);
+    $this->assertTrue(markaspot_group_jsonapi_entity_field_filter_access($definition, $editorial)->isNeutral());
+  }
+
+  /**
+   * Any role with 'bypass node access' stays unscoped.
+   */
+  public function testBypassNodeAccessStaysUnscoped(): void {
+    Role::create(['id' => 'operator', 'label' => 'Operator'])->save();
+    Role::load('operator')
+      ->grantPermission('bypass node access')
+      ->grantPermission('view field_e_mail')
+      ->save();
+    $operator = $this->account('operator', ['operator']);
+    $this->assertTrue($this->reportB->get('field_e_mail')->access('view', $operator));
+  }
+
+  /**
    * Joining the jurisdiction grants access without stale cached denials.
    */
   public function testMembershipChangeLiftsTheDenial(): void {
@@ -254,6 +296,8 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
 
     $moderator = $this->account('dedicated-moderator', ['moderator']);
     $this->assertTrue($this->reportB->get('field_e_mail')->access('view', $moderator));
+    $definition = $this->reportB->get('field_e_mail')->getFieldDefinition();
+    $this->assertTrue(markaspot_group_jsonapi_entity_field_filter_access($definition, $moderator)->isNeutral());
   }
 
   /**
