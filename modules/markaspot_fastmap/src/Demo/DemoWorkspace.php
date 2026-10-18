@@ -86,6 +86,26 @@ final class DemoWorkspace {
   }
 
   /**
+   * Returns the public demo block of an allowlisted demo workspace.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The workspace.
+   * @param array $allowlist
+   *   Slugs from markaspot_fastmap.settings:demo_workspaces.
+   *
+   * @return array|null
+   *   The sanitized block, NULL unless the group carries the demo block AND
+   *   its slug is allowlisted.
+   */
+  public static function deliverable(GroupInterface $group, array $allowlist): ?array {
+    $slug = $group->hasField('field_slug') ? $group->get('field_slug')->value : NULL;
+    if (!is_string($slug) || !in_array($slug, $allowlist, TRUE)) {
+      return NULL;
+    }
+    return self::sanitizeForDelivery(self::block($group));
+  }
+
+  /**
    * Reduces a stored demo block to the public contract shape.
    *
    * Shape: {template, seedVersion, translations: {<service_request_id>:

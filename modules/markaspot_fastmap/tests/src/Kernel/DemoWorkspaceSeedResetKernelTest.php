@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_fastmap\Kernel;
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -425,6 +426,27 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   }
 
   /**
+   * The settings API delivers the demo block only for allowlisted demos.
+   */
+  public function testSettingsDeliveryNeedsAllowlist(): void {
+    $demo = Group::load($this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id']);
+    $customer = Group::create(['type' => 'jur', 'label' => 'Customer', 'field_slug' => 'customer']);
+    $customer->save();
+
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['customer'])->save();
+    [$settings, $metadata] = $this->settingsFor($demo);
+    $this->assertArrayNotHasKey('demo', $settings, 'A demo outside the allowlist delivers nothing.');
+    $this->assertContains('config:markaspot_fastmap.settings', $metadata->getCacheTags());
+    $this->assertArrayNotHasKey('demo', $this->settingsFor($customer)[0], 'An allowlisted group without block delivers nothing.');
+
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['demo-school-routes'])->save();
+    [$settings, $metadata] = $this->settingsFor($demo);
+    $this->assertSame('safe-routes', $settings['demo']['template']);
+    $this->assertCount(7, $settings['demo']['translations']);
+    $this->assertContains('config:markaspot_fastmap.settings', $metadata->getCacheTags());
+  }
+
+  /**
    * Reset refuses slugs outside the allowlist, even demo-flagged ones.
    */
   public function testResetRefusesSlugOutsideAllowlist(): void {
@@ -459,6 +481,23 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $second = $this->createReport($group, (int) $crossing->id());
     $this->reset()->runIfDue();
     $this->assertNotNull(Node::load($second->id()));
+  }
+
+  /**
+   * Runs the fastmap settings alter hook for a workspace.
+   *
+   * @return array{0: array, 1: \Drupal\Core\Cache\CacheableMetadata}
+   *   The altered settings and the collected cache metadata.
+   */
+  private function settingsFor(GroupInterface $group): array {
+    // The hook reports the AI budget; prime its usage counter so the test
+    // needs no markaspot_ai_usage table.
+    $month = date('Y-m', $this->container->get('datetime.time')->getRequestTime());
+    $this->container->get('cache.default')->set('markaspot_ai_usage:' . $group->id() . ':' . $month, 0);
+    $settings = [];
+    $metadata = new CacheableMetadata();
+    markaspot_fastmap_markaspot_nuxt_settings_alter($settings, $group, $metadata);
+    return [$settings, $metadata];
   }
 
   /**

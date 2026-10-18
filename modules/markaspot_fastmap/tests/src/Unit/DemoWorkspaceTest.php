@@ -101,15 +101,36 @@ final class DemoWorkspaceTest extends UnitTestCase {
   }
 
   /**
-   * Builds a group double with the given field_nuxt_config value.
+   * Delivery needs the demo block AND the slug on the allowlist.
    */
-  private function group(?string $config): GroupInterface {
-    $items = $this->createMock(FieldItemListInterface::class);
-    $items->method('isEmpty')->willReturn($config === NULL);
-    $items->method('__get')->with('value')->willReturn($config);
+  public function testDeliverableNeedsBlockAndAllowlist(): void {
+    $block = '{"demo":{"template":"safe-routes","seedVersion":2}}';
+
+    $this->assertNull(DemoWorkspace::deliverable($this->group($block, 'demo-x'), []));
+    $this->assertNull(DemoWorkspace::deliverable($this->group($block, 'demo-x'), ['demo-y']));
+    $this->assertNull(DemoWorkspace::deliverable($this->group('{"theme":{}}', 'demo-x'), ['demo-x']));
+    $this->assertNull(DemoWorkspace::deliverable($this->group($block, NULL), ['demo-x']));
+    $this->assertSame(
+      ['template' => 'safe-routes', 'seedVersion' => 2],
+      array_slice(DemoWorkspace::deliverable($this->group($block, 'demo-x'), ['demo-x']), 0, 2),
+    );
+  }
+
+  /**
+   * Builds a group double with field_nuxt_config and field_slug values.
+   */
+  private function group(?string $config, ?string $slug = NULL): GroupInterface {
+    $fields = ['field_nuxt_config' => $config, 'field_slug' => $slug];
+    $items = [];
+    foreach ($fields as $name => $value) {
+      $item = $this->createMock(FieldItemListInterface::class);
+      $item->method('isEmpty')->willReturn($value === NULL);
+      $item->method('__get')->with('value')->willReturn($value);
+      $items[$name] = $item;
+    }
     $group = $this->createMock(GroupInterface::class);
-    $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
-    $group->method('get')->with('field_nuxt_config')->willReturn($items);
+    $group->method('hasField')->willReturnCallback(static fn(string $name): bool => isset($items[$name]));
+    $group->method('get')->willReturnCallback(static fn(string $name): FieldItemListInterface => $items[$name]);
     return $group;
   }
 

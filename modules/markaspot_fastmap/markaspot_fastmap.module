@@ -10,6 +10,7 @@ declare(strict_types=1);
 use Drupal\Component\Serialization\Yaml;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
@@ -1018,7 +1019,7 @@ function markaspot_fastmap_entity_type_alter(array &$entity_types): void {
 /**
  * Implements hook_markaspot_nuxt_settings_alter().
  */
-function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $group): void {
+function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $group, ?CacheableMetadata $cache_metadata = NULL): void {
   if ($group && $group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()) {
     $settings['jurisdiction']['tier'] = $group->get('field_tier')->value;
   }
@@ -1070,10 +1071,13 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
   }
 
   // Template demo overlay: per-language texts of the seeded reports, keyed by
-  // service_request_id, plus the mini task. Only groups carrying the demo
-  // block get the key; it is reduced to the public contract shape.
-  if ($group instanceof GroupInterface) {
-    $demo = DemoWorkspace::sanitizeForDelivery(DemoWorkspace::block($group));
+  // service_request_id, plus the mini task. Same two gates as the reset: the
+  // group carries the demo block AND its slug is in the operator allowlist.
+  if ($group instanceof GroupInterface && DemoWorkspace::isDemo($group)) {
+    $fastmapSettings = \Drupal::config('markaspot_fastmap.settings');
+    // An allowlist change must invalidate the cached settings response.
+    $cache_metadata?->addCacheableDependency($fastmapSettings);
+    $demo = DemoWorkspace::deliverable($group, (array) $fastmapSettings->get('demo_workspaces'));
     if ($demo !== NULL) {
       $settings['demo'] = $demo;
     }
