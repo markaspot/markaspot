@@ -9,6 +9,7 @@ services:
       - '@logger.factory'
       - '@state'
       - '@datetime.time'
+      - '@file.usage'
   markaspot_vision.original_image_store:
     class: Drupal\markaspot_vision\Service\OriginalImageStore
     arguments:

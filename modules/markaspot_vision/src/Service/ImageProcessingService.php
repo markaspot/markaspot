@@ -11,6 +11,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\file\FileInterface;
+use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\media\MediaInterface;
 use GuzzleHttp\ClientInterface;
@@ -148,6 +149,8 @@ class ImageProcessingService {
    *   Shared advisory timestamps.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The clock.
+   * @param \Drupal\file\FileUsage\FileUsageInterface|null $fileUsage
+   *   File usage; without it no blur may overwrite a file.
    */
   public function __construct(
     ClientInterface $http_client,
@@ -157,6 +160,7 @@ class ImageProcessingService {
     LoggerChannelFactoryInterface $logger_factory,
     protected StateInterface $state,
     protected TimeInterface $time,
+    protected ?FileUsageInterface $fileUsage = NULL,
   ) {
     $this->httpClient = $http_client;
     $this->configFactory = $config_factory;
@@ -349,6 +353,9 @@ class ImageProcessingService {
       // before overwriting so the transformation is accountable. Read through
       // the stream wrapper: remote storage such as s3fs has no real path.
       $originalHash = @md5_file($originalUri) ?: 'unreadable';
+      if ($originalHash === 'unreadable') {
+        $this->logger->warning('GDPR audit: the original of media @id could not be read for its fingerprint before the blur overwrite.', ['@id' => $media->id()]);
+      }
 
       $this->logger->notice(
         'GDPR audit: blur overwrite for media @id | uri=@uri | original_md5=@hash | timestamp=@time',
@@ -391,6 +398,9 @@ class ImageProcessingService {
    * The URI must be the file the media's source field stores, in the scheme
    * that field is configured to write to. Which backend serves the scheme
    * (local disk, s3fs) is the site's configuration, not this module's.
+   * The file must also belong to this media alone: anyone may create a media
+   * pointing at a file they can view, and a blur through that media must not
+   * rewrite someone else's photo.
    *
    * @throws \RuntimeException
    *   Thrown for any other URI.
@@ -410,6 +420,34 @@ class ImageProcessingService {
         (string) $configured_scheme,
       ));
     }
+    if (!$this->usedOnlyBy($file, $media)) {
+      throw new \RuntimeException(sprintf(
+        'GDPR blur refused: "%s" is also used outside media %s.',
+        $uri,
+        (string) $media->id(),
+      ));
+    }
+  }
+
+  /**
+   * Whether a file is recorded as used by this media and nothing else.
+   */
+  protected function usedOnlyBy(FileInterface $file, MediaInterface $media): bool {
+    if (!$this->fileUsage) {
+      return FALSE;
+    }
+    $found = FALSE;
+    foreach ($this->fileUsage->listUsage($file) as $types) {
+      foreach ($types as $type => $ids) {
+        foreach (array_keys($ids) as $id) {
+          if ($type !== 'media' || (string) $id !== (string) $media->id()) {
+            return FALSE;
+          }
+          $found = TRUE;
+        }
+      }
+    }
+    return $found;
   }
 
   /**

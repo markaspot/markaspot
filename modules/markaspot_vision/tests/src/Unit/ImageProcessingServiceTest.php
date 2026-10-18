@@ -14,6 +14,7 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\file\FileInterface;
+use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\media\MediaSourceInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\image\ImageStyleInterface;
@@ -54,6 +55,13 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * @var \Drupal\Core\File\FileSystemInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected $fileSystem;
+
+  /**
+   * Recorded usage of the test media's file, as FileUsage::listUsage() lists.
+   *
+   * @var array<string, array<string, array<int|string, int>>>
+   */
+  private array $fileUsageList = ['file' => ['media' => [123 => 1]]];
 
   /**
    * Saved ENV variables to restore after each test.
@@ -158,6 +166,9 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $time = $this->createMock(TimeInterface::class);
     $time->method('getCurrentTime')->willReturn(1700000000);
 
+    $fileUsage = $this->createMock(FileUsageInterface::class);
+    $fileUsage->method('listUsage')->willReturnCallback(fn () => $this->fileUsageList);
+
     return new ImageProcessingService(
       $httpClient,
       $configFactory,
@@ -166,6 +177,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
       $loggerFactory,
       $this->createMock(StateInterface::class),
       $time,
+      $fileUsage,
     );
   }
 
@@ -665,7 +677,10 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * A blur never overwrites a file the media's configuration does not name.
    */
   #[DataProvider('refusedOverwriteProvider')]
-  public function testSaveBlurredImageRefusesAnyOtherFile(string $uri, ?string $storedUri, string $configuredScheme): void {
+  public function testSaveBlurredImageRefusesAnyOtherFile(string $uri, ?string $storedUri, string $configuredScheme, ?array $usage = NULL): void {
+    if ($usage !== NULL) {
+      $this->fileUsageList = $usage;
+    }
     $service = $this->createService();
     $this->fileSystem->expects($this->never())->method('saveData');
 
@@ -682,6 +697,21 @@ class ImageProcessingServiceTest extends UnitTestCase {
       'scheme other than configured' => ['public://photo.jpg', 'public://photo.jpg', 'private'],
       'no scheme configured' => ['private://photo.jpg', 'private://photo.jpg', ''],
       'media without a file' => ['private://photo.jpg', NULL, 'private'],
+      // Someone else's photo re-referenced by a new media: the blur through
+      // that media must not rewrite the victim's file.
+      'file shared with another media' => [
+        'private://photo.jpg',
+        'private://photo.jpg',
+        'private',
+        ['file' => ['media' => [123 => 1, 77 => 1]]],
+      ],
+      'file used by another entity type' => [
+        'public://photo.jpg',
+        'public://photo.jpg',
+        'public',
+        ['file' => ['media' => [123 => 1], 'node' => [5 => 1]]],
+      ],
+      'file without recorded usage' => ['private://photo.jpg', 'private://photo.jpg', 'private', []],
     ];
   }
 
