@@ -447,6 +447,110 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   }
 
   /**
+   * Media a visitor borrowed from another workspace survives the reset.
+   */
+  public function testResetKeepsMediaUsedOutsideTheDemo(): void {
+    $demo = Group::load($this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id']);
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['demo-school-routes'])->save();
+    $customer = Group::create(['type' => 'jur', 'label' => 'Customer', 'field_slug' => 'customer']);
+    $customer->save();
+    $customerCategory = Term::create([
+      'vid' => 'service_category',
+      'name' => 'Pothole',
+      'field_jurisdiction' => $customer->id(),
+    ]);
+    $customerCategory->save();
+
+    // A customer photo in the current revision of a customer report, and one
+    // that only an older revision of that report still references.
+    $customerPhoto = $this->createVisitorMedia('customer.png');
+    $historicPhoto = $this->createVisitorMedia('historic.png');
+    $customerReport = $this->createReport($customer, (int) $customerCategory->id(), $historicPhoto);
+    $customerReport->set('field_request_media', [['target_id' => $customerPhoto->id()]]);
+    $customerReport->setNewRevision(TRUE);
+    $customerReport->save();
+
+    // A visitor references both by ID from a demo report.
+    $crossing = $this->seededEntity('taxonomy_term', 'category', 'crossing');
+    $visitor = $this->createReport($demo, (int) $crossing->id(), $customerPhoto);
+    $visitor->set('field_request_media', [
+      ['target_id' => $customerPhoto->id()],
+      ['target_id' => $historicPhoto->id()],
+    ]);
+    $visitor->save();
+
+    $result = $this->reset()->resetWorkspace('demo-school-routes');
+
+    $this->assertNull(Node::load($visitor->id()));
+    $this->assertSame(0, $result['removed']['media']);
+    $this->assertSame(2, $result['removed']['media_kept']);
+    foreach ([$customerPhoto, $historicPhoto] as $photo) {
+      $kept = Media::load($photo->id());
+      $this->assertInstanceOf(Media::class, $kept);
+      $this->assertFileExists($kept->get('field_media_image')->entity->getFileUri());
+    }
+    $this->assertSame((int) $customerPhoto->id(), (int) Node::load($customerReport->id())->get('field_request_media')->target_id);
+  }
+
+  /**
+   * A reset from the stored seed falls back to the seeder's photo copy.
+   */
+  public function testResetRestoresPhotoFromSeededCopy(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['demo-school-routes'])->save();
+    // The seed directory is not mounted where cron runs, and the photo media
+    // got lost; only the seeder's copy is left.
+    unlink($this->seedDir . '/images/crossing.png');
+    $this->seededEntity('media', 'media', 'dangerous-crossing')->delete();
+
+    $this->reset()->resetWorkspace('demo-school-routes');
+
+    $media = $this->seededEntity('node', 'report', 'dangerous-crossing')->get('field_request_media')->entity;
+    $this->assertInstanceOf(Media::class, $media);
+    $this->assertFileExists($media->get('field_media_image')->entity->getFileUri());
+  }
+
+  /**
+   * Nothing is deleted when the seed could not be re-applied completely.
+   */
+  public function testResetSkipsPurgeWhenPhotoCannotBeRestored(): void {
+    $group = Group::load($this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id']);
+    $this->config('markaspot_fastmap.settings')
+      ->set('demo_workspaces', ['demo-school-routes'])
+      ->set('demo_reset_interval', 3600)
+      ->save();
+    $visitor = $this->createReport($group, (int) $this->seededEntity('taxonomy_term', 'category', 'crossing')->id());
+    unlink($this->seedDir . '/images/crossing.png');
+    $this->seededEntity('media', 'media', 'dangerous-crossing')->delete();
+    unlink('public://demo-seeds/demo-school-routes/dangerous-crossing-crossing.png');
+
+    // Cron: the failed run is not recorded, so the next cron run retries.
+    $this->reset()->runIfDue();
+    $this->assertNotNull(Node::load($visitor->id()));
+    $this->assertNull($this->container->get('state')->get(DemoWorkspaceReset::LAST_RUN_STATE));
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('reset skipped, nothing was deleted');
+    try {
+      $this->reset()->resetWorkspace('demo-school-routes');
+    }
+    finally {
+      $this->assertNotNull(Node::load($visitor->id()));
+    }
+  }
+
+  /**
+   * Seeding never runs as whatever account happens to be current.
+   */
+  public function testSeedRequiresActiveOperator(): void {
+    User::load(1)->block()->save();
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('technical operator');
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+  }
+
+  /**
    * Reset refuses slugs outside the allowlist, even demo-flagged ones.
    */
   public function testResetRefusesSlugOutsideAllowlist(): void {
@@ -628,9 +732,9 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   /**
    * Creates a published visitor photo.
    */
-  private function createVisitorMedia(): Media {
-    $uri = 'public://visitor.png';
-    imagepng(imagecreatetruecolor(4, 4), $this->container->get('file_system')->realpath('public://') . '/visitor.png');
+  private function createVisitorMedia(string $filename = 'visitor.png'): Media {
+    $uri = 'public://' . $filename;
+    imagepng(imagecreatetruecolor(4, 4), $uri);
     $file = File::create(['uri' => $uri, 'status' => 1]);
     $file->save();
     $media = Media::create([

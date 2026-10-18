@@ -138,7 +138,8 @@ final class DemoWorkspaceSeeder {
   public function asOperator(callable $callback): mixed {
     $operator = $this->entityTypeManager->getStorage('user')->load(1);
     if (!$operator instanceof UserInterface || !$operator->isActive()) {
-      return $callback();
+      // Never fall back to whatever account happens to run the command.
+      throw new \RuntimeException('Demo workspaces need an active technical operator account (uid 1).');
     }
     $this->accountSwitcher->switchTo($operator);
     try {
@@ -711,20 +712,24 @@ final class DemoWorkspaceSeeder {
    */
   private function copyPhoto(DemoSeed $seed, array $report): ContentEntityInterface {
     $source = $report['photo']['path'];
-    if (!is_file($source)) {
+    $copy = $this->photoCopyUri($seed, $report);
+    if (is_file($source)) {
+      $directory = dirname($copy);
+      if (!$this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS)) {
+        throw new \RuntimeException(sprintf('Directory %s is not writable.', $directory));
+      }
+      $uri = $this->fileSystem->copy($source, $copy, FileExists::Replace);
+    }
+    elseif (file_exists($copy)) {
+      // A reset from the stored seed copy: the seed directory is usually not
+      // mounted where cron runs, but the first run left this copy behind.
+      $uri = $copy;
+      $source = $this->fileSystem->realpath($copy) ?: $copy;
+    }
+    else {
       throw new \RuntimeException(sprintf('Photo of report "%s" is missing at %s and no seeded copy exists.', $report['key'], $source));
     }
-    $scheme = 'public';
-    $definitions = $this->entityFieldManager->getFieldDefinitions('media', 'request_image');
-    if (isset($definitions['field_media_image'])) {
-      $scheme = (string) ($definitions['field_media_image']->getFieldStorageDefinition()->getSetting('uri_scheme') ?: 'public');
-    }
-    $directory = $scheme . '://demo-seeds/' . $seed->data['slug'];
-    if (!$this->fileSystem->prepareDirectory($directory, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS)) {
-      throw new \RuntimeException(sprintf('Directory %s is not writable.', $directory));
-    }
-    $basename = $report['key'] . '-' . basename($report['photo']['file']);
-    $uri = $this->fileSystem->copy($source, $directory . '/' . $basename, FileExists::Replace);
+    $basename = basename($copy);
 
     $fileStorage = $this->entityTypeManager->getStorage('file');
     $fileUuid = $this->uuid($seed, 'file', $report['key']);
@@ -737,6 +742,54 @@ final class DemoWorkspaceSeeder {
     $file->set('status', 1);
     $file->save();
     return $file;
+  }
+
+  /**
+   * Returns where the seeder keeps its copy of a report photo.
+   */
+  private function photoCopyUri(DemoSeed $seed, array $report): string {
+    $scheme = 'public';
+    $definitions = $this->entityFieldManager->getFieldDefinitions('media', 'request_image');
+    if (isset($definitions['field_media_image'])) {
+      $scheme = (string) ($definitions['field_media_image']->getFieldStorageDefinition()->getSetting('uri_scheme') ?: 'public');
+    }
+    return $scheme . '://demo-seeds/' . $seed->data['slug'] . '/' . $report['key'] . '-' . basename($report['photo']['file']);
+  }
+
+  /**
+   * Returns the reports whose photo a seed run could not restore.
+   *
+   * A photo is restorable when the seeded media still has its file, the seed
+   * file is readable, or the seeder's own copy is still there. The reset
+   * checks this before deleting anything, so a missing photo never leaves an
+   * emptied demo behind.
+   *
+   * @return string[]
+   *   Report seed keys.
+   */
+  public function unrestorablePhotos(DemoSeed $seed): array {
+    if (!$this->entityTypeManager->hasDefinition('media')
+      || !$this->entityTypeManager->getStorage('media_type')->load('request_image')) {
+      // Photos are skipped on such sites anyway.
+      return [];
+    }
+    $missing = [];
+    $mediaStorage = $this->entityTypeManager->getStorage('media');
+    foreach ($seed->data['reports'] as $report) {
+      if (!isset($report['photo'])) {
+        continue;
+      }
+      $existing = $mediaStorage->loadByProperties(['uuid' => $this->uuid($seed, 'media', $report['key'])]);
+      $media = reset($existing);
+      $file = $media ? $media->get('field_media_image')->entity : NULL;
+      if (($file && file_exists($file->getFileUri()))
+        || is_file($report['photo']['path'])
+        || file_exists($this->photoCopyUri($seed, $report))) {
+        continue;
+      }
+      $missing[] = $report['key'];
+    }
+    return $missing;
   }
 
   /**

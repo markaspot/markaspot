@@ -68,8 +68,16 @@ final class DemoWorkspaceReset {
     if ($now - (int) $this->state->get(self::LAST_RUN_STATE, 0) < $interval) {
       return;
     }
-    $this->state->set(self::LAST_RUN_STATE, $now);
-    $this->resetAll();
+    $failed = array_filter($this->resetAll(), 'is_string');
+    // Only a complete run counts; after a failure the next cron run retries.
+    if ($failed === []) {
+      $this->state->set(self::LAST_RUN_STATE, $now);
+    }
+    else {
+      $this->logger->warning('Demo workspace cron reset incomplete (@slugs); it is retried at the next cron run.', [
+        '@slugs' => implode(', ', array_keys($failed)),
+      ]);
+    }
   }
 
   /**
@@ -128,6 +136,16 @@ final class DemoWorkspaceReset {
       throw new \RuntimeException(sprintf('Another reset of "%s" is in progress.', $slug));
     }
     try {
+      // Purge and re-seed are separate steps. Check first that the seed can be
+      // applied completely, so a failure never leaves an emptied demo.
+      $missing = $this->seeder->unrestorablePhotos($seed);
+      if ($missing !== []) {
+        $this->logger->error('Demo workspace @slug not reset, photos cannot be restored for: @keys. Visitor content was kept.', [
+          '@slug' => $slug,
+          '@keys' => implode(', ', $missing),
+        ]);
+        throw new \RuntimeException(sprintf('Photos of %s cannot be restored; reset skipped, nothing was deleted.', implode(', ', $missing)));
+      }
       $removed = $this->seeder->asOperator(fn(): array => $this->purgeVisitorContent($group, $seed));
       $result = $this->seeder->seed($seed);
     }
@@ -153,6 +171,10 @@ final class DemoWorkspaceReset {
    * Loads the seed for a slug from demo_seed_dir, else from the stored copy.
    */
   public function loadSeed(string $slug): DemoSeed {
+    // The slug becomes part of a file path below.
+    if (!preg_match(DemoWorkspace::SLUG_PATTERN, $slug)) {
+      throw new \RuntimeException(sprintf('"%s" is not a template demo slug.', $slug));
+    }
     $directory = (string) $this->configFactory->get('markaspot_fastmap.settings')->get('demo_seed_dir');
     if ($directory !== '') {
       $path = rtrim($directory, '/') . '/' . $slug . '.yml';
@@ -176,7 +198,7 @@ final class DemoWorkspaceReset {
   private function purgeVisitorContent(GroupInterface $group, DemoSeed $seed): array {
     $groupId = (int) $group->id();
     $owned = array_map('array_flip', $this->seeder->seededUuids($seed));
-    $removed = ['node' => 0, 'paragraph' => 0, 'media' => 0, 'file' => 0, 'taxonomy_term' => 0];
+    $removed = ['node' => 0, 'paragraph' => 0, 'media' => 0, 'media_kept' => 0, 'file' => 0, 'taxonomy_term' => 0];
 
     $nodeStorage = $this->entityTypeManager->getStorage('node');
     $nids = $nodeStorage->getQuery()
@@ -198,10 +220,18 @@ final class DemoWorkspaceReset {
         $removed['node']++;
         $removed['paragraph'] += $this->deleteParagraphs($paragraphIds);
         foreach ($media as $item) {
-          if ($item instanceof MediaInterface && !isset($owned['media'][$item->uuid()])) {
-            $removed['file'] += $this->deleteMedia($item);
-            $removed['media']++;
+          if (!$item instanceof MediaInterface || isset($owned['media'][$item->uuid()])) {
+            continue;
           }
+          // A visitor can reference any existing media ID in a demo report.
+          // Only media used by nothing outside this demo may go; anything
+          // else just loses the reference that died with the visitor node.
+          if ($this->isReferencedOutside($item, $groupId)) {
+            $removed['media_kept']++;
+            continue;
+          }
+          $removed['file'] += $this->deleteMedia($item);
+          $removed['media']++;
         }
       }
     }
@@ -234,6 +264,22 @@ final class DemoWorkspaceReset {
     }
 
     return $removed;
+  }
+
+  /**
+   * Whether any node outside the workspace references a media item.
+   *
+   * Every revision counts, and nodes without a jurisdiction count as outside.
+   */
+  private function isReferencedOutside(MediaInterface $media, int $groupId): bool {
+    $query = $this->entityTypeManager->getStorage('node')->getQuery()
+      ->allRevisions()
+      ->accessCheck(FALSE)
+      ->condition('field_request_media.target_id', $media->id());
+    $outside = $query->orConditionGroup()
+      ->condition('field_jurisdiction', $groupId, '<>')
+      ->notExists('field_jurisdiction');
+    return $query->condition($outside)->range(0, 1)->execute() !== [];
   }
 
   /**

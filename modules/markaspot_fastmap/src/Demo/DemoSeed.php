@@ -111,7 +111,7 @@ final class DemoSeed {
 
     $slug = $raw['slug'] ?? NULL;
     // The demo- prefix keeps a seed from ever addressing a customer slug.
-    if (!is_string($slug) || !preg_match('/^demo-[a-z0-9-]{1,25}$/D', $slug)) {
+    if (!is_string($slug) || !preg_match(DemoWorkspace::SLUG_PATTERN, $slug)) {
       throw new \InvalidArgumentException('Seed "slug" must match demo-[a-z0-9-]{1,25}.');
     }
     $template = $raw['template'] ?? NULL;

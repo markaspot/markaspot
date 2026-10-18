@@ -71,11 +71,12 @@ class DemoWorkspaceCommands extends DrushCommands {
         continue;
       }
       $this->output()->writeln(sprintf(
-        '%s: reset, removed %d nodes, %d media, %d terms.',
+        '%s: reset, removed %d nodes, %d media, %d terms; kept %d media used outside the demo.',
         $resetSlug,
         $result['removed']['node'],
         $result['removed']['media'],
         $result['removed']['taxonomy_term'],
+        $result['removed']['media_kept'],
       ));
     }
     return $failed > 0 ? self::EXIT_FAILURE : self::EXIT_SUCCESS;

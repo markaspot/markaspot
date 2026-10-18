@@ -29,6 +29,16 @@ final class DemoWorkspace {
   public const CONFIG_KEY = 'demo';
 
   /**
+   * Slug prefix reserved for template demos; customer signups may not use it.
+   */
+  public const SLUG_PREFIX = 'demo-';
+
+  /**
+   * Valid template demo slug: the reserved prefix plus 1 to 25 characters.
+   */
+  public const SLUG_PATTERN = '/^demo-[a-z0-9-]{1,25}$/D';
+
+  /**
    * Upper bounds for the public demo block.
    *
    * A hand-edited field_nuxt_config must not turn the anonymous settings
@@ -110,7 +120,9 @@ final class DemoWorkspace {
    *
    * Shape: {template, seedVersion, translations: {<service_request_id>:
    * {<lang>: {title, description, statusNotes: [<text>]}}}, task: {<lang>:
-   * <text>}}. Every leaf is a plain string; anything else is dropped.
+   * <text>}}. Every leaf is plain text: tags are stripped, so the block can
+   * never carry markup even if field_nuxt_config was edited by hand; anything
+   * that is not a string is dropped.
    *
    * @return array|null
    *   The sanitized block, NULL when the input is not a demo block.
@@ -143,12 +155,12 @@ final class DemoWorkspace {
         $entry = [];
         foreach (['title', 'description'] as $key) {
           if (self::isText($texts[$key] ?? NULL)) {
-            $entry[$key] = $texts[$key];
+            $entry[$key] = self::plain($texts[$key]);
           }
         }
         $notes = is_array($texts['statusNotes'] ?? NULL) ? array_values($texts['statusNotes']) : [];
         $entry['statusNotes'] = array_map(
-          static fn(mixed $note): string => self::isText($note) ? $note : '',
+          static fn(mixed $note): string => self::isText($note) ? self::plain($note) : '',
           array_slice($notes, 0, self::MAX_STATUS_NOTES),
         );
         $result['translations'][$requestId][$langcode] = $entry;
@@ -158,7 +170,7 @@ final class DemoWorkspace {
     $task = is_array($block['task'] ?? NULL) ? $block['task'] : [];
     foreach ($task as $langcode => $text) {
       if (is_string($langcode) && self::isLangcode($langcode) && self::isText($text)) {
-        $result['task'][$langcode] = $text;
+        $result['task'][$langcode] = self::plain($text);
       }
     }
 
@@ -170,6 +182,13 @@ final class DemoWorkspace {
       $result['task'] = new \stdClass();
     }
     return $result;
+  }
+
+  /**
+   * Reduces a string to plain text.
+   */
+  private static function plain(string $value): string {
+    return trim(strip_tags($value));
   }
 
   /**

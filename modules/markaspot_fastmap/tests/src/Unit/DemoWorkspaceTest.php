@@ -89,6 +89,30 @@ final class DemoWorkspaceTest extends UnitTestCase {
   }
 
   /**
+   * Delivered texts are plain text, even from a hand-edited block.
+   */
+  public function testSanitizeStripsMarkup(): void {
+    $result = DemoWorkspace::sanitizeForDelivery([
+      'template' => 'safe-routes',
+      'translations' => [
+        '1-2026' => [
+          'en' => [
+            'title' => '<img src=x onerror=alert(1)>Crossing',
+            'description' => '<b>Bold</b> text',
+            'statusNotes' => ['<a href="javascript:x">Note</a>'],
+          ],
+        ],
+      ],
+      'task' => ['en' => '<script>alert(1)</script>Open it'],
+    ]);
+
+    $this->assertSame('Crossing', $result['translations']['1-2026']['en']['title']);
+    $this->assertSame('Bold text', $result['translations']['1-2026']['en']['description']);
+    $this->assertSame(['Note'], $result['translations']['1-2026']['en']['statusNotes']);
+    $this->assertStringNotContainsString('<', $result['task']['en']);
+  }
+
+  /**
    * Empty maps stay JSON objects for the frontend.
    */
   public function testEmptyMapsEncodeAsObjects(): void {
