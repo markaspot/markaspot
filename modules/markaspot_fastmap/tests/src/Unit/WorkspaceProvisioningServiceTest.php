@@ -3536,14 +3536,10 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     foreach ($creates as $create) {
       $this->assertNotSame('', $create['name'], "Status term for locale {$locale} must have a non-empty name.");
-      // Term's primary langcode must equal the name's source language so
-      // the Default tab in the admin renders the same string that is stored
-      // as the primary entry in taxonomy_term_field_data.
-      $this->assertContains(
-        $create['langcode'],
-        [$locale, 'en'],
-        "Status term langcode should be either {$locale} or 'en' fallback.",
-      );
+      // Every workspace language has localized default names, so the term's
+      // primary langcode is the workspace language, never the English
+      // fallback.
+      $this->assertSame($locale, $create['langcode'], "Status term langcode should be {$locale}.");
     }
   }
 
@@ -3678,13 +3674,18 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * Each set must name every status in every language DEFAULT_STATUSES
    * covers, use known canonical template slugs and cover all three Open311
    * mappings, so escalation, resubmission and the closed mail keep working.
+   * Every workspace language (ALLOWED_LANGS) must have a name in the default
+   * set and in every template set, or its terms fall back to English.
    *
    * @coversNothing
    */
   public function testStatusTemplatesAreComplete(): void {
-    $defaults = new \ReflectionClassConstant(WorkspaceProvisioningService::class, 'DEFAULT_STATUSES');
-    $langcodes = array_keys($defaults->getValue()[0]['name']);
-    $this->assertCount(17, $langcodes);
+    $defaults = (new \ReflectionClassConstant(WorkspaceProvisioningService::class, 'DEFAULT_STATUSES'))->getValue();
+    $langcodes = array_keys($defaults[0]['name']);
+    $this->assertSame([], array_diff(WorkspaceProvisioningService::ALLOWED_LANGS, $langcodes), 'Every workspace language needs status names.');
+    foreach ($defaults as $status) {
+      $this->assertSame($langcodes, array_keys($status['name']), "Default status {$status['name']['en']} must cover every status language.");
+    }
 
     foreach (WorkspaceProvisioningService::STATUS_TEMPLATES as $template => $statuses) {
       $this->assertArrayHasKey($template, WorkspaceProvisioningService::THEME_TEMPLATES, "{$template} must be a canonical template slug.");
