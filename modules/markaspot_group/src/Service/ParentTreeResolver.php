@@ -117,6 +117,14 @@ class ParentTreeResolver {
   private array $childIdsByGroupId = [];
 
   /**
+   * Whether the parent field table exists, NULL until checked.
+   *
+   * Installs and test fixtures without the parent field have no hierarchy:
+   * every group is a root without children.
+   */
+  private ?bool $parentTableExists = NULL;
+
+  /**
    * Constructs a ParentTreeResolver.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -321,6 +329,15 @@ class ParentTreeResolver {
    *   Root group IDs sorted ascending.
    */
   public function getAllRootIds(string $bundle): array {
+    if (!$this->hasParentTable()) {
+      return array_map('intval', $this->database->select('groups_field_data', 'g')
+        ->distinct()
+        ->fields('g', ['id'])
+        ->condition('g.type', $bundle)
+        ->orderBy('g.id', 'ASC')
+        ->execute()
+        ->fetchCol());
+    }
     $ids = $this->database->select('groups_field_data', 'g')
       ->distinct()
       ->fields('g', ['id'])
@@ -550,6 +567,13 @@ class ParentTreeResolver {
   }
 
   /**
+   * Whether the configured parent field table exists, checked once.
+   */
+  protected function hasParentTable(): bool {
+    return $this->parentTableExists ??= $this->database->schema()->tableExists($this->parentTableName);
+  }
+
+  /**
    * Loads raw child IDs from the configured parent field table.
    *
    * @param int $groupId
@@ -561,6 +585,9 @@ class ParentTreeResolver {
   protected function loadChildIds(int $groupId): array {
     if (array_key_exists($groupId, $this->childIdsByGroupId)) {
       return $this->childIdsByGroupId[$groupId];
+    }
+    if (!$this->hasParentTable()) {
+      return $this->childIdsByGroupId[$groupId] = [];
     }
 
     $children = $this->database->select($this->parentTableName, 'p')

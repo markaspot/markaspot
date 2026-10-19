@@ -254,6 +254,30 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
   }
 
   /**
+   * Without a parent field, scoped user queries work without hierarchy.
+   *
+   * This fixture has no field_parent_jurisdiction, like installs and tests
+   * that never added it.
+   */
+  public function testScopedUserQueryWithoutParentField(): void {
+    $this->assertFalse($this->container->get('database')->schema()->tableExists('group__field_parent_jurisdiction'));
+    $resolver = $this->container->get('markaspot_group.hierarchy_resolver');
+    $this->assertSame([(int) $this->tenantA->id()], array_map('intval', $resolver->getDescendantIds((int) $this->tenantA->id())));
+
+    $staff = $this->account('staff@example.org');
+    $this->tenantA->addMember($staff);
+    $colleague = $this->account('colleague@example.org');
+    $this->tenantA->addMember($colleague);
+    $stranger = $this->account('stranger@example.org');
+    $this->tenantB->addMember($stranger);
+
+    $this->container->get('current_user')->setAccount($staff);
+    $uids = $this->container->get('entity_type.manager')->getStorage('user')->getQuery()->accessCheck(TRUE)->execute();
+    $this->assertContains((string) $colleague->id(), array_map('strval', $uids));
+    $this->assertNotContains((string) $stranger->id(), array_map('strval', $uids));
+  }
+
+  /**
    * Creates an account; names with "@" get that address as mail.
    */
   private function account(string $name, ?string $password = NULL): UserInterface {
