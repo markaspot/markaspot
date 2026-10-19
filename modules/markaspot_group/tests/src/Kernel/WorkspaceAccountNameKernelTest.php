@@ -272,6 +272,34 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
   }
 
   /**
+   * Provisioning a workspace for an existing account keeps login names.
+   *
+   * The owner of a new workspace may already have an account named after
+   * the address: an OTP account gets the workspace name, an account with a
+   * password or a privileged role keeps its name.
+   */
+  public function testProvisioningRenamesOnlyRenameableAccounts(): void {
+    Role::create(['id' => 'administrator', 'label' => 'Administrator', 'is_admin' => TRUE])->save();
+    $otp = $this->account('otp@example.org');
+    $password = $this->account('password@example.org', 'secret-password');
+    $admin = $this->account('admin@example.org');
+    $admin->addRole('administrator');
+    $admin->save();
+
+    $this->enableModules(['markaspot_fastmap']);
+    $provisioning = $this->container->get('markaspot_fastmap.workspace_provisioning');
+    $method = new \ReflectionMethod($provisioning, 'createTenantAdmin');
+    foreach (['otp@example.org', 'password@example.org', 'admin@example.org'] as $mail) {
+      $method->invoke($provisioning, $mail, 'Lindenhof', 'lindenhof');
+    }
+
+    $this->assertSame('lindenhof-admin', User::load($otp->id())->getAccountName());
+    $this->assertSame('password@example.org', User::load($password->id())->getAccountName());
+    $this->assertSame('admin@example.org', User::load($admin->id())->getAccountName());
+    $this->assertFalse(WorkspaceAccountName::isRenameable(User::load(1)), 'uid 1 is never renamed.');
+  }
+
+  /**
    * Imports name new accounts after the workspace on multi-tenant installs.
    */
   public function testImporterNamesAccountsAfterTheWorkspace(): void {

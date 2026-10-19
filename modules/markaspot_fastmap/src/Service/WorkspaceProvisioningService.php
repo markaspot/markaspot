@@ -2307,9 +2307,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $user = reset($existing);
       // An account named after its address (an older signup or an OTP
       // auto-registration) gets a workspace name now; the login is by mail.
-      if ($user instanceof UserInterface
-        && WorkspaceAccountName::exposesMail((string) $user->getAccountName(), (string) $user->getEmail())
-        && !str_starts_with((string) $user->getAccountName(), 'sso.')) {
+      // Accounts that may sign in by name (password, SSO, privileged) keep it.
+      if ($user instanceof UserInterface && WorkspaceAccountName::isRenameable($user)) {
         $user->setUsername((new WorkspaceAccountName($this->entityTypeManager))->forOwner($slug));
         $user->save();
       }

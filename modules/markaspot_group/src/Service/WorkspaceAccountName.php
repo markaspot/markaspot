@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_group\Service;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\user\Entity\Role;
 use Drupal\user\UserInterface;
 
 /**
@@ -60,6 +61,33 @@ final class WorkspaceAccountName {
     $name = mb_strtolower(trim($name));
     return ($mail !== '' && $name === mb_strtolower(trim($mail)))
       || preg_match('/^[^@\s]+@[^@\s]+\.[^@\s]+$/', $name) === 1;
+  }
+
+  /**
+   * Whether an account's mail-shaped name may be replaced by a workspace name.
+   *
+   * Only accounts that cannot sign in by name qualify: no stored password,
+   * no SSO name, not uid 1 and no privileged role. A password is kept even
+   * when it may be an unused random one from an import, because nothing
+   * marks imported accounts and a renamed password login locks its owner out.
+   */
+  public static function isRenameable(UserInterface $user): bool {
+    $name = (string) $user->getAccountName();
+    if ((int) $user->id() === 1
+      || !self::exposesMail($name, (string) $user->getEmail())
+      || str_starts_with($name, 'sso.')
+      || (string) $user->getPassword() !== '') {
+      return FALSE;
+    }
+    if (array_intersect($user->getRoles(TRUE), ['administrator', 'editorial_board', 'moderator'])) {
+      return FALSE;
+    }
+    foreach (Role::loadMultiple($user->getRoles(TRUE)) as $role) {
+      if ($role->isAdmin() || $role->hasPermission('administer users') || $role->hasPermission('bypass node access')) {
+        return FALSE;
+      }
+    }
+    return TRUE;
   }
 
   /**
