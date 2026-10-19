@@ -115,6 +115,11 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
       $this->assertSame(1, (int) $demo->getOwnerId());
       $this->assertStringContainsString('[demo-content]', (string) $demo->get('body')->value);
     }
+    // Published demo requests do not eat the published-report quota.
+    $tierConfig = $this->container->get('markaspot_fastmap.tier_config');
+    $this->assertSame(0, $tierConfig->countRequests((int) $group->id(), 'published'));
+    $this->assertSame(0, $tierConfig->countRequests((int) $group->id(), 'monthly'));
+    $this->assertSame(2, $tierConfig->getReportStats((int) $group->id())['demo_request_count']);
 
     $citizen = User::create(['name' => 'citizen', 'mail' => 'citizen@example.test', 'status' => 1]);
     $citizen->save();
@@ -125,6 +130,14 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
     // save loop does.
     $lookalike = $this->createReport($group, 1, "Looks like demo content.\n\n[demo-content]");
     $this->assertFalse($lookalike->isPublished(), 'A report that only looks like demo content stays gated.');
+
+    // Once the workspace is out of demo state, a published citizen report
+    // that contains the marker counts against the quota; demo requests still
+    // do not.
+    $group->set('field_expiry_date', NULL)->save();
+    $citizenWithMarker = $this->createReport($group, (int) $citizen->id(), 'I copied [demo-content] here.');
+    $this->assertTrue($citizenWithMarker->isPublished());
+    $this->assertSame(1, $tierConfig->countRequests((int) $group->id(), 'published'));
   }
 
   /**

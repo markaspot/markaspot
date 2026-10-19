@@ -391,21 +391,92 @@ class TierConfigServiceTest extends UnitTestCase {
    * @covers ::countRequests
    */
   public function testCountRequestsPublishedPeriod(): void {
-    $query = $this->createMock(QueryInterface::class);
-    $query->method('accessCheck')->willReturnSelf();
-    $query->method('condition')->willReturnSelf();
-    $query->method('count')->willReturnSelf();
-    $query->method('execute')->willReturn(42);
-
     $storage = $this->createMock(EntityStorageInterface::class);
-    $storage->method('getQuery')->willReturn($query);
+    $storage->method('getQuery')->willReturnOnConsecutiveCalls(
+      $this->countQuery(42),
+      $this->countQuery(0),
+    );
 
     $this->entityTypeManager->method('getStorage')
       ->with('node')
       ->willReturn($storage);
+    $this->database->method('escapeLike')->willReturnArgument(0);
 
     $result = $this->service->countRequests(14, 'published');
     $this->assertEquals(42, $result);
+  }
+
+  /**
+   * Tests that provisioned demo requests do not count against a quota.
+   *
+   * The quota is the period count minus the nodes owned by uid 1 that carry
+   * the "[demo-content]" marker; the demo query adds exactly these two
+   * conditions on top of the period conditions.
+   *
+   * @covers ::countRequests
+   * @dataProvider quotaPeriodProvider
+   */
+  public function testCountRequestsExcludesProvisionedDemoRequests(string $period): void {
+    $this->time->method('getRequestTime')->willReturn(mktime(12, 0, 0, 3, 15, 2026));
+    $periodConditions = [];
+    $demoConditions = [];
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturnOnConsecutiveCalls(
+      $this->countQuery(10, $periodConditions),
+      $this->countQuery(8, $demoConditions),
+    );
+    $this->entityTypeManager->method('getStorage')
+      ->with('node')
+      ->willReturn($storage);
+    $this->database->method('escapeLike')->willReturnArgument(0);
+
+    $this->assertSame(2, $this->service->countRequests(14, $period));
+
+    $extra = array_slice($demoConditions, count($periodConditions));
+    $this->assertSame(array_slice($demoConditions, 0, count($periodConditions)), $periodConditions);
+    $this->assertSame([
+      ['uid', 1],
+      ['body.value', '%[demo-content]%', 'LIKE'],
+    ], $extra);
+  }
+
+  /**
+   * Provides the quota periods.
+   *
+   * @return array<string, array{string}>
+   *   Period name.
+   */
+  public static function quotaPeriodProvider(): array {
+    return [
+      'published' => ['published'],
+      'monthly' => ['monthly'],
+    ];
+  }
+
+  /**
+   * Builds a count query mock that records its conditions.
+   *
+   * @param int $result
+   *   The count the query returns.
+   * @param array|null $conditions
+   *   Receives the arguments of every condition() call.
+   */
+  private function countQuery(int $result, ?array &$conditions = NULL): QueryInterface {
+    $conditions = [];
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')
+      ->willReturnCallback(function (...$args) use (&$conditions, $query) {
+        // Drop the defaulted trailing arguments the mock passes as NULL.
+        while ($args !== [] && end($args) === NULL) {
+          array_pop($args);
+        }
+        $conditions[] = $args;
+        return $query;
+      });
+    $query->method('count')->willReturnSelf();
+    $query->method('execute')->willReturn($result);
+    return $query;
   }
 
   /**
@@ -418,23 +489,22 @@ class TierConfigServiceTest extends UnitTestCase {
     $now = mktime(12, 0, 0, 3, 15, 2026);
     $this->time->method('getRequestTime')->willReturn($now);
 
-    $query = $this->createMock(QueryInterface::class);
-    $query->method('accessCheck')->willReturnSelf();
-    $query->expects($this->exactly(3))
-      ->method('condition')
-      ->willReturnSelf();
-    $query->method('count')->willReturnSelf();
-    $query->method('execute')->willReturn(7);
-
+    $conditions = [];
     $storage = $this->createMock(EntityStorageInterface::class);
-    $storage->method('getQuery')->willReturn($query);
+    $storage->method('getQuery')->willReturnOnConsecutiveCalls(
+      $this->countQuery(7, $conditions),
+      $this->countQuery(0),
+    );
 
     $this->entityTypeManager->method('getStorage')
       ->with('node')
       ->willReturn($storage);
+    $this->database->method('escapeLike')->willReturnArgument(0);
 
     $result = $this->service->countRequests(14, 'monthly');
     $this->assertEquals(7, $result);
+    $this->assertCount(3, $conditions);
+    $this->assertSame(['created', mktime(0, 0, 0, 3, 1, 2026), '>='], $conditions[2]);
   }
 
   /**

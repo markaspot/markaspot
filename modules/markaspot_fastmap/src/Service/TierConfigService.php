@@ -8,6 +8,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -153,6 +154,11 @@ class TierConfigService {
    * concurrent writes. This is acceptable for soft limits (50-2000 range).
    * At most 1-2 requests can overshoot per race event.
    *
+   * The quota periods ('published', 'monthly') leave out the demo requests
+   * workspace provisioning created: platform content owned by uid 1 with the
+   * "[demo-content]" marker, the same predicate the demo removal endpoint
+   * deletes by. A citizen report that merely contains the marker counts.
+   *
    * @param int $groupId
    *   The jurisdiction group ID.
    * @param string $period
@@ -162,6 +168,23 @@ class TierConfigService {
    *   The number of service requests.
    */
   public function countRequests(int $groupId, string $period): int {
+    $count = (int) $this->requestQuery($groupId, $period)->count()->execute();
+    if ($period === 'total') {
+      return $count;
+    }
+
+    $provisionedDemo = (int) $this->requestQuery($groupId, $period)
+      ->condition('uid', 1)
+      ->condition('body.value', '%' . $this->database->escapeLike('[demo-content]') . '%', 'LIKE')
+      ->count()
+      ->execute();
+    return max(0, $count - $provisionedDemo);
+  }
+
+  /**
+   * Builds the service request query of a jurisdiction for a period.
+   */
+  private function requestQuery(int $groupId, string $period): QueryInterface {
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
@@ -177,7 +200,7 @@ class TierConfigService {
       $query->condition('created', $firstOfMonth, '>=');
     }
 
-    return (int) $query->count()->execute();
+    return $query;
   }
 
   /**
