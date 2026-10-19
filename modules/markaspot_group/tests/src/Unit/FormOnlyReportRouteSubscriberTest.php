@@ -38,7 +38,6 @@ class FormOnlyReportRouteSubscriberTest extends UnitTestCase {
       'markaspot_service_provider.rest_update',
       'markaspot_service_provider.rest_get',
       'markaspot_service_provider.rest_auth',
-      'markaspot_feedback.form',
       'markaspot_feedback.rest',
       'markaspot_feedback.get',
     ];

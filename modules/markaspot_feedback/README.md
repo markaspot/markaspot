@@ -10,7 +10,7 @@ The Mark-a-Spot Feedback module adds an additional feedback field to service req
 - Configures field_permissions with public permission type
 - Automatically adds field to form and view displays
 - Provides proper install and uninstall hooks with cleanup
-- User feedback forms for service requests
+- Citizen feedback through the frontend feedback page (`/api/feedback/{uuid}`, reporter address required)
 - Satisfaction rating system
 - Comment management for service requests
 - Feedback analytics
