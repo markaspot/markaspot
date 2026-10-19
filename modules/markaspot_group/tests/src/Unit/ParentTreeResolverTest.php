@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_group\Unit;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Schema;
 use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\ParentTreeResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -50,6 +52,11 @@ class ParentTreeResolverTest extends UnitTestCase {
   protected $logger;
 
   /**
+   * Whether the mocked schema reports the parent field table as present.
+   */
+  protected bool $parentTableExists = TRUE;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -58,6 +65,9 @@ class ParentTreeResolverTest extends UnitTestCase {
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
     $this->database = $this->createMock(Connection::class);
+    $schema = $this->createMock(Schema::class);
+    $schema->method('tableExists')->willReturnCallback(fn(): bool => $this->parentTableExists);
+    $this->database->method('schema')->willReturn($schema);
     $this->logger = $this->createMock(LoggerInterface::class);
 
     $this->entityTypeManager->method('getStorage')
@@ -147,6 +157,43 @@ class ParentTreeResolverTest extends UnitTestCase {
       ['groups_field_data', 'g'],
       ['group__field_parent_custom', 'p'],
     ], $seenTables);
+  }
+
+  /**
+   * Without the parent field table there is no hierarchy.
+   *
+   * @covers ::getAllRootIds
+   * @covers ::getDescendantIds
+   */
+  public function testMissingParentTableMeansNoHierarchy(): void {
+    $this->parentTableExists = FALSE;
+    $seenTables = [];
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchCol')->willReturn(['3', '7']);
+    $select = $this->createMock(Select::class);
+    $select->method('distinct')->willReturnSelf();
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->expects($this->never())->method('notExists');
+    $select->method('orderBy')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $this->database->method('select')
+      ->willReturnCallback(function ($table, $alias) use ($select, &$seenTables) {
+        $seenTables[] = $table;
+        return $select;
+      });
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(3);
+    $group->method('bundle')->willReturn('custom');
+    $this->groupStorage->method('load')->willReturn($group);
+    $this->groupStorage->method('loadMultiple')->willReturn([]);
+
+    $resolver = $this->createResolver();
+    $this->assertSame([3, 7], $resolver->getAllRootIds('custom'), 'Every group is a root.');
+    $this->assertSame([3], array_map('intval', $resolver->getDescendantIds(3, 'load descendants custom', 'load child custom')));
+    $this->assertNotContains('group__field_parent_custom', $seenTables, 'The missing table is never queried.');
   }
 
 }

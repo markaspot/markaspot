@@ -5,6 +5,7 @@ namespace Drupal\Tests\markaspot_group\Unit;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Schema;
 use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
@@ -77,6 +78,11 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   protected string $jurisdictionGroupType = 'jur';
 
   /**
+   * Whether the mocked schema reports the parent field table as present.
+   */
+  protected bool $parentTableExists = TRUE;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -85,6 +91,9 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
     $this->database = $this->createMock(Connection::class);
+    $schema = $this->createMock(Schema::class);
+    $schema->method('tableExists')->willReturnCallback(fn(): bool => $this->parentTableExists);
+    $this->database->method('schema')->willReturn($schema);
     $this->logger = $this->createMock(LoggerInterface::class);
 
     $this->entityTypeManager->method('getStorage')
