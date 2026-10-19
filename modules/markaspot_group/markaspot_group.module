@@ -2309,7 +2309,7 @@ function markaspot_group_query_user_access_alter(AlterableInterface $query): voi
 /**
  * Returns the accounts that share a jurisdiction scope with an account.
  *
- * The SQL form of the shared-scope rule in markaspot_group_user_access():
+ * The query form of the shared-scope rule in markaspot_group_user_access():
  * members of the account's jurisdictions, of their parent jurisdictions,
  * and of organisations attached to the same jurisdiction tree.
  *
@@ -2332,24 +2332,26 @@ function _markaspot_group_scope_user_ids(int $uid): array {
   }
 
   $group_ids = array_values(array_unique(array_map('intval', $jurisdiction_ids)));
-  if ($trees !== [] && \Drupal::database()->schema()->tableExists('group__field_jurisdiction')) {
-    $organisation_ids = \Drupal::database()->select('group__field_jurisdiction', 'j')
-      ->fields('j', ['entity_id'])
-      ->condition('j.bundle', _markaspot_group_get_org_group_type())
-      ->condition('j.field_jurisdiction_target_id', array_values(array_unique($trees)), 'IN')
-      ->execute()
-      ->fetchCol();
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $group_fields = \Drupal::service('entity_field.manager')->getFieldStorageDefinitions('group');
+  if ($trees !== [] && isset($group_fields['field_jurisdiction'])) {
+    $organisation_ids = $entity_type_manager->getStorage('group')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', _markaspot_group_get_org_group_type())
+      ->condition('field_jurisdiction', array_values(array_unique($trees)), 'IN')
+      ->execute();
     $group_ids = array_merge($group_ids, array_map('intval', $organisation_ids));
   }
 
   $uids = [$uid];
   if ($group_ids !== []) {
-    $uids = array_merge($uids, array_map('intval', \Drupal::database()->select('group_relationship_field_data', 'r')
-      ->fields('r', ['entity_id'])
-      ->condition('r.plugin_id', 'group_membership')
-      ->condition('r.gid', $group_ids, 'IN')
-      ->execute()
-      ->fetchCol()));
+    $rows = $entity_type_manager->getStorage('group_relationship')->getAggregateQuery()
+      ->accessCheck(FALSE)
+      ->condition('plugin_id', 'group_membership')
+      ->condition('gid', $group_ids, 'IN')
+      ->groupBy('entity_id')
+      ->execute();
+    $uids = array_merge($uids, array_map(static fn(array $row): int => (int) $row['entity_id'], $rows));
   }
   return $cache[$uid] = array_values(array_unique($uids));
 }
