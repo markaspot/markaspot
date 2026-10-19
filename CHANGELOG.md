@@ -1,5 +1,27 @@
 # Changelog
 
+## [11.9.219](https://github.com/markaspot/markaspot/compare/11.9.218...11.9.219) (2026-10-18)
+
+### Features
+
+* **fastmap:** add an endpoint for tenant admins to remove demo requests ([5382390](https://github.com/markaspot/markaspot/commit/5382390d48916f3d98469bfc04e2f5d8f4dacb78))
+* **fastmap:** provision template-specific status sets ([a1b33d9](https://github.com/markaspot/markaspot/commit/a1b33d9dbbc2e43028c388362f00ef03162733da))
+
+### Bug Fixes
+
+* **fastmap:** add Hungarian status names for every workspace status set ([60e3a19](https://github.com/markaspot/markaspot/commit/60e3a19b5cd4ef2fc72640a6dd065c1b3f49af07))
+* **fastmap:** check access before disclosing unknown jurisdictions on demo removal ([a8e6139](https://github.com/markaspot/markaspot/commit/a8e6139e1199fc94e964e7cf22106097497c9daa))
+* **fastmap:** keep demo requests off the question status ([09e33e9](https://github.com/markaspot/markaspot/commit/09e33e9e99bf849afddb665b6aacbbc05bebdeec))
+* **fastmap:** keep provisioned demo requests out of report quotas ([a3e5eee](https://github.com/markaspot/markaspot/commit/a3e5eee1fa19f9e4926307ee3dd5f193009fb7f0))
+* **fastmap:** mirror the safe-routes statuses in the school route demo ([a2d21f9](https://github.com/markaspot/markaspot/commit/a2d21f9c1d71b372d5aff797ae9aa0a01ab68bd4))
+* **fastmap:** never unpublish provisioned demo requests in the over-limit cron ([dd852f2](https://github.com/markaspot/markaspot/commit/dd852f2f1ad6426767e8bd933a97d1c814bf4711))
+* **fastmap:** pick demo request statuses by term weight ([aa68de4](https://github.com/markaspot/markaspot/commit/aa68de45ee88ca95e9000694fb7ecbb06f62b10f))
+* **fastmap:** publish provisioned demo requests in demo-state workspaces ([2ffaef4](https://github.com/markaspot/markaspot/commit/2ffaef4088f69fdf65eb9b10e9b6447db067f174))
+* **fastmap:** resolve legacy template slugs to canonical theme presets ([98a0247](https://github.com/markaspot/markaspot/commit/98a0247442303e73e5a6534a167e0aeacd26bf1e))
+* **fastmap:** stop writing an unread filters block into new workspaces ([e3f3fc4](https://github.com/markaspot/markaspot/commit/e3f3fc4ffea6a86cf62eddff772a474f129a6262))
+* **fastmap:** use European Portuguese and clearer status names in status sets ([046e54a](https://github.com/markaspot/markaspot/commit/046e54a8fef64e51a6805e416cdd4ae1556cef0d))
+* require svg-sanitize 1.0 for logo sanitizing advisories ([e0c73ae](https://github.com/markaspot/markaspot/commit/e0c73aece994f997fcb9a3aba287ffa51d88c898))
+
 ## [11.9.218](https://github.com/markaspot/markaspot/compare/11.9.217...11.9.218) (2026-10-18)
 
 ### Features
