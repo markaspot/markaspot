@@ -1,5 +1,34 @@
 # Changelog
 
+## [11.9.221](https://github.com/markaspot/markaspot/compare/11.9.220...11.9.221) (2026-10-19)
+
+### Bug Fixes
+
+* **fastmap:** keep the name of password, SSO and privileged accounts when provisioning a workspace ([919f631](https://github.com/markaspot/markaspot/commit/919f63169681b0904ef27570edad8f5a108118fa))
+* **fastmap:** tolerate a reused account without a name when naming it after the workspace ([fee9953](https://github.com/markaspot/markaspot/commit/fee99535572722de689cc9181415a7ecbe274fda))
+* **feedback:** accept citizen feedback only with the reporter's email address ([75aebe6](https://github.com/markaspot/markaspot/commit/75aebe6147426ade193620baa1c946ea16d11da2))
+* **feedback:** limit address guesses, accept the mail recipient, and hide unviewable reports and stored feedback ([1a7f11e](https://github.com/markaspot/markaspot/commit/1a7f11e12d14d1d654b96c0836517030ed3f49b4))
+* **feedback:** remove the broken backend feedback form that showed existing feedback ([d9428c2](https://github.com/markaspot/markaspot/commit/d9428c25ce937334513a87fd78202f1d7cc31718))
+* **feedback:** require the reporter address without author fallback and never return stored feedback ([a128bb8](https://github.com/markaspot/markaspot/commit/a128bb80916ce00feba3a7063eee95031191f120))
+* **group:** list no accounts to anonymous visitors on multi-tenant installs and expand each jurisdiction tree once ([2ac6861](https://github.com/markaspot/markaspot/commit/2ac68615bf40d3156762b8ae37e36f3a274ad4cf))
+* **group:** list only accounts of a shared jurisdiction in access-checked user queries and autocompletes ([c75f7c5](https://github.com/markaspot/markaspot/commit/c75f7c534f390dbdd3a831e748de3441f5e6d323))
+* **group:** name workspace owners and invited members after the workspace, not their e-mail address ([5c27150](https://github.com/markaspot/markaspot/commit/5c2715086577e7d667ca93b5402ea91197093462))
+* **group:** never rename privileged or password accounts in the account name update and run it in batches ([63679e1](https://github.com/markaspot/markaspot/commit/63679e10587784b643b843701852664270da1407))
+* **group:** show user names only to accounts that share a jurisdiction ([880b481](https://github.com/markaspot/markaspot/commit/880b4811fb2423eca5d4e05c648bb262c06604a7))
+* **group:** take slug and role from one membership and rename mail-named accounts with unused passwords on fastmap ([b720dca](https://github.com/markaspot/markaspot/commit/b720dca8e85260fbac65c040e94ac0cbf53f5253))
+* **group:** treat a missing parent jurisdiction field as no hierarchy instead of failing user queries ([889dff7](https://github.com/markaspot/markaspot/commit/889dff77f27aeb92a1f308880be3052e4ad35627))
+* **nuxt:** require a logged-in account on every JSON:API user route via the core login requirement ([fa1c4fb](https://github.com/markaspot/markaspot/commit/fa1c4fbadd972c19637c34fce30db105df124da2))
+* **passwordless:** name auto-registered accounts with a neutral handle instead of their e-mail address ([401b457](https://github.com/markaspot/markaspot/commit/401b4578bd82589c417e9a806d4d1ed74caf432b))
+* **tenant-import:** name imported and reused accounts after the workspace on multi-tenant installs ([7adcdc1](https://github.com/markaspot/markaspot/commit/7adcdc1da57692f3f19521ec72455fdeff4fc075))
+
+### Refactoring
+
+* **group:** resolve the shared user scope with entity queries instead of raw SQL ([679a551](https://github.com/markaspot/markaspot/commit/679a551c0d8208a69bce3c65502d8f2d209546c8))
+
+### Documentation
+
+* **group:** note that anonymous saves cannot reference accounts on multi-tenant installs ([f8a250a](https://github.com/markaspot/markaspot/commit/f8a250a07fe7d49b75f6b59afdd09ac5782b48e1))
+
 ## [11.9.220](https://github.com/markaspot/markaspot/compare/11.9.219...11.9.220) (2026-10-18)
 
 ### Bug Fixes
