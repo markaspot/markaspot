@@ -5,10 +5,13 @@
 # address of each pin, so the address never contradicts the map tiles.
 # Story: a parents' initiative runs the map on its own. It sorts the reports,
 # asks back, solves what it can and takes the rest to the school and the city.
+# The statuses mirror the safe-routes set in
+# WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
+# mappings), so the demo shows the workflow a real workspace gets.
 version: 1
 slug: demo-school-routes
 template: safe-routes
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: report
@@ -49,6 +52,11 @@ statuses:
     hex: '#2563EB'
     icon: i-lucide-clock
     name: { en: 'In progress', es: 'En curso', fr: 'En cours', de: 'In Bearbeitung' }
+  - key: handed-over
+    mapping: open
+    hex: '#0891B2'
+    icon: i-lucide-send
+    name: { en: 'Handed over to school or city', es: 'Entregado al colegio o al ayuntamiento', fr: 'Transmis à l''école ou à la ville', de: 'An Schule oder Stadt übergeben' }
   - key: resolved
     mapping: closed
     hex: '#059669'
@@ -126,12 +134,19 @@ reports:
           fr: 'Merci pour ce signalement. Cela se produit-il surtout avant le début des cours ou aussi l''après-midi ?'
           de: 'Danke für die Meldung. Passiert das vor allem vor Schulbeginn oder auch am Nachmittag?'
       - status: in-progress
+        days_ago: 15
+        note:
+          en: 'Thanks for your answer: it happens mostly between 7:40 and 8:00. Parents will count the cars on two mornings so that we can show the city real numbers.'
+          es: 'Gracias por tu respuesta: pasa sobre todo entre las 7:40 y las 8:00. Algunas familias contarán los coches durante dos mañanas para poder enseñar al ayuntamiento cifras reales.'
+          fr: 'Merci pour votre réponse : cela arrive surtout entre 7 h 40 et 8 h. Des parents vont compter les voitures pendant deux matins, pour montrer à la ville des chiffres réels.'
+          de: 'Danke für die Antwort: Es passiert vor allem zwischen 7:40 und 8:00 Uhr. Eltern zählen an zwei Morgen die Autos, damit wir der Stadt echte Zahlen zeigen können.'
+      - status: handed-over
         days_ago: 12
         note:
-          en: 'Thanks for your answer: it happens mostly between 7:40 and 8:00. Parents counted the cars on two mornings. We have sent the numbers to the city and asked for a crossing guard. Until then, parents take turns at the gate.'
-          es: 'Gracias por tu respuesta: pasa sobre todo entre las 7:40 y las 8:00. Algunas familias contaron los coches durante dos mañanas. Hemos enviado las cifras al ayuntamiento y pedido un vigilante de cruce. Mientras tanto, madres y padres se turnan en la puerta.'
-          fr: 'Merci pour votre réponse : cela arrive surtout entre 7 h 40 et 8 h. Des parents ont compté les voitures pendant deux matins. Nous avons envoyé les chiffres à la ville et demandé un agent de traversée. En attendant, des parents se relaient devant l''entrée.'
-          de: 'Danke für die Antwort: Es passiert vor allem zwischen 7:40 und 8:00 Uhr. Eltern haben an zwei Morgen die Autos gezählt. Wir haben die Zahlen an die Stadt geschickt und einen Schülerlotsen beantragt. Bis dahin stehen Eltern abwechselnd am Tor.'
+          en: 'Parents counted the cars on two mornings. We have sent the numbers to the city and asked for a crossing guard. Until then, parents take turns at the gate.'
+          es: 'Algunas familias contaron los coches durante dos mañanas. Hemos enviado las cifras al ayuntamiento y pedido un vigilante de cruce. Mientras tanto, madres y padres se turnan en la puerta.'
+          fr: 'Des parents ont compté les voitures pendant deux matins. Nous avons envoyé les chiffres à la ville et demandé un agent de traversée. En attendant, des parents se relaient devant l''entrée.'
+          de: 'Eltern haben an zwei Morgen die Autos gezählt. Wir haben die Zahlen an die Stadt geschickt und einen Schülerlotsen beantragt. Bis dahin stehen Eltern abwechselnd am Tor.'
 
   - key: blocked-sidewalk
     category: sidewalk

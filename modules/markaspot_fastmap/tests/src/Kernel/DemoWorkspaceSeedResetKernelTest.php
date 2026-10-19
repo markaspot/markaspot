@@ -253,7 +253,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertSame('Dangerous crossing', $crossing->label());
     $this->assertSame('Gefährliche Querung', $crossing->getTranslation('de')->label());
     $this->assertSame('Cruce peligroso', $crossing->getTranslation('es')->label());
-    $this->assertCount(4, $this->terms('service_status', (int) $group->id()));
+    $this->assertCount(5, $this->terms('service_status', (int) $group->id()));
     $this->assertSame('Rückfrage', $this->seededEntity('taxonomy_term', 'status', 'question')->getTranslation('de')->label());
     $this->assertCount(5, $group->get('field_service_categories'));
 
@@ -272,16 +272,23 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
       $this->assertFalse((bool) $report->get('field_notification')->value);
     }
 
-    // The question case: three history entries, oldest first, final status.
+    // The question case: four history entries, oldest first, ending handed
+    // over to the school or city, which stays open.
     $crossingReport = $this->seededEntity('node', 'report', 'dangerous-crossing');
     $this->assertInstanceOf(NodeInterface::class, $crossingReport);
     $notes = $crossingReport->get('field_status_notes')->referencedEntities();
-    $this->assertCount(3, $notes);
+    $this->assertCount(4, $notes);
     $this->assertLessThan($notes[1]->get('created')->value, $notes[0]->get('created')->value);
     $this->assertLessThan($notes[2]->get('created')->value, $notes[1]->get('created')->value);
+    $this->assertLessThan($notes[3]->get('created')->value, $notes[2]->get('created')->value);
     $inProgress = $this->seededEntity('taxonomy_term', 'status', 'in-progress');
-    $this->assertSame((int) $inProgress->id(), (int) $crossingReport->get('field_status')->target_id);
     $this->assertSame((int) $inProgress->id(), (int) $notes[2]->get('field_status_term')->target_id);
+    $handedOver = $this->seededEntity('taxonomy_term', 'status', 'handed-over');
+    $this->assertSame('open', $handedOver->get('field_open311_mapping')->value);
+    $this->assertSame('An Schule oder Stadt übergeben', $handedOver->getTranslation('de')->label());
+    $this->assertSame((int) $handedOver->id(), (int) $crossingReport->get('field_status')->target_id);
+    $this->assertSame((int) $handedOver->id(), (int) $notes[3]->get('field_status_term')->target_id);
+    $this->assertStringContainsString('crossing guard', (string) $notes[3]->get('field_status_note')->value);
     $this->assertStringContainsString('afternoon', (string) $notes[1]->get('field_status_note')->value);
     $this->assertSame(
       'Gracias por el aviso. ¿Ocurre sobre todo antes de que empiecen las clases o también por la tarde?',
@@ -403,8 +410,8 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $restored = $this->seededEntity('node', 'report', 'dangerous-crossing');
     $this->assertSame((int) $seeded->id(), (int) $restored->id());
     $this->assertStringStartsWith('There is no crossing', (string) $restored->get('body')->value);
-    $this->assertSame((int) $this->seededEntity('taxonomy_term', 'status', 'in-progress')->id(), (int) $restored->get('field_status')->target_id);
-    $this->assertCount(3, $restored->get('field_status_notes'));
+    $this->assertSame((int) $this->seededEntity('taxonomy_term', 'status', 'handed-over')->id(), (int) $restored->get('field_status')->target_id);
+    $this->assertCount(4, $restored->get('field_status_notes'));
     $this->assertTrue($restored->get('field_priority')->isEmpty(), 'Dashboard-only fields are cleared.');
     $this->assertTrue($restored->get('field_internal_remark')->isEmpty());
     $this->assertNull(Paragraph::load($remark->id()), 'Internal remarks on seeded reports are deleted.');

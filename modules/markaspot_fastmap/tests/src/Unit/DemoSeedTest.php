@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_fastmap\Unit;
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\markaspot_fastmap\Demo\DemoSeed;
+use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -49,6 +50,31 @@ final class DemoSeedTest extends UnitTestCase {
     $this->assertContains('closed', $finalMappings, 'The example needs a resolved case.');
     $this->assertTrue($hasQuestion, 'The example needs a question back to the reporter.');
     $this->assertArrayHasKey('de', $seed->data['task']);
+  }
+
+  /**
+   * The example mirrors the statuses a real workspace of its template gets.
+   *
+   * A demo must not promise a workflow the template does not provision.
+   */
+  public function testShippedExampleMirrorsTemplateStatuses(): void {
+    $seed = DemoSeed::fromFile(self::EXAMPLE);
+    $template = WorkspaceProvisioningService::STATUS_TEMPLATES[WorkspaceProvisioningService::resolveTemplate($seed->data['template'])];
+
+    $expected = [];
+    foreach ($template as $status) {
+      $expected[] = [
+        'key' => $status['key'],
+        'mapping' => $status['mapping'],
+        'name' => array_combine($seed->data['languages'], array_map(
+          static fn(string $langcode): string => $status['name'][$langcode],
+          $seed->data['languages'],
+        )),
+        'hex' => $status['hex'],
+        'icon' => $status['icon'],
+      ];
+    }
+    $this->assertSame($expected, $seed->data['statuses']);
   }
 
   /**
