@@ -117,7 +117,7 @@ jobs:
               ] + [.repositories[] | select((.type != "package" or .package.name != "npm-asset/maplibre-gl") and ((.url // "") | test("github.com/markaspot/markaspot") | not))]' composer.json > composer.json.ci
           mv composer.json.ci composer.json
           composer config repositories | head -c 600; echo
-          composer update drupal/markaspot markaspot/markaspot npm-asset/maplibre-gl --with-dependencies --no-progress
+          composer update drupal/markaspot markaspot/markaspot npm-asset/maplibre-gl enshrined/svg-sanitize --with-dependencies --no-progress
           test -f web/profiles/contrib/markaspot/markaspot.profile
           test ! -L web/profiles/contrib/markaspot
           # Prove the tests below run this checkout, not a published release.
