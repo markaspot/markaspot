@@ -19,6 +19,9 @@ services:
   markaspot_group.hierarchy_resolver:
     class: Drupal\markaspot_group\Service\JurisdictionHierarchyResolver
     arguments: ['@entity_type.manager', '@database', '@logger.factory', '@config.factory']
+  markaspot_group.workspace_account_name:
+    class: Drupal\markaspot_group\Service\WorkspaceAccountName
+    arguments: ['@entity_type.manager']
   markaspot_group.organisation_hierarchy_resolver:
     class: Drupal\markaspot_group\Service\JurisdictionHierarchyResolver
     arguments:

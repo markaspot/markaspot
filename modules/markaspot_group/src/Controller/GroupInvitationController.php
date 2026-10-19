@@ -22,6 +22,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\WorkspaceAccountName;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\user\UserInterface;
@@ -100,6 +101,8 @@ class GroupInvitationController extends ControllerBase {
    *   The entity repository service.
    * @param \Drupal\markaspot_nuxt\Service\FrontendUrlService|null $frontendUrlService
    *   The public frontend URL resolver, or NULL when markaspot_nuxt is absent.
+   * @param \Drupal\markaspot_group\Service\WorkspaceAccountName|null $accountNames
+   *   Names for accounts the invitation creates.
    */
   public function __construct(
     protected readonly Connection $database,
@@ -115,6 +118,7 @@ class GroupInvitationController extends ControllerBase {
     protected readonly ?object $tierConfigService = NULL,
     protected readonly ?EntityRepositoryInterface $entityRepository = NULL,
     protected readonly ?FrontendUrlService $frontendUrlService = NULL,
+    protected readonly ?WorkspaceAccountName $accountNames = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->moduleHandler = $moduleHandler;
@@ -145,6 +149,7 @@ class GroupInvitationController extends ControllerBase {
       $moduleHandler->moduleExists('markaspot_nuxt')
         ? $container->get('markaspot_nuxt.frontend_url')
         : NULL,
+      $container->get('markaspot_group.workspace_account_name'),
     );
   }
 
@@ -542,7 +547,7 @@ class GroupInvitationController extends ControllerBase {
 
       try {
         // Find existing user by email or auto-create.
-        $user = $this->findOrCreateUser($email, $langcode);
+        $user = $this->findOrCreateUser($email, $langcode, $this->getJurisdictionSlug($group));
         if (!$user) {
           $this->unclaimInvitation((int) $invitation['id']);
           return new JsonResponse(['error' => 'Failed to create user account.'], 500);
@@ -792,18 +797,21 @@ class GroupInvitationController extends ControllerBase {
   /**
    * Finds an existing user by email or creates a new one.
    *
-   * Follows the passwordless signup pattern: creates users with the email
-   * prefix as username, active status, and the appropriate language.
+   * Follows the passwordless signup pattern: creates active users in the
+   * appropriate language, named "<slug>-member-<hex>" so the name never
+   * carries the address (WorkspaceAccountName).
    *
    * @param string $email
    *   The email address.
    * @param string $langcode
    *   The language code for the new user.
+   * @param string|null $slug
+   *   The slug of the workspace the invitation is for.
    *
    * @return \Drupal\user\UserInterface|null
    *   The user entity, or NULL on failure.
    */
-  protected function findOrCreateUser(string $email, string $langcode): ?UserInterface {
+  protected function findOrCreateUser(string $email, string $langcode, ?string $slug = NULL): ?UserInterface {
     $userStorage = $this->entityTypeManager()->getStorage('user');
 
     // Look up existing user by email.
@@ -812,9 +820,8 @@ class GroupInvitationController extends ControllerBase {
       return reset($existing);
     }
 
-    // Auto-create user with randomized suffix to prevent username enumeration.
-    $emailPrefix = strstr($email, '@', TRUE) ?: $email;
-    $username = $emailPrefix . '_' . bin2hex(random_bytes(4));
+    // The name is the label colleagues see; it never carries the address.
+    $username = ($this->accountNames ?? new WorkspaceAccountName($this->entityTypeManager()))->forMember($slug ?? 'workspace');
 
     try {
       /** @var \Drupal\user\UserInterface $user */

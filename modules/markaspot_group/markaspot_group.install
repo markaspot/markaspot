@@ -11,6 +11,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\markaspot_group\Service\WorkspaceAccountName;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Extension\Requirement\RequirementSeverity;
 use Drupal\Core\Session\AccountSwitcherInterface;
@@ -6388,4 +6389,93 @@ function _markaspot_group_restore_label_overrides(string $name, array $overrides
     }
     $override->save();
   }
+}
+
+/**
+ * Renames accounts whose name is their e-mail address.
+ *
+ * The account name is the user label, and the shared fastmap install named
+ * self-signup owners after their address. Accounts get the names new
+ * accounts get (WorkspaceAccountName): "<slug>-admin" for tenant
+ * administrators, "<slug>-member-<hex>" otherwise, from the first
+ * jurisdiction (or organisation jurisdiction) they belong to.
+ *
+ * Only on installs with several jurisdictions, and only accounts without a
+ * password: there the login is by mail (OTP) and never by name. SSO accounts
+ * ("sso.*") and single-jurisdiction installs, where the password form may
+ * use the name, stay untouched. Logs counts only, never names.
+ */
+function markaspot_group_update_11956(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $jur_type = _markaspot_group_jurisdiction_group_type();
+  $jurisdictions = (int) $entity_type_manager->getStorage('group')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', $jur_type)
+    ->count()
+    ->execute();
+  if ($jurisdictions <= 1) {
+    return sprintf('Account names left unchanged: %d jurisdiction(s), not a multi-tenant install.', $jurisdictions);
+  }
+
+  $names = \Drupal::service('markaspot_group.workspace_account_name');
+  $user_storage = $entity_type_manager->getStorage('user');
+  $uids = $user_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('uid', 1, '>')
+    ->condition('name', '%@%', 'LIKE')
+    ->execute();
+
+  $renamed = 0;
+  $skipped = 0;
+  foreach ($user_storage->loadMultiple($uids) as $user) {
+    if (!$user instanceof UserInterface
+      || !WorkspaceAccountName::exposesMail($user->getAccountName(), (string) $user->getEmail())
+      || str_starts_with($user->getAccountName(), 'sso.')
+      || (string) $user->getPassword() !== '') {
+      $skipped++;
+      continue;
+    }
+
+    [$slug, $is_admin] = _markaspot_group_account_name_scope($user, $jur_type);
+    $user->setUsername($is_admin ? $names->forOwner($slug) : $names->forMember($slug));
+    $user->save();
+    $renamed++;
+  }
+
+  \Drupal::logger('markaspot_group')->notice('Renamed @renamed accounts whose name was an e-mail address; @skipped kept (password or SSO).', [
+    '@renamed' => $renamed,
+    '@skipped' => $skipped,
+  ]);
+  return sprintf('Renamed %d account(s) whose name was an e-mail address; kept %d with a password or SSO name.', $renamed, $skipped);
+}
+
+/**
+ * Returns the slug and admin flag an account name is built from.
+ *
+ * @return array{0: string, 1: bool}
+ *   The slug of the account's first jurisdiction and whether it administers
+ *   one of its jurisdictions.
+ */
+function _markaspot_group_account_name_scope(UserInterface $user, string $jur_type): array {
+  $jurisdiction_slug = NULL;
+  $organisation_slug = NULL;
+  $is_admin = FALSE;
+  $memberships = GroupMembership::loadByUser($user);
+  usort($memberships, static fn($a, $b): int => (int) $a->getGroupId() <=> (int) $b->getGroupId());
+  foreach ($memberships as $membership) {
+    $group = $membership->getGroup();
+    if ($group->bundle() === $jur_type) {
+      $is_admin = $is_admin || isset($membership->getRoles(FALSE)[$jur_type . '-tenant_admin']);
+      if ($jurisdiction_slug === NULL && $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()) {
+        $jurisdiction_slug = (string) $group->get('field_slug')->value;
+      }
+    }
+    elseif ($organisation_slug === NULL && $group->hasField('field_jurisdiction')) {
+      $jurisdiction = $group->get('field_jurisdiction')->entity;
+      if ($jurisdiction instanceof GroupInterface && $jurisdiction->hasField('field_slug') && !$jurisdiction->get('field_slug')->isEmpty()) {
+        $organisation_slug = (string) $jurisdiction->get('field_slug')->value;
+      }
+    }
+  }
+  return [$jurisdiction_slug ?? $organisation_slug ?? 'workspace', $is_admin];
 }

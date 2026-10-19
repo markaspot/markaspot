@@ -19,6 +19,7 @@ use Drupal\file\FileInterface;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\file\FileUsage\FileUsageInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\WorkspaceAccountName;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
@@ -1449,7 +1450,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         $group->save();
 
         // 5. Create tenant admin user.
-        $user = $this->createTenantAdmin($email, $name);
+        $user = $this->createTenantAdmin($email, $name, $slug);
 
         // 6. Add user as group member with admin role.
         $this->addGroupMembership($group, $user);
@@ -2294,7 +2295,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Creates or retrieves the tenant admin user.
    */
-  private function createTenantAdmin(string $email, string $workspaceName): UserInterface {
+  private function createTenantAdmin(string $email, string $workspaceName, string $slug): UserInterface {
     $userStorage = $this->entityTypeManager->getStorage('user');
 
     // Check if user already exists.
@@ -2306,8 +2307,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       return reset($existing);
     }
 
+    // The name is the label colleagues see; it never carries the address.
     $user = $userStorage->create([
-      'name' => $email,
+      'name' => (new WorkspaceAccountName($this->entityTypeManager))->forOwner($slug),
       'mail' => $email,
       'status' => 1,
     ]);
