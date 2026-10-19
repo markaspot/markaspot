@@ -204,8 +204,9 @@ class ReportStatsController extends ControllerBase {
    *   The current request.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
-   *   200 with the counts, 400 for a missing or invalid ID, 404 for an
-   *   unknown jurisdiction, 403 without tenant admin access.
+   *   200 with the counts, 400 for a missing or invalid ID, 403 without
+   *   tenant admin access. An unknown jurisdiction is 404 for platform admins
+   *   and 403 for everyone else, so the endpoint cannot enumerate group IDs.
    */
   public function removeDemoContent(Request $request): JsonResponse {
     $data = json_decode($request->getContent(), TRUE);
@@ -217,12 +218,15 @@ class ReportStatsController extends ControllerBase {
       return new JsonResponse(['error' => 'Missing or invalid jurisdiction_id'], 400);
     }
 
-    $entity = $this->loadJurisdictionGroup((string) $id);
-    if (!$entity) {
-      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    $account = $this->currentUser();
+    if (!$this->loadJurisdictionGroup((string) $id)) {
+      $isPlatformAdmin = (int) $account->id() === 1 || in_array('administrator', $account->getRoles(), TRUE);
+      return $isPlatformAdmin
+        ? new JsonResponse(['error' => 'Jurisdiction not found'], 404)
+        : new JsonResponse(['error' => 'Access denied'], 403);
     }
 
-    if (!$this->access((string) $id, $this->currentUser())->isAllowed()) {
+    if (!$this->access((string) $id, $account)->isAllowed()) {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
@@ -245,7 +249,7 @@ class ReportStatsController extends ControllerBase {
     $this->getLogger('markaspot_fastmap')->notice('Removed @count demo requests from jurisdiction @gid (user @uid).', [
       '@count' => $removed,
       '@gid' => $id,
-      '@uid' => $this->currentUser()->id(),
+      '@uid' => $account->id(),
     ]);
 
     return new JsonResponse([

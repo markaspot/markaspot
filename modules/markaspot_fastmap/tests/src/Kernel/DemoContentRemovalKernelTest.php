@@ -194,18 +194,26 @@ final class DemoContentRemovalKernelTest extends KernelTestBase {
   }
 
   /**
-   * Invalid input fails before any access decision or deletion.
+   * Invalid input is rejected and unknown IDs are not disclosed.
    */
   public function testInvalidInput(): void {
     $this->assertSame(400, $this->post($this->admin, [])['status']);
     $this->assertSame(400, $this->post($this->admin, ['jurisdiction_id' => 'school-routes'])['status'], 'Slugs are not accepted.');
     $this->assertSame(400, $this->post($this->admin, ['jurisdiction_id' => -1])['status']);
     $this->assertSame(400, $this->post($this->admin, ['jurisdiction_id' => [1]])['status']);
-    $this->assertSame(404, $this->post($this->admin, ['jurisdiction_id' => 9999])['status']);
 
+    // Unknown IDs and non-jurisdiction groups: only platform admins learn
+    // that they do not exist, everyone else gets the same 403 as for a
+    // foreign workspace.
     $org = Group::create(['type' => 'org', 'label' => 'Traffic department']);
     $org->save();
-    $this->assertSame(404, $this->post($this->admin, ['jurisdiction_id' => (int) $org->id()])['status'], 'Non-jurisdiction groups are unknown.');
+    $platformAdmin = $this->createUser('platform-admin');
+    $platformAdmin->addRole('administrator');
+    $platformAdmin->save();
+    foreach ([9999, (int) $org->id()] as $unknown) {
+      $this->assertSame(403, $this->post($this->admin, ['jurisdiction_id' => $unknown])['status'], "Tenant admin, unknown {$unknown}.");
+      $this->assertSame(404, $this->post($platformAdmin, ['jurisdiction_id' => $unknown])['status'], "Platform admin, unknown {$unknown}.");
+    }
   }
 
   /**
