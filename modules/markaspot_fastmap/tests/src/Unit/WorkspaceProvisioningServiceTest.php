@@ -3329,6 +3329,171 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that a template workspace gets the template's status set.
+   *
+   * @covers ::provisionWorkspace
+   * @dataProvider templateStatusSetProvider
+   */
+  public function testTemplateStatusSetIsProvisioned(string $template, string $canonical): void {
+    $record = $this->setupDefaultStatusTermTrackerViaRef();
+
+    $this->service->provisionWorkspace($this->validData([
+      'template' => $template,
+      'categories' => [
+        'en' => ['Road Damage'],
+        'de' => ['Straßenschaden'],
+      ],
+      'language' => 'de',
+    ]));
+
+    $expected = WorkspaceProvisioningService::STATUS_TEMPLATES[$canonical];
+    $this->assertSame(array_column($expected, 'mapping'), array_column($record->creates, 'mapping'));
+    $this->assertSame(array_column($expected, 'icon'), array_column($record->creates, 'icon'));
+    foreach ($expected as $i => $status) {
+      $this->assertSame('de', $record->creates[$i]['langcode']);
+      $this->assertSame($status['name']['de'], $record->creates[$i]['name']);
+      $en = array_values(array_filter(
+        $record->translations,
+        fn($t) => $t['term_id'] === $record->creates[$i]['term_id'] && $t['lang'] === 'en',
+      ));
+      $this->assertSame($status['name']['en'], $en[0]['name'] ?? NULL);
+    }
+  }
+
+  /**
+   * Provides every template with a status set, plus the legacy alias.
+   *
+   * @return array<string, array{string, string}>
+   *   Sent template slug and canonical slug.
+   */
+  public static function templateStatusSetProvider(): array {
+    $cases = [];
+    foreach (array_keys(WorkspaceProvisioningService::STATUS_TEMPLATES) as $template) {
+      $cases[$template] = [$template, $template];
+    }
+    $cases['eco-map alias'] = ['eco-map', 'field-research'];
+    return $cases;
+  }
+
+  /**
+   * Tests the safe-routes set: hand-over stays open, one closed exit.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testSafeRoutesStatusSet(): void {
+    $record = $this->setupDefaultStatusTermTrackerViaRef();
+
+    $this->service->provisionWorkspace($this->validData([
+      'template' => 'safe-routes',
+      'categories' => [
+        'en' => ['Dangerous crossing'],
+        'de' => ['Gefährliche Querung'],
+      ],
+      'language' => 'de',
+    ]));
+
+    $this->assertSame(
+      ['Eingegangen', 'Rückfrage', 'In Bearbeitung', 'An Schule oder Stadt übergeben', 'Erledigt'],
+      array_column($record->creates, 'name'),
+    );
+    $this->assertSame(['initial', 'open', 'open', 'open', 'closed'], array_column($record->creates, 'mapping'));
+  }
+
+  /**
+   * Tests that issue-reporter and unknown templates keep the defaults.
+   *
+   * @covers ::provisionWorkspace
+   * @dataProvider defaultStatusTemplateProvider
+   */
+  public function testTemplatesWithoutStatusSetKeepDefaultStatuses(string $template): void {
+    $record = $this->setupDefaultStatusTermTrackerViaRef();
+
+    $this->service->provisionWorkspace($this->validData([
+      'template' => $template,
+      'categories' => ['en' => ['Road Damage']],
+      'language' => 'en',
+    ]));
+
+    $this->assertSame(['Created', 'In progress', 'Done'], array_column($record->creates, 'name'));
+  }
+
+  /**
+   * Provides template slugs that fall back to the default statuses.
+   *
+   * @return array<string, array{string}>
+   *   Template slug.
+   */
+  public static function defaultStatusTemplateProvider(): array {
+    return [
+      'issue-reporter' => ['issue-reporter'],
+      'civic-report alias' => ['civic-report'],
+      'unknown' => ['nonexistent-template'],
+    ];
+  }
+
+  /**
+   * Tests that explicit statuses from the AI chat win over the template set.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testExplicitStatusesWinOverTemplateStatusSet(): void {
+    $record = $this->setupDefaultStatusTermTrackerViaRef();
+
+    $this->service->provisionWorkspace($this->validData([
+      'template' => 'safe-routes',
+      'categories' => ['en' => ['Dangerous crossing']],
+      'language' => 'en',
+      'statuses' => [
+        ['name' => 'New', 'hex' => '#FF0000', 'icon' => 'i-lucide-circle', 'mapping' => 'initial'],
+        ['name' => 'Done', 'hex' => '#00FF00', 'icon' => 'i-lucide-check', 'mapping' => 'closed'],
+      ],
+    ]));
+
+    $this->assertSame(['New', 'Done'], array_column($record->creates, 'name'));
+    $this->assertSame(['initial', 'closed'], array_column($record->creates, 'mapping'));
+  }
+
+  /**
+   * Tests that every template status set is complete and well-formed.
+   *
+   * Each set must name every status in every language DEFAULT_STATUSES
+   * covers, use known canonical template slugs and cover all three Open311
+   * mappings, so escalation, resubmission and the closed mail keep working.
+   *
+   * @coversNothing
+   */
+  public function testStatusTemplatesAreComplete(): void {
+    $defaults = new \ReflectionClassConstant(WorkspaceProvisioningService::class, 'DEFAULT_STATUSES');
+    $langcodes = array_keys($defaults->getValue()[0]['name']);
+    $this->assertCount(17, $langcodes);
+
+    foreach (WorkspaceProvisioningService::STATUS_TEMPLATES as $template => $statuses) {
+      $this->assertArrayHasKey($template, WorkspaceProvisioningService::THEME_TEMPLATES, "{$template} must be a canonical template slug.");
+      $this->assertNotContains($template, array_keys(WorkspaceProvisioningService::TEMPLATE_ALIASES));
+      $mappings = array_column($statuses, 'mapping');
+      $this->assertSame('initial', $mappings[0], "{$template} must start with its initial status.");
+      foreach (['initial', 'open', 'closed'] as $mapping) {
+        $this->assertContains($mapping, $mappings, "{$template} needs a {$mapping} status.");
+      }
+      $keys = array_column($statuses, 'key');
+      $this->assertSame($keys, array_unique($keys), "{$template} status keys must be unique.");
+      foreach ($statuses as $status) {
+        $this->assertMatchesRegularExpression('/^#[0-9A-F]{6}$/', $status['hex']);
+        $this->assertMatchesRegularExpression('/^i-lucide-[a-z0-9-]+$/', $status['icon']);
+        $this->assertSame($langcodes, array_keys($status['name']), "{$template}/{$status['key']} must cover every status language.");
+        foreach ($status['name'] as $langcode => $name) {
+          $this->assertNotSame('', trim($name), "{$template}/{$status['key']} has an empty {$langcode} name.");
+        }
+      }
+      // Names must stay distinct within a set in every language.
+      foreach ($langcodes as $langcode) {
+        $names = array_map(fn($status) => $status['name'][$langcode], $statuses);
+        $this->assertSame($names, array_unique($names), "{$template} has duplicate {$langcode} names.");
+      }
+    }
+  }
+
+  /**
    * Provides every ALLOWED_LANGS locale for the default-status test.
    *
    * @return array<string, array{string}>
