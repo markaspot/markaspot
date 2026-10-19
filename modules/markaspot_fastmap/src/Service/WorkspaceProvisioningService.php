@@ -1862,10 +1862,6 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'navigation' => [
         'mode' => 'simple',
       ],
-      'filters' => [
-        'status' => ['enabled' => TRUE],
-        'category' => ['enabled' => TRUE],
-      ],
     ];
   }
 
