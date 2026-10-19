@@ -83,6 +83,10 @@ class FeedbackController extends ControllerBase {
   /**
    * Updates feedback for a service request.
    *
+   * Body: {"feedback": "...", "set_status": true|false, "email_verification":
+   * "<reporter address>"}. The reporter address is required; without it, or
+   * with any other address, the answer is 403 and nothing is saved.
+   *
    * @param string $uuid
    *   The UUID of the service request.
    * @param \Symfony\Component\HttpFoundation\Request $request
@@ -118,6 +122,18 @@ class FeedbackController extends ControllerBase {
       if ($node->getType() != 'service_request') {
         $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('Not a service request')], 400);
+      }
+
+      // Only the reporter may answer: the link in the feedback mail carries
+      // nothing but the public UUID, so the reporter's address is the proof.
+      // Checked before anything about the report is revealed or written,
+      // with one answer for every failure.
+      $email = $data['email_verification'] ?? NULL;
+      if (!is_string($email) || trim($email) === '' || $this->validateAuthorEmail($node, $email) !== TRUE) {
+        $logger->warning('Feedback for node @nid rejected: missing or wrong reporter email.', ['@nid' => $node->id()]);
+        return new JsonResponse([
+          'message' => $this->t('The email address does not match this service request.'),
+        ], 403);
       }
 
       // Enforce that the node is eligible to receive citizen feedback.
@@ -165,22 +181,6 @@ class FeedbackController extends ControllerBase {
           'field_has_feedback' => $field_has_feedback,
         // 409 Conflict
         ], 409);
-      }
-
-      // Validate email against the original author's email.
-      if (!empty($data['email_verification'])) {
-        $validation_result = $this->validateAuthorEmail($node, $data['email_verification']);
-
-        if ($validation_result !== TRUE) {
-          $logger->warning('Author email validation failed for @email on node @nid: @reason', [
-            '@email' => $data['email_verification'],
-            '@nid' => $node->id(),
-            '@reason' => $validation_result,
-          ]);
-          return new JsonResponse([
-            'message' => $validation_result,
-          ], 403);
-        }
       }
 
       // Update the feedback field.
