@@ -1150,14 +1150,20 @@ function markaspot_fastmap_cron(): void {
 
         $excess = $count - $limit;
 
-        $nids = $entityTypeManager->getStorage('node')->getQuery()
+        $query = $entityTypeManager->getStorage('node')->getQuery()
           ->accessCheck(FALSE)
           ->condition('type', 'service_request')
           ->condition('status', 1)
           ->condition('field_jurisdiction', $gid)
           ->sort('created', 'ASC')
-          ->range(0, $excess)
-          ->execute();
+          ->range(0, $excess);
+        // The count leaves out the provisioned demo requests, so the selection
+        // must too: they are the oldest nodes and would go first.
+        $demoNids = $tierConfig->getProvisionedDemoRequestIds($gid);
+        if ($demoNids !== []) {
+          $query->condition('nid', $demoNids, 'NOT IN');
+        }
+        $nids = $query->execute();
 
         if (empty($nids)) {
           continue;

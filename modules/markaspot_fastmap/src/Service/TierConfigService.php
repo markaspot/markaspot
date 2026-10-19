@@ -173,12 +173,40 @@ class TierConfigService {
       return $count;
     }
 
-    $provisionedDemo = (int) $this->requestQuery($groupId, $period)
-      ->condition('uid', 1)
-      ->condition('body.value', '%' . $this->database->escapeLike('[demo-content]') . '%', 'LIKE')
+    $provisionedDemo = (int) $this->provisionedDemoCondition($this->requestQuery($groupId, $period))
       ->count()
       ->execute();
     return max(0, $count - $provisionedDemo);
+  }
+
+  /**
+   * Returns the IDs of the demo requests provisioning created, any status.
+   *
+   * Quota enforcement must skip these nodes like countRequests() does, or it
+   * would unpublish the oldest nodes, which are the demo requests, while the
+   * citizen reports stay over the limit.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return int[]
+   *   Node IDs owned by uid 1 that carry the "[demo-content]" marker.
+   */
+  public function getProvisionedDemoRequestIds(int $groupId): array {
+    $nids = $this->provisionedDemoCondition($this->requestQuery($groupId, 'total'))->execute();
+    return array_values(array_map('intval', $nids));
+  }
+
+  /**
+   * Restricts a request query to the demo requests provisioning created.
+   *
+   * Owner uid 1 plus the "[demo-content]" marker, the predicate the demo
+   * removal endpoint deletes by.
+   */
+  private function provisionedDemoCondition(QueryInterface $query): QueryInterface {
+    return $query
+      ->condition('uid', 1)
+      ->condition('body.value', '%' . $this->database->escapeLike('[demo-content]') . '%', 'LIKE');
   }
 
   /**
