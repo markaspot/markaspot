@@ -2304,7 +2304,16 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       // Reuse existing account. Group-scoped permissions come from the
       // jur-tenant_admin group role on the membership, so no global Drupal
       // role is needed. This avoids privilege escalation across workspaces.
-      return reset($existing);
+      $user = reset($existing);
+      // An account named after its address (an older signup or an OTP
+      // auto-registration) gets a workspace name now; the login is by mail.
+      if ($user instanceof UserInterface
+        && WorkspaceAccountName::exposesMail($user->getAccountName(), (string) $user->getEmail())
+        && !str_starts_with($user->getAccountName(), 'sso.')) {
+        $user->setUsername((new WorkspaceAccountName($this->entityTypeManager))->forOwner($slug));
+        $user->save();
+      }
+      return $user;
     }
 
     // The name is the label colleagues see; it never carries the address.

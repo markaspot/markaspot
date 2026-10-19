@@ -239,6 +239,21 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
   }
 
   /**
+   * Imports name new accounts after the workspace on multi-tenant installs.
+   */
+  public function testImporterNamesAccountsAfterTheWorkspace(): void {
+    $this->enableModules(['markaspot_tenant_import']);
+    $importer = $this->container->get('markaspot_tenant_import.tenant_importer');
+    $method = new \ReflectionMethod($importer, 'newAccountName');
+    $this->assertSame('lindenhof-admin', $method->invoke($importer, 'owner@example.org', 'tenant_admin', $this->tenantA));
+    $this->assertMatchesRegularExpression('/^lindenhof-member-[0-9a-f]{4}$/', $method->invoke($importer, 'staff@example.org', 'moderator', $this->tenantA));
+
+    // A dedicated single-jurisdiction install keeps the address as login name.
+    $this->tenantB->delete();
+    $this->assertSame('owner@example.org', $method->invoke($importer, 'owner@example.org', 'tenant_admin', $this->tenantA));
+  }
+
+  /**
    * Creates an account; names with "@" get that address as mail.
    */
   private function account(string $name, ?string $password = NULL): UserInterface {

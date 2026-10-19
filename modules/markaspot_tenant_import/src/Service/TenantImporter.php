@@ -15,6 +15,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\markaspot_tenant_import\Exception\TenantImportValidationException;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\markaspot_group\Service\WorkspaceAccountName;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\user\UserInterface;
@@ -89,6 +90,37 @@ class TenantImporter {
     private readonly LockBackendInterface $lock,
     private readonly PermissionHandlerInterface $permissionHandler,
   ) {}
+
+  /**
+   * Returns the account name of an imported account.
+   *
+   * On an install with several jurisdictions the name is the label other
+   * workspaces' staff could see, so it never carries the address
+   * (WorkspaceAccountName). A dedicated single-jurisdiction install keeps the
+   * address as name: staff there may sign in with it on the password form.
+   */
+  private function newAccountName(string $email, string $role, GroupInterface $jurisdiction): string {
+    if (!$this->isMultiTenant()) {
+      return $email;
+    }
+    $slug = $jurisdiction->hasField('field_slug') && !$jurisdiction->get('field_slug')->isEmpty()
+      ? (string) $jurisdiction->get('field_slug')->value
+      : 'workspace';
+    $names = new WorkspaceAccountName($this->entityTypeManager);
+    return $role === 'tenant_admin' ? $names->forOwner($slug) : $names->forMember($slug);
+  }
+
+  /**
+   * Whether the install has more than one jurisdiction.
+   */
+  private function isMultiTenant(): bool {
+    return (int) $this->entityTypeManager->getStorage('group')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'jur')
+      ->range(0, 2)
+      ->count()
+      ->execute() > 1;
+  }
 
   /**
    * Reads and decodes a tenant configuration file.
@@ -456,7 +488,7 @@ class TenantImporter {
         : $this->loadUserByEmail($email);
       $existing = $users[$key];
       $profileProtected[$key] = FALSE;
-      if (!in_array('users', $skip, TRUE) && !$existing instanceof UserInterface) {
+      if (!in_array('users', $skip, TRUE) && !$existing instanceof UserInterface && !$this->isMultiTenant()) {
         if (mb_strlen($email) > UserInterface::USERNAME_MAX_LENGTH) {
           $errors[] = sprintf(
             'users[%d].email exceeds installed username maximum of %d characters for a new account.',
@@ -1070,7 +1102,7 @@ class TenantImporter {
           if ($wasNew) {
             /** @var \Drupal\user\UserInterface $user */
             $user = $this->entityTypeManager->getStorage('user')->create([
-              'name' => $email,
+              'name' => $this->newAccountName($email, (string) $userRow['role'], $jurisdiction),
               'mail' => $email,
               'status' => 1,
               'pass' => $this->passwordGenerator->generate(32),
