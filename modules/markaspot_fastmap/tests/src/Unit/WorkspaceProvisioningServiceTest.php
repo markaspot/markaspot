@@ -1975,6 +1975,61 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that demo requests never land on the question status.
+   *
+   * In safe-routes the first open status is "Question to reporter"; a demo
+   * request on it would show a question that was never asked.
+   *
+   * @covers ::provisionWorkspace
+   * @covers ::resolveStatusTermIds
+   */
+  public function testDemoRequestsSkipQuestionStatus(): void {
+    $record = $this->setupDemoStatusTracker();
+
+    $this->service->provisionWorkspace($this->validData([
+      'template' => 'safe-routes',
+      'categories' => ['en' => ['Crossing', 'Sidewalk', 'Visibility', 'Speeding', 'Lighting', 'Bus stop']],
+      'language' => 'en',
+    ]));
+
+    $this->assertSame(
+      ['Received', 'Received', 'Received', 'In progress', 'In progress', 'Resolved'],
+      array_map(fn(array $demo) => $record->statuses[$demo['field_status']] ?? NULL, $record->demoRequests),
+    );
+  }
+
+  /**
+   * Tests that a skipped status is still used when it is the only one.
+   *
+   * @covers ::resolveStatusTermIds
+   */
+  public function testSkippedStatusIsFallbackForItsMapping(): void {
+    $terms = [];
+    foreach ([11 => 'initial', 12 => 'open', 13 => 'closed'] as $id => $mapping) {
+      $field = $this->createMock(FieldItemListInterface::class);
+      $field->method('isEmpty')->willReturn(FALSE);
+      $field->method('__get')->with('value')->willReturn($mapping);
+      $term = $this->createMock(TermInterface::class);
+      $term->method('id')->willReturn($id);
+      $term->method('hasField')->willReturn(TRUE);
+      $term->method('get')->willReturn($field);
+      $terms[$id] = $term;
+    }
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('execute')->willReturn(array_keys($terms));
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturn($query);
+    $storage->method('loadMultiple')->willReturn($terms);
+
+    $method = new \ReflectionMethod($this->service, 'resolveStatusTermIds');
+    $map = $method->invoke($this->service, $storage, 42, [12]);
+    ksort($map);
+    $this->assertSame(['closed' => 13, 'initial' => 11, 'open' => 12], $map);
+  }
+
+  /**
    * Configures provisioning mocks that track status terms and demo requests.
    *
    * Status terms carry their Open311 mapping and are returned by the status

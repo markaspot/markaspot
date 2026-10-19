@@ -1152,6 +1152,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     'initial', 'initial', 'initial', 'open', 'open', 'closed', 'closed', 'initial',
   ];
 
+  /**
+   * Status keys that demo requests avoid.
+   *
+   * A key listed here is used only when no other status has the same
+   * mapping: a "question to the reporter" status without a question note
+   * would show a conversation that never happened.
+   */
+  private const DEMO_SKIPPED_STATUS_KEYS = ['question'];
+
   public const ALLOWED_LANGS = [
     'en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
     'hu', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
@@ -1384,12 +1393,14 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
         // 2. Create status terms: explicit statuses win, then the template's
         // status set, then the defaults.
+        $statusKeys = [];
         if (is_array($customStatuses) && !empty($customStatuses)) {
           $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses, $statusTranslations, $availableLanguages);
         }
         else {
-          $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages, self::STATUS_TEMPLATES[$template] ?? self::DEFAULT_STATUSES);
+          $statusKeys = $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages, self::STATUS_TEMPLATES[$template] ?? self::DEFAULT_STATUSES);
         }
+        $demoSkippedStatusIds = array_keys(array_intersect($statusKeys, self::DEMO_SKIPPED_STATUS_KEYS));
 
         // 3. Create category terms.
         $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang, $categoryIcons);
@@ -1411,7 +1422,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         $this->addApiUserMembership($group);
 
         // 8. Create demo service requests.
-        $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
+        $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang, $demoSkippedStatusIds);
 
         // 9. Create welcome start page.
         try {
@@ -1982,8 +1993,12 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * @param array $statuses
    *   The status set: self::DEFAULT_STATUSES or an entry of
    *   self::STATUS_TEMPLATES.
+   *
+   * @return array<int, string>
+   *   The status key of each created term, keyed by term ID ('' without key).
    */
-  private function createStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $languages, array $statuses): void {
+  private function createStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $languages, array $statuses): array {
+    $keys = [];
     $weight = 0;
     foreach ($statuses as $status) {
       $hasDefaultTranslation = isset($status['name'][$defaultLang]);
@@ -2008,6 +2023,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'field_jurisdiction' => ['target_id' => $groupId],
       ]);
       $term->save();
+      $keys[(int) $term->id()] = $status['key'] ?? '';
 
       foreach ($languages as $lang) {
         if ($lang === $primaryLang) {
@@ -2020,6 +2036,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
       }
     }
+    return $keys;
   }
 
   /**
@@ -2644,8 +2661,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *   The group entity ID.
    * @param string $lang
    *   The workspace default language code.
+   * @param int[] $skippedStatusIds
+   *   Status term IDs to avoid (see self::DEMO_SKIPPED_STATUS_KEYS).
    */
-  private function createDemoRequests(array $data, GroupInterface $group, array $categoryTermIds, int $groupId, string $lang): void {
+  private function createDemoRequests(array $data, GroupInterface $group, array $categoryTermIds, int $groupId, string $lang, array $skippedStatusIds = []): void {
     if (empty($categoryTermIds)) {
       return;
     }
@@ -2654,7 +2673,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
 
     // Resolve status term IDs by Open311 mapping for this jurisdiction.
-    $statusMap = $this->resolveStatusTermIds($termStorage, $groupId);
+    $statusMap = $this->resolveStatusTermIds($termStorage, $groupId, $skippedStatusIds);
 
     // Determine coordinate generation strategy.
     // Read the authoritative map center from the group's stored nuxt_config
@@ -2952,11 +2971,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *   The taxonomy term storage.
    * @param int $groupId
    *   The jurisdiction group ID.
+   * @param int[] $skippedTermIds
+   *   Term IDs used only when no other term has the same mapping.
    *
    * @return array<string, int>
    *   Map of Open311 mapping string to term ID.
    */
-  private function resolveStatusTermIds(EntityStorageInterface $termStorage, int $groupId): array {
+  private function resolveStatusTermIds(EntityStorageInterface $termStorage, int $groupId, array $skippedTermIds = []): array {
     $termIds = $termStorage->getQuery()
       ->accessCheck(FALSE)
       ->condition('vid', 'service_status')
@@ -2968,18 +2989,23 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
 
     $statusMap = [];
+    $fallbackMap = [];
     $terms = $termStorage->loadMultiple($termIds);
     foreach ($terms as $term) {
       if ($term->hasField('field_open311_mapping') && !$term->get('field_open311_mapping')->isEmpty()) {
         $mapping = $term->get('field_open311_mapping')->value;
+        $skipped = in_array((int) $term->id(), $skippedTermIds, TRUE);
         // Only store the first term for each mapping (lowest weight wins).
-        if (!isset($statusMap[$mapping])) {
+        if ($skipped) {
+          $fallbackMap[$mapping] ??= (int) $term->id();
+        }
+        elseif (!isset($statusMap[$mapping])) {
           $statusMap[$mapping] = (int) $term->id();
         }
       }
     }
 
-    return $statusMap;
+    return $statusMap + $fallbackMap;
   }
 
   /**
