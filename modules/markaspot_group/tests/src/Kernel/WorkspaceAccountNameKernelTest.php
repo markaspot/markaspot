@@ -13,6 +13,7 @@ use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_group\Controller\GroupInvitationController;
 use Drupal\markaspot_group\Service\WorkspaceAccountName;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -179,7 +180,7 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
     $plain = $this->account('plain-name');
 
     $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
-    $this->assertStringContainsString('Renamed 4 account(s)', markaspot_group_update_11956());
+    $this->assertStringContainsString('Renamed 4 account(s)', $this->runRenameUpdate());
 
     $this->assertSame('lindenhof-admin', User::load($owner->id())->getAccountName());
     $this->assertMatchesRegularExpression('/^riverside-member-[0-9a-f]{4}$/', User::load($member->id())->getAccountName());
@@ -194,7 +195,7 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
     $this->assertSame([(int) $owner->id()], array_map('intval', array_keys($byMail)));
 
     // Idempotent.
-    $this->assertStringContainsString('Renamed 0 account(s)', markaspot_group_update_11956());
+    $this->assertStringContainsString('Renamed 0 account(s)', $this->runRenameUpdate());
     $this->assertSame('lindenhof-admin', User::load($owner->id())->getAccountName());
   }
 
@@ -207,7 +208,7 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
     $this->tenantA->addMember($owner, ['group_roles' => ['jur-tenant_admin']]);
 
     $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
-    $this->assertStringContainsString('not a multi-tenant install', markaspot_group_update_11956());
+    $this->assertStringContainsString('not a multi-tenant install', $this->runRenameUpdate());
     $this->assertSame('owner@example.org', User::load($owner->id())->getAccountName());
   }
 
@@ -221,21 +222,53 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
     $this->tenantB->addMember($account, ['group_roles' => ['jur-tenant_admin']]);
 
     $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
-    markaspot_group_update_11956();
+    $this->runRenameUpdate();
     $this->assertSame('riverside-admin', User::load($account->id())->getAccountName());
   }
 
   /**
-   * On the fastmap install, accounts with an (unused) password are renamed.
+   * Password accounts keep their name, also where login is by mail.
+   *
+   * Imported accounts carry a random password that cannot be told apart
+   * from a real one, so the update never infers the login mode.
    */
-  public function testUpdateRenamesPasswordAccountsWhereLoginIsByMail(): void {
+  public function testUpdateKeepsPasswordAccountsOnFastmap(): void {
     $imported = $this->account('imported@example.org', 'random-import-password');
     $this->tenantA->addMember($imported);
     $this->enableModules(['markaspot_fastmap']);
 
     $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
-    markaspot_group_update_11956();
-    $this->assertMatchesRegularExpression('/^lindenhof-member-[0-9a-f]{4}$/', User::load($imported->id())->getAccountName());
+    $this->runRenameUpdate();
+    $this->assertSame('imported@example.org', User::load($imported->id())->getAccountName());
+  }
+
+  /**
+   * Privileged accounts keep their name even without a password.
+   */
+  public function testUpdateNeverRenamesPrivilegedAccounts(): void {
+    Role::create(['id' => 'administrator', 'label' => 'Administrator', 'is_admin' => TRUE])->save();
+    Role::create(['id' => 'editorial_board', 'label' => 'Editorial board'])->save();
+    Role::create(['id' => 'moderator', 'label' => 'Moderator'])->save();
+    Role::create(['id' => 'user_admin', 'label' => 'User admin', 'permissions' => ['administer users']])->save();
+    Role::create(['id' => 'node_bypass', 'label' => 'Bypass', 'permissions' => ['bypass node access']])->save();
+
+    $kept = [];
+    foreach (['administrator', 'editorial_board', 'moderator', 'user_admin', 'node_bypass'] as $role) {
+      $account = $this->account($role . '@example.org');
+      $account->addRole($role);
+      $account->save();
+      $this->tenantA->addMember($account, ['group_roles' => ['jur-tenant_admin']]);
+      $kept[$role] = $account;
+    }
+    $member = $this->account('member@example.org');
+    $this->tenantA->addMember($member);
+
+    $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
+    $this->assertStringContainsString('Renamed 1 account(s)', $this->runRenameUpdate());
+    foreach ($kept as $role => $account) {
+      $this->assertSame($role . '@example.org', User::load($account->id())->getAccountName(), "A $role account keeps its name.");
+    }
+    $this->assertMatchesRegularExpression('/^lindenhof-member-[0-9a-f]{4}$/', User::load($member->id())->getAccountName());
   }
 
   /**
@@ -275,6 +308,17 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
     $uids = $this->container->get('entity_type.manager')->getStorage('user')->getQuery()->accessCheck(TRUE)->execute();
     $this->assertContains((string) $colleague->id(), array_map('strval', $uids));
     $this->assertNotContains((string) $stranger->id(), array_map('strval', $uids));
+  }
+
+  /**
+   * Runs update 11956 through all its batches, returns the final message.
+   */
+  private function runRenameUpdate(): string {
+    $sandbox = [];
+    do {
+      $message = markaspot_group_update_11956($sandbox);
+    } while (($sandbox['#finished'] ?? 1) < 1);
+    return $message;
   }
 
   /**

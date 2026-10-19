@@ -6400,59 +6400,86 @@ function _markaspot_group_restore_label_overrides(string $name, array $overrides
  * administrators, "<slug>-member-<hex>" otherwise, from the first
  * jurisdiction (or organisation jurisdiction) they belong to.
  *
- * Only on installs with several jurisdictions. Accounts with a password keep
- * their name, because the password form signs in by name, except where
- * markaspot_fastmap runs: that install signs in by mail only, and imported
- * accounts there carry a random password nobody knows. SSO accounts
- * ("sso.*") and single-jurisdiction installs stay untouched. Logs counts
- * only, never names.
+ * Only on installs with several jurisdictions, and only for accounts that
+ * cannot sign in by name: accounts with a password, SSO accounts ("sso.*")
+ * and privileged accounts (administrator, editorial board, global moderator,
+ * any role with "administer users" or "bypass node access") keep their name
+ * on every install. Runs in batches of 50 and logs counts only, never names.
  */
-function markaspot_group_update_11956(): string {
+function markaspot_group_update_11956(array &$sandbox): string {
   $entity_type_manager = \Drupal::entityTypeManager();
   $jur_type = _markaspot_group_jurisdiction_group_type();
-  $jurisdictions = (int) $entity_type_manager->getStorage('group')->getQuery()
-    ->accessCheck(FALSE)
-    ->condition('type', $jur_type)
-    ->count()
-    ->execute();
-  if ($jurisdictions <= 1) {
-    return sprintf('Account names left unchanged: %d jurisdiction(s), not a multi-tenant install.', $jurisdictions);
+  $user_storage = $entity_type_manager->getStorage('user');
+
+  if (!isset($sandbox['uids'])) {
+    $jurisdictions = (int) $entity_type_manager->getStorage('group')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $jur_type)
+      ->count()
+      ->execute();
+    if ($jurisdictions <= 1) {
+      $sandbox['#finished'] = 1;
+      return sprintf('Account names left unchanged: %d jurisdiction(s), not a multi-tenant install.', $jurisdictions);
+    }
+    $sandbox['uids'] = array_values($user_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('uid', 1, '>')
+      ->condition('name', '%@%', 'LIKE')
+      ->sort('uid')
+      ->execute());
+    $sandbox['total'] = count($sandbox['uids']);
+    $sandbox['renamed'] = 0;
+    $sandbox['kept'] = 0;
   }
 
   $names = \Drupal::service('markaspot_group.workspace_account_name');
-  // The fastmap install signs in by mail only (OTP); the random password the
-  // tenant import sets is never used there. Elsewhere a password may be a
-  // real name login, so those accounts keep their name.
-  $password_login = !\Drupal::moduleHandler()->moduleExists('markaspot_fastmap');
-  $user_storage = $entity_type_manager->getStorage('user');
-  $uids = $user_storage->getQuery()
-    ->accessCheck(FALSE)
-    ->condition('uid', 1, '>')
-    ->condition('name', '%@%', 'LIKE')
-    ->execute();
-
-  $renamed = 0;
-  $skipped = 0;
-  foreach ($user_storage->loadMultiple($uids) as $user) {
-    if (!$user instanceof UserInterface
-      || !WorkspaceAccountName::exposesMail($user->getAccountName(), (string) $user->getEmail())
-      || str_starts_with($user->getAccountName(), 'sso.')
-      || ($password_login && (string) $user->getPassword() !== '')) {
-      $skipped++;
+  foreach ($user_storage->loadMultiple(array_splice($sandbox['uids'], 0, 50)) as $user) {
+    if (!$user instanceof UserInterface || !_markaspot_group_account_name_renameable($user)) {
+      $sandbox['kept']++;
       continue;
     }
-
     [$slug, $is_admin] = _markaspot_group_account_name_scope($user, $jur_type);
     $user->setUsername($is_admin ? $names->forOwner($slug) : $names->forMember($slug));
     $user->save();
-    $renamed++;
+    $sandbox['renamed']++;
   }
 
-  \Drupal::logger('markaspot_group')->notice('Renamed @renamed accounts whose name was an e-mail address; @skipped kept (password or SSO).', [
-    '@renamed' => $renamed,
-    '@skipped' => $skipped,
+  $sandbox['#finished'] = $sandbox['total'] > 0 ? 1 - count($sandbox['uids']) / $sandbox['total'] : 1;
+  if ($sandbox['#finished'] < 1) {
+    return '';
+  }
+  \Drupal::logger('markaspot_group')->notice('Renamed @renamed accounts whose name was an e-mail address; @kept kept (privileged, password, or SSO).', [
+    '@renamed' => $sandbox['renamed'],
+    '@kept' => $sandbox['kept'],
   ]);
-  return sprintf('Renamed %d account(s) whose name was an e-mail address; kept %d with a password or SSO name.', $renamed, $skipped);
+  return sprintf('Renamed %d account(s) whose name was an e-mail address; kept %d privileged, password or SSO account(s).', $sandbox['renamed'], $sandbox['kept']);
+}
+
+/**
+ * Whether update 11956 may replace an account's mail-shaped name.
+ *
+ * Only accounts that cannot sign in with name and password qualify: no
+ * stored password, no SSO name, and no privileged role. A password is kept
+ * even when it may be an unused random one from an import, because nothing
+ * marks imported accounts and a renamed password login locks its owner out.
+ */
+function _markaspot_group_account_name_renameable(UserInterface $user): bool {
+  $name = (string) $user->getAccountName();
+  if (!WorkspaceAccountName::exposesMail($name, (string) $user->getEmail())
+    || str_starts_with($name, 'sso.')
+    || (string) $user->getPassword() !== '') {
+    return FALSE;
+  }
+  $privileged_roles = ['administrator', 'editorial_board', 'moderator'];
+  if (array_intersect($user->getRoles(TRUE), $privileged_roles)) {
+    return FALSE;
+  }
+  foreach (Role::loadMultiple($user->getRoles(TRUE)) as $role) {
+    if ($role->isAdmin() || $role->hasPermission('administer users') || $role->hasPermission('bypass node access')) {
+      return FALSE;
+    }
+  }
+  return TRUE;
 }
 
 /**
