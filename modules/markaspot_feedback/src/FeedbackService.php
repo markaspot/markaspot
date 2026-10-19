@@ -181,18 +181,18 @@ class FeedbackService implements FeedbackServiceInterface {
   }
 
   /**
-   * Returns the address the feedback mail goes to, NULL if there is none.
+   * Returns the reporter's address, NULL if the report has none.
    *
-   * The reporter's address, else the address of the report's author. The
-   * REST endpoint accepts feedback only with this same address.
+   * Only field_e_mail counts. The report's author is never a stand-in: on
+   * imported or API-created reports that is an importer or service account,
+   * not the reporter. The feedback mail goes to this address and the REST
+   * endpoint accepts feedback only with it.
    */
   public static function recipientEmail(NodeInterface $node): ?string {
-    if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
-      $mail = trim((string) $node->get('field_e_mail')->value);
-      return $mail !== '' ? $mail : NULL;
+    if (!$node->hasField('field_e_mail') || $node->get('field_e_mail')->isEmpty()) {
+      return NULL;
     }
-    $owner = $node->getOwner();
-    $mail = $owner && (int) $owner->id() > 0 ? trim((string) $owner->getEmail()) : '';
+    $mail = trim((string) $node->get('field_e_mail')->value);
     return $mail !== '' ? $mail : NULL;
   }
 
@@ -251,7 +251,7 @@ class FeedbackService implements FeedbackServiceInterface {
         ]);
       }
       else {
-        $logger->warning('No email address found for node @nid (checked field_e_mail and author).', [
+        $logger->warning('No reporter email address on node @nid, no feedback request sent.', [
           '@nid' => $node->id(),
         ]);
         return FALSE;

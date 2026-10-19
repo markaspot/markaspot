@@ -163,14 +163,21 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
   }
 
   /**
-   * The address the mail went to is accepted, also the author fallback.
+   * Without a reporter address the author never stands in.
+   *
+   * No mail goes out and the endpoint answers like a wrong address.
    */
-  public function testAuthorFallbackRecipientIsAccepted(): void {
+  public function testAuthorIsNoFallbackRecipient(): void {
     $author = User::create(['name' => 'author', 'mail' => 'author@example.org', 'status' => 1]);
     $author->save();
     $report = $this->report(NULL, (int) $author->id());
-    $this->assertSame('author@example.org', FeedbackService::recipientEmail($report));
-    $this->assertSame(200, $this->post($report, ['feedback' => 'Thanks', 'email_verification' => 'author@example.org'])->getStatusCode());
+    $this->assertNull(FeedbackService::recipientEmail($report));
+
+    $response = $this->post($report, ['feedback' => 'Thanks', 'email_verification' => 'author@example.org']);
+    $this->assertSame(403, $response->getStatusCode());
+    $wrong = $this->post($this->report(), ['feedback' => 'Thanks', 'email_verification' => 'author@example.org']);
+    $this->assertSame((string) $wrong->getContent(), (string) $response->getContent(), 'Same answer as a wrong address.');
+    $this->assertUnchanged($report);
   }
 
   /**
@@ -190,6 +197,16 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
     $again = $this->post($report, ['feedback' => 'Second', 'email_verification' => 'reporter@example.org']);
     $this->assertSame(409, $again->getStatusCode());
     $this->assertStringNotContainsString('First answer', (string) $again->getContent());
+
+    // The read endpoint says it was answered but never shows the text, not
+    // even to staff who may read the field.
+    $staff = User::create(['name' => 'staff', 'mail' => 'staff@example.org', 'status' => 1]);
+    $staff->save();
+    $this->container->get('current_user')->setAccount($staff);
+    $read = $controller->getServiceRequest($report->uuid());
+    $this->assertTrue(json_decode((string) $read->getContent(), TRUE)['has_feedback']);
+    $this->assertStringNotContainsString('First answer', (string) $read->getContent());
+    $this->assertArrayNotHasKey('feedback', json_decode((string) $read->getContent(), TRUE));
   }
 
   /**

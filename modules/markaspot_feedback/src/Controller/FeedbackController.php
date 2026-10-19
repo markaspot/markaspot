@@ -326,12 +326,8 @@ class FeedbackController extends ControllerBase {
         $response_data['field_has_feedback'] = (bool) $node->get('field_has_feedback')->value;
       }
 
-      // Add feedback if it exists and the caller may read the field.
-      if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()
-        && $node->get('field_feedback')->access('view')) {
-        $response_data['feedback'] = $node->get('field_feedback')->value;
-      }
-
+      // The stored feedback text is never returned here: has_feedback tells
+      // the frontend the report was already answered.
       $logger->notice('Retrieved service request data for node @nid (UUID: @uuid)', [
         '@nid' => $node->id(),
         '@uuid' => $uuid,
@@ -350,7 +346,7 @@ class FeedbackController extends ControllerBase {
   }
 
   /**
-   * Validates that the provided email matches the original service request author.
+   * Validates that the provided email matches the reporter's address.
    *
    * @param \Drupal\node\Entity\Node $node
    *   The service request node.
@@ -358,14 +354,13 @@ class FeedbackController extends ControllerBase {
    *   The email to validate.
    *
    * @return bool|string
-   *   TRUE if the email matches the author, error message string otherwise.
+   *   TRUE if the email matches the reporter, error message string otherwise.
    */
   protected function validateAuthorEmail($node, $email) {
+    // Reports without a reporter address accept no feedback; they answer
+    // like a wrong address so the response reveals nothing about the report.
     $recipient = FeedbackService::recipientEmail($node);
-    if ($recipient === NULL) {
-      return $this->t('No author email found for this service request');
-    }
-    if (mb_strtolower(trim((string) $email)) === mb_strtolower($recipient)) {
+    if ($recipient !== NULL && mb_strtolower(trim((string) $email)) === mb_strtolower($recipient)) {
       return TRUE;
     }
     return $this->t('The email address does not match this service request.');
