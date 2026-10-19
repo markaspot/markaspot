@@ -1072,6 +1072,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private const DEMO_REQUEST_MAX_COUNT = 8;
 
   /**
+   * The drupal_static() key of the in-request demo request seeding flag.
+   *
+   * TRUE only while createDemoRequests() saves its synthetic reports.
+   * markaspot_fastmap_node_presave() reads it to let exactly those saves pass
+   * the demo-state publication gate.
+   */
+  public const DEMO_REQUEST_SEEDING = 'markaspot_fastmap_demo_request_seeding';
+
+  /**
    * Lock lifetime while provisioning a workspace slug.
    */
   private const WORKSPACE_SLUG_LOCK_TTL = 300.0;
@@ -2676,54 +2685,65 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     // never blocks or breaks on AI unavailability.
     $aiContent = $this->generateDemoContentWithAi(array_values($categoryNames), $lang, $group);
 
-    foreach (array_values($selectedTids) as $i => $categoryTid) {
-      $categoryName = $categoryNames[$categoryTid];
+    // Demo requests are published even though a new workspace is in demo
+    // state: the flag exempts exactly these saves from the publication gate
+    // in markaspot_fastmap_node_presave().
+    $seeding = &drupal_static(self::DEMO_REQUEST_SEEDING, FALSE);
+    $seeding = TRUE;
+    try {
+      foreach (array_values($selectedTids) as $i => $categoryTid) {
+        $categoryName = $categoryNames[$categoryTid];
 
-      if (isset($aiContent[$i]['title'], $aiContent[$i]['body'])) {
-        $title = mb_substr($aiContent[$i]['title'], 0, 255);
-        $bodyText = $aiContent[$i]['body'];
+        if (isset($aiContent[$i]['title'], $aiContent[$i]['body'])) {
+          $title = mb_substr($aiContent[$i]['title'], 0, 255);
+          $bodyText = $aiContent[$i]['body'];
+        }
+        else {
+          $title = mb_substr($categoryName, 0, 255);
+          $bodyText = $this->buildFallbackDemoBody($categoryName, $lang, $group);
+        }
+
+        // Determine status for this demo request.
+        $mapping = self::DEMO_STATUS_MAPPINGS[$i] ?? 'initial';
+        $statusTid = $statusMap[$mapping] ?? $statusMap['initial'] ?? NULL;
+
+        // Generate a random coordinate within the bounding box.
+        [$lat, $lng] = $this->randomCoordinateInBbox($bbox);
+
+        $values = [
+          'type' => 'service_request',
+          // Requested langcode. Note service_request is not translatable and
+          // service_request_node_presave() force-normalizes every new node to
+          // the content-type default (currently 'und', LANGCODE_NOT_SPECIFIED),
+          // so the persisted node is language-neutral like all real reports.
+          // This value only shapes the in-memory entity before that presave.
+          'langcode' => $lang,
+          'title' => $title,
+          'body' => [
+            'value' => $bodyText . "\n\n[demo-content]",
+            'format' => 'plain_text',
+          ],
+          'field_category' => ['target_id' => $categoryTid],
+          'field_geolocation' => [
+            'lat' => $lat,
+            'lng' => $lng,
+          ],
+          'field_address' => $data['name'] ?? 'Demo Location',
+          'uid' => 1,
+          'status' => 1,
+          'field_jurisdiction' => ['target_id' => $groupId],
+        ];
+
+        if ($statusTid) {
+          $values['field_status'] = ['target_id' => $statusTid];
+        }
+
+        $node = $nodeStorage->create($values);
+        $node->save();
       }
-      else {
-        $title = mb_substr($categoryName, 0, 255);
-        $bodyText = $this->buildFallbackDemoBody($categoryName, $lang, $group);
-      }
-
-      // Determine status for this demo request.
-      $mapping = self::DEMO_STATUS_MAPPINGS[$i] ?? 'initial';
-      $statusTid = $statusMap[$mapping] ?? $statusMap['initial'] ?? NULL;
-
-      // Generate a random coordinate within the bounding box.
-      [$lat, $lng] = $this->randomCoordinateInBbox($bbox);
-
-      $values = [
-        'type' => 'service_request',
-        // Requested langcode. Note service_request is not translatable and
-        // service_request_node_presave() force-normalizes every new node to
-        // the content-type default (currently 'und', LANGCODE_NOT_SPECIFIED),
-        // so the persisted node is language-neutral like all real reports.
-        // This value only shapes the in-memory entity before that presave.
-        'langcode' => $lang,
-        'title' => $title,
-        'body' => [
-          'value' => $bodyText . "\n\n[demo-content]",
-          'format' => 'plain_text',
-        ],
-        'field_category' => ['target_id' => $categoryTid],
-        'field_geolocation' => [
-          'lat' => $lat,
-          'lng' => $lng,
-        ],
-        'field_address' => $data['name'] ?? 'Demo Location',
-        'uid' => 1,
-        'field_jurisdiction' => ['target_id' => $groupId],
-      ];
-
-      if ($statusTid) {
-        $values['field_status'] = ['target_id' => $statusTid];
-      }
-
-      $node = $nodeStorage->create($values);
-      $node->save();
+    }
+    finally {
+      $seeding = FALSE;
     }
 
     $this->logger->info('Created @count demo requests for workspace @name (group @id).', [

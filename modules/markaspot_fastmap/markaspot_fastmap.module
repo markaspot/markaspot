@@ -17,6 +17,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
+use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\user\EntityOwnerInterface;
@@ -536,7 +537,14 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
     }
   }
 
-  if ($demoGroup && _markaspot_fastmap_workspace_in_demo_state($demoGroup)) {
+  // Exempt: the demo requests workspace provisioning saves right now. They
+  // are synthetic platform content, not a citizen submission, and carry no
+  // personal data, so the reason for the gate does not apply. The flag is set
+  // only around that save loop (WorkspaceProvisioningService::
+  // createDemoRequests()); every other report in the workspace stays gated.
+  $seedingDemoRequest = $is_new && drupal_static(WorkspaceProvisioningService::DEMO_REQUEST_SEEDING, FALSE);
+
+  if ($demoGroup && !$seedingDemoRequest && _markaspot_fastmap_workspace_in_demo_state($demoGroup)) {
     $node->setUnpublished();
     \Drupal::logger('markaspot_fastmap')->debug(
       'Report queued for moderation: workspace @gid is in demo-mode (Stripe activation pending).',

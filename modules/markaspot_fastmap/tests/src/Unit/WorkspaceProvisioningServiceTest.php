@@ -1926,6 +1926,170 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that demo requests are saved published under the seeding flag.
+   *
+   * The flag lets exactly these saves past the demo-state publication gate in
+   * markaspot_fastmap_node_presave(); it must be set during each demo request
+   * save and reset afterwards, also when a save fails.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testDemoRequestsAreSavedPublishedUnderSeedingFlag(): void {
+    drupal_static_reset(WorkspaceProvisioningService::DEMO_REQUEST_SEEDING);
+    $record = $this->setupDemoStatusTracker();
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['en' => ['Road Damage', 'Flood']],
+      'language' => 'en',
+    ]));
+
+    $this->assertCount(2, $record->demoRequests);
+    foreach ($record->demoRequests as $demo) {
+      $this->assertSame(1, $demo['status']);
+      $this->assertTrue($demo['seeding'], 'The seeding flag is set while a demo request is saved.');
+    }
+    $this->assertSame([FALSE], array_unique($record->pageSeeding), 'The start page is saved without the flag.');
+    $this->assertFalse(drupal_static(WorkspaceProvisioningService::DEMO_REQUEST_SEEDING, FALSE));
+  }
+
+  /**
+   * Tests that the seeding flag is reset when a demo request save fails.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testSeedingFlagIsResetWhenDemoRequestSaveFails(): void {
+    drupal_static_reset(WorkspaceProvisioningService::DEMO_REQUEST_SEEDING);
+    $this->setupDemoStatusTracker(failDemoSave: TRUE);
+
+    try {
+      $this->service->provisionWorkspace($this->validData([
+        'categories' => ['en' => ['Road Damage']],
+        'language' => 'en',
+      ]));
+      $this->fail('Provisioning must fail when a demo request cannot be saved.');
+    }
+    catch (\RuntimeException) {
+      // Expected.
+    }
+    $this->assertFalse(drupal_static(WorkspaceProvisioningService::DEMO_REQUEST_SEEDING, FALSE));
+  }
+
+  /**
+   * Configures provisioning mocks that track status terms and demo requests.
+   *
+   * Status terms carry their Open311 mapping and are returned by the status
+   * query, so createDemoRequests() resolves real term IDs.
+   *
+   * @param bool $failDemoSave
+   *   Whether saving a demo request throws.
+   *
+   * @return object
+   *   Record with statuses (term ID => English name), demoRequests (status,
+   *   field_status, seeding flag at save time) and pageSeeding.
+   */
+  protected function setupDemoStatusTracker(bool $failDemoSave = FALSE): object {
+    $record = new class {
+      /**
+       * Status term English names keyed by term ID.
+       *
+       * @var array<int, string>
+       */
+      public array $statuses = [];
+
+      /**
+       * Saved demo requests.
+       *
+       * @var array<int, array{status: mixed, field_status: int|null, seeding: bool}>
+       */
+      public array $demoRequests = [];
+
+      /**
+       * Seeding flag values seen while saving pages.
+       *
+       * @var bool[]
+       */
+      public array $pageSeeding = [];
+
+    };
+
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $termIdCounter = 0;
+    $termsById = [];
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$termsById, $record) {
+        $termIdCounter++;
+        $currentId = $termIdCounter;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($currentId);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('label')->willReturn($values['name'] ?? '');
+        if (($values['vid'] ?? '') === 'service_status') {
+          $record->statuses[$currentId] = $values['name'];
+          $field = $this->createMock(FieldItemListInterface::class);
+          $field->method('isEmpty')->willReturn(FALSE);
+          $field->method('__get')->with('value')->willReturn($values['field_open311_mapping']);
+          $term->method('hasField')->willReturn(TRUE);
+          $term->method('get')->willReturn($field);
+        }
+        $termsById[$currentId] = $term;
+        return $term;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturnCallback(fn() => array_keys($record->statuses));
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+    $this->termStorage->method('loadMultiple')
+      ->willReturnCallback(function (array $ids) use (&$termsById) {
+        return array_intersect_key($termsById, array_flip($ids));
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use ($record, $failDemoSave) {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('isTranslatable')->willReturn(FALSE);
+        $isDemo = $values['type'] === 'service_request';
+        $node->method('save')->willReturnCallback(function () use ($values, $record, $isDemo, $failDemoSave) {
+          $seeding = (bool) drupal_static(WorkspaceProvisioningService::DEMO_REQUEST_SEEDING, FALSE);
+          if (!$isDemo) {
+            $record->pageSeeding[] = $seeding;
+            return 1;
+          }
+          if ($failDemoSave) {
+            throw new \RuntimeException('Storage failure');
+          }
+          $record->demoRequests[] = [
+            'status' => $values['status'] ?? NULL,
+            'field_status' => $values['field_status']['target_id'] ?? NULL,
+            'seeding' => $seeding,
+          ];
+          return 1;
+        });
+        return $node;
+      });
+
+    return $record;
+  }
+
+  /**
    * Tests demo requests use coordinates within boundary bbox.
    *
    * The boundary is stored in field_boundary (FeatureCollection) and the
