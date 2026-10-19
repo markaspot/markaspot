@@ -389,7 +389,7 @@ class FastMapWorkspaceController extends ControllerBase {
         'lat' => max(-90.0, min(90.0, (float) ($data['lat'] ?? 0))),
         'lng' => max(-180.0, min(180.0, (float) ($data['lng'] ?? 0))),
         'zoom' => (int) ($data['zoom'] ?? 13),
-        'template' => $data['template'] ?? 'civic-report',
+        'template' => $data['template'] ?? 'issue-reporter',
         'language' => $data['language'] ?? '',
         'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
         'statuses' => $statuses,

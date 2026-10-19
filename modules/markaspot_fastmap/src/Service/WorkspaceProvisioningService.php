@@ -293,16 +293,33 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   ];
 
   /**
-   * Theme presets by template name.
+   * Legacy template slugs mapped to their canonical slug.
+   *
+   * Mirrors TEMPLATE_SLUG_ALIASES in the frontend
+   * (fastmap-layer/shared/templates.ts). The frontend sends canonical slugs;
+   * the aliases keep older clients and stored demo seeds working.
+   */
+  public const TEMPLATE_ALIASES = [
+    'civic-report' => 'issue-reporter',
+    'eco-map' => 'field-research',
+  ];
+
+  /**
+   * Template every unknown slug falls back to.
+   */
+  public const FALLBACK_TEMPLATE = 'issue-reporter';
+
+  /**
+   * Theme presets by canonical template slug.
    */
   public const THEME_TEMPLATES = [
     'crisis-map' => ['primary' => 'red', 'secondary' => 'orange', 'neutral' => 'slate'],
-    'civic-report' => ['primary' => 'blue', 'secondary' => 'cyan', 'neutral' => 'slate'],
+    'issue-reporter' => ['primary' => 'blue', 'secondary' => 'cyan', 'neutral' => 'slate'],
     'safe-routes' => ['primary' => 'amber', 'secondary' => 'orange', 'neutral' => 'stone'],
     'access-map' => ['primary' => 'violet', 'secondary' => 'purple', 'neutral' => 'slate'],
     'climate-watch' => ['primary' => 'orange', 'secondary' => 'amber', 'neutral' => 'stone'],
     'trail-watch' => ['primary' => 'green', 'secondary' => 'emerald', 'neutral' => 'stone'],
-    'eco-map' => ['primary' => 'emerald', 'secondary' => 'teal', 'neutral' => 'slate'],
+    'field-research' => ['primary' => 'emerald', 'secondary' => 'teal', 'neutral' => 'slate'],
     'neighbourhood' => ['primary' => 'cyan', 'secondary' => 'sky', 'neutral' => 'slate'],
     'construction-watch' => ['primary' => 'yellow', 'secondary' => 'amber', 'neutral' => 'stone'],
   ];
@@ -361,7 +378,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $lat = max(-90.0, min(90.0, (float) ($data['lat'] ?? 0)));
     $lng = max(-180.0, min(180.0, (float) ($data['lng'] ?? 0)));
     $zoom = (int) ($data['zoom'] ?? 13);
-    $template = $data['template'] ?? 'civic-report';
+    $template = self::resolveTemplate(is_string($data['template'] ?? NULL) ? $data['template'] : '');
     $requestedLang = $data['language'] ?? '';
     $boundary = $data['boundary'] ?? NULL;
     $customStatuses = $data['statuses'] ?? NULL;
@@ -898,10 +915,24 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   }
 
   /**
+   * Resolves a template slug to its canonical slug.
+   *
+   * @param string $template
+   *   A canonical or legacy template slug, or any other string.
+   *
+   * @return string
+   *   The canonical slug, or self::FALLBACK_TEMPLATE for unknown slugs.
+   */
+  public static function resolveTemplate(string $template): string {
+    $template = self::TEMPLATE_ALIASES[$template] ?? $template;
+    return isset(self::THEME_TEMPLATES[$template]) ? $template : self::FALLBACK_TEMPLATE;
+  }
+
+  /**
    * Builds the Nuxt configuration JSON for a workspace.
    */
   public function buildNuxtConfig(string $name, string $slug, float $lat, float $lng, int $zoom, string $template, array $languages, string $defaultLang): array {
-    $themeColors = self::THEME_TEMPLATES[$template] ?? self::THEME_TEMPLATES['civic-report'];
+    $themeColors = self::THEME_TEMPLATES[self::resolveTemplate($template)];
 
     return [
       'client' => [
@@ -1005,7 +1036,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         throw new \RuntimeException('Directory not writable: ' . $directory);
       }
 
-      $theme = self::THEME_TEMPLATES[$template] ?? self::THEME_TEMPLATES['civic-report'];
+      $theme = self::THEME_TEMPLATES[self::resolveTemplate($template)];
       $primaryHex = $this->resolvePrimaryHex($theme['primary']);
       $svg = $this->placeholderSignetGenerator->generate($slug, $primaryHex);
       $file = $this->fileRepository->writeData(

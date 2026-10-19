@@ -933,11 +933,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   public static function unifiedReportingTemplateWordingProvider(): array {
     $templates = [
       'crisis-map',
+      'issue-reporter',
       'civic-report',
       'safe-routes',
       'access-map',
       'climate-watch',
       'trail-watch',
+      'field-research',
       'eco-map',
       'neighbourhood',
       'construction-watch',
@@ -1344,19 +1346,58 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that unknown template falls back to civic-report.
+   * Tests that unknown template falls back to issue-reporter.
    *
    * @covers ::provisionWorkspace
    */
   public function testProvisionWorkspaceUnknownTemplateFallback(): void {
     $this->setupSuccessfulProvisioning();
 
-    // Should not throw, unknown template falls back to civic-report.
+    // Should not throw, unknown template falls back to issue-reporter.
     $result = $this->service->provisionWorkspace($this->validData([
       'template' => 'nonexistent-template',
     ]));
 
     $this->assertEquals(42, $result['group_id']);
+  }
+
+  /**
+   * Tests that canonical and legacy template slugs get the same theme.
+   *
+   * The frontend sends canonical slugs (issue-reporter, field-research);
+   * older clients and stored seeds still send civic-report and eco-map.
+   *
+   * @covers ::provisionWorkspace
+   * @covers ::resolveTemplate
+   * @dataProvider templateThemeProvider
+   */
+  public function testTemplateSlugResolvesTheme(string $template, string $canonical, string $primary): void {
+    $this->assertSame($canonical, WorkspaceProvisioningService::resolveTemplate($template));
+
+    $createdGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
+    $this->service->provisionWorkspace($this->validData(['template' => $template]));
+
+    $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE, 512, JSON_THROW_ON_ERROR);
+    $this->assertSame($primary, $nuxtConfig['theme']['primary']);
+  }
+
+  /**
+   * Provides template slugs with their canonical slug and primary color.
+   *
+   * @return array<string, array{string, string, string}>
+   *   Sent slug, canonical slug, expected primary color.
+   */
+  public static function templateThemeProvider(): array {
+    return [
+      'field-research' => ['field-research', 'field-research', 'emerald'],
+      'eco-map alias' => ['eco-map', 'field-research', 'emerald'],
+      'issue-reporter' => ['issue-reporter', 'issue-reporter', 'blue'],
+      'civic-report alias' => ['civic-report', 'issue-reporter', 'blue'],
+      'safe-routes' => ['safe-routes', 'safe-routes', 'amber'],
+      'unknown' => ['nonexistent-template', 'issue-reporter', 'blue'],
+      'empty' => ['', 'issue-reporter', 'blue'],
+    ];
   }
 
   /**
