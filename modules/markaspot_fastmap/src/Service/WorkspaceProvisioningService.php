@@ -3026,12 +3026,14 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
     $statusMap = [];
     $fallbackMap = [];
-    $terms = $termStorage->loadMultiple($termIds);
+    // Lowest weight wins, ties by term ID; never rely on the load order.
+    $terms = array_values($termStorage->loadMultiple($termIds));
+    usort($terms, static fn($a, $b): int => ((int) $a->getWeight() <=> (int) $b->getWeight()) ?: ((int) $a->id() <=> (int) $b->id()));
     foreach ($terms as $term) {
       if ($term->hasField('field_open311_mapping') && !$term->get('field_open311_mapping')->isEmpty()) {
         $mapping = $term->get('field_open311_mapping')->value;
         $skipped = in_array((int) $term->id(), $skippedTermIds, TRUE);
-        // Only store the first term for each mapping (lowest weight wins).
+        // Only store the first term for each mapping.
         if ($skipped) {
           $fallbackMap[$mapping] ??= (int) $term->id();
         }

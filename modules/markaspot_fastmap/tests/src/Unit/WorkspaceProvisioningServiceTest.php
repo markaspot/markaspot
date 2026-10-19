@@ -2030,6 +2030,52 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that the first status per mapping is chosen by weight, not by ID.
+   *
+   * @covers ::resolveStatusTermIds
+   */
+  public function testStatusTermResolutionFollowsWeight(): void {
+    // Term ID order and weight order disagree: 21 is created first but sorts
+    // after 22; 23 and 24 tie on weight, so the lower ID wins.
+    $definitions = [
+      21 => ['open', 5],
+      22 => ['open', 1],
+      23 => ['initial', 0],
+      24 => ['initial', 0],
+      25 => ['closed', 9],
+    ];
+    $terms = [];
+    foreach ($definitions as $id => [$mapping, $weight]) {
+      $field = $this->createMock(FieldItemListInterface::class);
+      $field->method('isEmpty')->willReturn(FALSE);
+      $field->method('__get')->with('value')->willReturn($mapping);
+      $term = $this->createMock(TermInterface::class);
+      $term->method('id')->willReturn($id);
+      $term->method('getWeight')->willReturn($weight);
+      $term->method('hasField')->willReturn(TRUE);
+      $term->method('get')->willReturn($field);
+      $terms[$id] = $term;
+    }
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('execute')->willReturn(array_keys($terms));
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturn($query);
+    // Hand the terms back in reverse ID order.
+    $storage->method('loadMultiple')->willReturn(array_reverse($terms, TRUE));
+
+    $method = new \ReflectionMethod($this->service, 'resolveStatusTermIds');
+    $map = $method->invoke($this->service, $storage, 42, []);
+    ksort($map);
+    $this->assertSame(['closed' => 25, 'initial' => 23, 'open' => 22], $map);
+
+    // A skipped term only loses to other terms of its mapping.
+    $map = $method->invoke($this->service, $storage, 42, [22]);
+    $this->assertSame(21, $map['open']);
+  }
+
+  /**
    * Configures provisioning mocks that track status terms and demo requests.
    *
    * Status terms carry their Open311 mapping and are returned by the status
