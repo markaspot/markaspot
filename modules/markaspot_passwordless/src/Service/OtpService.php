@@ -442,6 +442,17 @@ class OtpService {
   }
 
   /**
+   * Returns a free neutral account name, "member-<8 hex>".
+   */
+  protected function newAccountName(): string {
+    $storage = $this->entityTypeManager->getStorage('user');
+    do {
+      $name = 'member-' . bin2hex(random_bytes(4));
+    } while ($storage->loadByProperties(['name' => $name]) !== []);
+    return $name;
+  }
+
+  /**
    * Authenticate or create user and log them in.
    *
    * @param string $email
@@ -480,8 +491,8 @@ class OtpService {
         $current_langcode = $this->languageManager->getCurrentLanguage()->getId();
 
         $user = User::create([
-        // Use email as username.
-          'name' => $email,
+          // The name is the label other accounts see; never the address.
+          'name' => $this->newAccountName(),
           'mail' => $email,
           'status' => 1,
           'roles' => ['authenticated'],
