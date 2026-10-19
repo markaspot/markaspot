@@ -103,6 +103,22 @@ markaspot_fastmap.report_stats:
     _auth: ['cookie']
     no_cache: 'TRUE'
 
+markaspot_fastmap.demo_content_remove:
+  path: '/api/fastmap/demo-content/remove'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\ReportStatsController::removeDemoContent'
+    _title: 'Remove demo content'
+  methods: [POST]
+  requirements:
+    # Tenant admin access to the jurisdiction in the body is enforced inside
+    # the controller, mirroring report_stats.
+    _user_is_logged_in: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+    _format: 'json'
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
+
 markaspot_fastmap.accept_tos:
   path: '/api/accept-tos'
   defaults:

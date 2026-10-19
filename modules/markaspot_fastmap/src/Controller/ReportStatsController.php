@@ -7,6 +7,7 @@ namespace Drupal\markaspot_fastmap\Controller;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupMembershipInterface;
@@ -17,7 +18,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Returns real-vs-demo service request counts for a jurisdiction.
+ * Reports and removes the demo service requests of a jurisdiction.
  *
  * Powers the frontend onboarding "first real report" step. A "demo report"
  * is a service_request node whose body carries the literal "[demo-content]"
@@ -38,11 +39,19 @@ class ReportStatsController extends ControllerBase {
   protected TierConfigService $tierConfig;
 
   /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected Connection $database;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
     $instance = parent::create($container);
     $instance->tierConfig = $container->get('markaspot_fastmap.tier_config');
+    $instance->database = $container->get('database');
     return $instance;
   }
 
@@ -178,6 +187,71 @@ class ReportStatsController extends ControllerBase {
     }
 
     return new JsonResponse($this->tierConfig->getReportStats((int) $entity->id()));
+  }
+
+  /**
+   * Deletes the provisioned demo requests of a jurisdiction.
+   *
+   * Only nodes that provisioning created are removed: service requests of
+   * this jurisdiction, owned by uid 1 (the provisioning owner) and carrying
+   * the "[demo-content]" marker. A citizen can type the marker into a report,
+   * so the marker alone never qualifies a node for deletion.
+   *
+   * Request body: {"jurisdiction_id": <numeric group ID>}. Response:
+   * {"removed": <int>, "demo_request_count": <remaining int>}.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The current request.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   200 with the counts, 400 for a missing or invalid ID, 404 for an
+   *   unknown jurisdiction, 403 without tenant admin access.
+   */
+  public function removeDemoContent(Request $request): JsonResponse {
+    $data = json_decode($request->getContent(), TRUE);
+    $id = is_array($data) ? ($data['jurisdiction_id'] ?? NULL) : NULL;
+    if (is_string($id) && ctype_digit($id)) {
+      $id = (int) $id;
+    }
+    if (!is_int($id) || $id <= 0) {
+      return new JsonResponse(['error' => 'Missing or invalid jurisdiction_id'], 400);
+    }
+
+    $entity = $this->loadJurisdictionGroup((string) $id);
+    if (!$entity) {
+      return new JsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    if (!$this->access((string) $id, $this->currentUser())->isAllowed()) {
+      return new JsonResponse(['error' => 'Access denied'], 403);
+    }
+
+    $storage = $this->entityTypeManager()->getStorage('node');
+    $nids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_jurisdiction', $id)
+      ->condition('uid', 1)
+      ->condition('body.value', '%' . $this->database->escapeLike('[demo-content]') . '%', 'LIKE')
+      ->execute();
+
+    $removed = 0;
+    foreach (array_chunk($nids, 50) as $chunk) {
+      $nodes = $storage->loadMultiple($chunk);
+      $storage->delete($nodes);
+      $removed += count($nodes);
+    }
+
+    $this->getLogger('markaspot_fastmap')->notice('Removed @count demo requests from jurisdiction @gid (user @uid).', [
+      '@count' => $removed,
+      '@gid' => $id,
+      '@uid' => $this->currentUser()->id(),
+    ]);
+
+    return new JsonResponse([
+      'removed' => $removed,
+      'demo_request_count' => $this->tierConfig->getReportStats($id)['demo_request_count'],
+    ]);
   }
 
 }
