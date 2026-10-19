@@ -8,7 +8,6 @@ use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\markaspot_nuxt\Access\UserJsonApiAccessCheck;
 use Drupal\markaspot_nuxt\Routing\UserJsonApiRouteSubscriber;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
@@ -153,29 +152,25 @@ class UserViewLabelAccessTest extends UnitTestCase {
   }
 
   /**
-   * JSON:API user GET routes receive the anonymous access gate.
+   * Every JSON:API user route requires a logged-in account.
    */
-  public function testUserJsonApiRoutesReceiveCustomAccessGate(): void {
+  public function testUserJsonApiRoutesRequireLogin(): void {
     $collection = new RouteCollection();
-    $userRoute = new Route('/jsonapi/user/user');
-    $userRoute->addDefaults(['resource_type' => 'user--user']);
-    $userRoute->setMethods(['GET']);
-    $collection->add('jsonapi.user--user.collection', $userRoute);
-
-    $userIndividualRoute = new Route('/jsonapi/user/user/{entity}');
-    $userIndividualRoute->addDefaults(['resource_type' => 'user--user']);
-    $userIndividualRoute->setMethods(['GET']);
-    $collection->add('jsonapi.user--user.individual', $userIndividualRoute);
-
-    $userPostRoute = new Route('/jsonapi/user/user');
-    $userPostRoute->addDefaults(['resource_type' => 'user--user']);
-    $userPostRoute->setMethods(['POST']);
-    $collection->add('jsonapi.user--user.collection.post', $userPostRoute);
-
-    $userPatchRoute = new Route('/jsonapi/user/user/{entity}');
-    $userPatchRoute->addDefaults(['resource_type' => 'user--user']);
-    $userPatchRoute->setMethods(['PATCH']);
-    $collection->add('jsonapi.user--user.individual.patch', $userPatchRoute);
+    $userRoutes = [];
+    foreach ([
+      'collection' => ['/jsonapi/user/user', 'GET'],
+      'individual' => ['/jsonapi/user/user/{entity}', 'GET'],
+      'related' => ['/jsonapi/user/user/{entity}/{related}', 'GET'],
+      'relationship' => ['/jsonapi/user/user/{entity}/relationships/{related}', 'GET'],
+      'collection.post' => ['/jsonapi/user/user', 'POST'],
+      'individual.patch' => ['/jsonapi/user/user/{entity}', 'PATCH'],
+    ] as $suffix => [$path, $method]) {
+      $route = new Route($path);
+      $route->addDefaults(['resource_type' => 'user--user']);
+      $route->setMethods([$method]);
+      $collection->add('jsonapi.user--user.' . $suffix, $route);
+      $userRoutes[$suffix] = $route;
+    }
 
     $nodeRoute = new Route('/jsonapi/node/service_request');
     $nodeRoute->addDefaults(['resource_type' => 'node--service_request']);
@@ -194,39 +189,10 @@ class UserViewLabelAccessTest extends UnitTestCase {
     };
     $subscriber->alter($collection);
 
-    $this->assertSame(
-          'markaspot_nuxt.user_jsonapi_access_check:access',
-          $userRoute->getRequirement('_custom_access')
-      );
-    $this->assertSame(
-          'markaspot_nuxt.user_jsonapi_access_check:access',
-          $userIndividualRoute->getRequirement('_custom_access')
-      );
-    $this->assertNull($userPostRoute->getRequirement('_custom_access'));
-    $this->assertNull($userPatchRoute->getRequirement('_custom_access'));
-    $this->assertNull($nodeRoute->getRequirement('_custom_access'));
-  }
-
-  /**
-   * Anonymous users cannot access JSON:API user routes.
-   */
-  public function testUserJsonApiAccessCheckDeniesAnonymous(): void {
-    $checker = new UserJsonApiAccessCheck();
-    $result = $checker->access($this->createAccount(TRUE));
-
-    $this->assertTrue($result->isForbidden());
-    $this->assertContains('user.roles:anonymous', $result->getCacheContexts());
-  }
-
-  /**
-   * Authenticated users pass through to JSON:API entity access.
-   */
-  public function testUserJsonApiAccessCheckAllowsAuthenticated(): void {
-    $checker = new UserJsonApiAccessCheck();
-    $result = $checker->access($this->createAccount(FALSE));
-
-    $this->assertTrue($result->isAllowed());
-    $this->assertContains('user.roles:anonymous', $result->getCacheContexts());
+    foreach ($userRoutes as $suffix => $route) {
+      $this->assertSame('TRUE', $route->getRequirement('_user_is_logged_in'), $suffix);
+    }
+    $this->assertNull($nodeRoute->getRequirement('_user_is_logged_in'));
   }
 
 }

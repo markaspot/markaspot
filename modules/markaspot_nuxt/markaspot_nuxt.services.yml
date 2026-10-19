@@ -36,8 +36,6 @@ services:
   markaspot_nuxt.enterprise_feature_access_check:
     class: Drupal\markaspot_nuxt\Access\EnterpriseFeatureAccessCheck
     arguments: ['@markaspot_nuxt.enterprise_feature_gate', '@entity_type.manager', '@config.factory', '@?markaspot_group.hierarchy_resolver']
-  markaspot_nuxt.user_jsonapi_access_check:
-    class: Drupal\markaspot_nuxt\Access\UserJsonApiAccessCheck
   markaspot_nuxt.user_jsonapi_route_subscriber:
     class: Drupal\markaspot_nuxt\Routing\UserJsonApiRouteSubscriber
     tags:
