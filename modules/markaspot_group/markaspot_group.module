@@ -2289,6 +2289,10 @@ function markaspot_group_query_user_access_alter(AlterableInterface $query): voi
   // (its selection key outlives the session) would otherwise list accounts
   // of every workspace. Code that looks up accounts for anonymous flows
   // (login, OTP, password reset) loads them without access checks.
+  // Caveat: entity reference validation runs an access-checked selection
+  // query. An anonymous save that references a user other than uid 0 fails
+  // validation here ("cannot be referenced") on multi-tenant installs.
+  // Anonymous reports and photos reference uid 0 only, so they validate.
   if ($account->isAnonymous()) {
     if (_markaspot_group_jurisdiction_group_count() > 1) {
       $query->alwaysFalse();
