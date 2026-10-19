@@ -2285,8 +2285,17 @@ function markaspot_group_user_access(UserInterface $user, string $operation, Acc
 function markaspot_group_query_user_access_alter(AlterableInterface $query): void {
   $account = $query->getMetaData('account');
   $account = $account instanceof AccountInterface ? $account : \Drupal::currentUser();
-  if ($account->isAnonymous()
-    || (int) $account->id() === 1
+  // Anonymous visitors never need a user list. A replayed autocomplete URL
+  // (its selection key outlives the session) would otherwise list accounts
+  // of every workspace. Code that looks up accounts for anonymous flows
+  // (login, OTP, password reset) loads them without access checks.
+  if ($account->isAnonymous()) {
+    if (_markaspot_group_jurisdiction_group_count() > 1) {
+      $query->alwaysFalse();
+    }
+    return;
+  }
+  if ((int) $account->id() === 1
     || array_intersect(['administrator', 'editorial_board'], $account->getRoles())
     || $account->hasPermission('administer users')
     || _markaspot_group_jurisdiction_group_count() <= 1) {
@@ -2324,10 +2333,15 @@ function _markaspot_group_scope_user_ids(int $uid): array {
   $scope = _markaspot_group_account_scope_jurisdiction_ids($uid);
   $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
   $jurisdiction_ids = $scope;
-  $trees = [];
+  $root_ids = [];
   foreach ($scope as $jurisdiction_id) {
     $jurisdiction_ids = array_merge($jurisdiction_ids, $resolver->getAncestorIds($jurisdiction_id));
-    $root_id = $resolver->getRootJurisdictionId($jurisdiction_id) ?? $jurisdiction_id;
+    $root_id = (int) ($resolver->getRootJurisdictionId($jurisdiction_id) ?? $jurisdiction_id);
+    $root_ids[$root_id] = $root_id;
+  }
+  // Each tree is walked once, however many of its jurisdictions are in scope.
+  $trees = [];
+  foreach ($root_ids as $root_id) {
     $trees = array_merge($trees, [$root_id], $resolver->getDescendantIds($root_id));
   }
 
@@ -2377,6 +2391,7 @@ function _markaspot_group_account_scope_jurisdiction_ids(int $uid): array {
 
   $hierarchy_resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
   $ids = [];
+  $org_roots = [];
   foreach (GroupMembershipEntity::loadByUser($user) as $membership) {
     $group = $membership->getGroup();
     if (_markaspot_group_is_jurisdiction_group($group)) {
@@ -2387,10 +2402,15 @@ function _markaspot_group_account_scope_jurisdiction_ids(int $uid): array {
       && $group->bundle() === _markaspot_group_get_org_group_type()
       && $group->hasField('field_jurisdiction')) {
       foreach (array_filter(array_map('intval', array_column($group->get('field_jurisdiction')->getValue(), 'target_id'))) as $jurisdiction_id) {
-        $root_id = $hierarchy_resolver->getRootJurisdictionId($jurisdiction_id) ?? $jurisdiction_id;
-        $ids = array_merge($ids, [$jurisdiction_id], $hierarchy_resolver->getDescendantIds($root_id));
+        $root_id = (int) ($hierarchy_resolver->getRootJurisdictionId($jurisdiction_id) ?? $jurisdiction_id);
+        $ids[] = $jurisdiction_id;
+        $org_roots[$root_id] = $root_id;
       }
     }
+  }
+  // Organisations of one tree share its walk.
+  foreach ($org_roots as $root_id) {
+    $ids = array_merge($ids, $hierarchy_resolver->getDescendantIds($root_id));
   }
 
   return $scopes[$uid] = array_values(array_unique(array_map('intval', $ids)));

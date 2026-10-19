@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_group\Kernel;
 
 use Drupal\Component\Utility\Crypt;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\Site\Settings;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -14,6 +16,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolver;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\Tests\user\Traits\UserCreationTrait;
@@ -84,6 +87,16 @@ final class UserLabelJurisdictionScopeKernelTest extends KernelTestBase {
    * Owner of workspace B, named like a fastmap self-signup.
    */
   private UserInterface $ownerB;
+
+  /**
+   * Counts tree walks so a test can prove each tree is walked once.
+   */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+    if ($container->hasDefinition('markaspot_group.hierarchy_resolver')) {
+      $container->getDefinition('markaspot_group.hierarchy_resolver')->setClass(CountingHierarchyResolver::class);
+    }
+  }
 
   /**
    * {@inheritdoc}
@@ -331,6 +344,62 @@ final class UserLabelJurisdictionScopeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Anonymous visitors get no user suggestions, even with a valid key.
+   */
+  public function testAnonymousAutocompleteListsNobody(): void {
+    $this->container->get('router.builder')->rebuild();
+    $this->setCurrentUser(new AnonymousUserSession());
+
+    $settings = ['match_operator' => 'CONTAINS', 'match_limit' => 10];
+    $key = Crypt::hmacBase64(serialize($settings) . 'userdefault:user', Settings::getHashSalt());
+    $this->container->get('keyvalue')->get('entity_autocomplete')->set($key, $settings);
+
+    $request = Request::create('/entity_reference_autocomplete/user/default:user/' . $key, 'GET', ['q' => 'owner']);
+    $response = $this->container->get('http_kernel')->handle($request);
+    $this->assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+    $this->assertSame([], json_decode((string) $response->getContent(), TRUE));
+    $this->assertStringNotContainsString('owner-', (string) $response->getContent());
+
+    // Single-jurisdiction installs keep core behaviour.
+    $this->tenantB->delete();
+    $this->districtA->delete();
+    drupal_static_reset();
+    $uids = $this->container->get('entity_type.manager')->getStorage('user')->getQuery()->accessCheck(TRUE)->execute();
+    $this->assertContains((string) $this->ownerA->id(), array_map('strval', $uids));
+  }
+
+  /**
+   * Scope expansion walks each jurisdiction tree once.
+   *
+   * Two roots: tenant A with two districts, tenant C with one. A member of
+   * every jurisdiction of both trees must not walk tree A three times.
+   */
+  public function testScopeWalksEachTreeOnce(): void {
+    $districtA2 = $this->jurisdiction('District A2', $this->tenantA);
+    $tenantC = $this->jurisdiction('Tenant C');
+    $districtC = $this->jurisdiction('District C', $tenantC);
+    $staff = $this->account('staff-multi', ['moderator']);
+    foreach ([$this->tenantA, $this->districtA, $districtA2, $districtC] as $jurisdiction) {
+      $jurisdiction->addMember($staff);
+    }
+    $memberC = $this->account('member-c', ['moderator']);
+    $tenantC->addMember($memberC);
+
+    drupal_static_reset();
+    // The membership scope is resolved first; count only the tree expansion.
+    _markaspot_group_account_scope_jurisdiction_ids((int) $staff->id());
+    CountingHierarchyResolver::$descendantWalks = [];
+    $uids = _markaspot_group_scope_user_ids((int) $staff->id());
+
+    $this->assertContains((int) $this->ownerA->id(), $uids);
+    $this->assertContains((int) $memberC->id(), $uids, 'Members of the second tree are in scope.');
+    $this->assertNotContains((int) $this->ownerB->id(), $uids);
+    $walks = array_count_values(CountingHierarchyResolver::$descendantWalks);
+    ksort($walks);
+    $this->assertSame([(int) $this->tenantA->id() => 1, (int) $tenantC->id() => 1], $walks, 'Each tree is walked once, from its root.');
+  }
+
+  /**
    * Creates a jurisdiction group, optionally below a parent.
    */
   private function jurisdiction(string $label, ?Group $parent = NULL): Group {
@@ -387,6 +456,28 @@ final class UserLabelJurisdictionScopeKernelTest extends KernelTestBase {
     if (!$storage->load($groupType . '-group_membership')) {
       $storage->createFromPlugin(GroupType::load($groupType), 'group_membership')->save();
     }
+  }
+
+}
+
+/**
+ * Hierarchy resolver that records each descendant walk.
+ */
+class CountingHierarchyResolver extends JurisdictionHierarchyResolver {
+
+  /**
+   * Group IDs whose descendants were requested, in order.
+   *
+   * @var int[]
+   */
+  public static array $descendantWalks = [];
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getDescendantIds(int $groupId): array {
+    self::$descendantWalks[] = $groupId;
+    return parent::getDescendantIds($groupId);
   }
 
 }
