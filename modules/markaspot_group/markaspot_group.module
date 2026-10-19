@@ -2226,6 +2226,94 @@ function _markaspot_group_account_bypasses_private_field_scope(AccountInterface 
 }
 
 /**
+ * Implements hook_ENTITY_TYPE_access() for user entities.
+ *
+ * A user label is the account name, and on the shared fastmap instance the
+ * name of a self-signup owner has been the e-mail address. JSON:API serves a
+ * label-only resource whenever 'view label' is allowed, for /jsonapi/user and
+ * for every user reference (author, revision author, file owner, status note
+ * author). On an install with several jurisdictions, the label is therefore
+ * only visible to accounts that share a jurisdiction scope with the user.
+ * This only ever denies: the account itself, administrators, editorial
+ * staff and user administrators keep what core grants, and an install with
+ * a single jurisdiction stays unscoped.
+ */
+function markaspot_group_user_access(UserInterface $user, string $operation, AccountInterface $account): AccessResult {
+  if ($operation !== 'view label') {
+    return AccessResult::neutral();
+  }
+
+  $result = AccessResult::neutral()
+    ->addCacheContexts(['user'])
+    ->addCacheTags(['group_list']);
+  $target_id = (int) $user->id();
+  $viewer_id = (int) $account->id();
+  if ($account->isAnonymous()
+    || $target_id === 0
+    || $target_id === $viewer_id
+    || $viewer_id === 1
+    || array_intersect(['administrator', 'editorial_board'], $account->getRoles())
+    || $account->hasPermission('administer users')
+    || _markaspot_group_jurisdiction_group_count() <= 1) {
+    return $result;
+  }
+
+  $result->addCacheTags([
+    'group_relationship_list:plugin:group_membership:entity:' . $viewer_id,
+    'group_relationship_list:plugin:group_membership:entity:' . $target_id,
+  ]);
+  if (array_intersect(
+    _markaspot_group_account_scope_jurisdiction_ids($viewer_id),
+    _markaspot_group_account_scope_jurisdiction_ids($target_id),
+  )) {
+    return $result;
+  }
+
+  return AccessResult::forbidden('User names are only visible within a shared jurisdiction.')
+    ->addCacheableDependency($result);
+}
+
+/**
+ * Returns the jurisdictions an account works in, once per request.
+ *
+ * Jurisdiction memberships with their sub-jurisdictions, plus the
+ * jurisdiction tree an organisation membership is attached to.
+ *
+ * @return int[]
+ *   Jurisdiction group IDs.
+ */
+function _markaspot_group_account_scope_jurisdiction_ids(int $uid): array {
+  $scopes = &drupal_static(__FUNCTION__, []);
+  if (isset($scopes[$uid])) {
+    return $scopes[$uid];
+  }
+  $user = $uid > 0 ? User::load($uid) : NULL;
+  if (!$user instanceof UserInterface) {
+    return $scopes[$uid] = [];
+  }
+
+  $hierarchy_resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $ids = [];
+  foreach (GroupMembershipEntity::loadByUser($user) as $membership) {
+    $group = $membership->getGroup();
+    if (_markaspot_group_is_jurisdiction_group($group)) {
+      $ids = array_merge($ids, [(int) $group->id()], $hierarchy_resolver->getDescendantIds((int) $group->id()));
+      continue;
+    }
+    if ($group instanceof GroupInterface
+      && $group->bundle() === _markaspot_group_get_org_group_type()
+      && $group->hasField('field_jurisdiction')) {
+      foreach (array_filter(array_map('intval', array_column($group->get('field_jurisdiction')->getValue(), 'target_id'))) as $jurisdiction_id) {
+        $root_id = $hierarchy_resolver->getRootJurisdictionId($jurisdiction_id) ?? $jurisdiction_id;
+        $ids = array_merge($ids, [$jurisdiction_id], $hierarchy_resolver->getDescendantIds($root_id));
+      }
+    }
+  }
+
+  return $scopes[$uid] = array_values(array_unique(array_map('intval', $ids)));
+}
+
+/**
  * Counts jurisdiction groups, once per request.
  */
 function _markaspot_group_jurisdiction_group_count(): int {
