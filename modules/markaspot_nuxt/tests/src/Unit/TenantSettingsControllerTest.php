@@ -4184,12 +4184,15 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests sanitizeSvgLogoData() rejects external image references.
+   * Tests sanitizeSvgLogoData() never keeps external image references.
+   *
+   * Since svg-sanitize 1.0 the sanitizer strips the bare remote href itself,
+   * so the icon is either rejected or stored without the reference.
    *
    * @covers ::sanitizeSvgLogoData
    * @covers ::svgContainsUnsafeExternalReferences
    */
-  public function testSanitizeSvgLogoDataRejectsExternalImageReference(): void {
+  public function testSanitizeSvgLogoDataDropsExternalImageReference(): void {
     $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
     $result = $method->invoke(
       $this->controller,
@@ -4199,7 +4202,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
       'app_icon',
     );
 
-    $this->assertNull($result);
+    $this->assertStringNotContainsString('example.com', (string) $result);
   }
 
   /**
@@ -4222,12 +4225,15 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests sanitizeSvgLogoData() rejects external inline CSS images.
+   * Tests sanitizeSvgLogoData() never keeps external inline CSS images.
+   *
+   * Since svg-sanitize 1.0 the sanitizer strips image-set() references
+   * itself, so the icon is either rejected or stored without them.
    *
    * @covers ::sanitizeSvgLogoData
    * @covers ::svgContainsUnsafeExternalReferences
    */
-  public function testSanitizeSvgLogoDataRejectsInlineStyle(): void {
+  public function testSanitizeSvgLogoDataDropsInlineStyleImage(): void {
     $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
     $result = $method->invoke(
       $this->controller,
@@ -4238,7 +4244,81 @@ class TenantSettingsControllerTest extends UnitTestCase {
       'app_icon',
     );
 
-    $this->assertNull($result);
+    $this->assertStringNotContainsString('example.com', (string) $result);
+  }
+
+  /**
+   * Tests sanitizeSvgLogoData() cleans malicious logos and keeps valid ones.
+   *
+   * @covers ::sanitizeSvgLogoData
+   * @dataProvider svgLogoProvider
+   */
+  public function testSanitizeSvgLogoDataCleansMaliciousLogo(string $svg, bool $rejected, array $required, array $forbidden): void {
+    $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
+    $result = $method->invoke($this->controller, $svg, 'logo_light');
+
+    if ($rejected) {
+      $this->assertNull($result);
+      return;
+    }
+    $this->assertIsString($result);
+    foreach ($required as $fragment) {
+      $this->assertStringContainsString($fragment, $result);
+    }
+    foreach ($forbidden as $fragment) {
+      $this->assertStringNotContainsString($fragment, $result);
+    }
+  }
+
+  /**
+   * Provides malicious and valid SVG logos.
+   *
+   * @return array<string, array{string, bool, string[], string[]}>
+   *   SVG source, whether it is rejected, required and forbidden fragments.
+   */
+  public static function svgLogoProvider(): array {
+    $ns = 'xmlns="http://www.w3.org/2000/svg"';
+    $xlink = 'xmlns:xlink="http://www.w3.org/1999/xlink"';
+    return [
+      'script element' => [
+        "<svg {$ns} viewBox=\"0 0 10 10\"><script>alert(1)</script><rect width=\"10\" height=\"10\"/></svg>",
+        FALSE,
+        ['<rect'],
+        ['<script', 'alert('],
+      ],
+      'onload handler' => [
+        "<svg {$ns} viewBox=\"0 0 10 10\" onload=\"alert(1)\"><rect width=\"10\" height=\"10\"/></svg>",
+        FALSE,
+        ['<rect'],
+        ['onload', 'alert('],
+      ],
+      // svg-sanitize 1.0 strips the DTD before parsing, so a document that
+      // references a custom entity no longer parses and is rejected.
+      'DTD entity' => [
+        '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xss "&#60;img src=x onerror=alert(1)&#62;">]>'
+          . "<svg {$ns}><text>&xss;</text></svg>",
+        TRUE,
+        [],
+        [],
+      ],
+      'external xlink:href' => [
+        "<svg {$ns} {$xlink} viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\"/>"
+          . '<image xlink:href="https://evil.example/pixel.png" width="1" height="1"/>'
+          . '<use xlink:href="https://evil.example/sprite.svg#a"/></svg>',
+        FALSE,
+        ['<rect'],
+        ['evil.example'],
+      ],
+      'valid logo with a public doctype' => [
+        '<?xml version="1.0" encoding="UTF-8"?>'
+          . '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
+          . "<svg {$ns} viewBox=\"0 0 100 100\"><title>Logo</title>"
+          . '<circle cx="50" cy="50" r="40" fill="#0891B2"/><path d="M20 50h60" stroke="#fff"/></svg>',
+        FALSE,
+        ['<circle', 'fill="#0891B2"', '<path', 'viewBox="0 0 100 100"'],
+        ['<!DOCTYPE', '<?xml'],
+      ],
+    ];
   }
 
 }

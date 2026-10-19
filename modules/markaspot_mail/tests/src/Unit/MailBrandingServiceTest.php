@@ -1431,4 +1431,86 @@ final class MailBrandingServiceTest extends UnitTestCase {
     // @phpcs:enable
   }
 
+  /**
+   * Inline SVG logos are sanitized before they are trusted as markup.
+   *
+   * @dataProvider svgLogoProvider
+   */
+  public function testReadSvgInlineCleansMaliciousLogo(string $svg, bool $rejected, array $required, array $forbidden): void {
+    $path = sys_get_temp_dir() . '/mail-logo-' . bin2hex(random_bytes(4)) . '.svg';
+    file_put_contents($path, $svg);
+    try {
+      $service = $this->buildService(NULL);
+      $method = new \ReflectionMethod($service, 'readSvgInline');
+      $result = $method->invoke($service, $path);
+    }
+    finally {
+      unlink($path);
+    }
+
+    if ($rejected) {
+      $this->assertNull($result);
+      return;
+    }
+    $this->assertNotNull($result);
+    $markup = (string) $result;
+    foreach ($required as $fragment) {
+      $this->assertStringContainsString($fragment, $markup);
+    }
+    foreach ($forbidden as $fragment) {
+      $this->assertStringNotContainsString($fragment, $markup);
+    }
+  }
+
+  /**
+   * Provides malicious and valid SVG logos.
+   *
+   * @return array<string, array{string, bool, string[], string[]}>
+   *   SVG source, whether it is rejected, required and forbidden fragments.
+   */
+  public static function svgLogoProvider(): array {
+    $ns = 'xmlns="http://www.w3.org/2000/svg"';
+    $xlink = 'xmlns:xlink="http://www.w3.org/1999/xlink"';
+    return [
+      'script element' => [
+        "<svg {$ns} viewBox=\"0 0 10 10\"><script>alert(1)</script><rect width=\"10\" height=\"10\"/></svg>",
+        FALSE,
+        ['<rect'],
+        ['<script', 'alert('],
+      ],
+      'onload handler' => [
+        "<svg {$ns} viewBox=\"0 0 10 10\" onload=\"alert(1)\"><rect width=\"10\" height=\"10\"/></svg>",
+        FALSE,
+        ['<rect'],
+        ['onload', 'alert('],
+      ],
+      // svg-sanitize 1.0 strips the DTD before parsing, so a document that
+      // references a custom entity no longer parses and is rejected.
+      'DTD entity' => [
+        '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xss "&#60;img src=x onerror=alert(1)&#62;">]>'
+          . "<svg {$ns}><text>&xss;</text></svg>",
+        TRUE,
+        [],
+        [],
+      ],
+      'external xlink:href' => [
+        "<svg {$ns} {$xlink} viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\"/>"
+          . '<image xlink:href="https://evil.example/pixel.png" width="1" height="1"/>'
+          . '<use xlink:href="https://evil.example/sprite.svg#a"/></svg>',
+        FALSE,
+        ['<rect'],
+        ['evil.example'],
+      ],
+      'valid logo with a public doctype' => [
+        '<?xml version="1.0" encoding="UTF-8"?>'
+          . '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
+          . "<svg {$ns} viewBox=\"0 0 100 100\"><title>Logo</title>"
+          . '<circle cx="50" cy="50" r="40" fill="#0891B2"/><path d="M20 50h60" stroke="#fff"/></svg>',
+        FALSE,
+        ['<circle', 'fill="#0891B2"', '<path', 'viewBox="0 0 100 100"'],
+        ['<!DOCTYPE', '<?xml'],
+      ],
+    ];
+  }
+
 }
