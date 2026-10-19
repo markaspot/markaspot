@@ -212,6 +212,33 @@ final class WorkspaceAccountNameKernelTest extends KernelTestBase {
   }
 
   /**
+   * Slug and role come from the same membership.
+   */
+  public function testUpdateTakesSlugAndRoleFromOneMembership(): void {
+    // Member of the lower-ID workspace A, administrator of B.
+    $account = $this->account('both@example.org');
+    $this->tenantA->addMember($account);
+    $this->tenantB->addMember($account, ['group_roles' => ['jur-tenant_admin']]);
+
+    $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
+    markaspot_group_update_11956();
+    $this->assertSame('riverside-admin', User::load($account->id())->getAccountName());
+  }
+
+  /**
+   * On the fastmap install, accounts with an (unused) password are renamed.
+   */
+  public function testUpdateRenamesPasswordAccountsWhereLoginIsByMail(): void {
+    $imported = $this->account('imported@example.org', 'random-import-password');
+    $this->tenantA->addMember($imported);
+    $this->enableModules(['markaspot_fastmap']);
+
+    $this->container->get('module_handler')->loadInclude('markaspot_group', 'install');
+    markaspot_group_update_11956();
+    $this->assertMatchesRegularExpression('/^lindenhof-member-[0-9a-f]{4}$/', User::load($imported->id())->getAccountName());
+  }
+
+  /**
    * Creates an account; names with "@" get that address as mail.
    */
   private function account(string $name, ?string $password = NULL): UserInterface {

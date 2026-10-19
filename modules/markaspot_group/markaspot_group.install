@@ -6400,10 +6400,12 @@ function _markaspot_group_restore_label_overrides(string $name, array $overrides
  * administrators, "<slug>-member-<hex>" otherwise, from the first
  * jurisdiction (or organisation jurisdiction) they belong to.
  *
- * Only on installs with several jurisdictions, and only accounts without a
- * password: there the login is by mail (OTP) and never by name. SSO accounts
- * ("sso.*") and single-jurisdiction installs, where the password form may
- * use the name, stay untouched. Logs counts only, never names.
+ * Only on installs with several jurisdictions. Accounts with a password keep
+ * their name, because the password form signs in by name, except where
+ * markaspot_fastmap runs: that install signs in by mail only, and imported
+ * accounts there carry a random password nobody knows. SSO accounts
+ * ("sso.*") and single-jurisdiction installs stay untouched. Logs counts
+ * only, never names.
  */
 function markaspot_group_update_11956(): string {
   $entity_type_manager = \Drupal::entityTypeManager();
@@ -6418,6 +6420,10 @@ function markaspot_group_update_11956(): string {
   }
 
   $names = \Drupal::service('markaspot_group.workspace_account_name');
+  // The fastmap install signs in by mail only (OTP); the random password the
+  // tenant import sets is never used there. Elsewhere a password may be a
+  // real name login, so those accounts keep their name.
+  $password_login = !\Drupal::moduleHandler()->moduleExists('markaspot_fastmap');
   $user_storage = $entity_type_manager->getStorage('user');
   $uids = $user_storage->getQuery()
     ->accessCheck(FALSE)
@@ -6431,7 +6437,7 @@ function markaspot_group_update_11956(): string {
     if (!$user instanceof UserInterface
       || !WorkspaceAccountName::exposesMail($user->getAccountName(), (string) $user->getEmail())
       || str_starts_with($user->getAccountName(), 'sso.')
-      || (string) $user->getPassword() !== '') {
+      || ($password_login && (string) $user->getPassword() !== '')) {
       $skipped++;
       continue;
     }
@@ -6457,25 +6463,37 @@ function markaspot_group_update_11956(): string {
  *   one of its jurisdictions.
  */
 function _markaspot_group_account_name_scope(UserInterface $user, string $jur_type): array {
-  $jurisdiction_slug = NULL;
-  $organisation_slug = NULL;
-  $is_admin = FALSE;
   $memberships = GroupMembership::loadByUser($user);
   usort($memberships, static fn($a, $b): int => (int) $a->getGroupId() <=> (int) $b->getGroupId());
-  foreach ($memberships as $membership) {
-    $group = $membership->getGroup();
-    if ($group->bundle() === $jur_type) {
-      $is_admin = $is_admin || isset($membership->getRoles(FALSE)[$jur_type . '-tenant_admin']);
-      if ($jurisdiction_slug === NULL && $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()) {
-        $jurisdiction_slug = (string) $group->get('field_slug')->value;
+  $slug_of = static function ($group): ?string {
+    return $group instanceof GroupInterface && $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()
+      ? (string) $group->get('field_slug')->value
+      : NULL;
+  };
+
+  // Slug and role always come from the same membership: the first one the
+  // account administers, else its first jurisdiction, else the
+  // jurisdiction of its first organisation.
+  foreach ([TRUE, FALSE] as $admin_only) {
+    foreach ($memberships as $membership) {
+      $group = $membership->getGroup();
+      if ($group->bundle() !== $jur_type) {
+        continue;
       }
-    }
-    elseif ($organisation_slug === NULL && $group->hasField('field_jurisdiction')) {
-      $jurisdiction = $group->get('field_jurisdiction')->entity;
-      if ($jurisdiction instanceof GroupInterface && $jurisdiction->hasField('field_slug') && !$jurisdiction->get('field_slug')->isEmpty()) {
-        $organisation_slug = (string) $jurisdiction->get('field_slug')->value;
+      $is_admin = isset($membership->getRoles(FALSE)[$jur_type . '-tenant_admin']);
+      if ($admin_only && !$is_admin) {
+        continue;
+      }
+      if ($slug = $slug_of($group)) {
+        return [$slug, $is_admin];
       }
     }
   }
-  return [$jurisdiction_slug ?? $organisation_slug ?? 'workspace', $is_admin];
+  foreach ($memberships as $membership) {
+    $group = $membership->getGroup();
+    if ($group->hasField('field_jurisdiction') && ($slug = $slug_of($group->get('field_jurisdiction')->entity))) {
+      return [$slug, FALSE];
+    }
+  }
+  return ['workspace', FALSE];
 }
