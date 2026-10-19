@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\Component\Utility\Crypt;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\file\Entity\File;
@@ -300,6 +302,32 @@ final class UserLabelJurisdictionScopeKernelTest extends KernelTestBase {
       }
     }
     return $names;
+  }
+
+  /**
+   * The user autocomplete lists accounts of the shared scope only.
+   *
+   * The autocomplete renders labels without a 'view label' check, and its
+   * key can be taken from any form with a user reference widget.
+   */
+  public function testUserAutocompleteListsSharedScopeOnly(): void {
+    $staffA = $this->account('staff-a', ['moderator']);
+    $this->tenantA->addMember($staffA);
+    $this->container->get('router.builder')->rebuild();
+    $this->setCurrentUser($staffA);
+
+    $settings = ['match_operator' => 'CONTAINS', 'match_limit' => 10];
+    [$targetType, $handler] = ['user', 'default:user'];
+    $key = Crypt::hmacBase64(serialize($settings) . $targetType . $handler, Settings::getHashSalt());
+    $this->container->get('keyvalue')->get('entity_autocomplete')->set($key, $settings);
+
+    $request = Request::create('/entity_reference_autocomplete/user/default:user/' . $key, 'GET', ['q' => 'owner']);
+    $response = $this->container->get('http_kernel')->handle($request);
+    $this->assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+    $labels = array_column(json_decode((string) $response->getContent(), TRUE), 'label');
+
+    $this->assertContains('owner-a@example.org', $labels);
+    $this->assertNotContains('owner-b@example.org', $labels, 'A foreign account is not suggested.');
   }
 
   /**

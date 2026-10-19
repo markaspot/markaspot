@@ -2274,6 +2274,87 @@ function markaspot_group_user_access(UserInterface $user, string $operation, Acc
 }
 
 /**
+ * Implements hook_query_TAG_alter() for user_access.
+ *
+ * Access-checked user queries (entity reference autocomplete, selection
+ * handlers, JSON:API collections) list only accounts that share a
+ * jurisdiction scope with the current user, with the same exemptions as
+ * markaspot_group_user_access(). Labels shown by an autocomplete never pass
+ * the 'view label' check, so the list itself has to be scoped.
+ */
+function markaspot_group_query_user_access_alter(AlterableInterface $query): void {
+  $account = $query->getMetaData('account');
+  $account = $account instanceof AccountInterface ? $account : \Drupal::currentUser();
+  if ($account->isAnonymous()
+    || (int) $account->id() === 1
+    || array_intersect(['administrator', 'editorial_board'], $account->getRoles())
+    || $account->hasPermission('administer users')
+    || _markaspot_group_jurisdiction_group_count() <= 1) {
+    return;
+  }
+
+  $alias = NULL;
+  foreach ($query->getTables() as $table_alias => $info) {
+    if (in_array($info['table'] ?? NULL, ['users', 'users_field_data'], TRUE)) {
+      $alias = $table_alias;
+      break;
+    }
+  }
+  if ($alias === NULL) {
+    return;
+  }
+  $query->condition($alias . '.uid', _markaspot_group_scope_user_ids((int) $account->id()) ?: [0], 'IN');
+}
+
+/**
+ * Returns the accounts that share a jurisdiction scope with an account.
+ *
+ * The SQL form of the shared-scope rule in markaspot_group_user_access():
+ * members of the account's jurisdictions, of their parent jurisdictions,
+ * and of organisations attached to the same jurisdiction tree.
+ *
+ * @return int[]
+ *   User IDs, including the account itself.
+ */
+function _markaspot_group_scope_user_ids(int $uid): array {
+  $cache = &drupal_static(__FUNCTION__, []);
+  if (isset($cache[$uid])) {
+    return $cache[$uid];
+  }
+  $scope = _markaspot_group_account_scope_jurisdiction_ids($uid);
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $jurisdiction_ids = $scope;
+  $trees = [];
+  foreach ($scope as $jurisdiction_id) {
+    $jurisdiction_ids = array_merge($jurisdiction_ids, $resolver->getAncestorIds($jurisdiction_id));
+    $root_id = $resolver->getRootJurisdictionId($jurisdiction_id) ?? $jurisdiction_id;
+    $trees = array_merge($trees, [$root_id], $resolver->getDescendantIds($root_id));
+  }
+
+  $group_ids = array_values(array_unique(array_map('intval', $jurisdiction_ids)));
+  if ($trees !== [] && \Drupal::database()->schema()->tableExists('group__field_jurisdiction')) {
+    $organisation_ids = \Drupal::database()->select('group__field_jurisdiction', 'j')
+      ->fields('j', ['entity_id'])
+      ->condition('j.bundle', _markaspot_group_get_org_group_type())
+      ->condition('j.field_jurisdiction_target_id', array_values(array_unique($trees)), 'IN')
+      ->execute()
+      ->fetchCol();
+    $group_ids = array_merge($group_ids, array_map('intval', $organisation_ids));
+  }
+
+  $uids = [$uid];
+  if ($group_ids !== []) {
+    $uids = array_merge($uids, array_map('intval', \Drupal::database()->select('group_relationship_field_data', 'r')
+      ->fields('r', ['entity_id'])
+      ->condition('r.plugin_id', 'group_membership')
+      ->condition('r.gid', $group_ids, 'IN')
+      ->execute()
+      ->fetchCol()));
+  }
+  return $cache[$uid] = array_values(array_unique($uids));
+}
+
+/**
  * Returns the jurisdictions an account works in, once per request.
  *
  * Jurisdiction memberships with their sub-jurisdictions, plus the
