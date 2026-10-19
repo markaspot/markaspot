@@ -8,11 +8,13 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_feedback\Controller\FeedbackController;
+use Drupal\markaspot_feedback\FeedbackService;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
@@ -60,6 +62,7 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
     $this->installSchema('node', ['node_access']);
     $this->installConfig(['system', 'user', 'field', 'filter', 'node']);
     User::create(['uid' => 0, 'name' => '', 'status' => 0])->save();
+    Role::load('anonymous')->grantPermission('access content')->save();
 
     NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
     Vocabulary::create(['vid' => 'service_status', 'name' => 'Status'])->save();
@@ -147,12 +150,57 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Guessing addresses is limited per client and report.
+   */
+  public function testVerificationIsRateLimited(): void {
+    $report = $this->report();
+    for ($i = 0; $i < FeedbackController::FLOOD_THRESHOLD; $i++) {
+      $this->assertSame(403, $this->post($report, ['feedback' => 'x', 'email_verification' => "guess$i@example.org"])->getStatusCode());
+    }
+    $blocked = $this->post($report, ['feedback' => 'x', 'email_verification' => 'reporter@example.org']);
+    $this->assertSame(429, $blocked->getStatusCode());
+    $this->assertUnchanged($report);
+  }
+
+  /**
+   * The address the mail went to is accepted, also the author fallback.
+   */
+  public function testAuthorFallbackRecipientIsAccepted(): void {
+    $author = User::create(['name' => 'author', 'mail' => 'author@example.org', 'status' => 1]);
+    $author->save();
+    $report = $this->report(NULL, (int) $author->id());
+    $this->assertSame('author@example.org', FeedbackService::recipientEmail($report));
+    $this->assertSame(200, $this->post($report, ['feedback' => 'Thanks', 'email_verification' => 'author@example.org'])->getStatusCode());
+  }
+
+  /**
+   * The read endpoint shows viewable reports only and repeats no feedback.
+   */
+  public function testReadEndpointRespectsNodeAccess(): void {
+    $controller = FeedbackController::create($this->container);
+    $unpublished = $this->report();
+    $unpublished->setUnpublished()->save();
+    $this->assertSame(404, $controller->getServiceRequest($unpublished->uuid())->getStatusCode());
+
+    $report = $this->report();
+    $this->assertSame(200, $controller->getServiceRequest($report->uuid())->getStatusCode());
+
+    // A second feedback is refused without echoing the first one.
+    $this->post($report, ['feedback' => 'First answer', 'email_verification' => 'reporter@example.org']);
+    $again = $this->post($report, ['feedback' => 'Second', 'email_verification' => 'reporter@example.org']);
+    $this->assertSame(409, $again->getStatusCode());
+    $this->assertStringNotContainsString('First answer', (string) $again->getContent());
+  }
+
+  /**
    * Creates a closed report.
    */
-  private function report(?string $mail = 'reporter@example.org'): NodeInterface {
+  private function report(?string $mail = 'reporter@example.org', int $uid = 0): NodeInterface {
     $node = Node::create([
       'type' => 'service_request',
       'title' => 'Report',
+      'uid' => $uid,
+      'status' => 1,
       'field_e_mail' => $mail,
       'field_status' => $this->closed->id(),
     ]);

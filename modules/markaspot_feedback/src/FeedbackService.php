@@ -181,6 +181,22 @@ class FeedbackService implements FeedbackServiceInterface {
   }
 
   /**
+   * Returns the address the feedback mail goes to, NULL if there is none.
+   *
+   * The reporter's address, else the address of the report's author. The
+   * REST endpoint accepts feedback only with this same address.
+   */
+  public static function recipientEmail(NodeInterface $node): ?string {
+    if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
+      $mail = trim((string) $node->get('field_e_mail')->value);
+      return $mail !== '' ? $mail : NULL;
+    }
+    $owner = $node->getOwner();
+    $mail = $owner && (int) $owner->id() > 0 ? trim((string) $owner->getEmail()) : '';
+    return $mail !== '' ? $mail : NULL;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function processFeedbackForNode(NodeInterface $node) {
@@ -224,18 +240,7 @@ class FeedbackService implements FeedbackServiceInterface {
         return FALSE;
       }
 
-      // Check if the node has a field_e_mail field and it's not empty.
-      $recipientEmail = NULL;
-      if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
-        $recipientEmail = $node->get('field_e_mail')->value;
-      }
-      // Fallback to the node author's email as a last resort.
-      else {
-        $user = $node->getOwner();
-        if ($user && $user->getEmail()) {
-          $recipientEmail = $user->getEmail();
-        }
-      }
+      $recipientEmail = self::recipientEmail($node);
 
       // Send the email if we found a recipient.
       if ($recipientEmail) {

@@ -7,9 +7,11 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\markaspot_feedback\FeedbackService;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Flood\FloodInterface;
 
 /**
  * Controller for feedback-related requests.
@@ -45,7 +47,22 @@ class FeedbackController extends ControllerBase {
   protected $configFactory;
 
   /**
-   * Constructs a FeedbackController object.
+   * Flood event of failed reporter address checks, per client IP and report.
+   */
+  public const FLOOD_EVENT = 'markaspot_feedback.verify';
+
+  /**
+   * Failed checks allowed per window.
+   */
+  public const FLOOD_THRESHOLD = 10;
+
+  /**
+   * Flood window in seconds.
+   */
+  public const FLOOD_WINDOW = 3600;
+
+  /**
+   * Constructs the controller.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
@@ -55,12 +72,15 @@ class FeedbackController extends ControllerBase {
    *   The state service.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     LoggerChannelFactoryInterface $logger_factory,
     StateInterface $state,
     ConfigFactoryInterface $config_factory,
+    protected FloodInterface $flood,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->loggerFactory = $logger_factory;
@@ -76,7 +96,8 @@ class FeedbackController extends ControllerBase {
       $container->get('entity_type.manager'),
       $container->get('logger.factory'),
       $container->get('state'),
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('flood'),
     );
   }
 
@@ -128,8 +149,16 @@ class FeedbackController extends ControllerBase {
       // nothing but the public UUID, so the reporter's address is the proof.
       // Checked before anything about the report is revealed or written,
       // with one answer for every failure.
+      // Guessing addresses is limited per client and report.
+      $floodId = $request->getClientIp() . ':' . $node->uuid();
+      if (!$this->flood->isAllowed(self::FLOOD_EVENT, self::FLOOD_THRESHOLD, self::FLOOD_WINDOW, $floodId)) {
+        return new JsonResponse([
+          'message' => $this->t('Too many attempts. Please try again later.'),
+        ], 429, ['Retry-After' => (string) self::FLOOD_WINDOW]);
+      }
       $email = $data['email_verification'] ?? NULL;
       if (!is_string($email) || trim($email) === '' || $this->validateAuthorEmail($node, $email) !== TRUE) {
+        $this->flood->register(self::FLOOD_EVENT, self::FLOOD_WINDOW, $floodId);
         $logger->warning('Feedback for node @nid rejected: missing or wrong reporter email.', ['@nid' => $node->id()]);
         return new JsonResponse([
           'message' => $this->t('The email address does not match this service request.'),
@@ -176,7 +205,6 @@ class FeedbackController extends ControllerBase {
 
         return new JsonResponse([
           'message' => $this->t('Feedback already exists for this service request'),
-          'existing_feedback' => $node->get($feedback_field)->value,
           'nid' => $node->id(),
           'field_has_feedback' => $field_has_feedback,
         // 409 Conflict
@@ -263,10 +291,10 @@ class FeedbackController extends ControllerBase {
 
       $node = reset($nodes);
 
-      // Check if the node is a service request.
-      if ($node->getType() != 'service_request') {
-        $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Not a service request')], 400);
+      // Check if the node is a service request the caller may see; anything
+      // else looks like an unknown UUID.
+      if ($node->getType() != 'service_request' || !$node->access('view')) {
+        return new JsonResponse(['message' => $this->t('Service request not found')], 404);
       }
 
       // Build response data.
@@ -298,8 +326,9 @@ class FeedbackController extends ControllerBase {
         $response_data['field_has_feedback'] = (bool) $node->get('field_has_feedback')->value;
       }
 
-      // Add feedback if it exists.
-      if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()) {
+      // Add feedback if it exists and the caller may read the field.
+      if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()
+        && $node->get('field_feedback')->access('view')) {
         $response_data['feedback'] = $node->get('field_feedback')->value;
       }
 
@@ -332,35 +361,14 @@ class FeedbackController extends ControllerBase {
    *   TRUE if the email matches the author, error message string otherwise.
    */
   protected function validateAuthorEmail($node, $email) {
-    // Check if the node has an author email field.
-    if (!$node->hasField('field_e_mail') || $node->get('field_e_mail')->isEmpty()) {
+    $recipient = FeedbackService::recipientEmail($node);
+    if ($recipient === NULL) {
       return $this->t('No author email found for this service request');
     }
-
-    // Get the original author's email.
-    $author_email = $node->get('field_e_mail')->value;
-    if (empty($author_email)) {
-      return $this->t('Author email is not configured for this service request');
-    }
-
-    // Case-insensitive email comparison.
-    $provided_email_clean = strtolower(trim($email));
-    $author_email_clean = strtolower(trim($author_email));
-
-    if ($provided_email_clean === $author_email_clean) {
+    if (mb_strtolower(trim((string) $email)) === mb_strtolower($recipient)) {
       return TRUE;
     }
-
-    // Log the validation failure.
-    $error_message = $this->t('Email "@provided" does not match the original service request author email', [
-      '@provided' => $email,
-    ]);
-
-    $this->loggerFactory->get('markaspot_feedback')->warning('Author email validation failed for node @nid', [
-      '@nid' => $node->id(),
-    ]);
-
-    return $error_message;
+    return $this->t('The email address does not match this service request.');
   }
 
   /**
