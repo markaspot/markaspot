@@ -198,21 +198,23 @@ final class VisionPurposeRulesTest extends UnitTestCase {
    */
   public function testFallbackPurposeIsBounded(): void {
     $categories = [];
-    for ($i = 1; $i <= 40; $i++) {
+    for ($i = 1; $i <= 30; $i++) {
       $categories[] = ['tid' => $i, 'label' => "Cat\n{$i}\x07"];
     }
     $categories[] = ['tid' => 99, 'label' => "Cat\n1\x07"];
-    $parts = $this->apply('contribution', [
-      'tenant_context' => '',
-      'group' => $this->workspace('contribution', "Hof\r\nkatzen\x00" . str_repeat('x', 300)),
-      'categories' => $categories,
-    ]);
-    $context = $parts['project_context'];
+    $group = $this->workspace('contribution', "Hof\r\nkatzen\x00" . str_repeat('x', 300));
+    $context = $this->apply('contribution', ['tenant_context' => '', 'group' => $group, 'categories' => $categories])['project_context'];
     $this->assertDoesNotMatchRegularExpression('/\p{Cc}/u', $context);
     $this->assertStringContainsString('"Hof katzen ' . str_repeat('x', 109) . '"', $context);
-    $this->assertStringContainsString('Cat 30, and more.', $context);
-    $this->assertStringNotContainsString('Cat 31', $context);
+    // Up to the cap every category is listed, each once, never truncated.
+    $this->assertStringEndsWith('Cat 29, Cat 30.', $context);
     $this->assertSame(1, substr_count($context, 'Cat 1,'));
+    $this->assertStringNotContainsString('and more', $context);
+
+    // Above the cap no partial list: the request's category JSON is complete.
+    $categories[] = ['tid' => 31, 'label' => 'Cat 31'];
+    $context = $this->apply('contribution', ['tenant_context' => '', 'group' => $group, 'categories' => $categories])['project_context'];
+    $this->assertSame('The map "Hof katzen ' . str_repeat('x', 109) . '" collects contributions in the categories supplied with this request.', $context);
   }
 
 }

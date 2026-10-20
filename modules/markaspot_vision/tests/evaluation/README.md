@@ -62,7 +62,7 @@ Contexts carry `wordingPreset` where the workspace is not a defect map. `markasp
 - `suggestion` and `entry` maps refuse documents, screenshots, tables, charts and text. On `suggestion` maps the place an idea relates to is the subject, even when the suggested change is not visible yet. `contribution` maps accept photographed or scanned photos unless the purpose excludes them, and refuse other non-photographic content unless the purpose explicitly collects it, for example documents.
 - These maps are not defect-reporting maps, but a damaged or broken subject that fits the purpose still counts. The neutral user framing applies to the scene description and the hazard assessment; the categorization rules stay unchanged.
 - The description framing follows the preset. A hazard is set only when it is acute and visible.
-- A workspace without `field_ai_system_prompt` gets one sentence of purpose built from its name, the preset noun and its category names.
+- A workspace without `field_ai_system_prompt` gets one sentence of purpose built from its name, the preset noun and its category names. Above 30 categories the sentence names none and refers to the categories supplied with the request.
 
 Report maps and installs without FastMap keep the request byte for byte; `tests/src/Unit/ProviderPayloadGoldenTest.php` pins it against fixtures recorded from the 11.9.222 code. These cases are specifications as well; no model was called.
 

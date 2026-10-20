@@ -26,6 +26,10 @@ final class VisionPurposeRules {
 
   /**
    * Most category names the fallback purpose lists.
+   *
+   * Above it the sentence lists none, so the category JSON of the request
+   * stays the only complete listing and no partial list biases the choice.
+   * Provisioning caps a workspace at this many categories.
    */
   private const FALLBACK_MAX_CATEGORIES = 30;
 
@@ -172,11 +176,12 @@ final class VisionPurposeRules {
         $names[] = $name;
       }
     }
-    $more = count($names) > self::FALLBACK_MAX_CATEGORIES;
-    $names = array_slice($names, 0, self::FALLBACK_MAX_CATEGORIES);
     $sentence = 'The map "' . self::plain((string) $group->label(), 120) . '" collects ' . $plural;
+    if (count($names) > self::FALLBACK_MAX_CATEGORIES) {
+      return $sentence . ' in the categories supplied with this request.';
+    }
     if ($names !== []) {
-      $sentence .= ' in these categories: ' . implode(', ', $names) . ($more ? ', and more' : '');
+      $sentence .= ' in these categories: ' . implode(', ', $names);
     }
     return $sentence . '.';
   }
