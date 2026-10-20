@@ -435,6 +435,9 @@ class ModelPolicyTest extends UnitTestCase {
       yield [$mode, ['hazard_level' => 5], $mode === 'json_schema'];
       yield [$mode, ['hazard_level' => 3.0], $mode === 'json_schema'];
       yield [$mode, ['extra' => 'data'], $mode === 'json_schema'];
+      // The optional leading observation field validates in every mode.
+      yield [$mode, ['observation' => 'A spreadsheet screenshot.'], TRUE];
+      yield [$mode, ['observation' => 5], $mode === 'json_schema'];
       yield [$mode, ['privacy_flag' => 'false'], FALSE];
     }
   }

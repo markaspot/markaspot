@@ -437,6 +437,29 @@ class ImageProcessingServiceTest extends UnitTestCase {
     // Verify hazard_level and hazard_category are in properties.
     $this->assertArrayHasKey('hazard_level', $schema['properties']);
     $this->assertArrayHasKey('hazard_category', $schema['properties']);
+    $this->assertArrayNotHasKey('observation', $schema['properties']);
+  }
+
+  /**
+   * A requested observation leads the schema; everything else stays as is.
+   */
+  public function testObservationLeadsTheSchema(): void {
+    $service = $this->createService();
+    $plain = $this->invokeMethod($service, 'prepareRequestPayload', [[], ['model' => 'gpt-4o']]);
+    $payload = $this->invokeMethod($service, 'prepareRequestPayload', [
+      [],
+      ['model' => 'gpt-4o'],
+      'Say what is visible.',
+    ]);
+
+    $schema = $payload['response_format']['json_schema']['schema'];
+    $this->assertSame(['type' => 'string', 'description' => 'Say what is visible.'], reset($schema['properties']));
+    $this->assertSame('observation', array_key_first($schema['properties']));
+    $this->assertSame('observation', $schema['required'][0]);
+
+    unset($schema['properties']['observation']);
+    array_shift($schema['required']);
+    $this->assertSame($plain['response_format']['json_schema']['schema'], $schema);
   }
 
   /**

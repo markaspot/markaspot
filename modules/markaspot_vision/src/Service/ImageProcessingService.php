@@ -627,6 +627,7 @@ class ImageProcessingService {
         'user_prefix' => "The following set of {$image_count} images shows a single situation or issue. "
           . "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ",
         'user_framing' => '',
+        'observation' => '',
       ], [
         'jurisdiction_id' => $jurisdictionId,
         'group' => $group,
@@ -698,7 +699,7 @@ class ImageProcessingService {
       $messages[] = $user_message;
 
       // Prepare and send request.
-      $request_payload = $this->prepareRequestPayload($messages, $api_config);
+      $request_payload = $this->prepareRequestPayload($messages, $api_config, $parts['observation']);
 
       BlurAdvisory::warn($this->state, $this->logger, $this->time->getCurrentTime(), $this->getBlurMode(), (bool) $config->get('enable_blur_preprocessing'));
 
@@ -990,7 +991,7 @@ class ImageProcessingService {
           if (!$object instanceof \stdClass || !isset($object->privacy_flag) || !is_bool($object->privacy_flag)) {
             throw new \RuntimeException('Vision response lacks a boolean privacy_flag.');
           }
-          if (!$this->validateSchema($object, $this->responseSchema())) {
+          if (!$this->validateSchema($object, $this->validationSchema())) {
             $this->logger->warning('Vision strict response differs from the schema; privacy_flag was verified.');
           }
         }
@@ -1180,7 +1181,7 @@ class ImageProcessingService {
       }
       elseif ($char === '}' && --$depth === 0) {
         $candidate = substr($content, $start, $i - $start + 1);
-        if ($this->validateSchema(json_decode($candidate), $this->responseSchema())) {
+        if ($this->validateSchema(json_decode($candidate), $this->validationSchema())) {
           $valid[] = [$candidate, $start, $i + 1];
         }
       }
@@ -1347,11 +1348,13 @@ class ImageProcessingService {
    *   The messages array for the API.
    * @param array $api_config
    *   The API configuration.
+   * @param string $observation
+   *   Description of a leading observation field, see responseSchema().
    *
    * @return array
    *   The prepared request payload.
    */
-  protected function prepareRequestPayload(array $messages, array $api_config): array {
+  protected function prepareRequestPayload(array $messages, array $api_config, string $observation = ''): array {
     $config = $this->configFactory->get('markaspot_vision.settings');
 
     $payload = [
@@ -1362,7 +1365,7 @@ class ImageProcessingService {
         'json_schema' => [
           'name' => 'vision_response',
           'strict' => TRUE,
-          'schema' => $this->responseSchema(),
+          'schema' => $this->responseSchema($observation),
         ],
       ],
     ];
@@ -1397,9 +1400,15 @@ class ImageProcessingService {
 
   /**
    * Returns the schema shared by output, fallback prompts and validation.
+   *
+   * @param string $observation
+   *   When not empty, the schema starts with a required "observation" string
+   *   with this description. Models fill the fields in schema order, so the
+   *   observation is written before the category and is_reportable_issue are
+   *   decided. Empty keeps the schema unchanged.
    */
-  protected function responseSchema(): array {
-    return [
+  protected function responseSchema(string $observation = ''): array {
+    $schema = [
       'type' => 'object',
       'properties' => [
         'category' => ['type' => 'integer'],
@@ -1470,6 +1479,23 @@ class ImageProcessingService {
       ],
       'additionalProperties' => FALSE,
     ];
+    if ($observation !== '') {
+      $schema['properties'] = ['observation' => ['type' => 'string', 'description' => $observation]] + $schema['properties'];
+      array_unshift($schema['required'], 'observation');
+    }
+    return $schema;
+  }
+
+  /**
+   * Returns the response schema for validation.
+   *
+   * Accepts responses with and without the optional observation field, so a
+   * request that asked for it validates like any other.
+   */
+  protected function validationSchema(): array {
+    $schema = $this->responseSchema();
+    $schema['properties']['observation'] = ['type' => 'string'];
+    return $schema;
   }
 
   /**
