@@ -110,7 +110,10 @@ final class DemoSessionController implements ContainerInjectionInterface {
     $this->flood->register(self::FLOOD_EVENT, self::FLOOD_WINDOW);
 
     if ($switching) {
-      user_logout();
+      // Drop the other demo's session data; the login below migrates the
+      // session to a new ID. user_logout() would destroy the session, and
+      // Drupal does not start a new one in the same request.
+      $request->getSession()->clear();
     }
     $this->staffAccount->startSession($account, $request->getSession());
     $this->logger->notice('Demo session started for workspace @slug (account @uid).', [
