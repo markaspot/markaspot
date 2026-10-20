@@ -178,6 +178,9 @@ settings passing the visitor IP through.
   `/user/<id>/edit|cancel`, `/jsonapi/user`, `/api/admin`, user switching)
   answer 403 to a demo session (`DemoStaffAccount::isDeniedPath()`), even if
   a later role change would let the controllers through.
+- The account has no preferred language, and `PATCH /api/auth/preferences`
+  is denied: the dashboard follows a user's preferred language on every
+  status check, so one stored choice would switch every visitor.
 - Mail to `@civicspot.invalid` is dropped in `hook_mail_alter()`, so the
   account never receives assignment, status, OTP or password mails.
 - `/api/auth/status` reports `user.is_demo_account: true` for the account, so

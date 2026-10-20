@@ -80,21 +80,38 @@ final class DemoStaffAccount {
    * access as well; this list keeps that true if the role set grows.
    */
   private const DENIED_PATHS = [
-    // Billing, tier, usage, deletion, new workspaces.
-    '#^/api/fastmap/(billing|usage|workspace-deletion|create-workspace|claim-login-token)(/|$)#' => NULL,
+    // Billing and tier (the Stripe checkout and portal routes of the Nuxt
+    // server read and write through /api/fastmap/billing), usage, workspace
+    // deletion, new workspaces, removal of the template content.
+    '#^/api/fastmap/(billing|usage|workspace-deletion|create-workspace|claim-login-token|demo-content|report-stats)(/|$)#' => NULL,
     // Member list, member edits, invitations.
     '#^/api/group-members(/|$)#' => NULL,
     // Workspace settings.
     '#^/api/tenant-settings(/|$)#' => NULL,
     '#^/jsonapi/(group|group_relationship)/#' => ['POST', 'PATCH', 'DELETE'],
+    '#^/api/dashboard/status-selection(/|$)#' => ['POST', 'PATCH', 'DELETE'],
+    '#^/api/dashboard/mail-texts(/|$)#' => NULL,
+    '#^/api/platform/#' => ['POST', 'PATCH', 'PUT', 'DELETE'],
+    // Functions outside report work, closed independent of the role set:
+    // metrics, AI and duplicates, moderation queue, mail inbox, exports,
+    // original photos, forwarding to outside recipients.
+    '#^/api/dashboard/(kpis|time-series|forwarding-details|hazards)(/|$)#' => NULL,
+    '#^/api/(ai|moderation|inbound-mail|escalation|delegation)(/|$)#' => NULL,
+    '#^/api/vision/originals(/|$)#' => NULL,
+    '#^/api/export-jurisdictions(/|$)#' => NULL,
     // Platform and user administration.
     '#^/api/admin(/|$)#' => NULL,
     '#^/admin(/|$)#' => NULL,
     '#^/group/#' => NULL,
     '#^/user/\d+/(edit|cancel)(/|$)#' => NULL,
     '#^/jsonapi/user/#' => NULL,
-    '#^/api/auth/switch-#' => NULL,
+    // The account itself: no switching, no other login from this session,
+    // no handoff of the session. One visitor's language choice would apply
+    // to every visitor.
+    '#^/api/auth/(switch-|request-code|verify-code|session-handoff|claim-token)#' => NULL,
+    '#^/api/auth/preferences$#' => ['PATCH'],
   ];
+
 
   /**
    * Workspace slug per user ID, FALSE for regular accounts.

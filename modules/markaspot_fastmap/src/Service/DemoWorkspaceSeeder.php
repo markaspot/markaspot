@@ -447,7 +447,10 @@ final class DemoWorkspaceSeeder {
     $account->activate();
     $account->set('roles', DemoStaffAccount::GLOBAL_ROLES);
     $account->set('langcode', $seed->data['default_language']);
-    $account->set('preferred_langcode', $seed->data['default_language']);
+    // No preferred language: the dashboard switches to a user's preferred
+    // language on every status check, which would pin all visitors to one.
+    $account->set('preferred_langcode', NULL);
+    $account->set('preferred_admin_langcode', NULL);
     $this->setIfField($account, 'field_all_groups_member', FALSE);
     // Visitors are not workspace operators; the operator terms do not apply.
     if ($account->hasField('field_tos_accepted_at') && $account->get('field_tos_accepted_at')->isEmpty()) {

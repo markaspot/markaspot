@@ -668,6 +668,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertSame($this->staffAccount()->uuid('demo-school-routes'), $account->uuid());
     $this->assertTrue($this->staffAccount()->isDemoAccount($account));
     $this->assertSame('demo-school-routes', $this->staffAccount()->workspaceSlug($account));
+    $this->assertSame('', $account->getPreferredLangcode(FALSE), 'No preferred language that would pin every visitor.');
 
     $memberships = $this->container->get('entity_type.manager')->getStorage('group_relationship')
       ->loadByProperties(['plugin_id' => 'group_membership', 'entity_id' => $account->id()]);
@@ -996,6 +997,15 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
         $resolver->getInstanceFromDefinition(TenantSettingsController::class)->accessCheck($account, $groupId),
         AccessResult::allowedIf((bool) Group::load($groupId)->access('update', $account)),
       ],
+      'workspace deletion' => [
+        AccessResult::allowedIf((bool) Group::load($groupId)->access('delete', $account)),
+      ],
+      'account self-service' => [
+        AccessResult::allowedIf($account->access('delete', $account)),
+      ],
+      'functions outside report work' => [
+        AccessResult::allowedIfHasPermission($account, 'access dashboard kpis'),
+      ],
       'user administration' => [
         AccessResult::allowedIf($account->access('update', $account)),
         AccessResult::allowedIfHasPermission($account, 'administer users'),
@@ -1016,8 +1026,38 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
         ['PATCH', '/api/fastmap/billing/demo-school-routes'],
         ['POST', '/api/fastmap/billing/demo-school-routes/sync-token'],
         ['GET', '/api/fastmap/usage/demo-school-routes'],
-        ['POST', '/api/fastmap/workspace-deletion/request/{gid}'],
         ['POST', '/api/fastmap/create-workspace'],
+      ]],
+      'workspace deletion' => ['workspace deletion', [
+        ['POST', '/api/fastmap/workspace-deletion/request/{gid}'],
+        ['POST', '/api/fastmap/workspace-deletion/peek'],
+        ['POST', '/api/fastmap/workspace-deletion/confirm'],
+        ['POST', '/api/fastmap/demo-content/remove'],
+      ]],
+      'account self-service' => ['account self-service', [
+        ['POST', '/user/{uid}/cancel'],
+        ['DELETE', '/jsonapi/user/user/00000000-0000-0000-0000-000000000000'],
+        ['PATCH', '/api/auth/preferences'],
+        ['POST', '/api/auth/request-code'],
+        ['POST', '/api/auth/verify-code'],
+        ['GET', '/api/auth/session-handoff/start'],
+        ['POST', '/api/auth/claim-token'],
+      ]],
+      'functions outside report work' => ['functions outside report work', [
+        ['GET', '/api/dashboard/kpis'],
+        ['GET', '/api/dashboard/time-series/volume'],
+        ['GET', '/api/fastmap/report-stats'],
+        ['POST', '/api/ai/assist'],
+        ['GET', '/api/ai/duplicates/1'],
+        ['GET', '/api/moderation/flagged-requests'],
+        ['GET', '/api/inbound-mail'],
+        ['GET', '/api/vision/originals'],
+        ['POST', '/api/escalation/1-2026'],
+        ['POST', '/api/delegation/1-2026'],
+        ['GET', '/api/export-jurisdictions'],
+        ['GET', '/api/dashboard/mail-texts'],
+        ['PATCH', '/api/dashboard/status-selection/{gid}'],
+        ['PATCH', '/api/platform/maintenance'],
       ]],
       'team and invitations' => ['team and invitations', [
         ['GET', '/api/group-members'],
@@ -1065,6 +1105,12 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
       ['GET', '/jsonapi/group/jur'],
       ['GET', '/api/mark-a-spot-settings'],
       ['GET', '/user/1'],
+      ['POST', '/jsonapi/node/service_request'],
+      ['POST', '/api/dashboard/status-notes'],
+      ['PATCH', '/api/request-responsibility/1'],
+      ['GET', '/api/request-assignees/1'],
+      ['GET', '/api/dashboard/status-selection/1'],
+      ['GET', '/api/platform/maintenance'],
     ] as [$method, $path]) {
       $this->dispatchAsCurrentSession($path, $method);
     }
