@@ -19,7 +19,8 @@ declare(strict_types=1);
  * the parts below can change. The platform rules (evidence, privacy, current
  * category IDs, response language), the image prompt with its categories and
  * attribute definitions and the response schema are fixed and never passed
- * here; the schema can only gain the leading observation field below. Without an implementation the request stays exactly as before.
+ * here; the schema can only gain the leading observation field below.
+ * Without an implementation the request stays exactly as before.
  *
  * Values that are not strings after the hook ran keep their defaults.
  *
@@ -41,8 +42,8 @@ declare(strict_types=1);
  *   - observation: empty by default. When set, the response schema starts
  *     with a required "observation" string and this text as its
  *     description, so the model states what the image shows before it picks
- *     the category and decides is_reportable_issue. The field is kept in the
- *     AI metadata; nothing else reads it.
+ *     the category and decides is_reportable_issue. The controller drops the
+ *     field before anything is stored or returned.
  * @param array $context
  *   Read-only facts about the request:
  *   - jurisdiction_id: int|null, the requested jurisdiction group ID.

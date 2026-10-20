@@ -922,8 +922,8 @@ class ImageProcessingService {
    * Lets other modules adapt the editable prompt parts of one analysis.
    *
    * @param array<string, string> $parts
-   *   The defaults: project_context, relevance, framing, user_prefix and
-   *   user_framing.
+   *   The defaults: project_context, relevance, framing, user_prefix,
+   *   user_framing and observation.
    * @param array $context
    *   Read-only facts about the request, see markaspot_vision.api.php.
    *
@@ -1069,6 +1069,11 @@ class ImageProcessingService {
   protected function appendSchemaInstruction(array &$payload): void {
     $schema = $payload['response_format']['json_schema']['schema'];
     $instruction = "\nReturn one JSON object with these required keys and types: " . $this->describeSchema($schema) . '.';
+    // Only a requested observation carries a description; the plain schema
+    // has none, so its instruction stays unchanged.
+    if (isset($schema['properties']['observation']['description'])) {
+      $instruction .= ' observation: ' . $schema['properties']['observation']['description'];
+    }
     foreach ($payload['messages'] as &$message) {
       if (($message['role'] ?? '') !== 'user') {
         continue;

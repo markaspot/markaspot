@@ -85,7 +85,8 @@ final class VisionPurposeRules {
   private const OBSERVATION = "Write this first, before you choose the category or judge relevance: one or two "
     . "plain sentences on what the image literally shows. Name the main subject and say whether it is a photo "
     . "of a real place or object, or a document, screenshot, table, chart or text. Do not interpret it in terms "
-    . "of the project or its categories yet.";
+    . "of the project or its categories yet. Never write down personal data: no names, addresses, house numbers, "
+    . "license plates, document contents or descriptions of people.";
 
   /**
    * Constructs the rules.

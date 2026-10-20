@@ -748,6 +748,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       'hazard_issues' => [],
       'privacy_flag' => TRUE,
       'privacy_issues' => ['person visible'],
+      'observation' => 'A letter addressed to a named person.',
     ];
 
     $this->imageProcessingService->method('processImages')
@@ -811,6 +812,10 @@ class ImageProcessingControllerTest extends UnitTestCase {
     // The response-only signal must never be persisted to the JSON:API-exposed
     // field_ai_metadata, even if a future refactor reorders the assignment.
     $this->assertArrayNotHasKey('privacy_handled_by_blur', $storedMeta);
+    // The observation is free text outside the privacy rule: never stored,
+    // never returned.
+    $this->assertArrayNotHasKey('observation', $storedMeta);
+    $this->assertArrayNotHasKey('observation', $data);
     // The blurred thumbnail is returned (data URL) keyed by media UUID so the
     // citizen preview can show the privacy-protected version.
     $this->assertSame(

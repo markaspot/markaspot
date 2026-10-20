@@ -460,6 +460,17 @@ class ImageProcessingServiceTest extends UnitTestCase {
     unset($schema['properties']['observation']);
     array_shift($schema['required']);
     $this->assertSame($plain['response_format']['json_schema']['schema'], $schema);
+
+    // Fallback modes carry the description in the schema instruction.
+    $messages = [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Analyze.']]]];
+    $plainPayload = ['messages' => $messages, 'response_format' => $plain['response_format']];
+    $this->invokeMethod($service, 'appendSchemaInstruction', [&$plainPayload]);
+    $this->assertStringNotContainsString('observation', $plainPayload['messages'][0]['content'][0]['text']);
+    $observed = ['messages' => $messages, 'response_format' => $payload['response_format']];
+    $this->invokeMethod($service, 'appendSchemaInstruction', [&$observed]);
+    $text = $observed['messages'][0]['content'][0]['text'];
+    $this->assertStringContainsString('required keys and types: {observation:string,category:', $text);
+    $this->assertStringEndsWith(' observation: Say what is visible.', $text);
   }
 
   /**

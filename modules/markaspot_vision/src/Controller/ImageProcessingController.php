@@ -302,6 +302,10 @@ class ImageProcessingController extends ControllerBase {
       // persisted field_ai_metadata audit blob or the response; the
       // authoritative values are computed below.
       unset($decoded_result['privacy_handled_by_blur'], $decoded_result['blurred_previews'], $decoded_result['privacy_flags'], $decoded_result['privacy_reblurred'], $decoded_result['markaspot_privacy_escalation']);
+      // The observation only makes the model describe before it judges; it is
+      // free text outside the description's privacy rule, so it is neither
+      // stored in field_ai_metadata nor returned.
+      unset($decoded_result['observation']);
       // Normalized once: the media field holds 64 characters, and the raw
       // model value stays in field_ai_metadata for the audit trail.
       $hazard_category = $this->imageProcessingService->normalizeHazardCategory($decoded_result['hazard_category'] ?? NULL);
