@@ -1048,6 +1048,14 @@ class PasswordlessAuthController extends ControllerBase {
    *   JSON response with the updated user, matching the status() shape.
    */
   public function updatePreferences(Request $request): JsonResponse {
+    // All visitors share a template demo's staff account; one stored
+    // language would apply to every one of them.
+    if ($this->demoStaffAccount?->isDemoAccount($this->currentUser)) {
+      return new JsonResponse([
+        'error' => 'Demo accounts keep no preferences.',
+      ], Response::HTTP_FORBIDDEN);
+    }
+
     $data = json_decode($request->getContent(), TRUE);
 
     if (!is_array($data) || empty($data['preferred_langcode'])) {

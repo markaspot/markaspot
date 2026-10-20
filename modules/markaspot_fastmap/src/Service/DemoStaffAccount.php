@@ -73,43 +73,46 @@ final class DemoStaffAccount {
   /**
    * Paths a demo account never reaches, whatever its roles grant.
    *
-   * Keyed by pattern on the path; the value lists the denied HTTP methods,
-   * NULL for all. Billing and tier, team and invitations, workspace
-   * settings and user administration stay with real accounts, also when a
-   * visitor calls the backend directly. The controllers check their own
-   * access as well; this list keeps that true if the role set grows.
+   * Keyed by case-insensitive pattern; the value lists the denied HTTP
+   * methods, NULL for all. DemoSessionSubscriber matches both the request path
+   * and the path of the matched route, so a language prefix or another
+   * spelling of the URL reaches the same verdict. Billing and tier, team and
+   * invitations, workspace settings and user administration stay with real
+   * accounts, also when a visitor calls the backend directly. The controllers
+   * check their own access as well; this list keeps that true if the role set
+   * grows.
    */
   private const DENIED_PATHS = [
     // Billing and tier (the Stripe checkout and portal routes of the Nuxt
     // server read and write through /api/fastmap/billing), usage, workspace
     // deletion, new workspaces, removal of the template content.
-    '#^/api/fastmap/(billing|usage|workspace-deletion|create-workspace|claim-login-token|demo-content|report-stats)(/|$)#' => NULL,
+    '#^/api/fastmap/(billing|usage|workspace-deletion|create-workspace|claim-login-token|demo-content|report-stats)(/|$)#i' => NULL,
     // Member list, member edits, invitations.
-    '#^/api/group-members(/|$)#' => NULL,
+    '#^/api/group-members(/|$)#i' => NULL,
     // Workspace settings.
-    '#^/api/tenant-settings(/|$)#' => NULL,
-    '#^/jsonapi/(group|group_relationship)/#' => ['POST', 'PATCH', 'DELETE'],
-    '#^/api/dashboard/status-selection(/|$)#' => ['POST', 'PATCH', 'DELETE'],
-    '#^/api/dashboard/mail-texts(/|$)#' => NULL,
-    '#^/api/platform/#' => ['POST', 'PATCH', 'PUT', 'DELETE'],
+    '#^/api/tenant-settings(/|$)#i' => NULL,
+    '#^/jsonapi/(group|group_relationship)/#i' => ['POST', 'PATCH', 'DELETE'],
+    '#^/api/dashboard/status-selection(/|$)#i' => ['POST', 'PATCH', 'DELETE'],
+    '#^/api/dashboard/mail-texts(/|$)#i' => NULL,
+    '#^/api/platform/#i' => ['POST', 'PATCH', 'PUT', 'DELETE'],
     // Functions outside report work, closed independent of the role set:
     // metrics, AI and duplicates, moderation queue, mail inbox, exports,
     // original photos, forwarding to outside recipients.
-    '#^/api/dashboard/(kpis|time-series|forwarding-details|hazards)(/|$)#' => NULL,
-    '#^/api/(ai|moderation|inbound-mail|escalation|delegation)(/|$)#' => NULL,
-    '#^/api/vision/originals(/|$)#' => NULL,
-    '#^/api/export-jurisdictions(/|$)#' => NULL,
+    '#^/api/dashboard/(kpis|time-series|forwarding-details|hazards)(/|$)#i' => NULL,
+    '#^/api/(ai|moderation|inbound-mail|escalation|delegation)(/|$)#i' => NULL,
+    '#^/api/vision/originals(/|$)#i' => NULL,
+    '#^/api/export-jurisdictions(/|$)#i' => NULL,
     // Platform and user administration.
-    '#^/api/admin(/|$)#' => NULL,
-    '#^/admin(/|$)#' => NULL,
-    '#^/group/#' => NULL,
-    '#^/user/\d+/(edit|cancel)(/|$)#' => NULL,
-    '#^/jsonapi/user/#' => NULL,
+    '#^/api/admin(/|$)#i' => NULL,
+    '#^/admin(/|$)#i' => NULL,
+    '#^/group/#i' => NULL,
+    '#^/user/(\d+|\{[^}]+\})/(edit|cancel)(/|$)#i' => NULL,
+    '#^/jsonapi/user/#i' => NULL,
     // The account itself: no switching, no other login from this session,
     // no handoff of the session. One visitor's language choice would apply
     // to every visitor.
-    '#^/api/auth/(switch-|request-code|verify-code|session-handoff|claim-token)#' => NULL,
-    '#^/api/auth/preferences$#' => ['PATCH'],
+    '#^/api/auth/(switch-|request-code|verify-code|session-handoff|claim-token)#i' => NULL,
+    '#^/api/auth/preferences$#i' => ['PATCH'],
   ];
 
 

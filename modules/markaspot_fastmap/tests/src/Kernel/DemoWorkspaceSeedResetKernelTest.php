@@ -8,6 +8,7 @@ use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Routing\RouteObjectInterface;
 use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\field\Entity\FieldConfig;
@@ -52,6 +53,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\Routing\Route;
 
 /**
  * Tests seeding and resetting template demo workspaces.
@@ -804,15 +806,20 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertFalse($account->access('update', $account));
     $this->assertFalse($account->access('delete', $account));
 
-    // Preferences may change; credentials may not.
-    $account->set('preferred_langcode', 'de')->save();
-    try {
-      $account->setEmail('visitor@example.com')->save();
-      $this->fail('A visitor changed the demo account mail.');
+    // Neither credentials nor the shared language and time zone change.
+    foreach (['mail' => 'visitor@example.com', 'preferred_langcode' => 'de', 'timezone' => 'Europe/Paris'] as $field => $value) {
+      $changed = $this->staffAccount()->load('demo-school-routes');
+      try {
+        $changed->set($field, $value)->save();
+        $this->fail(sprintf('A visitor changed the demo account %s.', $field));
+      }
+      catch (EntityStorageException $e) {
+        $this->assertStringContainsString('cannot be changed', $e->getMessage());
+      }
+      $this->container->get('entity_type.manager')->getStorage('user')->resetCache([$changed->id()]);
     }
-    catch (EntityStorageException $e) {
-      $this->assertStringContainsString('cannot be changed', $e->getMessage());
-    }
+    $preferences = Request::create('/api/auth/preferences', 'PATCH', [], [], [], ['CONTENT_TYPE' => 'application/json'], '{"preferred_langcode":"de"}');
+    $this->assertSame(403, PasswordlessAuthController::create($this->container)->updatePreferences($preferences)->getStatusCode());
 
     // No membership outside the demo workspace.
     $this->container->get('current_user')->setAccount(User::load(1));
@@ -977,14 +984,18 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $account = $this->staffAccount()->load('demo-school-routes');
     $groupId = (string) $this->seeder()->findWorkspace('demo-school-routes')->id();
 
-    foreach ($denied as [$method, $path]) {
-      $path = str_replace(['{gid}', '{uid}'], [$groupId, (string) $account->id()], $path);
-      try {
-        $this->dispatchAsCurrentSession($path, $method);
-        $this->fail(sprintf('%s: %s %s was not denied.', $category, $method, $path));
-      }
-      catch (AccessDeniedHttpException) {
-        $this->addToAssertionCount(1);
+    foreach ($denied as [$method, $routePath]) {
+      $path = str_replace(['{gid}', '{uid}'], [$groupId, (string) $account->id()], $routePath);
+      // The request path as sent, in upper case, and with a language prefix
+      // (only the matched route reveals what a prefixed path is).
+      foreach ([[$path, NULL], [strtoupper($path), NULL], ['/de' . $path, $routePath]] as [$requestPath, $matchedRoute]) {
+        try {
+          $this->dispatchAsCurrentSession($requestPath, $method, $matchedRoute);
+          $this->fail(sprintf('%s: %s %s was not denied.', $category, $method, $requestPath));
+        }
+        catch (AccessDeniedHttpException) {
+          $this->addToAssertionCount(1);
+        }
       }
       $this->assertSame((int) $account->id(), (int) $this->container->get('current_user')->id(), 'A denied request keeps the session.');
     }
@@ -1120,6 +1131,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
       ['GET', '/api/platform/maintenance'],
     ] as [$method, $path]) {
       $this->dispatchAsCurrentSession($path, $method);
+      $this->dispatchAsCurrentSession('/de' . $path, $method, $path);
     }
     $this->assertFalse($this->container->get('current_user')->isAnonymous());
 
@@ -1132,12 +1144,16 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   /**
    * Runs the demo session subscriber for a request on the current session.
    */
-  private function dispatchAsCurrentSession(string $path, string $method): void {
+  private function dispatchAsCurrentSession(string $path, string $method, ?string $routePath = NULL): void {
     $session = $this->container->get('request_stack')->getCurrentRequest()->getSession();
     $request = Request::create($path, $method);
     $request->setSession($session);
     $event = new RequestEvent($this->container->get('http_kernel'), $request, HttpKernelInterface::MAIN_REQUEST);
-    $this->container->get('markaspot_fastmap.demo_session_subscriber')->onRequest($event);
+    $subscriber = $this->container->get('markaspot_fastmap.demo_session_subscriber');
+    $subscriber->onRequest($event);
+    // What the router would have matched for the path.
+    $request->attributes->set(RouteObjectInterface::ROUTE_OBJECT, new Route($routePath ?? $path));
+    $subscriber->onRoutedRequest($event);
   }
 
   /**

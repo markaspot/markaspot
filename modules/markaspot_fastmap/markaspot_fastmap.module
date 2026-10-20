@@ -1437,8 +1437,9 @@ function markaspot_fastmap_user_access(EntityInterface $entity, string $operatio
  * Implements hook_ENTITY_TYPE_presave() for user entities.
  *
  * Backstop behind markaspot_fastmap_user_access() for code that saves users
- * without an access check: the name, mail, password, status and roles of a
- * demo staff account change only for user administrators and the seeder.
+ * without an access check: the name, mail, password, status, roles,
+ * languages and time zone of a demo staff account change only for user
+ * administrators and the seeder.
  */
 function markaspot_fastmap_user_presave(UserInterface $user): void {
   $original = $user->isNew() ? NULL : $user->getOriginal();
@@ -1453,7 +1454,12 @@ function markaspot_fastmap_user_presave(UserInterface $user): void {
   if ((int) $actor->id() === 1 || $actor->hasPermission('administer users')) {
     return;
   }
-  foreach (['name', 'mail', 'pass', 'status', 'roles'] as $field) {
+  // Language and time zone too: all visitors share the account.
+  $guarded = [
+    'name', 'mail', 'pass', 'status', 'roles',
+    'preferred_langcode', 'preferred_admin_langcode', 'langcode', 'timezone',
+  ];
+  foreach ($guarded as $field) {
     if (!$user->get($field)->equals($original->get($field))) {
       throw new EntityStorageException(sprintf('The %s of a demo staff account cannot be changed.', $field));
     }
@@ -1504,3 +1510,4 @@ function markaspot_fastmap_user_login(UserInterface $account): void {
   ]);
   user_logout();
 }
+

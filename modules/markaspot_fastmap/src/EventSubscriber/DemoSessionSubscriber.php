@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\EventSubscriber;
 
+use Drupal\Core\Routing\RouteObjectInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Psr\Log\LoggerInterface;
@@ -11,6 +12,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Routing\Route;
 
 /**
  * Enforces the session and path rules of demo staff accounts.
@@ -33,8 +35,14 @@ final class DemoSessionSubscriber implements EventSubscriberInterface {
    * {@inheritdoc}
    */
   public static function getSubscribedEvents(): array {
-    // AuthenticationSubscriber sets the current user at priority 300.
-    return [KernelEvents::REQUEST => ['onRequest', 299]];
+    // AuthenticationSubscriber sets the current user at priority 300, the
+    // router matches at 32 and route access is checked at 30.
+    return [
+      KernelEvents::REQUEST => [
+        ['onRequest', 299],
+        ['onRoutedRequest', 31],
+      ],
+    ];
   }
 
   /**
@@ -59,6 +67,23 @@ final class DemoSessionSubscriber implements EventSubscriberInterface {
       '@max' => DemoStaffAccount::MAX_SESSION_AGE,
     ]);
     user_logout();
+  }
+
+  /**
+   * Denies a demo session the matched route of a denied path.
+   *
+   * The request path can carry a language prefix ("/de/jsonapi/user/user")
+   * or another spelling; the route path ("/jsonapi/user/user") cannot.
+   */
+  public function onRoutedRequest(RequestEvent $event): void {
+    if (!$event->isMainRequest() || !$this->currentUser->isAuthenticated() || !$this->staffAccount->isDemoAccount($this->currentUser)) {
+      return;
+    }
+    $request = $event->getRequest();
+    $route = $request->attributes->get(RouteObjectInterface::ROUTE_OBJECT);
+    if ($route instanceof Route && DemoStaffAccount::isDeniedPath($route->getPath(), $request->getMethod())) {
+      throw new AccessDeniedHttpException('Demo staff accounts cannot use this function.');
+    }
   }
 
 }
