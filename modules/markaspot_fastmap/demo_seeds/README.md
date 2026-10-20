@@ -72,9 +72,16 @@ allowlist invalidates it):
       "es": { "title": "…", "description": "…", "statusNotes": ["…", "…"] }
     }
   },
-  "task": { "en": "…", "es": "…" }
+  "task": { "en": "…", "es": "…" },
+  "showcase_request_id": "1-2026"
 }
 ```
+
+- `showcase_request_id` is the service_request_id of the first report in the
+  seed, read from the live node on every seed run; `null` until a seed run
+  has stored it. Solution pages link their dashboard slides to it. Request IDs
+  count per workspace, and a reset keeps the seeded nodes, so the value stays
+  the same until the workspace is created anew.
 
 - The `translations` key is the Open311 `service_request_id`, which is the
   node's `request_id` field (`<seq>-<year>` by default, optionally with the
@@ -85,6 +92,89 @@ allowlist invalidates it):
   returns them (oldest first).
 - Every language of the seed is present, including the default language.
 - `task` is also appended to the start page body as a bold paragraph.
+
+## Demo staff login
+
+Every seeded demo workspace has one staff account that all visitors share.
+The solution pages link dashboard features into the demo with one click,
+without a code or a mail.
+
+The seeder creates the account and restores it on every run and reset:
+
+| Property | Value |
+|---|---|
+| Name | `demo-<slug>`, e.g. `demo-demo-school-routes` |
+| Mail | `demo+<slug>@civicspot.invalid` (never deliverable) |
+| UUID | derived like every seeded entity (kind `user`, key `staff`); this is how code recognises the account |
+| Password | random on every run, never stored or shown |
+| Global roles | none besides `authenticated` |
+| Memberships | only the demo workspace, roles `jur-member` + `jur-moderator`, as the team dialog gives an invited moderator |
+
+If the moderator role is missing or not an individual role, the seed logs an
+error and skips the account; the endpoint then answers 404.
+
+The role set is deliberately minimal (`DemoStaffAccount::GLOBAL_ROLES` and
+`MEMBERSHIP_ROLES`, pinned by a kernel test). Without the global `moderator`
+role the account can open and update reports of its workspace and toggle
+their publication, but Drupal denies editing `field_status`,
+`field_status_notes` and `field_assignee` and hides reporter fields. What
+that means for dashboard deep links (from the code, measured on dev
+permissions):
+
+| Link | Result |
+|---|---|
+| `/<slug>/dashboard` | renders |
+| `/<slug>/dashboard/requests` | list renders; reporter columns stay empty |
+| `/<slug>/dashboard/requests/<id>/edit` | renders with edit controls (the UI treats `jur-moderator` as editor); saving a status change or public answer fails with 403 from JSON:API; assignment is hidden (no `assign service requests`) |
+| `/<slug>/dashboard/metrics` | redirected to `/<slug>/dashboard` with an info toast: the page needs `access dashboard kpis`, which only `administrator` and `tenant_admin` hold |
+
+The first seeded report is published as `demo.showcase_request_id` (see
+above).
+
+### Endpoint
+
+```
+POST /api/fastmap/demo-session
+Content-Type: application/json
+X-CSRF-Token: <token from /session/token>
+
+{"workspace": "demo-school-routes"}
+```
+
+| Status | When |
+|---|---|
+| 200 `{"ok": true, "dashboard": "/<slug>/dashboard"}` | logged in as the demo account; also when the session already is that account (no new login) |
+| 400 | body is not `{"workspace": "<string>"}` |
+| 404 | slug not in `demo_workspaces`, no demo block, or no active staff account with membership; all cases look the same |
+| 409 | the visitor is logged in as any other account; a real session is never replaced |
+| 415 | Content-Type is not `application/json` (or `application/vnd.api+json`) |
+| 429 | more than 20 new demo sessions per client IP and hour (flood event `markaspot_fastmap.demo_session`, `Retry-After` header) |
+
+Cross-site requests: Drupal checks the CSRF header token only for
+authenticated sessions. Anonymous visitors have no persistent session, so
+`/session/token` hands them a new token on every call that cannot be
+validated. For them the JSON content type is the guard: a cross-site form
+cannot send it, and a cross-site fetch with it needs a CORS preflight. The
+flood limit counts per `getClientIp()`, which relies on the reverse proxy
+settings passing the visitor IP through.
+
+### Guard rails
+
+- The session lives at most two hours. `mas:reset-demo-workspaces` (and the
+  cron reset) also deletes all sessions of the account, so visitors start
+  over together with the content.
+- A demo session must be started by the endpoint. Any other login of the
+  account (password, OTP, one-time link, user switching, session handoff) is
+  ended in `hook_user_login()`, and a request subscriber logs out sessions
+  without the endpoint marker or older than two hours.
+- Visitors cannot edit or delete the account (entity access), and code that
+  saves users cannot change its name, mail, password, status or roles unless
+  a user administrator acts.
+- The account cannot become a member of any other group.
+- Mail to `@civicspot.invalid` is dropped in `hook_mail_alter()`, so the
+  account never receives assignment, status, OTP or password mails.
+- `/api/auth/status` reports `user.is_demo_account: true` for the account, so
+  the frontend can show a demo banner and hide account settings.
 
 ## Recognising seeded content
 
