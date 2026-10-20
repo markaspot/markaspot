@@ -35,6 +35,11 @@ final class DemoSeedTest extends UnitTestCase {
       $seed = DemoSeed::fromFile($file);
       $slugs[] = $seed->data['slug'];
       $this->assertSame(basename($file, '.yml'), $seed->data['slug'], 'The file is named after the slug the reset looks for.');
+      // The image analysis needs the purpose of the map; the onboarding chat
+      // caps the same field at 2000 characters.
+      $purpose = (string) ($seed->data['ai_system_prompt'] ?? '');
+      $this->assertNotSame('', trim($purpose), $seed->data['slug'] . ' has a purpose text.');
+      $this->assertLessThanOrEqual(2000, mb_strlen($purpose), $seed->data['slug']);
       foreach ($seed->data['reports'] as $report) {
         $label = $seed->data['slug'] . ':' . $report['key'];
         if (isset($report['photo'])) {

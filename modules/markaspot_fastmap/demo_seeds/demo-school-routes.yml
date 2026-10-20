@@ -13,10 +13,17 @@
 version: 1
 slug: demo-school-routes
 template: safe-routes
-seed_version: 7
+seed_version: 8
 default_language: en
 languages: [en, es, fr, de]
 wording: report
+ai_system_prompt: >-
+  Purpose: a safe routes to school map. Parents and children report spots on the way to school
+  that feel dangerous. Valid observations: crossings without lights or a zebra crossing, missing
+  or blocked sidewalks, poor visibility at corners or behind parked cars, places where drivers
+  speed, dark spots without street lighting. Exclusions: recognisable children as the main
+  subject, private property, traffic offences of individual people. If the danger is not clearly
+  visible, describe the setting and state the uncertainty.
 name: 'Lindenhof School Routes'
 claim:
   en: 'Report dangerous spots on the way to school'

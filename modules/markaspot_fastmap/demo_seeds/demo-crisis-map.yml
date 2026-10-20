@@ -19,10 +19,17 @@
 version: 1
 slug: demo-crisis-map
 template: crisis-map
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: report
+ai_system_prompt: >-
+  Purpose: a crisis map run by a volunteer helper group after a storm, flood, fire, earthquake or
+  similar event. Residents document local impacts and where help is available. Valid observations:
+  flooded streets and basements, fire or smoke, damaged buildings, power outages, blocked roads,
+  debris and fallen trees, drop-in points where help or supplies are offered. Exclusions: rumours,
+  news screenshots, injured people as the main subject, anything not related to the event. Flag a
+  hazard only when it is acute and visible.
 name: 'Helferkreis Lindbach Storm Map'
 claim:
   en: 'Document local crisis impacts'

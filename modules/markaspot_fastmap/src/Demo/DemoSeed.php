@@ -60,7 +60,7 @@ final class DemoSeed {
     'version', 'slug', 'template', 'seed_version', 'default_language',
     'languages', 'wording', 'name', 'claim', 'map', 'boundary', 'theme',
     'operator', 'statuses', 'categories', 'organisations', 'start_page',
-    'task', 'reports',
+    'task', 'reports', 'ai_system_prompt',
   ];
 
   /**
@@ -178,6 +178,7 @@ final class DemoSeed {
       'operator' => isset($raw['operator']) ? self::operator($raw['operator']) : NULL,
       'start_page' => self::startPage($raw['start_page'] ?? NULL, $languages),
       'task' => isset($raw['task']) ? self::localized($raw['task'], 'task', $languages, 1000) : [],
+      'ai_system_prompt' => self::purpose($raw['ai_system_prompt'] ?? NULL),
     ];
 
     $data['statuses'] = self::statuses($raw['statuses'] ?? NULL, $languages);
@@ -194,6 +195,19 @@ final class DemoSeed {
     );
 
     return new self($data, $baseDir);
+  }
+
+  /**
+   * Validates the optional purpose text for the image analysis.
+   */
+  private static function purpose(mixed $value): string {
+    if ($value === NULL) {
+      return '';
+    }
+    if (!is_string($value) || mb_strlen(trim($value)) > 2000) {
+      throw new \InvalidArgumentException('Seed "ai_system_prompt" must be a string of at most 2000 characters.');
+    }
+    return trim($value);
   }
 
   /**
@@ -237,7 +251,7 @@ final class DemoSeed {
       'organisations' => $data['organisations'],
       'start_page' => $data['start_page'],
     ];
-    foreach (['claim', 'task'] as $key) {
+    foreach (['claim', 'task', 'ai_system_prompt'] as $key) {
       if (!empty($data[$key])) {
         $raw[$key] = $data[$key];
       }

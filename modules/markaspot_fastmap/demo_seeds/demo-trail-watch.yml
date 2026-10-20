@@ -18,10 +18,16 @@
 version: 1
 slug: demo-trail-watch
 template: trail-watch
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: report
+ai_system_prompt: >-
+  Purpose: a trail watch for hiking and cycling paths in a nature park. Visitors and rangers
+  report the condition of trails. Valid observations: fallen trees across a path, erosion and
+  washed-out sections, missing or damaged signs, damaged bridges and boardwalks, litter along the
+  trail, closed trails. Exclusions: wildlife photos without a trail issue, landscape views, people
+  as the main subject. If the problem is not clearly visible, say so instead of guessing.
 name: 'Farnbach Trail Watch'
 claim:
   en: 'Keep track of trails'

@@ -20,10 +20,17 @@
 version: 1
 slug: demo-climate-watch
 template: climate-watch
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: entry
+ai_system_prompt: >-
+  Purpose: a climate observation map for a neighbourhood. Residents record how heat, water and
+  drought show up locally, good and bad. Valid observations: hot sealed squares and car parks,
+  spots that flood after rain, places that lack or offer shade, sealed surfaces that could be
+  unsealed, trees and green space suffering from drought, also positive examples such as new trees
+  or unsealed areas. Exclusions: weather forecasts, documents, screenshots, people as the main
+  subject. Describe conditions factually; possible future risks are no hazard.
 name: 'Grüne Mitte Climate Watch'
 claim:
   en: 'Observe local climate impacts'

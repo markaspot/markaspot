@@ -18,10 +18,17 @@
 version: 1
 slug: demo-neighbourhood
 template: neighbourhood
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: suggestion
+ai_system_prompt: >-
+  Purpose: an ideas map for a neighbourhood. Residents suggest what could be improved at a
+  specific place; the idea itself is usually not visible yet. Valid photos: the place an idea
+  relates to, such as a square, a street corner, a courtyard, a tree pit, an empty lot, a bench or
+  a wall. Exclusions: documents, screenshots, sketches of unrelated places, people as the main
+  subject. Describe the place neutrally and add one short hint at what could be suggested there;
+  do not describe it as damaged unless damage is clearly visible.
 name: 'Erlenviertel Ideas Map'
 claim:
   en: 'Share ideas for the neighbourhood'

@@ -19,10 +19,17 @@
 version: 1
 slug: demo-amsterdam
 template: issue-reporter
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: report
+ai_system_prompt: >-
+  Purpose: a municipal defect reporter for a mid-sized town. Citizens report problems in public
+  space that the town should fix. Valid observations: damaged roads and sidewalks, broken or dark
+  streetlights, neglected green space, litter and illegal dumping, damaged playground equipment,
+  vandalism and graffiti on public property. Exclusions: private property, traffic offences of
+  individual people, emergencies that need the police or fire brigade. If the damage is not
+  clearly visible, say so instead of guessing.
 name: 'Gemeente Waterhoven'
 claim:
   en: 'Report local issues'

@@ -368,6 +368,11 @@ final class DemoWorkspaceSeeder {
     $group->set('label', $data['name']);
     $group->set('field_nuxt_config', $this->encode($config));
     $this->setIfField($group, 'field_platform_name', $data['name']);
+    // The project context the image analysis gets: what the map collects,
+    // valid subjects and exclusions. Without it the model only knows the
+    // categories. Same length limit as the onboarding chat.
+    $purpose = trim((string) ($data['ai_system_prompt'] ?? ''));
+    $this->setIfField($group, 'field_ai_system_prompt', $purpose === '' ? NULL : mb_substr($purpose, 0, 2000));
     $this->setIfField($group, 'field_boundary', $boundary);
     // Permanent: an expiry date would put the workspace into the trial "demo
     // state", whose GDPR gate unpublishes every new report.

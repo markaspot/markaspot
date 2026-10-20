@@ -19,10 +19,18 @@
 version: 1
 slug: demo-access-map
 template: access-map
-seed_version: 2
+seed_version: 3
 default_language: en
 languages: [en, es, fr, de]
 wording: report
+ai_system_prompt: >-
+  Purpose: a barrier map for an accessible town. Citizens document places where people using
+  wheelchairs, walkers, prams or a white cane cannot get through. Valid observations: missing
+  ramps or curb cuts, steps without an alternative, broken or missing elevators, obstacles on the
+  sidewalk (parked bikes, signs, construction), missing tactile paving, building entrances without
+  step-free access. Exclusions: general road damage that does not block anyone, private property
+  interiors, people as the main subject. If the barrier is not clearly visible, say so instead of
+  guessing.
 name: 'Freie Wege Barrier Map'
 claim:
   en: 'Make barriers visible'
