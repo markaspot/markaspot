@@ -1,5 +1,32 @@
 # Changelog
 
+## [11.9.223](https://github.com/markaspot/markaspot/compare/11.9.222...11.9.223) (2026-10-20)
+
+### Features
+
+* **fastmap:** judge photos on non-report maps by the map's purpose ([6e6124e](https://github.com/markaspot/markaspot/commit/6e6124e481f6484968fcccce1de9d20c1a3a668d))
+* **nuxt:** validate new or changed image-analysis project contexts ([b4674da](https://github.com/markaspot/markaspot/commit/b4674da25b4f7769fc20e588138e66b2836a9e42))
+* **vision:** add an alter hook for the editable prompt parts ([ca40d46](https://github.com/markaspot/markaspot/commit/ca40d468cee9a2f72e7385e58e078261af76f0f2))
+* **vision:** let a prompt hook lead the response with an observation field ([b4733a4](https://github.com/markaspot/markaspot/commit/b4733a4ca6068b67e79efc4d3531ebd2bc916ef2))
+
+### Bug Fixes
+
+* **fastmap:** describe the photo before judging its relevance on non-report maps ([2d97032](https://github.com/markaspot/markaspot/commit/2d97032abac2812db31955abc48818c54e631186))
+* **fastmap:** keep broken subjects, empty idea places and photo scans valid on non-report maps ([19b2602](https://github.com/markaspot/markaspot/commit/19b2602be6b268ad0045dcfafdb023b2bb0825fe))
+* **fastmap:** keep the observation instruction free of extra rules ([9b61a06](https://github.com/markaspot/markaspot/commit/9b61a0686bc4be76270b68bc612031d5fd086935))
+* **fastmap:** list no partial category set in the fallback purpose ([d0a3525](https://github.com/markaspot/markaspot/commit/d0a35256b61490d25f4d274c81bc630ebba14474))
+* **nuxt:** apply the project context bounds on every write path and compare line endings as line feeds ([e90caae](https://github.com/markaspot/markaspot/commit/e90caae269b51e7d06bea77c16e7bede18115e8d))
+* **vision:** drop the observation before storing the analysis and describe it in fallback modes ([883ab9d](https://github.com/markaspot/markaspot/commit/883ab9d185a93c0ed901ed1acc2f0326506a9163))
+
+### Refactoring
+
+* **vision:** keep the category fallback rule outside the alterable relevance part ([1d4d2ec](https://github.com/markaspot/markaspot/commit/1d4d2ec9585e6f789e81a44e9798d14e9e216ba2))
+
+### Documentation
+
+* **vision:** record the real-model counts of the observation field ([705abd4](https://github.com/markaspot/markaspot/commit/705abd471e0cd15d5bb255c56ea3b073e9fc0b10))
+* **vision:** state the real-model screenshot counts per preset ([5dd3ea6](https://github.com/markaspot/markaspot/commit/5dd3ea64bbb30e58d26d98575c0e84a2d3de6663))
+
 ## [11.9.222](https://github.com/markaspot/markaspot/compare/11.9.221...11.9.222) (2026-10-19)
 
 ### Features
