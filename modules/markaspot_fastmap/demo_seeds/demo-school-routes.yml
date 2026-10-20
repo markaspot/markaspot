@@ -13,14 +13,14 @@
 version: 1
 slug: demo-school-routes
 template: safe-routes
-seed_version: 5
+seed_version: 6
 default_language: en
 languages: [en, es, fr, de]
 wording: report
 name: 'Lindenhof School Routes'
 claim:
   en: 'Report dangerous spots on the way to school'
-  es: 'Señale los puntos peligrosos del camino al colegio'
+  es: 'Señala los puntos peligrosos del camino al colegio'
   fr: 'Signalez les endroits dangereux sur le chemin de l''école'
   de: 'Gefahrenstellen auf dem Schulweg melden'
 map:
@@ -95,15 +95,15 @@ start_page:
     de: 'Willkommen bei der Schulwegkarte'
   body:
     en: '<p>Parents, children and neighbours collect dangerous spots on the way to Lindenhof Primary School. The parents'' initiative reads every report, asks back when something is unclear and answers right here on the map. What parents cannot fix themselves, they take to the school and the city.</p><p>This is a demo. Everything you add is removed at the next regular reset.</p>'
-    es: '<p>Familias, niños y vecinos reúnen aquí los puntos peligrosos del camino a la escuela primaria Lindenhof. La iniciativa de madres y padres lee cada aviso, pregunta cuando algo no está claro y responde directamente en el mapa. Lo que las familias no pueden resolver por sí mismas lo llevan a la escuela y al ayuntamiento.</p><p>Esto es una demostración. Todo lo que añada se borrará en el próximo restablecimiento.</p>'
+    es: '<p>Familias, niños y vecinos reúnen aquí los puntos peligrosos del camino a la escuela primaria Lindenhof. La iniciativa de madres y padres lee cada aviso, pregunta cuando algo no está claro y responde directamente en el mapa. Lo que las familias no pueden resolver por sí mismas lo llevan a la escuela y al ayuntamiento.</p><p>Esto es una demostración. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
     fr: '<p>Parents, enfants et riverains recensent ici les endroits dangereux sur le chemin de l''école primaire Lindenhof. L''initiative de parents lit chaque signalement, pose des questions quand quelque chose n''est pas clair et répond directement sur la carte. Ce que les parents ne peuvent pas régler eux-mêmes, ils le portent à l''école et à la ville.</p><p>Ceci est une démo. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
-    de: '<p>Eltern, Kinder und Nachbarn sammeln hier Gefahrenstellen auf dem Weg zur Grundschule Lindenhof. Die Elterninitiative liest jede Meldung, fragt nach, wenn etwas unklar ist, und antwortet direkt auf der Karte. Was Eltern nicht selbst lösen können, bringen sie zur Schule und zur Stadt.</p><p>Dies ist eine Demo. Alles, was Sie eintragen, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+    de: '<p>Eltern, Kinder und Nachbarn sammeln hier Gefahrenstellen auf dem Weg zur Grundschule Lindenhof. Die Elterninitiative liest jede Meldung, fragt nach, wenn etwas unklar ist, und antwortet direkt auf der Karte. Was Eltern nicht selbst lösen können, bringen sie zur Schule und zur Stadt.</p><p>Dies ist eine Demo. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
 
 task:
   en: 'Open the dangerous crossing and read how the parents'' initiative followed up. Then report another spot on your way to school.'
-  es: 'Abra el cruce peligroso y lea cómo respondió la iniciativa de madres y padres. Después señale otro punto de su camino al colegio.'
+  es: 'Abre el cruce peligroso y lee cómo respondió la iniciativa de madres y padres. Después señala otro punto de tu camino al colegio.'
   fr: 'Ouvrez la traversée dangereuse et lisez la réponse de l''initiative de parents. Signalez ensuite un autre endroit sur le chemin de l''école.'
-  de: 'Öffnen Sie die gefährliche Querung und lesen Sie, wie die Elterninitiative reagiert hat. Melden Sie dann eine weitere Stelle auf dem Schulweg.'
+  de: 'Öffne die gefährliche Querung und lies, wie die Elterninitiative reagiert hat. Melde dann eine weitere Stelle auf dem Schulweg.'
 
 reports:
   - key: dangerous-crossing
@@ -133,9 +133,9 @@ reports:
         days_ago: 21
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'
       - status: question
         days_ago: 19
         time: '20:40'
@@ -149,7 +149,7 @@ reports:
         time: '21:10'
         note:
           en: 'Thanks for your answer: it happens mostly between 7:40 and 8:00. Parents will count the cars on two mornings so that we can show the city real numbers.'
-          es: 'Gracias por su respuesta: pasa sobre todo entre las 7:40 y las 8:00. Algunas familias contarán los coches durante dos mañanas para poder enseñar al ayuntamiento cifras reales.'
+          es: 'Gracias por tu respuesta: pasa sobre todo entre las 7:40 y las 8:00. Algunas familias contarán los coches durante dos mañanas para poder enseñar al ayuntamiento cifras reales.'
           fr: 'Merci pour votre réponse : cela arrive surtout entre 7 h 40 et 8 h. Des parents vont compter les voitures pendant deux matins, pour montrer à la ville des chiffres réels.'
           de: 'Danke für die Antwort: Es passiert vor allem zwischen 7:40 und 8:00 Uhr. Eltern zählen an zwei Morgen die Autos, damit wir der Stadt echte Zahlen zeigen können.'
       - status: handed-over
@@ -188,9 +188,9 @@ reports:
         days_ago: 16
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'
       - status: in-progress
         days_ago: 9
         time: '18:55'
@@ -234,9 +234,9 @@ reports:
         days_ago: 10
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'
       - status: in-progress
         days_ago: 6
         time: '19:30'
@@ -273,9 +273,9 @@ reports:
         days_ago: 7
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'
 
   - key: speeding
     category: speed
@@ -303,9 +303,9 @@ reports:
         days_ago: 5
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'
 
   - key: dark-footpath
     category: lighting
@@ -334,9 +334,9 @@ reports:
         days_ago: 3
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'
 
   - key: bus-stop
     category: crossing
@@ -365,6 +365,6 @@ reports:
         days_ago: 1
         note:
           en: 'Thank you, we have received your report.'
-          es: 'Gracias, hemos recibido su aviso.'
+          es: 'Gracias, hemos recibido tu aviso.'
           fr: 'Merci, nous avons bien reçu votre signalement.'
-          de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
+          de: 'Danke, deine Meldung ist eingegangen.'

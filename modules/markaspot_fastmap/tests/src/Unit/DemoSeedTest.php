@@ -51,6 +51,26 @@ final class DemoSeedTest extends UnitTestCase {
     $this->assertTrue($hasQuestion, 'The example needs a question back to the reporter.');
     $this->assertArrayHasKey('de', $seed->data['task']);
 
+    // The demo addresses visitors informally like the marketing pages: du in
+    // German, tú in Spanish, vous in French.
+    $texts = ['de' => [], 'es' => [], 'fr' => []];
+    $data = $seed->data;
+    array_walk_recursive($data, static function (mixed $value, int|string $key) use (&$texts): void {
+      if (is_string($value) && isset($texts[$key])) {
+        $texts[$key][] = strip_tags($value);
+      }
+    });
+    foreach ($texts['de'] as $text) {
+      // Formal pronouns, outside the start of a sentence.
+      $this->assertDoesNotMatchRegularExpression('/(?<![.!?:]\s)(?<!^)\b(Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihnen)\b/u', $text);
+    }
+    foreach ($texts['es'] as $text) {
+      $this->assertDoesNotMatchRegularExpression('/\b(usted|ustedes|su aviso|su respuesta|su camino)\b/iu', $text);
+    }
+    foreach ($texts['fr'] as $text) {
+      $this->assertDoesNotMatchRegularExpression('/\b(tu|ton|ta|tes|toi)\b/iu', $text);
+    }
+
     $photos = array_filter(array_column($seed->data['reports'], 'photo', 'key'));
     $this->assertCount(count($seed->data['reports']), $photos, 'Every report of the example has a photo.');
     foreach ($photos as $photo) {

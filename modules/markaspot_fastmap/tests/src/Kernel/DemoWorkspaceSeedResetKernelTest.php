@@ -265,7 +265,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertSame('en', $config['languages']['default']);
     $this->assertSame('safe-routes', $config['demo']['template']);
     $this->assertSame(Yaml::decode((string) file_get_contents($this->seedDir . '/demo-school-routes.yml'))['seed_version'], $config['demo']['seedVersion']);
-    $this->assertStringStartsWith('Öffnen Sie die gefährliche Querung', $config['demo']['task']['de']);
+    $this->assertStringStartsWith('Öffne die gefährliche Querung', $config['demo']['task']['de']);
     $this->assertSame('Gefahrenstellen auf dem Schulweg melden', $config['client']['claim']['de']);
 
     // Categories and statuses carry real term translations.
@@ -352,7 +352,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $page = $this->seededEntity('node', 'page', 'start');
     $this->assertTrue($page->isPromoted());
     $this->assertSame('Willkommen bei der Schulwegkarte', $page->getTranslation('de')->label());
-    $this->assertStringContainsString('Melden Sie dann eine weitere Stelle', (string) $page->getTranslation('de')->get('body')->value);
+    $this->assertStringContainsString('Melde dann eine weitere Stelle', (string) $page->getTranslation('de')->get('body')->value);
 
     // The public contract shape.
     $delivered = DemoWorkspace::sanitizeForDelivery(DemoWorkspace::block($group));
