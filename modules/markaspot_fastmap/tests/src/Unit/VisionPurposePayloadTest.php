@@ -72,6 +72,15 @@ final class VisionPurposePayloadTest extends UnitTestCase {
   public function testCategoryPartIsUnchanged(array $case): void {
     $name = $this->dataName();
     $payload = json_decode($this->captureProviderBody($case, $this->fastmapHandler()), TRUE, 512, JSON_THROW_ON_ERROR);
+    // The observation field leads the schema; without it the category part
+    // is the golden fixture byte for byte.
+    $schema = &$payload['response_format']['json_schema']['schema'];
+    $this->assertSame('observation', array_key_first($schema['properties']));
+    $this->assertSame('observation', $schema['required'][0]);
+    $this->assertStringStartsWith('Write this first, before you choose the category', $schema['properties']['observation']['description']);
+    unset($schema['properties']['observation']);
+    array_shift($schema['required']);
+    unset($schema);
     $expected = (string) file_get_contents(ProviderPayloadGoldenTest::fixturePath('category-' . $name));
     $this->assertSame($expected, ProviderPayloadGoldenTest::categoryPart($payload), $name);
 

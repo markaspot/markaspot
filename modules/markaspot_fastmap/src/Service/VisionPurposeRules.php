@@ -18,9 +18,12 @@ use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
  *   least one category; the mandatory category is never a reason for true;
  * - description framing per preset, hazards only when acute and visible;
  * - a neutral user prompt framing, the configured image prompt stays as is;
- * - a one-sentence purpose when the workspace has no project context.
+ * - a one-sentence purpose when the workspace has no project context;
+ * - an observation field first in the response, so the model says what the
+ *   image shows before it picks a category and judges relevance.
  *
- * Categories, attribute definitions and the response schema are not touched.
+ * Categories, attribute definitions and the rest of the response schema are
+ * not touched.
  */
 final class VisionPurposeRules {
 
@@ -73,6 +76,18 @@ final class VisionPurposeRules {
     . "return is never a reason to set is_reportable_issue to true.";
 
   /**
+   * Description of the observation field that leads the response.
+   *
+   * Real-model runs decided is_reportable_issue before describing the photo
+   * and then justified the verdict: an empty tree pit became a cat feeding
+   * spot, a pothole a facade in need of repair.
+   */
+  private const OBSERVATION = "Write this first, before you choose the category or judge relevance: one or two "
+    . "plain sentences on what the image literally shows. Name the main subject and say whether it is a photo "
+    . "of a real place or object, or a document, screenshot, table, chart or text. Do not interpret it in terms "
+    . "of the project or its categories yet.";
+
+  /**
    * Constructs the rules.
    *
    * @param \Drupal\markaspot_nuxt\Service\CitizenWordingResolver|null $wordingResolver
@@ -107,6 +122,7 @@ final class VisionPurposeRules {
 
     $parts['relevance'] = $this->relevance($preset, $plural);
     $parts['framing'] = $this->framing($preset);
+    $parts['observation'] = self::OBSERVATION;
     $parts['user_prefix'] = "The following set of {$imageCount} images shows one scene. "
       . "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ";
     $parts['user_framing'] = "This is not a defect-reporting map: it collects {$plural} for the purpose described "
@@ -131,7 +147,8 @@ final class VisionPurposeRules {
     $lead = "\n\nPROJECT RELEVANCE: This workspace collects {$plural}; it is not a defect-reporting map. Set "
       . "is_reportable_issue to true only when the image shows a real subject that fits the purpose in the "
       . "project context and at least one of the current tenant categories. A damaged or broken subject still "
-      . "counts when it fits.";
+      . "counts when it fits. Decide from your observation, not from the category list: when the observation "
+      . "names no subject that fits the purpose, set is_reportable_issue to false.";
     return match ($preset) {
       // The idea itself does not exist yet: the photo shows its place.
       'suggestion' => $lead . " On this map the subject is the place or object an idea relates to: nothing needs "
