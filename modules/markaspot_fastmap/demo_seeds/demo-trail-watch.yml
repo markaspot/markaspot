@@ -1,0 +1,392 @@
+# Template demo: trail-watch ("Trail damage map", DE "Wegeschädenmelder").
+# Format: README.md of the demo seeds. Real geometry, fictional names: the
+# pins lie on real forest paths in the Siebengebirge near Königswinter, next
+# to real huts, fords and viewpoints taken from OpenStreetMap. The
+# "Wanderfreunde Farnbach", the "Farnbach trails", the people and all reports
+# are fictional. No closure of a real trail is claimed: the only
+# "Trail closure" report is a ford that floods after rain (permanent notice).
+# No addresses are given on purpose: the geocoder fills them.
+# Story: a hiking club with volunteer trail wardens runs the map. It checks
+# every report, fixes what it can at its work parties and passes on what
+# belongs to the forest owner. The forestry office makes no promise and
+# never answers here.
+# Times: hikers report on weekend afternoons, the wardens answer in the
+# evening; entries without a time get a stable derived one.
+# The statuses mirror the trail-watch set in
+# WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
+# mappings).
+version: 1
+slug: demo-trail-watch
+template: trail-watch
+seed_version: 2
+default_language: en
+languages: [en, es, fr, de]
+wording: report
+name: 'Farnbach Trail Watch'
+claim:
+  en: 'Keep track of trails'
+  es: 'Registrar el estado de senderos'
+  fr: 'Suivre l''état des sentiers'
+  de: 'Wegezustände gemeinsam erfassen'
+map:
+  lat: 50.6605
+  lng: 7.2360
+  zoom: 15
+boundary:
+  radius_km: 1.5
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: reported
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-plus
+    name: { en: 'Reported', es: 'Notificado', fr: 'Signalé', de: 'Gemeldet' }
+  - key: in-progress
+    mapping: open
+    hex: '#2563EB'
+    icon: i-lucide-clock
+    name: { en: 'Confirmed, in progress', es: 'Confirmado, en curso', fr: 'Confirmé, en cours', de: 'Bestätigt, in Arbeit' }
+  - key: fixed
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-check
+    name: { en: 'Fixed', es: 'Reparado', fr: 'Réparé', de: 'Behoben' }
+  - key: permanent-notice
+    mapping: closed
+    hex: '#64748B'
+    icon: i-lucide-info
+    name: { en: 'Permanent notice', es: 'Aviso permanente', fr: 'Avertissement permanent', de: 'Dauerhafter Hinweis' }
+
+# Names and icons follow the trail-watch template (template-registry.ts,
+# useTemplates.ts categoryIcons), in the same order.
+categories:
+  - key: fallen-tree
+    icon: i-lucide-tree-pine
+    name: { en: 'Fallen tree', es: 'Árbol caído', fr: 'Arbre tombé', de: 'Umgestürzter Baum' }
+  - key: erosion
+    icon: i-lucide-mountain
+    name: { en: 'Erosion', es: 'Erosión', fr: 'Érosion', de: 'Erosion' }
+  - key: missing-sign
+    icon: i-lucide-signpost
+    name: { en: 'Missing sign', es: 'Señal faltante', fr: 'Panneau manquant', de: 'Fehlendes Schild' }
+  - key: damaged-bridge
+    icon: i-lucide-triangle-alert
+    name: { en: 'Damaged bridge', es: 'Puente dañado', fr: 'Pont endommagé', de: 'Beschädigte Brücke' }
+  - key: littering
+    icon: i-lucide-trash-2
+    name: { en: 'Littering', es: 'Basura', fr: 'Déchets', de: 'Müll' }
+  - key: trail-closure
+    icon: i-lucide-route-off
+    name: { en: 'Trail closure', es: 'Sendero cerrado', fr: 'Sentier fermé', de: 'Wegsperrung' }
+
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature. The forestry office appears only in the notes, as the recipient
+# of what the club passes on.
+organisations: []
+
+start_page:
+  title:
+    en: 'Welcome to Farnbach Trail Watch'
+    es: 'Bienvenido al mapa de senderos de Farnbach'
+    fr: 'Bienvenue sur la carte des sentiers de Farnbach'
+    de: 'Willkommen beim Wegeschädenmelder Farnbach'
+  body:
+    en: '<p>Hikers report fallen trees, washed-out paths, broken signs and damaged bridges on the Farnbach trails here. The volunteer trail wardens of the Wanderfreunde Farnbach check every report, answer right here on the map and fix what they can at their work parties. What belongs to the forest owner, such as bridges, they pass on to the forestry office with photos.</p><p>This map does not replace official closures. Always follow the signs on site.</p><p>This is a demo. The Wanderfreunde Farnbach, the Farnbach trails and all reports are fictional; the forest paths on the map are real. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Aquí los senderistas avisan de árboles caídos, caminos erosionados, señales rotas y puentes dañados en los senderos de Farnbach. Los guardas de senderos voluntarios de los Wanderfreunde Farnbach revisan cada aviso, responden directamente en el mapa y reparan lo que pueden en sus jornadas de trabajo. Lo que pertenece al propietario del bosque, como los puentes, lo trasladan con fotos a la oficina forestal.</p><p>Este mapa no sustituye a los cierres oficiales. Sigue siempre la señalización del lugar.</p><p>Esto es una demostración. Los Wanderfreunde Farnbach, los senderos de Farnbach y todos los avisos son ficticios; los caminos forestales del mapa son reales. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Les randonneurs signalent ici les arbres tombés, les chemins ravinés, les panneaux cassés et les ponts endommagés sur les sentiers de Farnbach. Les baliseurs bénévoles des Wanderfreunde Farnbach vérifient chaque signalement, répondent directement sur la carte et réparent ce qu''ils peuvent lors de leurs journées de travail. Ce qui appartient au propriétaire de la forêt, comme les ponts, ils le transmettent avec des photos à l''office forestier.</p><p>Cette carte ne remplace pas les fermetures officielles. Suivez toujours la signalisation sur place.</p><p>Ceci est une démo. Les Wanderfreunde Farnbach, les sentiers de Farnbach et tous les signalements sont fictifs ; les chemins forestiers de la carte sont réels. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Wanderer melden hier umgestürzte Bäume, ausgewaschene Wege, kaputte Schilder und beschädigte Brücken auf den Farnbach-Wegen. Die ehrenamtlichen Wegewarte der Wanderfreunde Farnbach prüfen jede Meldung, antworten direkt auf der Karte und beheben bei ihren Arbeitseinsätzen, was sie selbst können. Was dem Waldbesitzer gehört, etwa Brücken, geben sie mit Fotos an das Forstamt weiter.</p><p>Diese Karte ersetzt keine amtlichen Sperrungen. Achte immer auf die Beschilderung vor Ort.</p><p>Dies ist eine Demo. Die Wanderfreunde Farnbach, die Farnbach-Wege und alle Meldungen sind erfunden, die Waldwege auf der Karte sind echt. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the fallen tree and read how the trail wardens cleared the path. Then report something you noticed on your last hike.'
+  es: 'Abre el árbol caído y lee cómo los guardas de senderos despejaron el camino. Después avisa de algo que te llamó la atención en tu última excursión.'
+  fr: 'Ouvrez l''arbre tombé et lisez comment les baliseurs ont dégagé le chemin. Signalez ensuite quelque chose que vous avez remarqué lors de votre dernière randonnée.'
+  de: 'Öffne den umgestürzten Baum und lies, wie die Wegewarte den Weg freigeräumt haben. Melde dann etwas, das dir bei deiner letzten Wanderung aufgefallen ist.'
+
+reports:
+  - key: fallen-beech
+    category: fallen-tree
+    lat: 50.66425
+    lng: 7.23325
+    address: { address_line1: 'Drachenfelsstraße', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    time: '15:40'
+    photo:
+      file: images/trail-watch-fallen-tree.jpg
+      alt:
+        en: 'A thick beech trunk lies across a narrow forest path at hip height, with autumn leaves on the ground and the path continuing behind it.'
+        es: 'Un tronco grueso de haya atraviesa un sendero estrecho del bosque a la altura de la cadera, con hojas de otoño en el suelo y el camino que sigue detrás.'
+        fr: 'Un gros tronc de hêtre barre un étroit sentier forestier à hauteur de hanche, avec des feuilles mortes au sol et le chemin qui continue derrière.'
+        de: 'Ein dicker Buchenstamm liegt in Hüfthöhe quer über einem schmalen Waldweg, am Boden Herbstlaub, dahinter geht der Weg weiter.'
+    title:
+      en: 'Beech blocks the path below the hut'
+      es: 'Una haya bloquea el camino bajo el refugio'
+      fr: 'Un hêtre barre le chemin sous le refuge'
+      de: 'Buche versperrt den Weg unterhalb der Hütte'
+    description:
+      en: 'Since the storm a beech has been lying across the path just below the hut. You can only get past by climbing over it or crawling underneath, which is hard with children or a dog.'
+      es: 'Desde la tormenta hay una haya atravesada en el camino justo debajo del refugio. Solo se puede pasar trepando por encima o arrastrándose por debajo, lo que es difícil con niños o con perro.'
+      fr: 'Depuis la tempête, un hêtre est couché en travers du chemin juste en dessous du refuge. On ne passe qu''en l''escaladant ou en rampant dessous, ce qui est difficile avec des enfants ou un chien.'
+      de: 'Seit dem Sturm liegt kurz unterhalb der Hütte eine Buche quer über dem Weg. Man kommt nur vorbei, wenn man darüber klettert oder darunter durchkriecht, mit Kindern oder Hund ist das schwierig.'
+    history:
+      - status: reported
+        days_ago: 13
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'
+      - status: in-progress
+        days_ago: 12
+        time: '19:30'
+        note:
+          en: 'Thank you for the photo. Our trail warden walked the path this morning: the beech is about 40 cm thick and lies at hip height. We have marked a short detour at the hut and agreed with the forester that we clear the trunk at our next work party.'
+          es: 'Gracias por la foto. Nuestro guarda de senderos recorrió el camino esta mañana: la haya tiene unos 40 cm de grosor y está a la altura de la cadera. Hemos señalizado un pequeño desvío en el refugio y acordado con el guarda forestal que retiraremos el tronco en nuestra próxima jornada de trabajo.'
+          fr: 'Merci pour la photo. Notre baliseur a parcouru le chemin ce matin : le hêtre fait environ 40 cm de diamètre et se trouve à hauteur de hanche. Nous avons balisé un petit détour au refuge et convenu avec le garde forestier de dégager le tronc lors de notre prochaine journée de travail.'
+          de: 'Danke für das Foto. Unser Wegewart ist den Weg heute Morgen abgegangen: Die Buche ist etwa 40 cm dick und liegt in Hüfthöhe. Wir haben an der Hütte eine kurze Umleitung markiert und mit dem Förster abgesprochen, dass wir den Stamm beim nächsten Arbeitseinsatz wegräumen.'
+      - status: in-progress
+        days_ago: 10
+        time: '21:00'
+        note:
+          en: 'The work party is on Saturday at 9:00, meeting point at the hut. Anyone who wants to help is welcome. Please bring gloves and sturdy shoes.'
+          es: 'La jornada de trabajo es el sábado a las 9:00, con punto de encuentro en el refugio. Quien quiera ayudar es bienvenido. Trae guantes y calzado resistente.'
+          fr: 'La journée de travail a lieu samedi à 9 h, rendez-vous au refuge. Toute personne qui veut aider est la bienvenue. Apportez des gants et de bonnes chaussures.'
+          de: 'Der Arbeitseinsatz ist am Samstag um 9 Uhr, Treffpunkt an der Hütte. Wer helfen möchte, ist willkommen. Bitte Handschuhe und feste Schuhe mitbringen.'
+      - status: fixed
+        days_ago: 8
+        time: '16:15'
+        note:
+          en: 'The path is clear again. Two members with a chainsaw certificate cut the trunk, eight helpers moved the pieces to the side of the path. We have removed the detour sign. Thank you to everyone who came.'
+          es: 'El camino vuelve a estar despejado. Dos socios con certificado de motosierra cortaron el tronco y ocho voluntarios apartaron los trozos a un lado del camino. Hemos retirado la señal de desvío. Gracias a todos los que vinieron.'
+          fr: 'Le chemin est de nouveau dégagé. Deux membres titulaires d''un certificat de tronçonneuse ont coupé le tronc, huit bénévoles ont déplacé les morceaux sur le bord du chemin. Nous avons retiré le panneau de détour. Merci à toutes celles et ceux qui sont venus.'
+          de: 'Der Weg ist wieder frei. Zwei Mitglieder mit Motorsägenschein haben den Stamm zersägt, acht Helfer haben die Stücke an den Wegrand geräumt. Das Umleitungsschild ist wieder abgebaut. Danke an alle, die gekommen sind.'
+
+  - key: ford-after-rain
+    category: trail-closure
+    lat: 50.65496
+    lng: 7.23929
+    address: { address_line1: 'Tretschbachtal', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    time: '14:20'
+    photo:
+      file: images/trail-watch-ford.jpg
+      alt:
+        en: 'A forest path crosses a shallow brook through a ford with a few flat stepping stones, the water brown and slightly high, muddy banks covered in leaves.'
+        es: 'Un sendero del bosque cruza un arroyo poco profundo por un vado con algunas piedras planas, el agua marrón y algo crecida, las orillas embarradas y cubiertas de hojas.'
+        fr: 'Un chemin forestier traverse un ruisseau peu profond par un gué avec quelques pierres plates, l''eau brune et un peu haute, les berges boueuses couvertes de feuilles.'
+        de: 'Ein Waldweg quert einen flachen Bach durch eine Furt mit ein paar flachen Trittsteinen, das Wasser braun und etwas erhöht, die Ufer matschig und voller Laub.'
+    title:
+      en: 'Ford impassable after rain'
+      es: 'Vado intransitable después de llover'
+      fr: 'Gué impraticable après la pluie'
+      de: 'Furt nach Regen nicht passierbar'
+    description:
+      en: 'After the heavy rain the stepping stones in the ford were under water. We had to turn back.'
+      es: 'Después de la lluvia fuerte las piedras del vado estaban bajo el agua. Tuvimos que dar la vuelta.'
+      fr: 'Après les fortes pluies, les pierres du gué étaient sous l''eau. Nous avons dû faire demi-tour.'
+      de: 'Nach dem Starkregen lagen die Trittsteine in der Furt unter Wasser. Wir mussten umkehren.'
+    history:
+      - status: reported
+        days_ago: 25
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'
+      - status: permanent-notice
+        days_ago: 23
+        time: '20:45'
+        note:
+          en: 'Thank you. The ford is part of the trail and there is no room for a bridge here. After heavy rain it cannot be crossed for a day or two. This notice stays on the map: on rainy days, please take the path over the ridge instead.'
+          es: 'Gracias. El vado forma parte del sendero y aquí no hay sitio para un puente. Después de lluvias fuertes no se puede cruzar durante uno o dos días. Este aviso se queda en el mapa: los días de lluvia, toma mejor el camino por la loma.'
+          fr: 'Merci. Le gué fait partie du sentier et il n''y a pas la place pour un pont ici. Après de fortes pluies, il est infranchissable pendant un jour ou deux. Cet avertissement reste sur la carte : par temps de pluie, prenez plutôt le chemin par la crête.'
+          de: 'Danke. Die Furt gehört zum Weg, für eine Brücke ist hier kein Platz. Nach Starkregen ist sie ein bis zwei Tage nicht passierbar. Dieser Hinweis bleibt auf der Karte: Nimm an Regentagen lieber den Weg über den Kamm.'
+
+  - key: washed-out-path
+    category: erosion
+    lat: 50.66255
+    lng: 7.2408
+    address: { address_line1: 'Tretschbachtal', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    photo:
+      file: images/trail-watch-erosion.jpg
+      alt:
+        en: 'A steep forest path washed out into a deep channel, with exposed roots and loose dark stones.'
+        es: 'Un sendero empinado del bosque convertido por el agua en un surco profundo, con raíces al aire y piedras oscuras sueltas.'
+        fr: 'Un chemin forestier en pente raviné en une profonde rigole, avec des racines à nu et des pierres sombres qui roulent.'
+        de: 'Ein steiler Waldweg, zu einer tiefen Rinne ausgewaschen, mit freiliegenden Wurzeln und losen dunklen Steinen.'
+    title:
+      en: 'Steep section washed out'
+      es: 'Tramo empinado erosionado'
+      fr: 'Passage en pente raviné'
+      de: 'Steiles Stück ausgewaschen'
+    description:
+      en: 'The rain has cut a deep channel into the steep part of the path. The stones are loose and it is slippery going down.'
+      es: 'La lluvia ha abierto un surco profundo en la parte empinada del camino. Las piedras están sueltas y en la bajada resbala.'
+      fr: 'La pluie a creusé une profonde rigole dans la partie raide du chemin. Les pierres bougent et c''est glissant à la descente.'
+      de: 'Der Regen hat eine tiefe Rinne in das steile Stück des Wegs gespült. Die Steine sind lose, bergab rutscht man leicht.'
+    history:
+      - status: reported
+        days_ago: 9
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'
+      - status: in-progress
+        days_ago: 7
+        time: '20:15'
+        note:
+          en: 'Confirmed. At the next work party we will set wooden water bars so that the rain runs off to the side. Until then, please take care on the way down.'
+          es: 'Confirmado. En la próxima jornada de trabajo colocaremos travesaños de madera para que el agua de lluvia salga hacia un lado. Hasta entonces, ten cuidado en la bajada.'
+          fr: 'Confirmé. Lors de la prochaine journée de travail, nous poserons des renvois d''eau en bois pour que la pluie s''écoule sur le côté. D''ici là, soyez prudent à la descente.'
+          de: 'Bestätigt. Beim nächsten Arbeitseinsatz setzen wir Querrinnen aus Holz, damit das Regenwasser zur Seite abläuft. Bis dahin bitte bergab vorsichtig gehen.'
+
+  - key: broken-signpost
+    category: missing-sign
+    lat: 50.6636
+    lng: 7.24255
+    address: { address_line1: 'Tretschbachtal', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    photo:
+      file: images/trail-watch-signpost.jpg
+      alt:
+        en: 'A weathered wooden signpost at a junction of forest paths, one pointer arm broken off to a splintered stub.'
+        es: 'Un poste indicador de madera desgastado en un cruce de caminos del bosque, con uno de los brazos roto y reducido a un muñón astillado.'
+        fr: 'Un poteau indicateur en bois usé à un croisement de chemins forestiers, l''une des flèches cassée, il n''en reste qu''un moignon éclaté.'
+        de: 'Ein verwitterter Holzwegweiser an einer Kreuzung von Waldwegen, ein Richtungsarm ist abgebrochen, nur ein splittriger Stumpf ist übrig.'
+    title:
+      en: 'Signpost arm broken off'
+      es: 'Brazo del poste indicador roto'
+      fr: 'Flèche du poteau indicateur cassée'
+      de: 'Arm am Wegweiser abgebrochen'
+    description:
+      en: 'At the junction one arm of the signpost is missing. Without it you cannot tell which path leads to the hut.'
+      es: 'En el cruce falta un brazo del poste indicador. Sin él no se sabe qué camino lleva al refugio.'
+      fr: 'Au croisement, il manque une flèche au poteau indicateur. Sans elle, on ne sait pas quel chemin mène au refuge.'
+      de: 'An der Kreuzung fehlt ein Arm des Wegweisers. Ohne ihn sieht man nicht, welcher Weg zur Hütte führt.'
+    history:
+      - status: reported
+        days_ago: 21
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'
+      - status: in-progress
+        days_ago: 19
+        time: '19:50'
+        note:
+          en: 'Confirmed: the arm pointing to the hut has broken off. Our sign team is making a new one.'
+          es: 'Confirmado: se ha roto el brazo que indica el refugio. Nuestro equipo de señalización está haciendo uno nuevo.'
+          fr: 'Confirmé : la flèche qui indique le refuge est cassée. Notre équipe de balisage en fabrique une nouvelle.'
+          de: 'Bestätigt: Der Arm Richtung Hütte ist abgebrochen. Unser Schilderteam fertigt einen neuen an.'
+      - status: fixed
+        days_ago: 14
+        time: '18:20'
+        note:
+          en: 'The sign team mounted a new arm today. The way to the hut is signposted again.'
+          es: 'El equipo de señalización ha montado hoy un brazo nuevo. El camino al refugio vuelve a estar señalizado.'
+          fr: 'L''équipe de balisage a posé une nouvelle flèche aujourd''hui. Le chemin du refuge est de nouveau indiqué.'
+          de: 'Das Schilderteam hat heute einen neuen Arm angebracht. Der Weg zur Hütte ist wieder ausgeschildert.'
+
+  - key: loose-handrail
+    category: damaged-bridge
+    lat: 50.65595
+    lng: 7.2344
+    address: { address_line1: 'Tretschbachtal', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    time: '16:05'
+    photo:
+      file: images/trail-watch-footbridge.jpg
+      alt:
+        en: 'A small wooden footbridge over a forest brook, the handrail on one side broken and hanging down, a post leaning, wet planks covered in leaves.'
+        es: 'Una pequeña pasarela de madera sobre un arroyo del bosque, con la barandilla de un lado rota y colgando, un poste inclinado y tablones mojados cubiertos de hojas.'
+        fr: 'Une petite passerelle en bois au-dessus d''un ruisseau forestier, la main courante d''un côté cassée et pendante, un poteau penché, des planches mouillées couvertes de feuilles.'
+        de: 'Ein kleiner Holzsteg über einen Waldbach, das Geländer auf einer Seite gebrochen und herabhängend, ein Pfosten schief, nasse Bohlen voller Laub.'
+    title:
+      en: 'Handrail on the footbridge is loose'
+      es: 'La barandilla de la pasarela está suelta'
+      fr: 'La main courante de la passerelle ne tient plus'
+      de: 'Geländer am Steg ist lose'
+    description:
+      en: 'On the small footbridge over the brook one handrail hangs down and a post wobbles. The planks are slippery when wet.'
+      es: 'En la pequeña pasarela sobre el arroyo una barandilla cuelga y un poste se mueve. Los tablones resbalan cuando están mojados.'
+      fr: 'Sur la petite passerelle au-dessus du ruisseau, une main courante pend et un poteau branle. Les planches sont glissantes quand elles sont mouillées.'
+      de: 'Am kleinen Steg über den Bach hängt ein Geländer herunter und ein Pfosten wackelt. Die Bohlen sind bei Nässe rutschig.'
+    history:
+      - status: reported
+        days_ago: 6
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'
+      - status: in-progress
+        days_ago: 5
+        time: '20:20'
+        note:
+          en: 'Confirmed: the handrail on the downstream side is loose and one post is rotten. We have marked it with warning tape. The footbridge belongs to the forest owner, so we have sent the photos to the forestry office and offered our help with the repair.'
+          es: 'Confirmado: la barandilla del lado de aguas abajo está suelta y un poste está podrido. La hemos marcado con cinta de aviso. La pasarela pertenece al propietario del bosque, así que hemos enviado las fotos a la oficina forestal y ofrecido nuestra ayuda para la reparación.'
+          fr: 'Confirmé : la main courante côté aval ne tient plus et un poteau est pourri. Nous l''avons signalée avec de la rubalise. La passerelle appartient au propriétaire de la forêt : nous avons envoyé les photos à l''office forestier et proposé notre aide pour la réparation.'
+          de: 'Bestätigt: Das Geländer auf der Seite bachabwärts ist lose, ein Pfosten ist morsch. Wir haben es mit Flatterband markiert. Der Steg gehört dem Waldbesitzer, deshalb haben wir die Fotos an das Forstamt geschickt und unsere Hilfe bei der Reparatur angeboten.'
+
+  - key: viewpoint-litter
+    category: littering
+    lat: 50.65518
+    lng: 7.22736
+    address: { address_line1: 'Schaaffhausenstraße', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    time: '17:10'
+    title:
+      en: 'Rubbish at the viewpoint'
+      es: 'Basura en el mirador'
+      fr: 'Des déchets au point de vue'
+      de: 'Müll am Aussichtspunkt'
+    description:
+      en: 'Around the viewpoint there are bottles, cans and paper tissues lying in the bushes.'
+      es: 'Alrededor del mirador hay botellas, latas y pañuelos de papel tirados entre los arbustos.'
+      fr: 'Autour du point de vue, des bouteilles, des canettes et des mouchoirs en papier traînent dans les buissons.'
+      de: 'Rund um den Aussichtspunkt liegen Flaschen, Dosen und Taschentücher im Gebüsch.'
+    history:
+      - status: reported
+        days_ago: 17
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'
+      - status: fixed
+        days_ago: 15
+        time: '17:30'
+        note:
+          en: 'Three members collected two bags of rubbish at the viewpoint today. Thank you for letting us know.'
+          es: 'Hoy tres socios han recogido dos bolsas de basura en el mirador. Gracias por avisarnos.'
+          fr: 'Trois membres ont ramassé aujourd''hui deux sacs de déchets au point de vue. Merci de nous avoir prévenus.'
+          de: 'Drei Mitglieder haben heute zwei Säcke Müll am Aussichtspunkt eingesammelt. Danke für den Hinweis.'
+
+  - key: shelter-litter
+    category: littering
+    lat: 50.6595
+    lng: 7.23015
+    address: { address_line1: 'Hubertus-Schaaffhausen-Brücke', postal_code: '53604', locality: 'Bad Honnef', country_code: DE }
+    time: '13:35'
+    title:
+      en: 'Leftover barbecue rubbish at the shelter'
+      es: 'Restos de una barbacoa en el refugio'
+      fr: 'Restes de barbecue près de l''abri'
+      de: 'Grillreste an der Schutzhütte'
+    description:
+      en: 'Next to the shelter there is a disposable barbecue, plates and a bag of rubbish.'
+      es: 'Junto al refugio hay una barbacoa desechable, platos y una bolsa de basura.'
+      fr: 'À côté de l''abri, il y a un barbecue jetable, des assiettes et un sac de déchets.'
+      de: 'Neben der Schutzhütte liegen ein Einweggrill, Teller und ein Beutel mit Müll.'
+    history:
+      - status: reported
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your report.'
+          es: 'Gracias, hemos recibido tu aviso.'
+          fr: 'Merci, nous avons bien reçu votre signalement.'
+          de: 'Danke, deine Meldung ist eingegangen.'

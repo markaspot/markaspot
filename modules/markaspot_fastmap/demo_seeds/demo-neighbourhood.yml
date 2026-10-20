@@ -1,0 +1,391 @@
+# Template demo: neighbourhood ("Neighbourhood ideas map", DE "Quartiers-Ideenkarte").
+# Format: README.md of the demo seeds. Real geometry, fictional names: the
+# pins lie in a real residential quarter (Münster, Kreuzviertel), the
+# "Erlenviertel", the association, the people and all ideas are fictional.
+# No addresses are given on purpose: the geocoder fills the real address of
+# each pin, so the address never contradicts the map tiles.
+# Story: a residents' association runs the map on its own. It reads every
+# suggestion, discusses it at its monthly meeting, does small things with the
+# neighbours and passes bigger ideas to the city's district office as a joint
+# suggestion. The city makes no promise and never answers here.
+# Times: residents submit in the evening, the association answers after its
+# Tuesday meetings; entries without a time get a stable derived one.
+# The statuses mirror the neighbourhood set in
+# WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
+# mappings). "taken-up" is closed there today, so it is the end state of
+# ideas that were carried out. The planned closed status "implemented"
+# ("Umgesetzt") does not exist yet; see README.
+version: 1
+slug: demo-neighbourhood
+template: neighbourhood
+seed_version: 2
+default_language: en
+languages: [en, es, fr, de]
+wording: suggestion
+name: 'Erlenviertel Ideas Map'
+claim:
+  en: 'Share ideas for the neighbourhood'
+  es: 'Compartir ideas para el barrio'
+  fr: 'Partager des idées pour le quartier'
+  de: 'Ideen fürs Viertel teilen'
+map:
+  lat: 51.9699
+  lng: 7.6208
+  zoom: 16
+boundary:
+  radius_km: 0.6
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: submitted
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-plus
+    name: { en: 'Submitted', es: 'Enviado', fr: 'Soumis', de: 'Eingereicht' }
+  - key: in-discussion
+    mapping: open
+    hex: '#2563EB'
+    icon: i-lucide-messages-square
+    name: { en: 'In discussion', es: 'En debate', fr: 'En discussion', de: 'In Diskussion' }
+  - key: taken-up
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-check
+    name: { en: 'Taken up', es: 'Aceptado', fr: 'Retenu', de: 'Aufgegriffen' }
+  - key: not-pursued
+    mapping: closed
+    hex: '#64748B'
+    icon: i-lucide-circle-x
+    name: { en: 'Not pursued', es: 'Descartado', fr: 'Non retenu', de: 'Nicht weiterverfolgt' }
+
+# Names and icons follow the neighbourhood template (template-registry.ts,
+# useTemplates.ts categoryIcons), in the same order.
+categories:
+  - key: meeting-place
+    icon: i-lucide-users
+    name: { en: 'Playground and meeting place', es: 'Parque infantil y punto de encuentro', fr: 'Aire de jeux et lieu de rencontre', de: 'Spielplatz und Treffpunkt' }
+  - key: green
+    icon: i-lucide-trees
+    name: { en: 'Green and trees', es: 'Zonas verdes y árboles', fr: 'Verdure et arbres', de: 'Grün und Bäume' }
+  - key: traffic
+    icon: i-lucide-traffic-cone
+    name: { en: 'Calmer traffic', es: 'Tráfico calmado', fr: 'Circulation apaisée', de: 'Ruhigerer Verkehr' }
+  - key: seating
+    icon: i-lucide-armchair
+    name: { en: 'Seating', es: 'Bancos y asientos', fr: 'Bancs et assises', de: 'Sitzplätze' }
+  - key: culture
+    icon: i-lucide-music
+    name: { en: 'Culture and festivals', es: 'Cultura y fiestas', fr: 'Culture et fêtes', de: 'Kultur und Feste' }
+  - key: other
+    icon: i-lucide-lightbulb
+    name: { en: 'Other idea', es: 'Otra idea', fr: 'Autre idée', de: 'Andere Idee' }
+
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature. The city appears only in the notes, as the recipient of what the
+# association passes on.
+organisations: []
+
+start_page:
+  title:
+    en: 'Welcome to the Erlenviertel ideas map'
+    es: 'Bienvenido al mapa de ideas del Erlenviertel'
+    fr: 'Bienvenue sur la carte d''idées de l''Erlenviertel'
+    de: 'Willkommen bei der Ideenkarte fürs Erlenviertel'
+  body:
+    en: '<p>Residents of the Erlenviertel collect ideas for their quarter here: places to meet, more green, calmer streets, benches, culture and festivals. The neighbourhood association reads every suggestion, discusses it at its monthly meeting and answers right here on the map. Small things the neighbours do themselves. Bigger ideas go to the city''s district office as a joint suggestion.</p><p>This map is for ideas, not for complaints about neighbours. The association reads every suggestion and takes it off the map if it does not belong here.</p><p>This is a demo. The Erlenviertel, the association and all suggestions are fictional; the streets on the map are real. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Los vecinos del Erlenviertel reúnen aquí ideas para su barrio: lugares de encuentro, más verde, calles más tranquilas, bancos, cultura y fiestas. La asociación de vecinos lee cada sugerencia, la debate en su reunión mensual y responde directamente en el mapa. Las cosas pequeñas las hacen los propios vecinos. Las ideas más grandes llegan a la oficina de distrito del ayuntamiento como propuesta conjunta.</p><p>Este mapa es para ideas, no para quejas sobre los vecinos. La asociación lee cada sugerencia y la retira del mapa si no corresponde aquí.</p><p>Esto es una demostración. El Erlenviertel, la asociación y todas las sugerencias son ficticios; las calles del mapa son reales. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Les habitants de l''Erlenviertel rassemblent ici des idées pour leur quartier : lieux de rencontre, plus de verdure, rues plus calmes, bancs, culture et fêtes. L''association de quartier lit chaque proposition, en discute lors de sa réunion mensuelle et répond directement sur la carte. Les petites choses, les voisins les font eux-mêmes. Les idées plus importantes sont transmises au bureau de quartier de la ville sous forme de proposition commune.</p><p>Cette carte sert aux idées, pas aux plaintes contre les voisins. L''association lit chaque proposition et la retire de la carte si elle n''a pas sa place ici.</p><p>Ceci est une démo. L''Erlenviertel, l''association et toutes les propositions sont fictifs ; les rues de la carte sont réelles. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Die Menschen im Erlenviertel sammeln hier Ideen für ihr Quartier: Treffpunkte, mehr Grün, ruhigere Straßen, Bänke, Kultur und Feste. Der Nachbarschaftsverein liest jeden Vorschlag, bespricht ihn beim monatlichen Treffen und antwortet direkt auf der Karte. Kleine Dinge setzen die Nachbarn selbst um. Größere Ideen gehen als gemeinsamer Vorschlag an das Stadtteilbüro der Stadt.</p><p>Diese Karte ist für Ideen da, nicht für Beschwerden über Nachbarn. Der Verein liest jeden Vorschlag und nimmt ihn von der Karte, wenn er nicht hierher gehört.</p><p>Dies ist eine Demo. Das Erlenviertel, der Verein und alle Vorschläge sind erfunden, die Straßen auf der Karte sind echt. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the courtyard flea market and read how the neighbourhood association took up the idea. Then suggest something for your own quarter.'
+  es: 'Abre el mercadillo en los patios y lee cómo la asociación de vecinos hizo suya la idea. Después propón algo para tu propio barrio.'
+  fr: 'Ouvrez le vide-greniers dans les cours et lisez comment l''association de quartier a repris l''idée. Proposez ensuite quelque chose pour votre propre quartier.'
+  de: 'Öffne den Hofflohmarkt und lies, wie der Nachbarschaftsverein die Idee aufgegriffen hat. Schlag dann selbst etwas für dein Viertel vor.'
+
+reports:
+  - key: courtyard-market
+    category: culture
+    lat: 51.9706
+    lng: 7.6198
+    address: { address_line1: 'Finkenstraße', postal_code: '48147', locality: 'Münster', country_code: DE }
+    time: '19:20'
+    photo:
+      file: images/neighbourhood-courtyard-market.jpg
+      alt:
+        en: 'A backyard behind a brick house with folding tables full of second-hand things, crockery, toys and folded clothes, bunting above and autumn leaves on the ground.'
+        es: 'Un patio trasero detrás de una casa de ladrillo con mesas plegables llenas de objetos de segunda mano, vajilla, juguetes y ropa doblada, banderines encima y hojas de otoño en el suelo.'
+        fr: 'Une cour derrière une maison en brique avec des tables pliantes couvertes d''objets d''occasion, vaisselle, jouets et vêtements pliés, des fanions au-dessus et des feuilles mortes au sol.'
+        de: 'Ein Hinterhof hinter einem Backsteinhaus mit Klapptischen voller gebrauchter Sachen, Geschirr, Spielzeug und gefalteter Kleidung, darüber Wimpel, am Boden Herbstlaub.'
+    title:
+      en: 'A courtyard flea market for the whole quarter'
+      es: 'Un mercadillo en los patios de todo el barrio'
+      fr: 'Un vide-greniers dans les cours de tout le quartier'
+      de: 'Hofflohmarkt fürs ganze Viertel'
+    description:
+      en: 'Many of us keep things in the cellar that others could use. How about one Sunday when every household that wants to sells from its own courtyard or front garden? You walk from yard to yard and get to know the neighbours.'
+      es: 'Muchos guardamos en el sótano cosas que otros podrían usar. ¿Qué tal un domingo en el que cada hogar que quiera venda desde su propio patio o jardín delantero? Se va de patio en patio y se conoce a los vecinos.'
+      fr: 'Beaucoup d''entre nous gardent à la cave des choses qui pourraient servir à d''autres. Pourquoi pas un dimanche où chaque foyer qui le souhaite vend depuis sa propre cour ou son jardin de devant ? On passe de cour en cour et on fait connaissance avec les voisins.'
+      de: 'Viele von uns haben Sachen im Keller, die andere noch brauchen könnten. Wie wäre ein Sonntag, an dem jeder Haushalt, der mag, aus dem eigenen Hof oder Vorgarten verkauft? Man geht von Hof zu Hof und lernt die Nachbarn kennen.'
+    history:
+      - status: submitted
+        days_ago: 34
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'
+      - status: in-discussion
+        days_ago: 31
+        time: '21:15'
+        note:
+          en: 'Thank you for the idea. We will discuss it at the next neighbourhood meeting on Tuesday. Would you take part with your own courtyard?'
+          es: 'Gracias por la idea. La debatiremos en la próxima reunión de vecinos del martes. ¿Participarías con tu propio patio?'
+          fr: 'Merci pour cette idée. Nous en discuterons lors de la prochaine réunion de quartier, mardi. Participeriez-vous avec votre propre cour ?'
+          de: 'Danke für die Idee. Wir besprechen sie beim nächsten Nachbarschaftstreffen am Dienstag. Würdest du mit deinem eigenen Hof mitmachen?'
+      - status: in-discussion
+        days_ago: 24
+        time: '21:40'
+        note:
+          en: 'At the meeting 14 households signed up straight away. We have picked a Sunday, and two neighbours are drawing a small map of all courtyards that take part. Everything happens in the courtyards and front gardens.'
+          es: 'En la reunión se apuntaron enseguida 14 hogares. Hemos elegido un domingo y dos vecinas dibujan un pequeño plano con todos los patios que participan. Todo se hace en los patios y jardines delanteros.'
+          fr: 'Lors de la réunion, 14 foyers se sont inscrits tout de suite. Nous avons choisi un dimanche, et deux voisines dessinent un petit plan de toutes les cours participantes. Tout se passe dans les cours et les jardins de devant.'
+          de: 'Beim Treffen haben sich sofort 14 Haushalte eingetragen. Wir haben einen Sonntag festgelegt, und zwei Nachbarinnen zeichnen einen kleinen Plan mit allen Höfen, die mitmachen. Alles findet in den Höfen und Vorgärten statt.'
+      - status: taken-up
+        days_ago: 6
+        time: '20:05'
+        note:
+          en: 'The first courtyard flea market took place last Sunday, with 23 courtyards. Thank you to everyone who joined in. We will do it again in spring and keep the list of courtyards.'
+          es: 'El primer mercadillo en los patios se celebró el domingo pasado, con 23 patios. Gracias a todos los que participaron. Lo repetiremos en primavera y guardamos la lista de patios.'
+          fr: 'Le premier vide-greniers dans les cours a eu lieu dimanche dernier, avec 23 cours. Merci à toutes celles et ceux qui ont participé. Nous recommencerons au printemps et gardons la liste des cours.'
+          de: 'Der erste Hofflohmarkt war am vergangenen Sonntag, mit 23 Höfen. Danke an alle, die mitgemacht haben. Im Frühjahr machen wir das wieder und behalten die Liste der Höfe.'
+
+  - key: tree-pits
+    category: green
+    lat: 51.97025
+    lng: 7.6226
+    address: { address_line1: 'Hoyastraße', postal_code: '48147', locality: 'Münster', country_code: DE }
+    time: '18:10'
+    photo:
+      file: images/neighbourhood-tree-pit.jpg
+      alt:
+        en: 'A bare, trampled tree pit around a young street tree on a pavement, with terraced houses and bicycles in the background.'
+        es: 'Un alcorque pelado y pisoteado alrededor de un árbol joven en la acera, con casas adosadas y bicicletas al fondo.'
+        fr: 'Un pied d''arbre nu et piétiné autour d''un jeune arbre sur un trottoir, avec des maisons mitoyennes et des vélos en arrière-plan.'
+        de: 'Eine kahle, festgetretene Baumscheibe um einen jungen Straßenbaum auf dem Gehweg, dahinter Reihenhäuser und Fahrräder.'
+    title:
+      en: 'Flowers for the tree pits'
+      es: 'Flores para los alcorques'
+      fr: 'Des fleurs au pied des arbres'
+      de: 'Blumen für die Baumscheiben'
+    description:
+      en: 'The tree pits along the street are bare and trampled. Neighbours could each look after one and plant flowers that bees like.'
+      es: 'Los alcorques de la calle están pelados y pisoteados. Cada vecino podría cuidar uno y plantar flores que gusten a las abejas.'
+      fr: 'Les pieds d''arbres de la rue sont nus et piétinés. Chaque voisin pourrait s''occuper de l''un d''eux et y planter des fleurs qui plaisent aux abeilles.'
+      de: 'Die Baumscheiben in der Straße sind kahl und festgetreten. Nachbarn könnten je eine übernehmen und Blumen pflanzen, die Bienen mögen.'
+    history:
+      - status: submitted
+        days_ago: 20
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'
+      - status: in-discussion
+        days_ago: 17
+        time: '20:50'
+        note:
+          en: 'Nine neighbours want to look after a tree pit. The street trees belong to the city, so we are asking how tree pit sponsorships work there and will pass on the list of volunteers.'
+          es: 'Nueve vecinos quieren cuidar un alcorque. Los árboles de la calle pertenecen al ayuntamiento, así que le preguntamos cómo funcionan allí los padrinazgos de alcorques y le pasaremos la lista de voluntarios.'
+          fr: 'Neuf voisins veulent s''occuper d''un pied d''arbre. Les arbres de la rue appartiennent à la ville : nous lui demandons comment fonctionnent les parrainages de pieds d''arbres et lui transmettrons la liste des volontaires.'
+          de: 'Neun Nachbarn möchten eine Baumscheibe übernehmen. Die Straßenbäume gehören der Stadt, deshalb fragen wir dort nach, wie Baumscheiben-Patenschaften funktionieren, und geben die Liste der Freiwilligen weiter.'
+
+  - key: square-benches
+    category: seating
+    lat: 51.9693
+    lng: 7.6181
+    address: { address_line1: 'Studtplatz', postal_code: '48149', locality: 'Münster', country_code: DE }
+    photo:
+      file: images/neighbourhood-small-square.jpg
+      alt:
+        en: 'A small paved square at a street corner with a large plane tree and a bicycle rack, terraced houses around it and no bench.'
+        es: 'Una pequeña plaza adoquinada en una esquina con un gran plátano y un aparcabicis, rodeada de casas adosadas y sin ningún banco.'
+        fr: 'Une petite place pavée à un coin de rue avec un grand platane et un arceau à vélos, entourée de maisons mitoyennes et sans aucun banc.'
+        de: 'Ein kleiner gepflasterter Platz an einer Straßenecke mit einer großen Platane und einem Fahrradständer, ringsum Reihenhäuser, keine Bank.'
+    title:
+      en: 'Benches on the small square'
+      es: 'Bancos en la plazuela'
+      fr: 'Des bancs sur la petite place'
+      de: 'Bänke auf dem kleinen Platz'
+    description:
+      en: 'There is nowhere to sit on the square. Older neighbours on their way to the shops would like to rest here, and so would parents waiting with small children.'
+      es: 'En la plaza no hay dónde sentarse. A los vecinos mayores que van de compras les gustaría descansar aquí, y también a las familias que esperan con niños pequeños.'
+      fr: 'Il n''y a nulle part où s''asseoir sur la place. Les voisins âgés qui vont faire leurs courses aimeraient s''y reposer, tout comme les parents qui attendent avec de jeunes enfants.'
+      de: 'Auf dem Platz kann man nirgends sitzen. Ältere Nachbarn auf dem Weg zum Einkaufen würden hier gern eine Pause machen, Eltern mit kleinen Kindern auch.'
+    history:
+      - status: submitted
+        days_ago: 15
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'
+      - status: in-discussion
+        days_ago: 11
+        time: '21:00'
+        note:
+          en: 'Several neighbours have suggested the same thing. We are collecting every place in the quarter where a bench is missing and will hand the list to the city''s district office as a joint suggestion.'
+          es: 'Varios vecinos han sugerido lo mismo. Reunimos todos los lugares del barrio donde falta un banco y entregaremos la lista a la oficina de distrito del ayuntamiento como propuesta conjunta.'
+          fr: 'Plusieurs voisins ont proposé la même chose. Nous rassemblons tous les endroits du quartier où il manque un banc et remettrons la liste au bureau de quartier de la ville sous forme de proposition commune.'
+          de: 'Mehrere Nachbarn haben dasselbe vorgeschlagen. Wir sammeln alle Stellen im Viertel, an denen eine Bank fehlt, und geben die Liste als gemeinsamen Vorschlag an das Stadtteilbüro der Stadt.'
+
+  - key: book-cabinet
+    category: other
+    lat: 51.9688
+    lng: 7.6213
+    address: { address_line1: 'Heerdestraße', postal_code: '48149', locality: 'Münster', country_code: DE }
+    photo:
+      file: images/neighbourhood-book-cabinet.jpg
+      alt:
+        en: 'A home-made wooden book cabinet with a small roof and glass doors in a front garden behind a low hedge, full of books.'
+        es: 'Una estantería de madera hecha a mano, con un pequeño tejado y puertas de cristal, en un jardín delantero detrás de un seto bajo, llena de libros.'
+        fr: 'Une boîte à livres en bois faite maison, avec un petit toit et des portes vitrées, dans un jardin de devant derrière une haie basse, pleine de livres.'
+        de: 'Ein selbst gebauter Bücherschrank aus Holz mit kleinem Dach und Glastüren in einem Vorgarten hinter einer niedrigen Hecke, voller Bücher.'
+    title:
+      en: 'A book cabinet for the quarter'
+      es: 'Una estantería de libros para el barrio'
+      fr: 'Une boîte à livres pour le quartier'
+      de: 'Ein Bücherschrank fürs Viertel'
+    description:
+      en: 'A small cabinet where you can leave a book and take another one. It would also be a good reason to stop and chat.'
+      es: 'Un pequeño armario donde dejar un libro y llevarse otro. Además sería un buen motivo para pararse a charlar.'
+      fr: 'Une petite armoire où l''on dépose un livre et où l''on en prend un autre. Ce serait aussi une bonne occasion de s''arrêter pour discuter.'
+      de: 'Ein kleiner Schrank, in den man ein Buch stellt und ein anderes mitnimmt. Das wäre auch ein guter Anlass, kurz stehen zu bleiben und zu plaudern.'
+    history:
+      - status: submitted
+        days_ago: 48
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'
+      - status: in-discussion
+        days_ago: 44
+        time: '20:30'
+        note:
+          en: 'A neighbour who works with wood has offered to build the cabinet. Now we are looking for a spot on private ground that everyone can reach.'
+          es: 'Un vecino que trabaja la madera se ha ofrecido a construir el armario. Ahora buscamos un sitio en terreno privado al que todos puedan llegar.'
+          fr: 'Un voisin qui travaille le bois a proposé de construire l''armoire. Nous cherchons maintenant un emplacement sur un terrain privé accessible à tous.'
+          de: 'Ein Nachbar, der mit Holz arbeitet, hat angeboten, den Schrank zu bauen. Jetzt suchen wir einen Platz auf privatem Grund, den alle erreichen.'
+      - status: taken-up
+        days_ago: 26
+        time: '18:40'
+        note:
+          en: 'The book cabinet now stands in the front garden at the corner, with the owners'' permission. Two neighbours tidy it once a week.'
+          es: 'La estantería ya está en el jardín delantero de la esquina, con permiso de los propietarios. Dos vecinas la ordenan una vez por semana.'
+          fr: 'La boîte à livres se trouve désormais dans le jardin de devant, au coin de la rue, avec l''accord des propriétaires. Deux voisines la rangent une fois par semaine.'
+          de: 'Der Bücherschrank steht jetzt im Vorgarten an der Ecke, mit Erlaubnis der Eigentümer. Zwei Nachbarinnen räumen ihn einmal pro Woche auf.'
+
+  - key: play-street
+    category: traffic
+    lat: 51.9712
+    lng: 7.6192
+    address: { address_line1: 'Finkenstraße', postal_code: '48147', locality: 'Münster', country_code: DE }
+    time: '20:35'
+    photo:
+      file: images/neighbourhood-quiet-street.jpg
+      alt:
+        en: 'A quiet residential street with terraced houses and autumn trees, chalk drawings on the asphalt and bicycles in front of the houses.'
+        es: 'Una calle residencial tranquila con casas adosadas y árboles otoñales, dibujos de tiza en el asfalto y bicicletas delante de las casas.'
+        fr: 'Une rue résidentielle calme avec des maisons mitoyennes et des arbres d''automne, des dessins à la craie sur l''asphalte et des vélos devant les maisons.'
+        de: 'Eine ruhige Wohnstraße mit Reihenhäusern und herbstlichen Bäumen, Kreidebilder auf dem Asphalt und Fahrräder vor den Häusern.'
+    title:
+      en: 'A play street one Sunday a month'
+      es: 'Una calle de juegos un domingo al mes'
+      fr: 'Une rue aux enfants un dimanche par mois'
+      de: 'Einmal im Monat sonntags Spielstraße'
+    description:
+      en: 'Our street is quiet anyway. On one Sunday a month it could be closed to through traffic, so that children can ride their bikes and draw with chalk on the road.'
+      es: 'Nuestra calle ya es tranquila. Un domingo al mes podría cerrarse al tráfico de paso para que los niños monten en bici y pinten con tiza en la calzada.'
+      fr: 'Notre rue est déjà calme. Un dimanche par mois, elle pourrait être fermée à la circulation de transit, pour que les enfants puissent faire du vélo et dessiner à la craie sur la chaussée.'
+      de: 'Unsere Straße ist ohnehin ruhig. An einem Sonntag im Monat könnte sie für den Durchgangsverkehr gesperrt werden, damit Kinder Rad fahren und mit Kreide auf die Fahrbahn malen können.'
+    history:
+      - status: submitted
+        days_ago: 3
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'
+
+  - key: dog-area
+    category: green
+    lat: 51.9672
+    lng: 7.6210
+    address: { address_line1: 'Promenade', postal_code: '48149', locality: 'Münster', country_code: DE }
+    title:
+      en: 'Fenced dog area in the park'
+      es: 'Zona vallada para perros en el parque'
+      fr: 'Un espace clôturé pour chiens dans le parc'
+      de: 'Eingezäunte Hundewiese im Park'
+    description:
+      en: 'A fenced area where dogs can run freely would be good for the many dogs in the quarter.'
+      es: 'Una zona vallada donde los perros puedan correr sueltos vendría bien a los muchos perros del barrio.'
+      fr: 'Un espace clôturé où les chiens peuvent courir librement ferait du bien aux nombreux chiens du quartier.'
+      de: 'Eine eingezäunte Fläche, auf der Hunde frei laufen können, wäre gut für die vielen Hunde im Viertel.'
+    history:
+      - status: submitted
+        days_ago: 40
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'
+      - status: in-discussion
+        days_ago: 37
+        time: '21:05'
+        note:
+          en: 'Thank you. We will put the idea on the agenda of the next meeting.'
+          es: 'Gracias. Pondremos la idea en el orden del día de la próxima reunión.'
+          fr: 'Merci. Nous inscrirons l''idée à l''ordre du jour de la prochaine réunion.'
+          de: 'Danke. Wir setzen die Idee auf die Tagesordnung des nächsten Treffens.'
+      - status: not-pursued
+        days_ago: 30
+        time: '21:30'
+        note:
+          en: 'We discussed it at the meeting. The park is narrow and the playground is right next to it, so most neighbours were against a fenced area here. The association is not pursuing the idea. If you know a better place, please suggest it again.'
+          es: 'Lo debatimos en la reunión. El parque es estrecho y el parque infantil está justo al lado, así que la mayoría de los vecinos se opuso a una zona vallada aquí. La asociación no seguirá adelante con la idea. Si conoces un lugar mejor, vuelve a proponerlo.'
+          fr: 'Nous en avons discuté lors de la réunion. Le parc est étroit et l''aire de jeux se trouve juste à côté : la plupart des voisins étaient contre un espace clôturé à cet endroit. L''association ne donne pas suite à l''idée. Si vous connaissez un meilleur endroit, proposez-le à nouveau.'
+          de: 'Wir haben beim Treffen darüber gesprochen. Der Park ist schmal und der Spielplatz liegt direkt daneben, deshalb waren die meisten Nachbarn gegen eine eingezäunte Fläche an dieser Stelle. Der Verein verfolgt die Idee nicht weiter. Wenn du einen besseren Ort kennst, schlag ihn gern noch einmal vor.'
+
+  - key: table-tennis
+    category: meeting-place
+    lat: 51.97324
+    lng: 7.62437
+    address: { address_line1: 'Wichernstraße', postal_code: '48147', locality: 'Münster', country_code: DE }
+    time: '17:45'
+    title:
+      en: 'Table tennis table for teenagers'
+      es: 'Mesa de ping-pong para adolescentes'
+      fr: 'Une table de ping-pong pour les ados'
+      de: 'Tischtennisplatte für Jugendliche'
+    description:
+      en: 'The playground is made for small children. A table tennis table would give older children and teenagers a place to meet as well.'
+      es: 'El parque infantil está pensado para niños pequeños. Una mesa de ping-pong daría también a los mayores y a los adolescentes un lugar de encuentro.'
+      fr: 'L''aire de jeux est faite pour les petits. Une table de ping-pong offrirait aussi aux plus grands et aux ados un endroit où se retrouver.'
+      de: 'Der Spielplatz ist für kleine Kinder gemacht. Eine Tischtennisplatte gäbe auch älteren Kindern und Jugendlichen einen Treffpunkt.'
+    history:
+      - status: submitted
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your suggestion.'
+          es: 'Gracias, hemos recibido tu sugerencia.'
+          fr: 'Merci, nous avons bien reçu votre proposition.'
+          de: 'Danke, dein Vorschlag ist eingegangen.'

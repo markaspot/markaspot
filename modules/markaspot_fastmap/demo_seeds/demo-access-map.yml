@@ -1,0 +1,386 @@
+# Template demo: access-map ("Barrier map", DE "Barrierenmelder").
+# Format: README.md of the demo seeds. Real geometry, fictional names: the
+# pins lie in a real old town (Siegburg), placed at real crossings and bus
+# stops taken from OpenStreetMap. The "Initiative Freie Wege", the people and
+# all reports are fictional. No real lift, shop or building is named or
+# accused: the temporary cases are obstacles on the pavement, the one
+# entrance with steps stays anonymous.
+# No addresses are given on purpose: the geocoder fills them.
+# Story: a disability initiative runs the map. It checks every report on
+# site, confirms lasting barriers (they stay "Confirmed" on the map until
+# they are really gone), hands confirmed barriers to the city as a list and
+# clears small things directly on site. The city makes no promise and never
+# answers here.
+# Times: people report during the day, the initiative answers in the late
+# afternoon; entries without a time get a stable derived one.
+# The statuses mirror the access-map set in
+# WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
+# mappings).
+version: 1
+slug: demo-access-map
+template: access-map
+seed_version: 2
+default_language: en
+languages: [en, es, fr, de]
+wording: report
+name: 'Freie Wege Barrier Map'
+claim:
+  en: 'Make barriers visible'
+  es: 'Hacer visibles las barreras'
+  fr: 'Rendre les obstacles visibles'
+  de: 'Barrieren sichtbar machen'
+map:
+  lat: 50.7968
+  lng: 7.2068
+  zoom: 16
+boundary:
+  radius_km: 0.7
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: recorded
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-plus
+    name: { en: 'Recorded', es: 'Registrado', fr: 'Enregistré', de: 'Erfasst' }
+  - key: confirmed
+    mapping: open
+    hex: '#2563EB'
+    icon: i-lucide-badge-check
+    name: { en: 'Confirmed', es: 'Confirmado', fr: 'Confirmé', de: 'Bestätigt' }
+  - key: handed-over
+    mapping: open
+    hex: '#0891B2'
+    icon: i-lucide-send
+    name: { en: 'Handed over', es: 'Entregado', fr: 'Transmis', de: 'Übergeben' }
+  - key: removed
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-check
+    name: { en: 'Removed', es: 'Eliminado', fr: 'Supprimé', de: 'Beseitigt' }
+
+# Names and icons follow the access-map template (template-registry.ts,
+# useTemplates.ts categoryIcons), in the same order. "Broken elevator" and
+# "Inaccessible building" have no seeded report on purpose (no real lift or
+# building is accused); visitors can still use them.
+categories:
+  - key: missing-ramp
+    icon: i-lucide-accessibility
+    name: { en: 'Missing ramp', es: 'Rampa faltante', fr: 'Rampe manquante', de: 'Fehlende Rampe' }
+  - key: broken-elevator
+    icon: i-lucide-move-vertical
+    name: { en: 'Broken elevator', es: 'Ascensor averiado', fr: 'Ascenseur en panne', de: 'Defekter Aufzug' }
+  - key: curb-cut
+    icon: i-lucide-route
+    name: { en: 'Missing curb cut', es: 'Bordillo sin rebaje', fr: 'Bordure non abaissée', de: 'Fehlende Bordsteinabsenkung' }
+  - key: sidewalk-obstacle
+    icon: i-lucide-octagon-alert
+    name: { en: 'Sidewalk obstacle', es: 'Obstáculo en acera', fr: 'Obstacle trottoir', de: 'Gehweghindernis' }
+  - key: tactile-paving
+    icon: i-lucide-eye-off
+    name: { en: 'Missing tactile paving', es: 'Pavimento táctil ausente', fr: 'Guidage tactile manquant', de: 'Fehlendes Blindenleitsystem' }
+  - key: inaccessible-building
+    icon: i-lucide-door-open
+    name: { en: 'Inaccessible building', es: 'Edificio inaccesible', fr: 'Bâtiment inaccessible', de: 'Nicht barrierefreies Gebäude' }
+
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature. The city appears only in the notes, as the recipient of what the
+# initiative hands over.
+organisations: []
+
+start_page:
+  title:
+    en: 'Welcome to the Freie Wege barrier map'
+    es: 'Bienvenido al mapa de barreras de Freie Wege'
+    fr: 'Bienvenue sur la carte des obstacles de Freie Wege'
+    de: 'Willkommen beim Barrierenmelder von Freie Wege'
+  body:
+    en: '<p>People with wheelchairs, rollators, prams or white canes report barriers in the old town here: high kerbs, steps at entrances, missing guidance strips, obstacles on the pavement. The Initiative Freie Wege checks every report on site. A confirmed barrier stays visible on the map until it is really gone. The initiative hands confirmed barriers to the city as a list and clears small things directly with those responsible on site.</p><p>Please describe the barrier, not the people. Do not name shops or persons.</p><p>This is a demo. The Initiative Freie Wege and all reports are fictional; the streets on the map are real. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Aquí las personas en silla de ruedas, con andador, con carrito de bebé o con bastón blanco señalan las barreras del casco antiguo: bordillos altos, escalones en las entradas, guías táctiles que faltan, obstáculos en la acera. La Initiative Freie Wege comprueba cada aviso sobre el terreno. Una barrera confirmada sigue visible en el mapa hasta que desaparece de verdad. La iniciativa entrega al ayuntamiento las barreras confirmadas en una lista y resuelve las cosas pequeñas directamente con los responsables en el lugar.</p><p>Describe la barrera, no a las personas. No nombres tiendas ni personas.</p><p>Esto es una demostración. La Initiative Freie Wege y todos los avisos son ficticios; las calles del mapa son reales. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Les personnes en fauteuil roulant, avec un déambulateur, une poussette ou une canne blanche signalent ici les obstacles de la vieille ville : bordures hautes, marches aux entrées, bandes de guidage manquantes, obstacles sur le trottoir. L''Initiative Freie Wege vérifie chaque signalement sur place. Un obstacle confirmé reste visible sur la carte jusqu''à ce qu''il ait vraiment disparu. L''initiative remet à la ville la liste des obstacles confirmés et règle les petites choses directement avec les responsables sur place.</p><p>Décrivez l''obstacle, pas les personnes. Ne nommez ni commerces ni personnes.</p><p>Ceci est une démo. L''Initiative Freie Wege et tous les signalements sont fictifs ; les rues de la carte sont réelles. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Menschen mit Rollstuhl, Rollator, Kinderwagen oder Blindenstock melden hier Barrieren in der Altstadt: hohe Bordsteine, Stufen an Eingängen, fehlende Leitstreifen, Hindernisse auf dem Gehweg. Die Initiative Freie Wege prüft jede Meldung vor Ort. Eine bestätigte Barriere bleibt auf der Karte sichtbar, bis sie wirklich weg ist. Bestätigte Barrieren übergibt die Initiative gesammelt als Liste an die Stadt, Kleinigkeiten klärt sie direkt mit den Verantwortlichen vor Ort.</p><p>Beschreib bitte die Barriere, nicht die Menschen. Nenn keine Geschäfte und keine Personen.</p><p>Dies ist eine Demo. Die Initiative Freie Wege und alle Meldungen sind erfunden, die Straßen auf der Karte sind echt. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the high kerb at the traffic lights and read how the initiative stayed on it until the barrier was gone. Then report a barrier on your own way through town.'
+  es: 'Abre el bordillo alto del semáforo y lee cómo la iniciativa siguió el caso hasta que la barrera desapareció. Después señala una barrera en tu propio camino por la ciudad.'
+  fr: 'Ouvrez la bordure haute au feu et lisez comment l''initiative a suivi le cas jusqu''à la disparition de l''obstacle. Signalez ensuite un obstacle sur votre propre trajet en ville.'
+  de: 'Öffne den hohen Bordstein an der Ampel und lies, wie die Initiative drangeblieben ist, bis die Barriere weg war. Melde dann eine Barriere auf deinem eigenen Weg durch die Stadt.'
+
+reports:
+  - key: high-kerb
+    category: curb-cut
+    lat: 50.79662
+    lng: 7.2026
+    address: { address_line1: 'Wilhelmstraße', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    time: '10:15'
+    photo:
+      file: images/access-map-high-kerb.jpg
+      alt:
+        en: 'A pedestrian crossing at traffic lights with a high granite kerb along its whole width and no lowered section, the opposite kerb just as high.'
+        es: 'Un paso de peatones con semáforo y un bordillo alto de granito en toda su anchura, sin rebaje, y el bordillo de enfrente igual de alto.'
+        fr: 'Un passage piéton à un feu avec une haute bordure en granit sur toute sa largeur, sans abaissement, la bordure d''en face tout aussi haute.'
+        de: 'Ein Fußgängerüberweg an einer Ampel mit hohem Granitbordstein auf ganzer Breite ohne Absenkung, der Bordstein gegenüber ebenso hoch.'
+    title:
+      en: 'High kerb at the traffic lights'
+      es: 'Bordillo alto en el semáforo'
+      fr: 'Bordure haute au feu'
+      de: 'Hoher Bordstein an der Ampel'
+    description:
+      en: 'At this crossing the kerb is high on both sides. With my wheelchair I cannot get onto the pavement without help, and with a rollator it is just as hard.'
+      es: 'En este paso el bordillo es alto por los dos lados. Con mi silla de ruedas no puedo subir a la acera sin ayuda, y con andador es igual de difícil.'
+      fr: 'À ce passage, la bordure est haute des deux côtés. En fauteuil roulant, je ne peux pas monter sur le trottoir sans aide, et avec un déambulateur c''est tout aussi difficile.'
+      de: 'An diesem Überweg ist der Bordstein auf beiden Seiten hoch. Mit meinem Rollstuhl komme ich ohne Hilfe nicht auf den Gehweg, mit Rollator ist es genauso schwer.'
+    history:
+      - status: recorded
+        days_ago: 38
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'
+      - status: confirmed
+        days_ago: 35
+        time: '17:30'
+        note:
+          en: 'Two of us checked the crossing with a wheelchair and a rollator: the kerb is about 10 cm high on both sides and there is no lowered section. A second report about the same crossing has come in. The barrier stays on the map as confirmed.'
+          es: 'Dos de nosotros comprobamos el paso con una silla de ruedas y un andador: el bordillo mide unos 10 cm por ambos lados y no hay ningún rebaje. Ha llegado un segundo aviso sobre el mismo paso. La barrera queda en el mapa como confirmada.'
+          fr: 'Deux d''entre nous ont vérifié le passage avec un fauteuil roulant et un déambulateur : la bordure fait environ 10 cm des deux côtés et il n''y a aucun abaissement. Un deuxième signalement sur le même passage nous est parvenu. L''obstacle reste sur la carte comme confirmé.'
+          de: 'Zwei von uns haben den Überweg mit Rollstuhl und Rollator geprüft: Der Bordstein ist auf beiden Seiten etwa 10 cm hoch, eine Absenkung gibt es nicht. Eine zweite Meldung zum selben Überweg ist eingegangen. Die Barriere bleibt als bestätigt auf der Karte.'
+      - status: handed-over
+        days_ago: 28
+        time: '18:00'
+        note:
+          en: 'We have handed the city a list of 11 confirmed kerbs in the old town, with photos and measurements. This crossing is at the top of the list because it leads to the bus stops.'
+          es: 'Hemos entregado al ayuntamiento una lista de 11 bordillos confirmados en el casco antiguo, con fotos y medidas. Este paso encabeza la lista porque lleva a las paradas de autobús.'
+          fr: 'Nous avons remis à la ville une liste de 11 bordures confirmées dans la vieille ville, avec photos et mesures. Ce passage figure en tête de liste, car il mène aux arrêts de bus.'
+          de: 'Wir haben der Stadt eine Liste mit 11 bestätigten Bordsteinen in der Altstadt übergeben, mit Fotos und Maßen. Dieser Überweg steht ganz oben, weil er zu den Bushaltestellen führt.'
+      - status: removed
+        days_ago: 4
+        time: '16:40'
+        note:
+          en: 'The kerbs at this crossing were lowered during road works last week. We checked again with the wheelchair: you can now cross without help. Thank you to everyone who reported it.'
+          es: 'Los bordillos de este paso se rebajaron durante unas obras la semana pasada. Lo volvimos a comprobar con la silla de ruedas: ahora se puede cruzar sin ayuda. Gracias a todos los que lo señalaron.'
+          fr: 'Les bordures de ce passage ont été abaissées lors de travaux la semaine dernière. Nous avons vérifié à nouveau avec le fauteuil roulant : on peut désormais traverser sans aide. Merci à toutes celles et ceux qui l''ont signalé.'
+          de: 'Die Bordsteine an diesem Überweg wurden letzte Woche bei Bauarbeiten abgesenkt. Wir haben noch einmal mit dem Rollstuhl geprüft: Man kommt jetzt ohne Hilfe hinüber. Danke an alle, die es gemeldet haben.'
+
+  - key: entrance-steps
+    category: missing-ramp
+    lat: 50.79815
+    lng: 7.20935
+    address: { address_line1: 'Holzgasse', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    photo:
+      file: images/access-map-entrance-steps.jpg
+      alt:
+        en: 'The entrance of a small shop in an old town house, two worn stone steps up to a narrow wooden door, no handrail and no ramp.'
+        es: 'La entrada de una pequeña tienda en una casa del casco antiguo, dos escalones de piedra gastados hasta una puerta de madera estrecha, sin barandilla ni rampa.'
+        fr: 'L''entrée d''une petite boutique dans une maison de la vieille ville, deux marches en pierre usées jusqu''à une porte en bois étroite, sans main courante ni rampe.'
+        de: 'Der Eingang eines kleinen Ladens in einem Altstadthaus, zwei ausgetretene Steinstufen hinauf zu einer schmalen Holztür, kein Handlauf, keine Rampe.'
+    title:
+      en: 'Two steps at a shop entrance'
+      es: 'Dos escalones en la entrada de una tienda'
+      fr: 'Deux marches à l''entrée d''une boutique'
+      de: 'Zwei Stufen am Ladeneingang'
+    description:
+      en: 'Two high steps lead up to the entrance. There is no ramp and no bell, so with a wheelchair you have to wait until someone comes out.'
+      es: 'Dos escalones altos llevan a la entrada. No hay rampa ni timbre, así que en silla de ruedas hay que esperar a que salga alguien.'
+      fr: 'Deux hautes marches mènent à l''entrée. Il n''y a ni rampe ni sonnette : en fauteuil roulant, il faut attendre que quelqu''un sorte.'
+      de: 'Zwei hohe Stufen führen zum Eingang. Es gibt keine Rampe und keine Klingel, mit dem Rollstuhl muss man warten, bis jemand herauskommt.'
+    history:
+      - status: recorded
+        days_ago: 20
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'
+      - status: confirmed
+        days_ago: 18
+        time: '16:50'
+        note:
+          en: 'Confirmed: two steps of about 15 cm each, no handrail, no bell. We have spoken to the people who run the shop. They are looking into a mobile ramp and a bell. Until then the barrier stays on the map.'
+          es: 'Confirmado: dos escalones de unos 15 cm cada uno, sin barandilla ni timbre. Hemos hablado con las personas que llevan la tienda. Están estudiando una rampa móvil y un timbre. Hasta entonces la barrera sigue en el mapa.'
+          fr: 'Confirmé : deux marches d''environ 15 cm chacune, sans main courante ni sonnette. Nous avons parlé aux personnes qui tiennent la boutique. Elles étudient une rampe mobile et une sonnette. D''ici là, l''obstacle reste sur la carte.'
+          de: 'Bestätigt: zwei Stufen von je etwa 15 cm, kein Handlauf, keine Klingel. Wir haben mit den Menschen gesprochen, die den Laden führen. Sie prüfen eine mobile Rampe und eine Klingel. Bis dahin bleibt die Barriere auf der Karte.'
+
+  - key: bus-stop-guidance
+    category: tactile-paving
+    lat: 50.79956
+    lng: 7.21107
+    address: { address_line1: 'Grimmelsgasse', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    photo:
+      file: images/access-map-bus-stop.jpg
+      alt:
+        en: 'A bus stop with a glass shelter and plain grey paving along the kerb, without any tactile guidance strips.'
+        es: 'Una parada de autobús con marquesina de cristal y pavimento gris liso junto al bordillo, sin ninguna franja de guía táctil.'
+        fr: 'Un arrêt de bus avec un abri vitré et un pavage gris uni le long de la bordure, sans aucune bande de guidage tactile.'
+        de: 'Eine Bushaltestelle mit gläsernem Wartehäuschen und glattem grauem Pflaster an der Bordsteinkante, ohne Leitstreifen.'
+    title:
+      en: 'No guidance strip at the bus stop'
+      es: 'Sin franja guía en la parada de autobús'
+      fr: 'Pas de bande de guidage à l''arrêt de bus'
+      de: 'Kein Leitstreifen an der Bushaltestelle'
+    description:
+      en: 'At this bus stop there is no tactile paving. With a white cane I cannot find the place where the front door of the bus opens.'
+      es: 'En esta parada no hay pavimento táctil. Con el bastón blanco no encuentro el lugar donde se abre la puerta delantera del autobús.'
+      fr: 'À cet arrêt, il n''y a pas de guidage tactile. Avec ma canne blanche, je ne trouve pas l''endroit où s''ouvre la porte avant du bus.'
+      de: 'An dieser Haltestelle gibt es kein Blindenleitsystem. Mit dem Blindenstock finde ich die Stelle nicht, an der die vordere Bustür aufgeht.'
+    history:
+      - status: recorded
+        days_ago: 14
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'
+      - status: confirmed
+        days_ago: 12
+        time: '17:15'
+        note:
+          en: 'Confirmed: there is no guidance strip and no entry field at this stop. One of our members who is blind walked it with us.'
+          es: 'Confirmado: en esta parada no hay franja guía ni campo de entrada. Una de nuestras socias, que es ciega, la recorrió con nosotros.'
+          fr: 'Confirmé : il n''y a ni bande de guidage ni zone d''accès à cet arrêt. Une de nos membres, aveugle, l''a parcouru avec nous.'
+          de: 'Bestätigt: An dieser Haltestelle gibt es weder Leitstreifen noch Einstiegsfeld. Ein blindes Mitglied unserer Initiative ist sie mit uns abgegangen.'
+      - status: handed-over
+        days_ago: 7
+        time: '18:10'
+        note:
+          en: 'We have handed this stop to the city together with four other bus stops in the old town that have no guidance strips.'
+          es: 'Hemos entregado esta parada al ayuntamiento junto con otras cuatro paradas del casco antiguo que no tienen franja guía.'
+          fr: 'Nous avons transmis cet arrêt à la ville avec quatre autres arrêts de la vieille ville qui n''ont pas de bande de guidage.'
+          de: 'Wir haben diese Haltestelle zusammen mit vier weiteren Haltestellen ohne Leitstreifen in der Altstadt an die Stadt übergeben.'
+
+  - key: scooters-guidance-strip
+    category: sidewalk-obstacle
+    lat: 50.7963
+    lng: 7.205
+    address: { address_line1: 'Bahnhofstraße', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    time: '08:20'
+    photo:
+      file: images/access-map-scooters.jpg
+      alt:
+        en: 'Two rental e-scooters lie and stand across a white ridged guidance strip in a pedestrian zone, blocking it.'
+        es: 'Dos patinetes eléctricos de alquiler, uno tumbado y otro de pie, bloquean una franja guía blanca con relieve en una calle peatonal.'
+        fr: 'Deux trottinettes électriques de location, l''une couchée et l''autre debout, bloquent une bande de guidage blanche en relief dans une zone piétonne.'
+        de: 'Zwei Leih-E-Scooter liegen und stehen quer auf einem weißen gerippten Leitstreifen in der Fußgängerzone und versperren ihn.'
+    title:
+      en: 'E-scooters block the guidance strip'
+      es: 'Patinetes eléctricos bloquean la franja guía'
+      fr: 'Des trottinettes bloquent la bande de guidage'
+      de: 'E-Scooter blockieren den Leitstreifen'
+    description:
+      en: 'Two e-scooters are lying right on the guidance strip. With my cane I walked straight into them.'
+      es: 'Dos patinetes eléctricos están tirados justo encima de la franja guía. Con el bastón me choqué directamente con ellos.'
+      fr: 'Deux trottinettes sont couchées en plein sur la bande de guidage. Je les ai heurtées de plein fouet avec ma canne.'
+      de: 'Zwei E-Scooter liegen direkt auf dem Leitstreifen. Mit dem Stock bin ich genau dagegen gelaufen.'
+    history:
+      - status: recorded
+        days_ago: 9
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'
+      - status: removed
+        days_ago: 9
+        time: '15:10'
+        note:
+          en: 'The scooters were gone by midday. We have asked the rental companies to keep the guidance strip free. If it happens again, please report it again.'
+          es: 'A mediodía los patinetes ya no estaban. Hemos pedido a las empresas de alquiler que mantengan libre la franja guía. Si vuelve a pasar, avísanos de nuevo.'
+          fr: 'À midi, les trottinettes avaient disparu. Nous avons demandé aux sociétés de location de laisser la bande de guidage libre. Si cela se reproduit, signalez-le à nouveau.'
+          de: 'Bis Mittag waren die Scooter weg. Wir haben die Verleihfirmen gebeten, den Leitstreifen freizuhalten. Wenn es wieder passiert, melde es bitte erneut.'
+
+  - key: wall-kerb
+    category: curb-cut
+    lat: 50.79524
+    lng: 7.2056
+    address: { address_line1: 'Neue Poststraße', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    title:
+      en: 'No lowered kerb at the old town wall'
+      es: 'Sin rebaje en el bordillo junto a la muralla'
+      fr: 'Pas de bordure abaissée près du rempart'
+      de: 'Keine Absenkung an der Stadtmauer'
+    description:
+      en: 'Where the footpath along the old town wall meets the street there is no lowered kerb. With a pram I have to go round through the car park.'
+      es: 'Donde el camino junto a la muralla llega a la calle no hay bordillo rebajado. Con el carrito tengo que dar la vuelta por el aparcamiento.'
+      fr: 'Là où le chemin le long du rempart rejoint la rue, la bordure n''est pas abaissée. Avec la poussette, je dois faire le tour par le parking.'
+      de: 'Wo der Fußweg an der Stadtmauer auf die Straße trifft, ist der Bordstein nicht abgesenkt. Mit dem Kinderwagen muss ich über den Parkplatz ausweichen.'
+    history:
+      - status: recorded
+        days_ago: 16
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'
+      - status: confirmed
+        days_ago: 13
+        time: '17:40'
+        note:
+          en: 'Confirmed: the kerb is about 8 cm high. The spot is on our list for the next handover to the city.'
+          es: 'Confirmado: el bordillo mide unos 8 cm. El lugar está en nuestra lista para la próxima entrega al ayuntamiento.'
+          fr: 'Confirmé : la bordure fait environ 8 cm. L''endroit figure sur notre liste pour la prochaine remise à la ville.'
+          de: 'Bestätigt: Der Bordstein ist etwa 8 cm hoch. Die Stelle steht auf unserer Liste für die nächste Übergabe an die Stadt.'
+
+  - key: construction-walkway
+    category: sidewalk-obstacle
+    lat: 50.7989
+    lng: 7.2079
+    address: { address_line1: 'Kaiserstraße', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    time: '11:05'
+    photo:
+      file: images/access-map-construction-walkway.jpg
+      alt:
+        en: 'Red and white construction barriers take up a pavement, and the only way past is a temporary walkway on the road down a high kerb.'
+        es: 'Unas vallas de obra rojas y blancas ocupan la acera y el único paso es un pasillo provisional por la calzada, bajando un bordillo alto.'
+        fr: 'Des barrières de chantier rouges et blanches occupent le trottoir, et le seul passage est un couloir provisoire sur la chaussée, en descendant une bordure haute.'
+        de: 'Rot-weiße Baustellenabsperrungen nehmen den Gehweg ein, vorbei kommt man nur über einen Notweg auf der Fahrbahn, eine hohe Bordsteinkante hinunter.'
+    title:
+      en: 'Construction site detour only down a kerb'
+      es: 'El desvío de la obra solo baja por un bordillo'
+      fr: 'Le détour du chantier passe par une bordure'
+      de: 'Baustellen-Umweg nur über den Bordstein'
+    description:
+      en: 'The construction site takes up the whole pavement. The temporary walkway on the road starts behind a high kerb without a ramp.'
+      es: 'La obra ocupa toda la acera. El pasillo provisional por la calzada empieza detrás de un bordillo alto sin rampa.'
+      fr: 'Le chantier occupe tout le trottoir. Le couloir provisoire sur la chaussée commence derrière une bordure haute, sans rampe.'
+      de: 'Die Baustelle nimmt den ganzen Gehweg ein. Der Notweg auf der Fahrbahn beginnt hinter einer hohen Bordsteinkante ohne Rampe.'
+    history:
+      - status: recorded
+        days_ago: 2
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'
+
+  - key: crossing-tactile
+    category: tactile-paving
+    lat: 50.79534
+    lng: 7.20788
+    address: { address_line1: 'Mühlenstraße', postal_code: '53721', locality: 'Siegburg', country_code: DE }
+    time: '10:40'
+    title:
+      en: 'No tactile paving at the lowered kerb'
+      es: 'Sin pavimento táctil en el bordillo rebajado'
+      fr: 'Pas de guidage tactile à la bordure abaissée'
+      de: 'Keine Noppenplatten an der Absenkung'
+    description:
+      en: 'The kerb at this crossing is lowered, which is good for wheelchairs. But without tactile paving I cannot feel where the pavement ends and the road begins.'
+      es: 'El bordillo de este paso está rebajado, lo que va bien para las sillas de ruedas. Pero sin pavimento táctil no noto dónde acaba la acera y empieza la calzada.'
+      fr: 'La bordure de ce passage est abaissée, ce qui est bien pour les fauteuils roulants. Mais sans guidage tactile, je ne sens pas où finit le trottoir et où commence la chaussée.'
+      de: 'Der Bordstein an diesem Überweg ist abgesenkt, das ist gut für Rollstühle. Ohne Noppenplatten spüre ich aber nicht, wo der Gehweg aufhört und die Fahrbahn beginnt.'
+    history:
+      - status: recorded
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your report. We will look at the spot ourselves.'
+          es: 'Gracias, hemos recibido tu aviso. Iremos a ver el lugar nosotros mismos.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous irons voir l''endroit nous-mêmes.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir schauen uns die Stelle selbst an.'

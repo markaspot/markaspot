@@ -1,0 +1,399 @@
+# Template demo: climate-watch ("Climate observation map", DE "Hitze- und Hochwasserkarte").
+# Format: README.md of the demo seeds. Real geometry, fictional names: the
+# pins lie in the real town centre of Hamm (Westphalia), placed with
+# OpenStreetMap data at real squares, car parks, bus stops and ring road
+# parks. The group "Grüne Mitte", the people and all entries are fictional.
+# No addresses are given on purpose: the geocoder fills them.
+# Story: a citizen-science group runs the map. It checks every observation
+# with a second observation or a simple measurement and marks it confirmed
+# or not confirmed. Confirmed observations go into one report a year for
+# the city's climate adaptation team; nothing is handed over one by one and
+# the city never answers here.
+# Entries are observations of a state, not cases: the closed statuses
+# "Confirmed" and "Not confirmed" describe the observation, not repair work.
+# Only observation categories (no wishes, those belong to neighbourhood).
+# Times: heat is observed in the afternoon, flooding after showers, the group
+# answers in the evening; entries without a time get a stable derived one.
+# The statuses mirror the climate-watch set in
+# WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
+# mappings).
+version: 1
+slug: demo-climate-watch
+template: climate-watch
+seed_version: 2
+default_language: en
+languages: [en, es, fr, de]
+wording: entry
+name: 'Grüne Mitte Climate Watch'
+claim:
+  en: 'Observe local climate impacts'
+  es: 'Observar los efectos del clima'
+  fr: 'Observer les effets du climat'
+  de: 'Klimafolgen vor Ort beobachten'
+map:
+  lat: 51.6805
+  lng: 7.8180
+  zoom: 16
+boundary:
+  radius_km: 0.7
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: received
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-plus
+    name: { en: 'Observation received', es: 'Observación recibida', fr: 'Observation reçue', de: 'Beobachtung eingegangen' }
+  - key: under-review
+    mapping: open
+    hex: '#2563EB'
+    icon: i-lucide-search
+    name: { en: 'Under review', es: 'En revisión', fr: 'En cours de vérification', de: 'In Prüfung' }
+  - key: confirmed
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-badge-check
+    name: { en: 'Confirmed', es: 'Confirmado', fr: 'Confirmé', de: 'Bestätigt' }
+  - key: not-confirmed
+    mapping: closed
+    hex: '#64748B'
+    icon: i-lucide-circle-x
+    name: { en: 'Not confirmed', es: 'No confirmado', fr: 'Non confirmé', de: 'Nicht bestätigt' }
+
+# Names and icons follow the climate-watch template after the rethink
+# (template-registry.ts, useTemplates.ts categoryIcons in the
+# demo-live-preview worktree), in the same order.
+categories:
+  - key: heat
+    icon: i-lucide-thermometer-sun
+    name: { en: 'Heat hotspot', es: 'Isla de calor', fr: 'Îlot de chaleur', de: 'Hitzeinsel' }
+  - key: flooding
+    icon: i-lucide-waves
+    name: { en: 'Flooding spot', es: 'Zona inundable', fr: 'Zone inondable', de: 'Überflutungsstelle' }
+  - key: shade
+    icon: i-lucide-tree-deciduous
+    name: { en: 'Missing shade', es: 'Sombra faltante', fr: 'Ombre manquante', de: 'Fehlender Schatten' }
+  - key: sealed
+    icon: i-lucide-layers
+    name: { en: 'Sealed surface', es: 'Superficie sellada', fr: 'Surface imperméable', de: 'Versiegelte Fläche' }
+  - key: drought
+    icon: i-lucide-sprout
+    name: { en: 'Drought damage or tree loss', es: 'Daño por sequía o pérdida de árboles', fr: 'Dégâts dus à la sécheresse ou perte d''arbres', de: 'Trockenschaden oder Baumverlust' }
+
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature. The city appears only in the notes, as the recipient of the
+# yearly report.
+organisations: []
+
+start_page:
+  title:
+    en: 'Welcome to Grüne Mitte Climate Watch'
+    es: 'Bienvenido al mapa climático de Grüne Mitte'
+    fr: 'Bienvenue sur la carte climatique de Grüne Mitte'
+    de: 'Willkommen bei der Klimakarte von Grüne Mitte'
+  body:
+    en: '<p>Residents of the town centre enter what they observe here: squares that get very hot, flooding after heavy rain, waiting points without shade, sealed surfaces and dried-out trees. The citizen-science group Grüne Mitte checks every entry with a second observation or a simple measurement and marks it as confirmed or not confirmed. Many small observations add up to a picture of heat and water, street by street. Once a year the group hands its report to the city''s climate adaptation team.</p><p>These are observations by residents, not an official assessment.</p><p>This is a demo. The group Grüne Mitte and all entries are fictional; the streets on the map are real. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Aquí los vecinos del centro anotan lo que observan: plazas que se calientan mucho, inundaciones tras lluvias fuertes, paradas sin sombra, superficies selladas y árboles secos. El grupo de ciencia ciudadana Grüne Mitte comprueba cada entrada con una segunda observación o una medición sencilla y la marca como confirmada o no confirmada. Muchas observaciones pequeñas forman, calle a calle, una imagen del calor y del agua. Una vez al año el grupo entrega su informe al equipo de adaptación climática del ayuntamiento.</p><p>Son observaciones de los vecinos, no una evaluación oficial.</p><p>Esto es una demostración. El grupo Grüne Mitte y todas las entradas son ficticios; las calles del mapa son reales. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Les habitants du centre-ville saisissent ici ce qu''ils observent : places qui deviennent brûlantes, inondations après de fortes pluies, arrêts sans ombre, surfaces imperméables et arbres desséchés. Le groupe de sciences participatives Grüne Mitte vérifie chaque saisie par une deuxième observation ou une mesure simple et la marque comme confirmée ou non confirmée. De nombreuses petites observations dessinent, rue par rue, une image de la chaleur et de l''eau. Une fois par an, le groupe remet son rapport à l''équipe d''adaptation climatique de la ville.</p><p>Ce sont des observations d''habitants, pas une évaluation officielle.</p><p>Ceci est une démo. Le groupe Grüne Mitte et toutes les saisies sont fictifs ; les rues de la carte sont réelles. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Menschen aus der Innenstadt tragen hier ein, was sie beobachten: Plätze, die sich stark aufheizen, Überflutungen nach Starkregen, Wartestellen ohne Schatten, versiegelte Flächen und vertrocknete Bäume. Die Bürgerwissenschafts-Gruppe Grüne Mitte prüft jeden Eintrag mit einer zweiten Beobachtung oder einer einfachen Messung und markiert ihn als bestätigt oder nicht bestätigt. Viele kleine Beobachtungen ergeben Straße für Straße ein Bild von Hitze und Wasser. Einmal im Jahr übergibt die Gruppe ihren Bericht an das Klimaanpassungsteam der Stadt.</p><p>Das sind Beobachtungen von Anwohnern, keine amtliche Bewertung.</p><p>Dies ist eine Demo. Die Gruppe Grüne Mitte und alle Einträge sind erfunden, die Straßen auf der Karte sind echt. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the hot square and read how the group checked the observation with measurements. Then enter an observation from your own street.'
+  es: 'Abre la plaza caliente y lee cómo el grupo comprobó la observación con mediciones. Después anota una observación de tu propia calle.'
+  fr: 'Ouvrez la place brûlante et lisez comment le groupe a vérifié l''observation par des mesures. Saisissez ensuite une observation de votre propre rue.'
+  de: 'Öffne den heißen Platz und lies, wie die Gruppe die Beobachtung mit Messungen geprüft hat. Trag dann selbst eine Beobachtung aus deiner Straße ein.'
+
+reports:
+  - key: hot-square
+    category: heat
+    lat: 51.681
+    lng: 7.819
+    address: { address_line1: 'Marktplatz', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    time: '15:20'
+    photo:
+      file: images/climate-watch-hot-square.jpg
+      alt:
+        en: 'A large square paved in light grey concrete slabs under a high afternoon sun, with empty metal benches in full sun and no tree or shade anywhere.'
+        es: 'Una gran plaza pavimentada con losas de hormigón gris claro bajo el sol alto de la tarde, con bancos metálicos vacíos a pleno sol y sin ningún árbol ni sombra.'
+        fr: 'Une grande place pavée de dalles de béton gris clair sous le soleil haut de l''après-midi, avec des bancs métalliques vides en plein soleil et aucun arbre ni aucune ombre.'
+        de: 'Ein großer Platz aus hellgrauen Betonplatten unter hoher Nachmittagssonne, leere Metallbänke in praller Sonne, nirgends ein Baum oder Schatten.'
+    title:
+      en: 'Paved square gets very hot in the afternoon'
+      es: 'La plaza pavimentada se calienta mucho por la tarde'
+      fr: 'La place pavée devient brûlante l''après-midi'
+      de: 'Gepflasterter Platz heizt sich nachmittags stark auf'
+    description:
+      en: 'In the afternoon there is no shade anywhere on the square. The paving is so hot that you can feel it through your shoes, and nobody sits on the benches.'
+      es: 'Por la tarde no hay sombra en ninguna parte de la plaza. El suelo está tan caliente que se nota a través de los zapatos, y nadie se sienta en los bancos.'
+      fr: 'L''après-midi, il n''y a d''ombre nulle part sur la place. Le sol est si chaud qu''on le sent à travers les chaussures, et personne ne s''assoit sur les bancs.'
+      de: 'Nachmittags gibt es auf dem Platz nirgends Schatten. Das Pflaster ist so heiß, dass man es durch die Schuhe spürt, und auf den Bänken sitzt niemand.'
+    history:
+      - status: received
+        days_ago: 52
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'
+      - status: under-review
+        days_ago: 51
+        time: '20:10'
+        note:
+          en: 'Thank you. We will check this with measurements: on the next hot afternoons two members will measure the surface temperature on the square and, for comparison, under the trees on the ring road nearby.'
+          es: 'Gracias. Lo comprobaremos con mediciones: en las próximas tardes de calor dos miembros medirán la temperatura del suelo en la plaza y, para comparar, bajo los árboles de la ronda cercana.'
+          fr: 'Merci. Nous allons vérifier par des mesures : lors des prochains après-midi chauds, deux membres mesureront la température du sol sur la place et, pour comparer, sous les arbres du boulevard voisin.'
+          de: 'Danke. Wir prüfen das mit Messungen: An den nächsten heißen Nachmittagen messen zwei Mitglieder die Oberflächentemperatur auf dem Platz und zum Vergleich unter den Bäumen am nahen Ring.'
+      - status: under-review
+        days_ago: 47
+        time: '19:45'
+        note:
+          en: 'First measurement at 3 pm: 51 °C on the paving in the sun, 29 °C on the lawn under the trees on the ring road. We will measure twice more to be sure.'
+          es: 'Primera medición a las 15:00: 51 °C en el pavimento al sol, 29 °C en el césped bajo los árboles de la ronda. Mediremos dos veces más para estar seguros.'
+          fr: 'Première mesure à 15 h : 51 °C sur les dalles au soleil, 29 °C sur la pelouse sous les arbres du boulevard. Nous mesurerons encore deux fois pour en être sûrs.'
+          de: 'Erste Messung um 15 Uhr: 51 °C auf dem Pflaster in der Sonne, 29 °C auf dem Rasen unter den Bäumen am Ring. Wir messen noch zweimal, um sicher zu sein.'
+      - status: confirmed
+        days_ago: 41
+        time: '20:30'
+        note:
+          en: 'Confirmed after three hot afternoons: the paving was always above 48 °C, about 20 degrees hotter than under the trees nearby. Two more people have entered the same observation. It goes into our yearly report on heat in the town centre for the city''s climate adaptation team.'
+          es: 'Confirmado tras tres tardes de calor: el pavimento siempre superó los 48 °C, unos 20 grados más que bajo los árboles cercanos. Otras dos personas han anotado la misma observación. Entra en nuestro informe anual sobre el calor en el centro para el equipo de adaptación climática del ayuntamiento.'
+          fr: 'Confirmé après trois après-midi chauds : les dalles dépassaient toujours 48 °C, environ 20 degrés de plus que sous les arbres voisins. Deux autres personnes ont saisi la même observation. Elle figurera dans notre rapport annuel sur la chaleur au centre-ville, destiné à l''équipe d''adaptation climatique de la ville.'
+          de: 'Bestätigt nach drei heißen Nachmittagen: Das Pflaster hatte immer über 48 °C, etwa 20 Grad mehr als unter den Bäumen in der Nähe. Zwei weitere Personen haben dieselbe Beobachtung eingetragen. Sie kommt in unseren Jahresbericht zur Hitze in der Innenstadt für das Klimaanpassungsteam der Stadt.'
+
+  - key: flooded-corner
+    category: flooding
+    lat: 51.6795
+    lng: 7.8178
+    address: { address_line1: 'Nassauerstraße', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    time: '17:05'
+    photo:
+      file: images/climate-watch-flooded-corner.jpg
+      alt:
+        en: 'A street corner after heavy rain: brown water covers the road and the lowered kerb, and water swirls over an overwhelmed street drain.'
+        es: 'Una esquina después de una lluvia fuerte: el agua marrón cubre la calzada y el bordillo rebajado, y se arremolina sobre un sumidero desbordado.'
+        fr: 'Un coin de rue après une forte pluie : l''eau brune recouvre la chaussée et la bordure abaissée, et tourbillonne au-dessus d''une bouche d''égout débordée.'
+        de: 'Eine Straßenecke nach Starkregen: Braunes Wasser bedeckt Fahrbahn und abgesenkten Bordstein, über einem überlasteten Gully wirbelt das Wasser.'
+    title:
+      en: 'Corner under water after heavy rain'
+      es: 'Esquina bajo el agua tras la lluvia fuerte'
+      fr: 'Coin de rue sous l''eau après une forte pluie'
+      de: 'Ecke steht nach Starkregen unter Wasser'
+    description:
+      en: 'After today''s downpour the water stood ankle-deep at this corner. The drain could not take it, and people had to walk through the water.'
+      es: 'Después del chaparrón de hoy el agua llegaba a los tobillos en esta esquina. El sumidero no daba abasto y la gente tuvo que cruzar por el agua.'
+      fr: 'Après l''averse d''aujourd''hui, l''eau montait jusqu''aux chevilles à ce coin de rue. La bouche d''égout ne suffisait pas et les gens ont dû marcher dans l''eau.'
+      de: 'Nach dem Wolkenbruch heute stand das Wasser an dieser Ecke knöcheltief. Der Gully hat es nicht geschafft, die Leute mussten durchs Wasser laufen.'
+    history:
+      - status: received
+        days_ago: 58
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'
+      - status: under-review
+        days_ago: 57
+        time: '21:00'
+        note:
+          en: 'Thank you for the photo. One heavy shower is not enough for us to mark a flooding spot. We will look at the corner again after the next heavy rain.'
+          es: 'Gracias por la foto. Un solo chaparrón no basta para marcar una zona inundable. Volveremos a mirar la esquina después de la próxima lluvia fuerte.'
+          fr: 'Merci pour la photo. Une seule averse ne suffit pas pour marquer une zone inondable. Nous reviendrons voir ce coin après la prochaine forte pluie.'
+          de: 'Danke für das Foto. Ein einzelner Wolkenbruch reicht uns nicht, um eine Überflutungsstelle zu markieren. Wir schauen uns die Ecke nach dem nächsten Starkregen noch einmal an.'
+      - status: confirmed
+        days_ago: 44
+        time: '19:30'
+        note:
+          en: 'Confirmed. After the heavy rain this week a member saw the same: water ankle-deep at the corner for about an hour. The spot is in our report as a flooding spot.'
+          es: 'Confirmado. Tras la lluvia fuerte de esta semana un miembro vio lo mismo: agua hasta los tobillos en la esquina durante casi una hora. El lugar figura en nuestro informe como zona inundable.'
+          fr: 'Confirmé. Après la forte pluie de cette semaine, un membre a constaté la même chose : de l''eau jusqu''aux chevilles au coin de la rue pendant près d''une heure. L''endroit figure dans notre rapport comme zone inondable.'
+          de: 'Bestätigt. Nach dem Starkregen diese Woche hat ein Mitglied dasselbe gesehen: knöcheltiefes Wasser an der Ecke, etwa eine Stunde lang. Die Stelle steht als Überflutungsstelle in unserem Bericht.'
+
+  - key: sunny-bus-stop
+    category: shade
+    lat: 51.68008
+    lng: 7.81354
+    address: { address_line1: 'Westentor', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    time: '12:40'
+    photo:
+      file: images/climate-watch-sunny-bus-stop.jpg
+      alt:
+        en: 'A bus stop with only a pole and a metal bench on sealed paving, in full midday sun, without a shelter roof or a tree.'
+        es: 'Una parada de autobús con solo un poste y un banco metálico sobre pavimento sellado, a pleno sol de mediodía, sin marquesina ni árbol.'
+        fr: 'Un arrêt de bus avec seulement un poteau et un banc métallique sur un sol imperméable, en plein soleil de midi, sans abri ni arbre.'
+        de: 'Eine Bushaltestelle mit nur einem Mast und einer Metallbank auf versiegeltem Pflaster, in praller Mittagssonne, ohne Dach und ohne Baum.'
+    title:
+      en: 'No shade at the bus stop'
+      es: 'Sin sombra en la parada de autobús'
+      fr: 'Pas d''ombre à l''arrêt de bus'
+      de: 'Kein Schatten an der Bushaltestelle'
+    description:
+      en: 'At midday you wait here in full sun. There is no roof and no tree, and the metal bench is too hot to sit on.'
+      es: 'A mediodía aquí se espera a pleno sol. No hay techo ni árbol, y el banco metálico quema demasiado para sentarse.'
+      fr: 'À midi, on attend ici en plein soleil. Il n''y a ni toit ni arbre, et le banc métallique est trop chaud pour s''y asseoir.'
+      de: 'Mittags wartet man hier in der prallen Sonne. Es gibt kein Dach und keinen Baum, und auf der Metallbank kann man vor Hitze nicht sitzen.'
+    history:
+      - status: received
+        days_ago: 30
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'
+      - status: under-review
+        days_ago: 28
+        time: '20:00'
+        note:
+          en: 'We will look at the stop at different times of day and check whether a building or a tree gives shade at any time.'
+          es: 'Miraremos la parada a distintas horas del día y comprobaremos si en algún momento un edificio o un árbol da sombra.'
+          fr: 'Nous irons voir l''arrêt à différents moments de la journée pour vérifier si un bâtiment ou un arbre y fait de l''ombre à un moment donné.'
+          de: 'Wir schauen uns die Haltestelle zu verschiedenen Tageszeiten an und prüfen, ob ein Gebäude oder ein Baum irgendwann Schatten wirft.'
+
+  - key: sealed-car-park
+    category: sealed
+    lat: 51.6801
+    lng: 7.8185
+    address: { address_line1: 'Nassauerstraße', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    photo:
+      file: images/climate-watch-sealed-car-park.jpg
+      alt:
+        en: 'A large open car park, fully asphalted with white parking lines, without trees or green strips, a drain grate in the foreground and a few cars far away.'
+        es: 'Un gran aparcamiento al aire libre, totalmente asfaltado y con líneas blancas, sin árboles ni franjas verdes, con una rejilla de desagüe en primer plano y algunos coches al fondo.'
+        fr: 'Un grand parking à ciel ouvert, entièrement asphalté avec des lignes blanches, sans arbres ni bandes vertes, une grille d''évacuation au premier plan et quelques voitures au loin.'
+        de: 'Ein großer offener Parkplatz, komplett asphaltiert mit weißen Parklinien, ohne Bäume oder Grünstreifen, vorn ein Abflussgitter, weit hinten ein paar Autos.'
+    title:
+      en: 'Car park without a single tree'
+      es: 'Aparcamiento sin un solo árbol'
+      fr: 'Un parking sans un seul arbre'
+      de: 'Parkplatz ohne einen einzigen Baum'
+    description:
+      en: 'The whole car park is asphalt. There is no tree and no green strip, and after rain all the water runs into the drains.'
+      es: 'Todo el aparcamiento es asfalto. No hay ningún árbol ni franja verde, y cuando llueve toda el agua va a los desagües.'
+      fr: 'Tout le parking est en asphalte. Il n''y a ni arbre ni bande verte, et après la pluie toute l''eau part dans les égouts.'
+      de: 'Der ganze Parkplatz ist Asphalt. Es gibt keinen Baum und keinen Grünstreifen, nach Regen läuft das ganze Wasser in die Gullys.'
+    history:
+      - status: received
+        days_ago: 36
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'
+      - status: confirmed
+        days_ago: 33
+        time: '19:15'
+        note:
+          en: 'Confirmed: the car park is fully sealed, without a tree or a green strip. On hot days it adds to the heat on the square next to it. It is in our report as a sealed surface.'
+          es: 'Confirmado: el aparcamiento está totalmente sellado, sin árboles ni franjas verdes. En los días de calor aumenta el calor de la plaza de al lado. Figura en nuestro informe como superficie sellada.'
+          fr: 'Confirmé : le parking est entièrement imperméabilisé, sans arbre ni bande verte. Les jours de chaleur, il ajoute à la chaleur de la place voisine. Il figure dans notre rapport comme surface imperméable.'
+          de: 'Bestätigt: Der Parkplatz ist komplett versiegelt, ohne Baum und ohne Grünstreifen. An heißen Tagen verstärkt er die Hitze auf dem Platz daneben. Er steht als versiegelte Fläche in unserem Bericht.'
+
+  - key: brown-chestnuts
+    category: drought
+    lat: 51.67852
+    lng: 7.81888
+    address: { address_line1: 'Südring', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    photo:
+      file: images/climate-watch-brown-chestnut.jpg
+      alt:
+        en: 'A row of large horse chestnut trees along a ring road with leaves turned brown and curled from the edges, dry leaves on the lawn below.'
+        es: 'Una hilera de grandes castaños de Indias junto a una ronda, con las hojas marrones y enrolladas desde el borde, y hojas secas en el césped.'
+        fr: 'Une rangée de grands marronniers le long d''un boulevard, aux feuilles brunies et recroquevillées depuis les bords, avec des feuilles sèches sur la pelouse.'
+        de: 'Eine Reihe großer Rosskastanien an einem Ring, die Blätter vom Rand her braun und eingerollt, darunter trockenes Laub auf dem Rasen.'
+    title:
+      en: 'Chestnut trees on the ring road turn brown early'
+      es: 'Los castaños de la ronda se ponen marrones antes de tiempo'
+      fr: 'Les marronniers du boulevard brunissent trop tôt'
+      de: 'Kastanien am Ring werden früh braun'
+    description:
+      en: 'The chestnut trees on the ring road already have brown leaves, weeks before autumn. Is that the drought?'
+      es: 'Los castaños de la ronda ya tienen las hojas marrones, semanas antes del otoño. ¿Es por la sequía?'
+      fr: 'Les marronniers du boulevard ont déjà des feuilles brunes, des semaines avant l''automne. Est-ce à cause de la sécheresse ?'
+      de: 'Die Kastanien am Ring haben schon braune Blätter, Wochen vor dem Herbst. Ist das die Trockenheit?'
+    history:
+      - status: received
+        days_ago: 40
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'
+      - status: under-review
+        days_ago: 39
+        time: '20:20'
+        note:
+          en: 'Good question. A member who knows trees will take a close look at the leaves this week.'
+          es: 'Buena pregunta. Un miembro que entiende de árboles mirará las hojas de cerca esta semana.'
+          fr: 'Bonne question. Un membre qui s''y connaît en arbres examinera les feuilles de près cette semaine.'
+          de: 'Gute Frage. Ein Mitglied, das sich mit Bäumen auskennt, schaut sich die Blätter diese Woche genau an.'
+      - status: not-confirmed
+        days_ago: 34
+        time: '20:40'
+        note:
+          en: 'Not confirmed as drought damage. The brown leaves come from the horse chestnut leaf miner, a small moth whose larvae eat the leaves from inside, not from dryness. The entry stays on the map with this answer, but not in our drought list.'
+          es: 'No se confirma como daño por sequía. Las hojas marrones se deben al minador del castaño, una pequeña polilla cuyas larvas comen las hojas por dentro, no a la sequía. La entrada sigue en el mapa con esta respuesta, pero no en nuestra lista de sequía.'
+          fr: 'Non confirmé comme dégât de sécheresse. Les feuilles brunes viennent de la mineuse du marronnier, un petit papillon dont les larves mangent les feuilles de l''intérieur, et non du manque d''eau. La saisie reste sur la carte avec cette réponse, mais pas dans notre liste sécheresse.'
+          de: 'Nicht als Trockenschaden bestätigt. Die braunen Blätter kommen von der Kastanienminiermotte, deren Larven die Blätter von innen fressen, nicht von der Trockenheit. Der Eintrag bleibt mit dieser Antwort auf der Karte, aber nicht auf unserer Trockenheitsliste.'
+
+  - key: dead-young-tree
+    category: drought
+    lat: 51.68197
+    lng: 7.82089
+    address: { address_line1: 'Oststraße', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    title:
+      en: 'Young street tree has died'
+      es: 'Un árbol joven de la calle se ha secado'
+      fr: 'Un jeune arbre de la rue est mort'
+      de: 'Junger Straßenbaum ist abgestorben'
+    description:
+      en: 'The young tree in front of the houses has had no leaves since spring, and the bark is coming off.'
+      es: 'El árbol joven delante de las casas no tiene hojas desde la primavera y la corteza se está despegando.'
+      fr: 'Le jeune arbre devant les maisons n''a plus de feuilles depuis le printemps et l''écorce se détache.'
+      de: 'Der junge Baum vor den Häusern hat seit dem Frühjahr keine Blätter mehr, und die Rinde löst sich.'
+    history:
+      - status: received
+        days_ago: 22
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'
+      - status: confirmed
+        days_ago: 18
+        time: '19:40'
+        note:
+          en: 'Confirmed: the tree is dead, the bark is loose and there are no new buds. Most likely it did not get enough water in its first summers. It is in our report as tree loss.'
+          es: 'Confirmado: el árbol está muerto, la corteza está suelta y no hay brotes nuevos. Lo más probable es que no recibiera suficiente agua en sus primeros veranos. Figura en nuestro informe como pérdida de árbol.'
+          fr: 'Confirmé : l''arbre est mort, l''écorce se détache et il n''y a pas de nouveaux bourgeons. Il n''a sans doute pas reçu assez d''eau lors de ses premiers étés. Il figure dans notre rapport comme perte d''arbre.'
+          de: 'Bestätigt: Der Baum ist abgestorben, die Rinde ist lose, neue Knospen gibt es nicht. Vermutlich hat er in seinen ersten Sommern zu wenig Wasser bekommen. Er steht als Baumverlust in unserem Bericht.'
+
+  - key: second-hot-square
+    category: heat
+    lat: 51.68242
+    lng: 7.81867
+    address: { address_line1: 'Brüderstraße', postal_code: '59065', locality: 'Hamm', country_code: DE }
+    time: '16:10'
+    title:
+      en: 'Another square without shade'
+      es: 'Otra plaza sin sombra'
+      fr: 'Une autre place sans ombre'
+      de: 'Noch ein Platz ohne Schatten'
+    description:
+      en: 'This square is also completely paved. In the afternoon the air above it shimmers, and there is nowhere to sit in the shade.'
+      es: 'Esta plaza también está totalmente pavimentada. Por la tarde el aire vibra sobre ella y no hay ningún sitio para sentarse a la sombra.'
+      fr: 'Cette place est elle aussi entièrement pavée. L''après-midi, l''air y ondule de chaleur et il n''y a aucun endroit où s''asseoir à l''ombre.'
+      de: 'Auch dieser Platz ist komplett gepflastert. Nachmittags flimmert die Luft darüber, und nirgends kann man im Schatten sitzen.'
+    history:
+      - status: received
+        days_ago: 2
+        note:
+          en: 'Thank you, we have received your entry.'
+          es: 'Gracias, hemos recibido tu entrada.'
+          fr: 'Merci, nous avons bien reçu votre saisie.'
+          de: 'Danke, dein Eintrag ist eingegangen.'

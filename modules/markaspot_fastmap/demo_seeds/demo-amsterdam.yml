@@ -1,0 +1,395 @@
+# Template demo: issue-reporter ("Issue reporter", DE "Mängelmelder").
+# Format: README.md of the demo seeds. The only template demo run by an
+# administration. Real geometry, fictional names: the pins lie in a real
+# residential district of Amsterdam (Oud-West), placed with OpenStreetMap
+# data at real playgrounds, benches and small parks. "Gemeente Waterhoven",
+# its teams, the people and all reports are fictional: no real municipality,
+# department or branding. The slug stays demo-amsterdam (template-demos.ts).
+# No addresses are given on purpose: the geocoder fills them.
+# Story: residents report, the municipality's public space team reads every
+# report, passes it to the responsible crew and posts the status publicly.
+# The notes describe what happened, never a deadline.
+# Times: residents report on their way to work or in the evening, the city
+# answers during office hours; entries without a time get a stable derived
+# one.
+# The statuses mirror DEFAULT_STATUSES in WorkspaceProvisioningService
+# exactly (names, hex, icons, mappings), which issue-reporter gets because it
+# has no STATUS_TEMPLATES entry. DEFAULT_STATUSES has no keys; the keys here
+# are the seed's own.
+version: 1
+slug: demo-amsterdam
+template: issue-reporter
+seed_version: 2
+default_language: en
+languages: [en, es, fr, de]
+wording: report
+name: 'Gemeente Waterhoven'
+claim:
+  en: 'Report local issues'
+  es: 'Comunicar problemas del entorno'
+  fr: 'Signaler les problèmes locaux'
+  de: 'Mängel vor Ort melden'
+map:
+  lat: 52.3652
+  lng: 4.8655
+  zoom: 16
+boundary:
+  radius_km: 0.6
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: created
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-plus
+    name: { en: 'Created', es: 'Creado', fr: 'Créé', de: 'Erstellt' }
+  - key: in-progress
+    mapping: open
+    hex: '#2563EB'
+    icon: i-lucide-clock
+    name: { en: 'In progress', es: 'En curso', fr: 'En cours', de: 'In Bearbeitung' }
+  - key: done
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-check
+    name: { en: 'Done', es: 'Hecho', fr: 'Terminé', de: 'Erledigt' }
+
+# Names and icons follow the issue-reporter template (template-registry.ts,
+# useTemplates.ts categoryIcons), in the same order.
+categories:
+  - key: road-damage
+    icon: i-lucide-road
+    name: { en: 'Road damage', es: 'Daño vial', fr: 'Dégât routier', de: 'Straßenschaden' }
+  - key: streetlight
+    icon: i-lucide-lightbulb
+    name: { en: 'Streetlight', es: 'Alumbrado', fr: 'Éclairage public', de: 'Straßenbeleuchtung' }
+  - key: green-space
+    icon: i-lucide-trees
+    name: { en: 'Green space', es: 'Zona verde', fr: 'Espace vert', de: 'Grünfläche' }
+  - key: cleanliness
+    icon: i-lucide-trash-2
+    name: { en: 'Cleanliness', es: 'Limpieza', fr: 'Propreté', de: 'Sauberkeit' }
+  - key: playground
+    icon: i-lucide-ferris-wheel
+    name: { en: 'Playground', es: 'Parque infantil', fr: 'Aire de jeux', de: 'Spielplatz' }
+  - key: vandalism
+    icon: i-lucide-spray-can
+    name: { en: 'Vandalism', es: 'Vandalismo', fr: 'Vandalisme', de: 'Vandalismus' }
+
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature. The crews appear only in the notes.
+organisations: []
+
+start_page:
+  title:
+    en: 'Welcome to the issue reporter of Gemeente Waterhoven'
+    es: 'Bienvenido al buzón de incidencias de Gemeente Waterhoven'
+    fr: 'Bienvenue sur le service de signalement de Gemeente Waterhoven'
+    de: 'Willkommen beim Mängelmelder der Gemeente Waterhoven'
+  body:
+    en: '<p>Report potholes, broken street lights, dumped waste, graffiti or a broken bench in the district here. The public space team of the municipality reads every report, passes it to the crew that is responsible and shows the status on the map for everyone: Created, In progress, Done.</p><p>This is a demo. Gemeente Waterhoven is a fictional municipality on a real map: the streets are real, the municipality, its teams and all reports are fictional. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Aquí puedes comunicar baches, farolas averiadas, basura abandonada, grafitis o un banco roto en el barrio. El equipo de espacio público del municipio lee cada aviso, lo pasa al equipo responsable y muestra el estado en el mapa para todos: Creado, En curso, Hecho.</p><p>Esto es una demostración. Gemeente Waterhoven es un municipio ficticio sobre un mapa real: las calles son reales, el municipio, sus equipos y todos los avisos son ficticios. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Signalez ici les nids-de-poule, les lampadaires en panne, les dépôts sauvages, les graffitis ou un banc cassé dans le quartier. L''équipe espace public de la commune lit chaque signalement, le transmet à l''équipe responsable et affiche le statut sur la carte pour tout le monde : Créé, En cours, Terminé.</p><p>Ceci est une démo. Gemeente Waterhoven est une commune fictive sur une carte réelle : les rues sont réelles, la commune, ses équipes et tous les signalements sont fictifs. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Melde hier Schlaglöcher, kaputte Straßenlaternen, abgestellten Müll, Graffiti oder eine kaputte Bank im Viertel. Das Team öffentlicher Raum der Gemeinde liest jede Meldung, gibt sie an die zuständige Kolonne weiter und zeigt den Status für alle auf der Karte: Erstellt, In Bearbeitung, Erledigt.</p><p>Dies ist eine Demo. Die Gemeente Waterhoven ist eine erfundene Gemeinde auf einer echten Karte: Die Straßen sind echt, die Gemeinde, ihre Teams und alle Meldungen sind erfunden. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the hole in the brick paving and read how the municipality followed it up until it was repaired. Then report something in your own street.'
+  es: 'Abre el agujero en el pavimento de ladrillo y lee cómo el municipio lo siguió hasta repararlo. Después comunica algo de tu propia calle.'
+  fr: 'Ouvrez le trou dans le pavage en briques et lisez comment la commune l''a suivi jusqu''à la réparation. Signalez ensuite quelque chose dans votre propre rue.'
+  de: 'Öffne das Loch im Klinkerpflaster und lies, wie die Gemeinde es bis zur Reparatur verfolgt hat. Melde dann etwas aus deiner eigenen Straße.'
+
+reports:
+  - key: sunken-bricks
+    category: road-damage
+    lat: 52.36465
+    lng: 4.8667
+    address: { address_line1: 'Jacob van Lennepstraat', postal_code: '1053', locality: 'Amsterdam', country_code: NL }
+    time: '08:10'
+    photo:
+      file: images/issue-reporter-pothole.jpg
+      alt:
+        en: 'A hole in a red brick-paved street where several bricks have sunk and broken away, with loose bricks, a puddle and an orange traffic cone next to it.'
+        es: 'Un agujero en una calle de ladrillo rojo donde varios ladrillos se han hundido y roto, con ladrillos sueltos, un charco y un cono naranja al lado.'
+        fr: 'Un trou dans une rue pavée de briques rouges où plusieurs briques se sont affaissées et cassées, avec des briques détachées, une flaque et un cône orange à côté.'
+        de: 'Ein Loch in einer roten Klinkerstraße, mehrere Steine sind abgesackt und ausgebrochen, lose Steine, eine Pfütze und daneben ein orangefarbener Leitkegel.'
+    title:
+      en: 'Hole in the brick paving'
+      es: 'Agujero en el pavimento de ladrillo'
+      fr: 'Trou dans le pavage en briques'
+      de: 'Loch im Klinkerpflaster'
+    description:
+      en: 'Several bricks have sunk and broken out of the road. The hole is right where the bikes ride, and in the dark you only see it at the last moment.'
+      es: 'Varios ladrillos se han hundido y se han soltado de la calzada. El agujero está justo por donde pasan las bicis y de noche solo se ve en el último momento.'
+      fr: 'Plusieurs briques se sont affaissées et détachées de la chaussée. Le trou se trouve juste là où passent les vélos, et la nuit on ne le voit qu''au dernier moment.'
+      de: 'Mehrere Klinker sind abgesackt und aus der Fahrbahn gebrochen. Das Loch liegt genau da, wo die Räder fahren, und im Dunkeln sieht man es erst im letzten Moment.'
+    history:
+      - status: created
+        days_ago: 9
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'
+      - status: in-progress
+        days_ago: 8
+        time: '10:30'
+        note:
+          en: 'The public space team has checked the spot: the hole is about 40 cm wide. We have put a cone next to it and passed the repair to the paving crew.'
+          es: 'El equipo de espacio público ha revisado el lugar: el agujero mide unos 40 cm. Hemos puesto un cono al lado y hemos pasado la reparación al equipo de pavimentación.'
+          fr: 'L''équipe espace public a contrôlé l''endroit : le trou fait environ 40 cm de large. Nous avons placé un cône à côté et confié la réparation à l''équipe de voirie.'
+          de: 'Das Team öffentlicher Raum hat sich die Stelle angesehen: Das Loch ist etwa 40 cm breit. Wir haben einen Leitkegel daneben gestellt und die Reparatur an die Pflasterkolonne gegeben.'
+      - status: in-progress
+        days_ago: 5
+        time: '14:15'
+        note:
+          en: 'The paving crew has taken out the loose bricks. The sand underneath had washed away, so they are filling and compacting it first.'
+          es: 'El equipo de pavimentación ha retirado los ladrillos sueltos. La arena de debajo se había ido con el agua, así que primero la están rellenando y compactando.'
+          fr: 'L''équipe de voirie a retiré les briques détachées. Le sable en dessous avait été emporté par l''eau : elle le remplace et le compacte d''abord.'
+          de: 'Die Pflasterkolonne hat die losen Klinker herausgenommen. Der Sand darunter war ausgespült, deshalb wird er zuerst aufgefüllt und verdichtet.'
+      - status: done
+        days_ago: 3
+        time: '16:40'
+        note:
+          en: 'The bricks have been relaid and the cone has been removed. Thank you for your report.'
+          es: 'Los ladrillos se han vuelto a colocar y se ha retirado el cono. Gracias por tu aviso.'
+          fr: 'Les briques ont été reposées et le cône a été retiré. Merci pour votre signalement.'
+          de: 'Die Klinker sind neu verlegt, der Leitkegel ist weg. Danke für deine Meldung.'
+
+  - key: dark-street-light
+    category: streetlight
+    lat: 52.366
+    lng: 4.864
+    address: { address_line1: 'Hasebroekstraat', postal_code: '1053', locality: 'Amsterdam', country_code: NL }
+    time: '18:55'
+    photo:
+      file: images/issue-reporter-street-light.jpg
+      alt:
+        en: 'A residential street at dusk, one street lamp in the row is dark while the lamps further down are lit, the pavement in front of it in shadow.'
+        es: 'Una calle residencial al anochecer: una farola de la fila está apagada mientras las de más allá están encendidas, y la acera de delante queda en sombra.'
+        fr: 'Une rue résidentielle au crépuscule : un lampadaire de la rangée est éteint alors que les suivants sont allumés, le trottoir devant lui reste dans l''ombre.'
+        de: 'Eine Wohnstraße in der Dämmerung, eine Laterne in der Reihe ist dunkel, die weiteren brennen, der Gehweg davor liegt im Schatten.'
+    title:
+      en: 'Street lamp stays dark'
+      es: 'Una farola sigue apagada'
+      fr: 'Un lampadaire reste éteint'
+      de: 'Straßenlaterne bleibt dunkel'
+    description:
+      en: 'This lamp has been out for a week. The stretch between the bike racks is completely dark in the evening.'
+      es: 'Esta farola lleva una semana apagada. Por la noche el tramo entre los aparcabicis queda completamente a oscuras.'
+      fr: 'Ce lampadaire est éteint depuis une semaine. Le soir, le passage entre les arceaux à vélos est complètement dans le noir.'
+      de: 'Diese Laterne ist seit einer Woche aus. Abends ist das Stück zwischen den Fahrradständern völlig dunkel.'
+    history:
+      - status: created
+        days_ago: 6
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'
+      - status: in-progress
+        days_ago: 5
+        time: '09:20'
+        note:
+          en: 'We have passed the report to the street lighting team. They will check the lamp and its power supply.'
+          es: 'Hemos pasado el aviso al equipo de alumbrado público. Revisará la farola y su alimentación eléctrica.'
+          fr: 'Nous avons transmis le signalement à l''équipe éclairage public. Elle vérifiera le lampadaire et son alimentation électrique.'
+          de: 'Wir haben die Meldung an das Team Straßenbeleuchtung gegeben. Es prüft die Laterne und ihre Stromversorgung.'
+
+  - key: dumped-waste
+    category: cleanliness
+    lat: 52.3638
+    lng: 4.8628
+    address: { address_line1: 'Jacob van Lennepstraat', postal_code: '1053', locality: 'Amsterdam', country_code: NL }
+    time: '07:45'
+    photo:
+      file: images/issue-reporter-dumped-waste.jpg
+      alt:
+        en: 'An old mattress, a broken chair, cardboard boxes and full bin bags dumped on a brick pavement next to two grey underground waste containers.'
+        es: 'Un colchón viejo, una silla rota, cajas de cartón y bolsas de basura llenas abandonados en una acera de ladrillo junto a dos contenedores soterrados grises.'
+        fr: 'Un vieux matelas, une chaise cassée, des cartons et des sacs poubelle pleins abandonnés sur un trottoir en briques à côté de deux conteneurs enterrés gris.'
+        de: 'Eine alte Matratze, ein kaputter Stuhl, Kartons und volle Müllsäcke, abgestellt auf einem Klinkergehweg neben zwei grauen Unterflurcontainern.'
+    title:
+      en: 'Bulky waste next to the containers'
+      es: 'Trastos voluminosos junto a los contenedores'
+      fr: 'Des encombrants à côté des conteneurs'
+      de: 'Sperrmüll neben den Containern'
+    description:
+      en: 'Since last night a mattress, a chair and lots of bags have been lying next to the waste containers. The pavement is half blocked.'
+      es: 'Desde anoche hay un colchón, una silla y muchas bolsas junto a los contenedores. La acera está medio bloqueada.'
+      fr: 'Depuis hier soir, un matelas, une chaise et beaucoup de sacs traînent à côté des conteneurs. Le trottoir est à moitié bloqué.'
+      de: 'Seit gestern Abend liegen neben den Müllcontainern eine Matratze, ein Stuhl und viele Säcke. Der Gehweg ist halb versperrt.'
+    history:
+      - status: created
+        days_ago: 2
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'
+      - status: in-progress
+        days_ago: 2
+        time: '11:20'
+        note:
+          en: 'We have passed the report to the waste collection team.'
+          es: 'Hemos pasado el aviso al equipo de recogida de residuos.'
+          fr: 'Nous avons transmis le signalement à l''équipe de collecte des déchets.'
+          de: 'Wir haben die Meldung an das Team Abfallsammlung gegeben.'
+      - status: done
+        days_ago: 1
+        time: '15:30'
+        note:
+          en: 'The waste collection team has picked up the bulky waste. The pavement is clear again.'
+          es: 'El equipo de recogida se ha llevado los trastos. La acera vuelve a estar libre.'
+          fr: 'L''équipe de collecte a enlevé les encombrants. Le trottoir est de nouveau dégagé.'
+          de: 'Das Team Abfallsammlung hat den Sperrmüll abgeholt. Der Gehweg ist wieder frei.'
+
+  - key: graffiti-cabinet
+    category: vandalism
+    lat: 52.3653
+    lng: 4.8685
+    address: { address_line1: 'Ten Kateplein', postal_code: '1053', locality: 'Amsterdam', country_code: NL }
+    photo:
+      file: images/issue-reporter-graffiti.jpg
+      alt:
+        en: 'A grey metal utility cabinet on a pavement corner covered in fresh abstract graffiti in black, pink and blue, with a brick wall and bicycles behind it.'
+        es: 'Un armario técnico metálico gris en una esquina de la acera cubierto de grafitis abstractos recientes en negro, rosa y azul, con un muro de ladrillo y bicicletas detrás.'
+        fr: 'Une armoire technique métallique grise à un coin de trottoir couverte de graffitis abstraits récents en noir, rose et bleu, avec un mur de briques et des vélos derrière.'
+        de: 'Ein grauer Verteilerkasten an einer Gehwegecke voller frischer abstrakter Graffiti in Schwarz, Pink und Blau, dahinter eine Backsteinmauer und Fahrräder.'
+    title:
+      en: 'Graffiti on the utility cabinet'
+      es: 'Grafitis en el armario técnico'
+      fr: 'Graffitis sur l''armoire technique'
+      de: 'Graffiti am Verteilerkasten'
+    description:
+      en: 'The cabinet at the corner of the playground has been sprayed all over since the weekend.'
+      es: 'El armario de la esquina del parque infantil está lleno de pintadas desde el fin de semana.'
+      fr: 'L''armoire au coin de l''aire de jeux est couverte de tags depuis le week-end.'
+      de: 'Der Kasten an der Ecke zum Spielplatz ist seit dem Wochenende rundum besprüht.'
+    history:
+      - status: created
+        days_ago: 12
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'
+      - status: in-progress
+        days_ago: 10
+        time: '11:05'
+        note:
+          en: 'We have passed the report to the cleaning crew for graffiti.'
+          es: 'Hemos pasado el aviso al equipo de limpieza de grafitis.'
+          fr: 'Nous avons transmis le signalement à l''équipe de nettoyage des graffitis.'
+          de: 'Wir haben die Meldung an die Reinigungskolonne für Graffiti gegeben.'
+      - status: done
+        days_ago: 7
+        time: '13:50'
+        note:
+          en: 'The graffiti has been removed from the cabinet.'
+          es: 'Se han eliminado los grafitis del armario.'
+          fr: 'Les graffitis ont été retirés de l''armoire.'
+          de: 'Das Graffiti am Verteilerkasten ist entfernt.'
+
+  - key: broken-bench
+    category: green-space
+    lat: 52.364
+    lng: 4.8658
+    address: { address_line1: 'Nicolaas Beetsplantsoen', postal_code: '1054', locality: 'Amsterdam', country_code: NL }
+    photo:
+      file: images/issue-reporter-broken-bench.jpg
+      alt:
+        en: 'A wooden bench on a small square with trees, two seat slats broken and one hanging down, fallen leaves on the brick paving.'
+        es: 'Un banco de madera en una pequeña plaza con árboles, con dos listones del asiento rotos y uno colgando, y hojas caídas en el pavimento de ladrillo.'
+        fr: 'Un banc en bois sur une petite place arborée, deux lattes de l''assise cassées et l''une pendante, des feuilles mortes sur le pavage en briques.'
+        de: 'Eine Holzbank auf einem kleinen Platz mit Bäumen, zwei Sitzlatten gebrochen, eine hängt herunter, Laub auf dem Klinkerpflaster.'
+    title:
+      en: 'Bench with broken slats'
+      es: 'Banco con listones rotos'
+      fr: 'Banc aux lattes cassées'
+      de: 'Bank mit gebrochenen Latten'
+    description:
+      en: 'Two slats of the bench on the square are broken and have sharp splinters. Children climb on it.'
+      es: 'Dos listones del banco de la plaza están rotos y tienen astillas afiladas. Los niños se suben encima.'
+      fr: 'Deux lattes du banc de la place sont cassées et ont des échardes pointues. Les enfants grimpent dessus.'
+      de: 'Zwei Latten der Bank auf dem Platz sind gebrochen und haben scharfe Splitter. Kinder klettern darauf herum.'
+    history:
+      - status: created
+        days_ago: 15
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'
+      - status: in-progress
+        days_ago: 13
+        time: '10:10'
+        note:
+          en: 'The bench has been taped off. We have passed the repair to the carpentry crew, which will replace the broken slats.'
+          es: 'El banco se ha precintado. Hemos pasado la reparación al equipo de carpintería, que cambiará los listones rotos.'
+          fr: 'Le banc a été balisé. Nous avons confié la réparation à l''équipe de menuiserie, qui remplacera les lattes cassées.'
+          de: 'Die Bank ist abgesperrt. Wir haben die Reparatur an die Schreinerkolonne gegeben, die die gebrochenen Latten ersetzt.'
+
+  - key: loose-swing
+    category: playground
+    lat: 52.36499
+    lng: 4.86521
+    address: { address_line1: 'Borgerstraat', postal_code: '1053', locality: 'Amsterdam', country_code: NL }
+    time: '16:30'
+    title:
+      en: 'Swing chain is loose'
+      es: 'La cadena del columpio está suelta'
+      fr: 'La chaîne de la balançoire ne tient plus'
+      de: 'Kette an der Schaukel ist lose'
+    description:
+      en: 'On the playground one chain of the swing has come loose at the top, so the seat hangs crooked.'
+      es: 'En el parque infantil una cadena del columpio se ha soltado arriba y el asiento cuelga torcido.'
+      fr: 'Sur l''aire de jeux, une chaîne de la balançoire s''est détachée en haut et le siège pend de travers.'
+      de: 'Auf dem Spielplatz hat sich oben eine Kette der Schaukel gelöst, der Sitz hängt schief.'
+    history:
+      - status: created
+        days_ago: 4
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'
+      - status: in-progress
+        days_ago: 3
+        time: '09:15'
+        note:
+          en: 'The swing has been taped off until the playground inspector has checked it.'
+          es: 'El columpio se ha precintado hasta que lo revise el inspector de parques infantiles.'
+          fr: 'La balançoire a été balisée en attendant le contrôle de l''inspecteur des aires de jeux.'
+          de: 'Die Schaukel ist abgesperrt, bis der Spielplatzprüfer sie kontrolliert hat.'
+
+  - key: low-branch
+    category: green-space
+    lat: 52.3672
+    lng: 4.8667
+    address: { address_line1: 'Bellamystraat', postal_code: '1053', locality: 'Amsterdam', country_code: NL }
+    time: '13:10'
+    title:
+      en: 'Branch hangs low over the path'
+      es: 'Una rama cuelga baja sobre el camino'
+      fr: 'Une branche pend bas au-dessus du chemin'
+      de: 'Ast hängt tief über dem Weg'
+    description:
+      en: 'After the storm a large branch hangs low over the path through the small park. Cyclists have to duck.'
+      es: 'Tras la tormenta una rama grande cuelga baja sobre el camino del parquecito. Los ciclistas tienen que agacharse.'
+      fr: 'Après la tempête, une grosse branche pend bas au-dessus du chemin du petit parc. Les cyclistes doivent se baisser.'
+      de: 'Nach dem Sturm hängt ein großer Ast tief über dem Weg durch den kleinen Park. Radfahrer müssen sich ducken.'
+    history:
+      - status: created
+        days_ago: 1
+        note:
+          en: 'Thank you for your report. We have received it.'
+          es: 'Gracias por tu aviso. Lo hemos recibido.'
+          fr: 'Merci pour votre signalement. Nous l''avons bien reçu.'
+          de: 'Danke für deine Meldung. Wir haben sie erhalten.'

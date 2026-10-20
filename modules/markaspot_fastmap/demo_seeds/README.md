@@ -11,6 +11,24 @@ drush mas:seed-demo-workspace path/to/demo-school-routes.yml --reset  # remove v
 drush mas:reset-demo-workspaces [--slug=demo-school-routes]          # reset allowlisted demos
 ```
 
+## Shipped seeds
+
+| File | Template | Place (real geometry, fictional names) | Operator (fictional) |
+|---|---|---|---|
+| `demo-school-routes.yml` | safe-routes | Brühl | parents' initiative Lindenhof |
+| `demo-amsterdam.yml` | issue-reporter | Amsterdam Oud-West | Gemeente Waterhoven |
+| `demo-neighbourhood.yml` | neighbourhood | Münster | neighbourhood initiative |
+| `demo-trail-watch.yml` | trail-watch | Bad Honnef (Siebengebirge) | hiking club |
+| `demo-access-map.yml` | access-map | Siegburg | Initiative Freie Wege |
+| `demo-climate-watch.yml` | climate-watch | Hamm | citizen science group Grüne Mitte |
+| `demo-crisis-map.yml` | crisis-map | Wermelskirchen | Helferkreis Lindbach (exercise) |
+
+The file name is the slug, so `demo_seed_dir` can point at this directory.
+Every report carries a street-level address (street or square, postcode,
+locality, from OpenStreetMap via Photon at seed authoring time, no house
+numbers), so case views show a place and no fictional report points at a
+real house. The seeder writes it to `field_address` and does not geocode.
+
 ## Who answers in a demo
 
 Only the issue reporter demo is run by a city administration. Every other
@@ -295,7 +313,7 @@ reports:                        # 1 to 20, 6 to 8 recommended
     lat: 50.8301
     lng: 6.9052
     time: '07:52'               # optional submission time, HH:MM (see Times)
-    address:                    # optional; without it the geocoder fills the address
+    address:                    # optional street-level address; the seeder does not geocode
       { address_line1: …, postal_code: …, locality: …, country_code: DE }
     photo:                      # optional JPEG/PNG, path relative to the YAML file
       file: images/crossing.jpg
@@ -337,6 +355,11 @@ them), use fictional places and people, use the workspace wording, and do not
 promise functions the product does not have.
 
 ## Photos
+
+All photos in `images/` are AI-generated with OpenAI image generation via
+Codex for Civic Patches (school routes, trail watch, barrier map, climate
+observation map, neighbourhood ideas, issue reporter and crisis map, all on
+2026-10-18), resized to 1280x960 with metadata stripped.
 
 `images/school-routes-*.jpg` are AI-generated with OpenAI image generation via
 Codex on 2026-10-18 for Civic Patches (`school-routes-speeding.jpg` and

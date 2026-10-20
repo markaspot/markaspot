@@ -25,6 +25,33 @@ final class DemoSeedTest extends UnitTestCase {
   private const EXAMPLE = __DIR__ . '/../../../demo_seeds/demo-school-routes.yml';
 
   /**
+   * Every shipped seed loads, has its photos and a street-level address.
+   */
+  public function testAllShippedSeedsAreValid(): void {
+    $files = glob(dirname(self::EXAMPLE) . '/demo-*.yml') ?: [];
+    $this->assertGreaterThanOrEqual(7, count($files));
+    $slugs = [];
+    foreach ($files as $file) {
+      $seed = DemoSeed::fromFile($file);
+      $slugs[] = $seed->data['slug'];
+      $this->assertSame(basename($file, '.yml'), $seed->data['slug'], 'The file is named after the slug the reset looks for.');
+      foreach ($seed->data['reports'] as $report) {
+        $label = $seed->data['slug'] . ':' . $report['key'];
+        if (isset($report['photo'])) {
+          $this->assertFileExists($report['photo']['path'], $label);
+          $this->assertSame([1280, 960], array_slice(getimagesize($report['photo']['path']), 0, 2), $label);
+        }
+        // The case view shows an address; real streets, no house numbers,
+        // so no fictional report points at a real house.
+        $this->assertNotEmpty($report['address']['address_line1'] ?? NULL, $label);
+        $this->assertNotEmpty($report['address']['locality'] ?? NULL, $label);
+        $this->assertDoesNotMatchRegularExpression('/\\d/', $report['address']['address_line1'], $label);
+      }
+    }
+    $this->assertSame(count($slugs), count(array_unique($slugs)));
+  }
+
+  /**
    * The shipped example is a valid, complete four-language seed.
    */
   public function testShippedExampleIsValid(): void {

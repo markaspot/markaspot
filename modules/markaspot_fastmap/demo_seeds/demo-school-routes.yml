@@ -13,7 +13,7 @@
 version: 1
 slug: demo-school-routes
 template: safe-routes
-seed_version: 6
+seed_version: 7
 default_language: en
 languages: [en, es, fr, de]
 wording: report
@@ -110,6 +110,7 @@ reports:
     category: crossing
     lat: 50.8301
     lng: 6.9052
+    address: { address_line1: 'Kempishofstraße', postal_code: '50321', locality: 'Brühl', country_code: DE }
     time: '07:52'
     photo:
       file: images/school-routes-crossing.jpg
@@ -165,6 +166,7 @@ reports:
     category: sidewalk
     lat: 50.8289
     lng: 6.9039
+    address: { address_line1: 'Hospitalstraße', postal_code: '50321', locality: 'Brühl', country_code: DE }
     time: '07:41'
     photo:
       file: images/school-routes-blocked-sidewalk.jpg
@@ -212,6 +214,7 @@ reports:
     category: visibility
     lat: 50.8306
     lng: 6.9031
+    address: { address_line1: 'Wallstraße', postal_code: '50321', locality: 'Brühl', country_code: DE }
     photo:
       file: images/school-routes-hedge-corner.jpg
       alt:
@@ -250,6 +253,7 @@ reports:
     category: visibility
     lat: 50.8293
     lng: 6.9061
+    address: { address_line1: 'Burgstraße', postal_code: '50321', locality: 'Brühl', country_code: DE }
     time: '07:45'
     photo:
       file: images/school-routes-parked-cars-crossing.jpg
@@ -281,6 +285,7 @@ reports:
     category: speed
     lat: 50.8284
     lng: 6.9055
+    address: { address_line1: 'Markt', postal_code: '50321', locality: 'Brühl', country_code: DE }
     photo:
       file: images/school-routes-speeding.jpg
       alt:
@@ -311,6 +316,7 @@ reports:
     category: lighting
     lat: 50.8312
     lng: 6.9044
+    address: { address_line1: 'Schützenstraße', postal_code: '50321', locality: 'Brühl', country_code: DE }
     time: '07:20'
     photo:
       file: images/school-routes-dark-footpath.jpg
@@ -342,6 +348,7 @@ reports:
     category: crossing
     lat: 50.8299
     lng: 6.9068
+    address: { address_line1: 'Mayersweg', postal_code: '50321', locality: 'Brühl', country_code: DE }
     time: '13:25'
     photo:
       file: images/school-routes-bus-stop.jpg

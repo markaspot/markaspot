@@ -1,0 +1,447 @@
+# Template demo: crisis-map ("Crisis map", DE "Krisenkarte").
+# Format: README.md of the demo seeds. A FICTIONAL EXERCISE SCENARIO: the
+# cleanup phase after a night of storm and heavy rain. Real geometry,
+# fictional names: the pins lie in the real town of Wermelskirchen
+# (Bergisches Land, no known flood disaster), placed with OpenStreetMap data
+# at a real cycle path underpass, parks and residential streets. The storm
+# night, the "Helferkreis Lindbach", the people and all reports are
+# fictional. No real authority, fire brigade or relief organisation is named.
+# No injured people, no people in need, no business as a cause of damage.
+# No addresses are given on purpose: the geocoder fills them.
+# Story: residents report what they see, a volunteer helper circle checks
+# each report with a second person or a photo and marks it confirmed, all
+# clear or not confirmed (one false report shows the verification).
+# Times: the storm night starts two days before the seed run around 22:00,
+# reports come in through the night, the cleanup runs the next day.
+# The statuses mirror the crisis-map set in
+# WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
+# mappings).
+version: 1
+slug: demo-crisis-map
+template: crisis-map
+seed_version: 2
+default_language: en
+languages: [en, es, fr, de]
+wording: report
+name: 'Helferkreis Lindbach Storm Map'
+claim:
+  en: 'Document local crisis impacts'
+  es: 'Documentar efectos de las crisis'
+  fr: 'Documenter les effets des crises'
+  de: 'Krisenfolgen vor Ort dokumentieren'
+map:
+  lat: 51.1405
+  lng: 7.2165
+  zoom: 15
+boundary:
+  radius_km: 1.0
+operator:
+  email: support@civicpatches.de
+  address:
+    organization: 'Civic Patches GmbH'
+    address_line1: 'Pingsdorfer Str. 88-92'
+    postal_code: '50321'
+    locality: 'Brühl'
+    country_code: DE
+
+statuses:
+  - key: unconfirmed
+    mapping: initial
+    hex: '#D97706'
+    icon: i-lucide-circle-dashed
+    name: { en: 'Unconfirmed', es: 'Sin confirmar', fr: 'En attente de confirmation', de: 'Unbestätigt' }
+  - key: confirmed
+    mapping: open
+    hex: '#DC2626'
+    icon: i-lucide-triangle-alert
+    name: { en: 'Confirmed', es: 'Confirmado', fr: 'Confirmé', de: 'Bestätigt' }
+  - key: all-clear
+    mapping: closed
+    hex: '#059669'
+    icon: i-lucide-shield-check
+    name: { en: 'All clear', es: 'Fin de la alerta', fr: 'Fin d''alerte', de: 'Entwarnung' }
+  - key: not-confirmed
+    mapping: closed
+    hex: '#64748B'
+    icon: i-lucide-circle-x
+    name: { en: 'Not confirmed', es: 'No confirmado', fr: 'Non confirmé', de: 'Nicht bestätigt' }
+
+# Names and icons follow the crisis-map template after the rethink
+# (template-registry.ts, useTemplates.ts categoryIcons in the
+# demo-live-preview worktree), in the same order.
+categories:
+  - key: flooding
+    icon: i-lucide-waves
+    name: { en: 'Flooding', es: 'Inundación', fr: 'Inondation', de: 'Hochwasser' }
+  - key: fire
+    icon: i-lucide-flame
+    name: { en: 'Fire or smoke', es: 'Incendio o humo', fr: 'Incendie ou fumée', de: 'Brand oder Rauch' }
+  - key: building-damage
+    icon: i-lucide-building-2
+    name: { en: 'Building damage', es: 'Daño edificio', fr: 'Dégâts bâtiment', de: 'Gebäudeschaden' }
+  - key: power-outage
+    icon: i-lucide-zap-off
+    name: { en: 'Power outage', es: 'Corte de luz', fr: 'Coupure courant', de: 'Stromausfall' }
+  - key: road-block
+    icon: i-lucide-octagon-alert
+    name: { en: 'Road block', es: 'Corte de vía', fr: 'Route bloquée', de: 'Straßensperre' }
+  - key: debris
+    icon: i-lucide-tree-pine
+    name: { en: 'Debris or fallen tree', es: 'Escombros o árbol caído', fr: 'Débris ou arbre tombé', de: 'Trümmer oder umgestürzter Baum' }
+  - key: drop-in-point
+    icon: i-lucide-map-pin-house
+    name: { en: 'Drop-in point', es: 'Punto de atención', fr: 'Point d''accueil', de: 'Anlaufstelle' }
+
+# No organisations: CivicSpot workspaces do not have the organisations
+# feature, and the demo names no authority.
+organisations: []
+
+start_page:
+  title:
+    en: 'Welcome to the storm map of the Helferkreis Lindbach'
+    es: 'Bienvenido al mapa de la tormenta del Helferkreis Lindbach'
+    fr: 'Bienvenue sur la carte de la tempête du Helferkreis Lindbach'
+    de: 'Willkommen bei der Sturmkarte des Helferkreises Lindbach'
+  body:
+    en: '<p>After a night of storm and heavy rain, residents report what they see here: flooded spots, fallen trees, damaged roofs, power cuts, closed roads and the drop-in point of the helper circle. The volunteers of the Helferkreis Lindbach check every report with a second person or a photo and mark it as confirmed, all clear or not confirmed.</p><p><strong>This map does not replace an emergency call. In an emergency, call 112.</strong></p><p>This is a demo with a fictional exercise scenario: the storm night, the Helferkreis Lindbach and all reports are fictional; the streets on the map are real. Everything you add is removed at the next regular reset.</p>'
+    es: '<p>Tras una noche de tormenta y lluvias fuertes, los vecinos señalan aquí lo que ven: zonas inundadas, árboles caídos, tejados dañados, cortes de luz, calles cortadas y el punto de atención del grupo de ayuda. Los voluntarios del Helferkreis Lindbach comprueban cada aviso con una segunda persona o una foto y lo marcan como confirmado, fin de la alerta o no confirmado.</p><p><strong>Este mapa no sustituye a una llamada de emergencia. En caso de emergencia, llama al 112.</strong></p><p>Esto es una demostración con un ejercicio ficticio: la noche de tormenta, el Helferkreis Lindbach y todos los avisos son ficticios; las calles del mapa son reales. Todo lo que añadas se borrará en el próximo restablecimiento.</p>'
+    fr: '<p>Après une nuit de tempête et de fortes pluies, les habitants signalent ici ce qu''ils voient : endroits inondés, arbres tombés, toits endommagés, coupures de courant, routes fermées et le point d''accueil du groupe d''entraide. Les bénévoles du Helferkreis Lindbach vérifient chaque signalement avec une deuxième personne ou une photo et le marquent comme confirmé, fin d''alerte ou non confirmé.</p><p><strong>Cette carte ne remplace pas un appel d''urgence. En cas d''urgence, appelez le 112.</strong></p><p>Ceci est une démo avec un exercice fictif : la nuit de tempête, le Helferkreis Lindbach et tous les signalements sont fictifs ; les rues de la carte sont réelles. Tout ce que vous ajoutez sera supprimé lors de la prochaine réinitialisation.</p>'
+    de: '<p>Nach einer Nacht mit Sturm und Starkregen melden Anwohner hier, was sie sehen: überflutete Stellen, umgestürzte Bäume, beschädigte Dächer, Stromausfälle, gesperrte Straßen und die Anlaufstelle des Helferkreises. Die Ehrenamtlichen des Helferkreises Lindbach prüfen jede Meldung mit einer zweiten Person oder einem Foto und markieren sie als bestätigt, entwarnt oder nicht bestätigt.</p><p><strong>Diese Karte ersetzt keinen Notruf. Im Notfall wähle 112.</strong></p><p>Dies ist eine Demo mit einem erfundenen Übungsszenario: Die Sturmnacht, der Helferkreis Lindbach und alle Meldungen sind erfunden, die Straßen auf der Karte sind echt. Alles, was du einträgst, wird beim nächsten regelmäßigen Zurücksetzen entfernt.</p>'
+
+task:
+  en: 'Open the flooded underpass and read how the helper circle confirmed the report and gave the all clear. Then report what you noticed after the storm.'
+  es: 'Abre el paso inferior inundado y lee cómo el grupo de ayuda confirmó el aviso y dio el fin de la alerta. Después señala lo que te llamó la atención tras la tormenta.'
+  fr: 'Ouvrez le passage souterrain inondé et lisez comment le groupe d''entraide a confirmé le signalement puis levé l''alerte. Signalez ensuite ce que vous avez remarqué après la tempête.'
+  de: 'Öffne die überflutete Unterführung und lies, wie der Helferkreis die Meldung bestätigt und entwarnt hat. Melde dann, was dir nach dem Sturm aufgefallen ist.'
+
+reports:
+  - key: flooded-underpass
+    category: flooding
+    lat: 51.14422
+    lng: 7.21913
+    address: { address_line1: 'Bahnhofstraße', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '23:40'
+    photo:
+      file: images/crisis-map-flooded-underpass.jpg
+      alt:
+        en: 'A short pedestrian and cycle underpass with concrete walls, brown water standing about knee-deep inside, leaves and twigs floating on it.'
+        es: 'Un paso inferior corto para peatones y bicicletas con paredes de hormigón, con agua marrón estancada hasta la rodilla y hojas y ramas flotando.'
+        fr: 'Un court passage souterrain piétons et vélos aux murs en béton, rempli d''eau brune jusqu''aux genoux, avec des feuilles et des brindilles qui flottent.'
+        de: 'Eine kurze Fuß- und Radwegunterführung mit Betonwänden, darin steht braunes Wasser etwa knietief, Laub und Zweige treiben darauf.'
+    title:
+      en: 'Underpass on the cycle path flooded'
+      es: 'Paso inferior del carril bici inundado'
+      fr: 'Passage souterrain de la piste cyclable inondé'
+      de: 'Unterführung am Radweg überflutet'
+    description:
+      en: 'The underpass on the cycle path is full of water. I could not see how deep it is, so I turned back.'
+      es: 'El paso inferior del carril bici está lleno de agua. No se veía la profundidad, así que me di la vuelta.'
+      fr: 'Le passage souterrain de la piste cyclable est plein d''eau. Je ne voyais pas la profondeur, alors j''ai fait demi-tour.'
+      de: 'Die Unterführung am Radweg steht voll Wasser. Ich konnte nicht sehen, wie tief es ist, und bin umgekehrt.'
+    history:
+      - status: unconfirmed
+        days_ago: 2
+        note:
+          en: 'Thank you, we have received your report. We will check it.'
+          es: 'Gracias, hemos recibido tu aviso. Lo vamos a comprobar.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous allons le vérifier.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir prüfen sie.'
+      - status: confirmed
+        days_ago: 1
+        time: '00:25'
+        note:
+          en: 'Confirmed: a second person sent a photo from the other side. The water is about knee-deep. Please do not walk or cycle through the underpass and take another way.'
+          es: 'Confirmado: una segunda persona envió una foto desde el otro lado. El agua llega más o menos a la rodilla. No pases a pie ni en bici por el paso inferior y toma otro camino.'
+          fr: 'Confirmé : une deuxième personne a envoyé une photo prise de l''autre côté. L''eau arrive à peu près aux genoux. Ne traversez pas le passage à pied ni à vélo et prenez un autre chemin.'
+          de: 'Bestätigt: Eine zweite Person hat ein Foto von der anderen Seite geschickt. Das Wasser steht etwa knietief. Bitte nicht zu Fuß oder mit dem Rad durch die Unterführung, nimm einen anderen Weg.'
+      - status: confirmed
+        days_ago: 1
+        time: '07:30'
+        note:
+          en: 'Update in the morning: the water has dropped to ankle height. The drain at the low point is blocked with leaves, so the underpass stays marked for now.'
+          es: 'Actualización por la mañana: el agua ha bajado hasta el tobillo. El desagüe del punto más bajo está tapado con hojas, así que el paso inferior sigue marcado por ahora.'
+          fr: 'Point du matin : l''eau est descendue au niveau des chevilles. L''évacuation au point bas est bouchée par des feuilles, le passage reste donc signalé pour l''instant.'
+          de: 'Stand am Morgen: Das Wasser ist auf Knöchelhöhe gesunken. Der Abfluss an der tiefsten Stelle ist mit Laub verstopft, deshalb bleibt die Unterführung vorerst markiert.'
+      - status: all-clear
+        days_ago: 1
+        time: '16:10'
+        note:
+          en: 'All clear: volunteers cleared the leaves from the drain and the water has run off. The underpass is passable again; there is still mud on the path, so take care.'
+          es: 'Fin de la alerta: los voluntarios quitaron las hojas del desagüe y el agua se ha ido. El paso inferior vuelve a ser transitable; todavía hay barro en el camino, así que ten cuidado.'
+          fr: 'Fin d''alerte : des bénévoles ont dégagé les feuilles de l''évacuation et l''eau s''est écoulée. Le passage est de nouveau praticable ; il reste de la boue sur le chemin, soyez prudent.'
+          de: 'Entwarnung: Ehrenamtliche haben das Laub aus dem Abfluss geholt, das Wasser ist abgelaufen. Die Unterführung ist wieder passierbar, auf dem Weg liegt noch Schlamm, also Vorsicht.'
+
+  - key: fallen-tree
+    category: debris
+    lat: 51.1445
+    lng: 7.217
+    address: { address_line1: 'Remscheider Straße', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '22:50'
+    photo:
+      file: images/crisis-map-fallen-tree.jpg
+      alt:
+        en: 'A large tree lies across a narrow residential road after a storm, blocking the whole lane, with broken branches on the wet asphalt and houses behind.'
+        es: 'Un árbol grande yace atravesado en una calle residencial estrecha tras una tormenta y bloquea todo el carril, con ramas rotas en el asfalto mojado y casas detrás.'
+        fr: 'Un grand arbre est couché en travers d''une rue résidentielle étroite après une tempête et bloque toute la voie, avec des branches cassées sur l''asphalte mouillé et des maisons derrière.'
+        de: 'Ein großer Baum liegt nach einem Sturm quer über einer schmalen Wohnstraße und versperrt die ganze Fahrbahn, abgebrochene Äste auf dem nassen Asphalt, dahinter Häuser.'
+    title:
+      en: 'Tree blocks the access road'
+      es: 'Un árbol bloquea la calle de acceso'
+      fr: 'Un arbre bloque la voie d''accès'
+      de: 'Baum blockiert die Zufahrt'
+    description:
+      en: 'A big tree has fallen across the road. Nobody can get in or out by car.'
+      es: 'Un árbol grande ha caído atravesado en la calle. Nadie puede entrar ni salir en coche.'
+      fr: 'Un grand arbre est tombé en travers de la rue. Plus personne ne peut entrer ni sortir en voiture.'
+      de: 'Ein großer Baum ist quer über die Straße gefallen. Mit dem Auto kommt niemand mehr rein oder raus.'
+    history:
+      - status: unconfirmed
+        days_ago: 2
+        note:
+          en: 'Thank you, we have received your report. We will check it.'
+          es: 'Gracias, hemos recibido tu aviso. Lo vamos a comprobar.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous allons le vérifier.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir prüfen sie.'
+      - status: confirmed
+        days_ago: 2
+        time: '23:20'
+        note:
+          en: 'Confirmed by two neighbours. The tree blocks the whole lane. Please keep your distance: the trunk and branches are under tension.'
+          es: 'Confirmado por dos vecinos. El árbol bloquea todo el carril. Mantén la distancia: el tronco y las ramas están en tensión.'
+          fr: 'Confirmé par deux voisins. L''arbre bloque toute la voie. Gardez vos distances : le tronc et les branches sont sous tension.'
+          de: 'Von zwei Nachbarn bestätigt. Der Baum versperrt die ganze Fahrbahn. Bitte Abstand halten, Stamm und Äste stehen unter Spannung.'
+      - status: all-clear
+        days_ago: 1
+        time: '11:40'
+        note:
+          en: 'All clear: the tree has been cut up and moved to the side of the road. The access road is open again.'
+          es: 'Fin de la alerta: el árbol se ha troceado y apartado al borde de la calle. La calle de acceso vuelve a estar abierta.'
+          fr: 'Fin d''alerte : l''arbre a été découpé et déplacé sur le bord de la rue. La voie d''accès est de nouveau ouverte.'
+          de: 'Entwarnung: Der Baum ist zersägt und an den Straßenrand geräumt. Die Zufahrt ist wieder frei.'
+
+  - key: roof-tiles
+    category: building-damage
+    lat: 51.13985
+    lng: 7.21932
+    address: { address_line1: 'Hüpp-Anlage', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '08:15'
+    photo:
+      file: images/crisis-map-damaged-roof.jpg
+      alt:
+        en: 'A house roof with a patch of tiles torn off and the battens exposed, broken tiles on the pavement below, which is taped off with red and white tape.'
+        es: 'Un tejado al que el viento ha arrancado una parte de las tejas, con los listones a la vista y tejas rotas en la acera, acordonada con cinta roja y blanca.'
+        fr: 'Un toit dont une partie des tuiles a été arrachée, laissant voir les liteaux, avec des tuiles cassées sur le trottoir, balisé par de la rubalise rouge et blanche.'
+        de: 'Ein Hausdach, auf dem ein Stück Ziegel abgedeckt ist und die Latten frei liegen, darunter zerbrochene Ziegel auf dem Gehweg, mit rot-weißem Band abgesperrt.'
+    title:
+      en: 'Roof tiles on the pavement'
+      es: 'Tejas en la acera'
+      fr: 'Des tuiles sur le trottoir'
+      de: 'Dachziegel auf dem Gehweg'
+    description:
+      en: 'The storm has torn tiles off a roof. Some are lying on the pavement and more could fall.'
+      es: 'La tormenta ha arrancado tejas de un tejado. Algunas están en la acera y podrían caer más.'
+      fr: 'La tempête a arraché des tuiles d''un toit. Certaines sont sur le trottoir et d''autres pourraient tomber.'
+      de: 'Der Sturm hat Ziegel von einem Dach gerissen. Einige liegen auf dem Gehweg, weitere könnten herunterfallen.'
+    history:
+      - status: unconfirmed
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your report. We will check it.'
+          es: 'Gracias, hemos recibido tu aviso. Lo vamos a comprobar.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous allons le vérifier.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir prüfen sie.'
+      - status: confirmed
+        days_ago: 1
+        time: '09:00'
+        note:
+          en: 'Confirmed: several tiles have fallen onto the pavement. Neighbours have taped off the pavement. Please use the other side of the street until the roof has been secured.'
+          es: 'Confirmado: varias tejas han caído a la acera. Los vecinos han acordonado la acera. Usa la otra acera hasta que se asegure el tejado.'
+          fr: 'Confirmé : plusieurs tuiles sont tombées sur le trottoir. Des voisins ont balisé le trottoir. Passez de l''autre côté de la rue jusqu''à ce que le toit soit sécurisé.'
+          de: 'Bestätigt: Mehrere Ziegel sind auf den Gehweg gefallen. Nachbarn haben den Gehweg abgesperrt. Bitte die andere Straßenseite nehmen, bis das Dach gesichert ist.'
+
+  - key: shed-fire
+    category: fire
+    lat: 51.1341
+    lng: 7.2192
+    address: { address_line1: 'Rot-Kreuz-Straße', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '22:15'
+    photo:
+      file: images/crisis-map-burnt-shed.jpg
+      alt:
+        en: 'A small burnt-out wooden garden shed with a partly collapsed roof and a thin wisp of smoke, a wet lawn and a garden hose in front of it.'
+        es: 'Una pequeña caseta de jardín de madera quemada, con el tejado medio hundido y un hilo de humo, con césped mojado y una manguera delante.'
+        fr: 'Un petit abri de jardin en bois brûlé, au toit en partie effondré, d''où s''élève un mince filet de fumée, avec une pelouse mouillée et un tuyau d''arrosage devant.'
+        de: 'Ein kleines ausgebranntes Gartenhaus aus Holz mit teils eingestürztem Dach und einer dünnen Rauchfahne, davor nasser Rasen und ein Gartenschlauch.'
+    title:
+      en: 'Smoke from a garden shed'
+      es: 'Humo de una caseta de jardín'
+      fr: 'De la fumée sort d''un abri de jardin'
+      de: 'Rauch aus einem Gartenhaus'
+    description:
+      en: 'After a lightning strike there is smoke coming from a garden shed behind the houses.'
+      es: 'Después de caer un rayo sale humo de una caseta de jardín detrás de las casas.'
+      fr: 'Après un coup de foudre, de la fumée sort d''un abri de jardin derrière les maisons.'
+      de: 'Nach einem Blitzeinschlag kommt Rauch aus einem Gartenhaus hinter den Häusern.'
+    history:
+      - status: unconfirmed
+        days_ago: 2
+        note:
+          en: 'Thank you, we have received your report. If there is a fire, call 112 first.'
+          es: 'Gracias, hemos recibido tu aviso. Si hay fuego, llama primero al 112.'
+          fr: 'Merci, nous avons bien reçu votre signalement. En cas d''incendie, appelez d''abord le 112.'
+          de: 'Danke, deine Meldung ist eingegangen. Wenn es brennt, ruf zuerst die 112.'
+      - status: confirmed
+        days_ago: 2
+        time: '22:30'
+        note:
+          en: 'Confirmed: the fire brigade has been called and is on site. Nobody is in the shed. Please keep the path behind the gardens free.'
+          es: 'Confirmado: se ha llamado a los bomberos y están en el lugar. No hay nadie en la caseta. Deja libre el camino detrás de los jardines.'
+          fr: 'Confirmé : les pompiers ont été appelés et sont sur place. Personne ne se trouve dans l''abri. Laissez libre le chemin derrière les jardins.'
+          de: 'Bestätigt: Die Feuerwehr ist alarmiert und vor Ort. Im Gartenhaus ist niemand. Bitte den Weg hinter den Gärten frei lassen.'
+      - status: all-clear
+        days_ago: 2
+        time: '23:45'
+        note:
+          en: 'All clear: the fire is out and nobody was hurt. The shed has burnt out; a little smoke may still rise during the night.'
+          es: 'Fin de la alerta: el fuego está apagado y nadie ha resultado herido. La caseta se ha quemado por completo; durante la noche aún puede salir algo de humo.'
+          fr: 'Fin d''alerte : le feu est éteint et personne n''a été blessé. L''abri a entièrement brûlé ; un peu de fumée peut encore s''élever pendant la nuit.'
+          de: 'Entwarnung: Das Feuer ist aus, niemand wurde verletzt. Das Gartenhaus ist ausgebrannt, in der Nacht kann noch etwas Rauch aufsteigen.'
+
+  - key: power-cut
+    category: power-outage
+    lat: 51.136
+    lng: 7.2256
+    address: { address_line1: 'Am Vogelsang', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '23:05'
+    title:
+      en: 'No power in the street'
+      es: 'Sin luz en la calle'
+      fr: 'Plus de courant dans la rue'
+      de: 'Kein Strom in der Straße'
+    description:
+      en: 'Since the storm the whole street has been dark, including the street lights.'
+      es: 'Desde la tormenta toda la calle está a oscuras, también las farolas.'
+      fr: 'Depuis la tempête, toute la rue est dans le noir, éclairage public compris.'
+      de: 'Seit dem Sturm ist die ganze Straße dunkel, auch die Straßenlaternen.'
+    history:
+      - status: unconfirmed
+        days_ago: 2
+        note:
+          en: 'Thank you, we have received your report. We will check it.'
+          es: 'Gracias, hemos recibido tu aviso. Lo vamos a comprobar.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous allons le vérifier.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir prüfen sie.'
+      - status: confirmed
+        days_ago: 2
+        time: '23:35'
+        note:
+          en: 'Confirmed: several households in the street report a power cut. The drop-in point has power for charging phones.'
+          es: 'Confirmado: varios hogares de la calle señalan un corte de luz. En el punto de atención hay corriente para cargar el móvil.'
+          fr: 'Confirmé : plusieurs foyers de la rue signalent une coupure de courant. Au point d''accueil, il y a du courant pour recharger les téléphones.'
+          de: 'Bestätigt: Mehrere Haushalte in der Straße melden einen Stromausfall. An der Anlaufstelle gibt es Strom zum Laden von Handys.'
+      - status: all-clear
+        days_ago: 1
+        time: '06:20'
+        note:
+          en: 'All clear: according to several neighbours the power is back in the whole street.'
+          es: 'Fin de la alerta: según varios vecinos, la luz ha vuelto en toda la calle.'
+          fr: 'Fin d''alerte : selon plusieurs voisins, le courant est revenu dans toute la rue.'
+          de: 'Entwarnung: Laut mehreren Nachbarn ist der Strom in der ganzen Straße wieder da.'
+
+  - key: park-flooding
+    category: flooding
+    lat: 51.13713
+    lng: 7.21307
+    address: { address_line1: 'Am Stadtpark', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '00:40'
+    title:
+      en: 'Road by the park under water'
+      es: 'Calle junto al parque bajo el agua'
+      fr: 'Rue près du parc sous l''eau'
+      de: 'Straße am Park unter Wasser'
+    description:
+      en: 'I heard that the road by the park is completely under water.'
+      es: 'He oído que la calle junto al parque está completamente bajo el agua.'
+      fr: 'J''ai entendu dire que la rue près du parc était complètement sous l''eau.'
+      de: 'Ich habe gehört, dass die Straße am Park komplett unter Wasser steht.'
+    history:
+      - status: unconfirmed
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your report. We will check it.'
+          es: 'Gracias, hemos recibido tu aviso. Lo vamos a comprobar.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous allons le vérifier.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir prüfen sie.'
+      - status: not-confirmed
+        days_ago: 1
+        time: '01:30'
+        note:
+          en: 'Not confirmed: two helpers walked along the road. There are only puddles at the edge, the road is clear. Thank you anyway: better one report too many than one too few.'
+          es: 'No confirmado: dos voluntarios recorrieron la calle. Solo hay charcos en el borde y la calle está libre. Gracias de todos modos: mejor un aviso de más que uno de menos.'
+          fr: 'Non confirmé : deux bénévoles ont longé la rue. Il n''y a que des flaques sur le bord, la rue est dégagée. Merci quand même : mieux vaut un signalement de trop qu''un de moins.'
+          de: 'Nicht bestätigt: Zwei Helfer sind die Straße abgegangen. Am Rand stehen nur Pfützen, die Straße ist frei. Trotzdem danke: lieber eine Meldung zu viel als eine zu wenig.'
+
+  - key: drop-in-point
+    category: drop-in-point
+    lat: 51.14096
+    lng: 7.21793
+    address: { address_line1: 'Dhünner Straße', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '07:00'
+    photo:
+      file: images/crisis-map-drop-in-point.jpg
+      alt:
+        en: 'A white folding gazebo on a small paved square with a table of thermos flasks, paper cups, biscuits and a power strip with phone chargers, sandbags beside it, no people.'
+        es: 'Una carpa plegable blanca en una plazuela pavimentada con una mesa con termos, vasos de papel, galletas y una regleta con cargadores de móvil, sacos de arena al lado, sin personas.'
+        fr: 'Une tonnelle pliante blanche sur une petite place pavée, avec une table garnie de thermos, de gobelets en carton, de biscuits et d''une multiprise avec des chargeurs de téléphone, des sacs de sable à côté, sans personne.'
+        de: 'Ein weißer Faltpavillon auf einem kleinen gepflasterten Platz mit einem Tisch voller Thermoskannen, Pappbecher, Kekse und einer Steckdosenleiste mit Handyladegeräten, daneben Sandsäcke, keine Menschen.'
+    title:
+      en: 'Drop-in point of the helper circle'
+      es: 'Punto de atención del grupo de ayuda'
+      fr: 'Point d''accueil du groupe d''entraide'
+      de: 'Anlaufstelle des Helferkreises'
+    description:
+      en: 'Hot drinks, phone charging, sandbags and information about the cleanup, under the white gazebo by the playground.'
+      es: 'Bebidas calientes, carga de móviles, sacos de arena e información sobre la limpieza, bajo la carpa blanca junto al parque infantil.'
+      fr: 'Boissons chaudes, recharge des téléphones, sacs de sable et informations sur le nettoyage, sous la tonnelle blanche près de l''aire de jeux.'
+      de: 'Heiße Getränke, Handy laden, Sandsäcke und Infos zum Aufräumen, unter dem weißen Pavillon am Spielplatz.'
+    history:
+      - status: unconfirmed
+        days_ago: 1
+        note:
+          en: 'The drop-in point has been entered on the map.'
+          es: 'El punto de atención se ha añadido al mapa.'
+          fr: 'Le point d''accueil a été ajouté à la carte.'
+          de: 'Die Anlaufstelle ist auf der Karte eingetragen.'
+      - status: confirmed
+        days_ago: 1
+        time: '07:20'
+        note:
+          en: 'The drop-in point is open today from 8:00 to 18:00. Come by in person; we do not take requests by phone here.'
+          es: 'El punto de atención abre hoy de 8:00 a 18:00. Pasa en persona; aquí no atendemos peticiones por teléfono.'
+          fr: 'Le point d''accueil est ouvert aujourd''hui de 8 h à 18 h. Passez sur place ; nous ne prenons pas de demandes par téléphone ici.'
+          de: 'Die Anlaufstelle ist heute von 8 bis 18 Uhr geöffnet. Komm einfach vorbei, telefonische Anfragen nehmen wir hier nicht an.'
+
+  - key: barrier-tape
+    category: road-block
+    lat: 51.13862
+    lng: 7.2126
+    address: { address_line1: 'Telegrafenstraße', postal_code: '42929', locality: 'Wermelskirchen', country_code: DE }
+    time: '15:30'
+    title:
+      en: 'Barrier tape across the road'
+      es: 'Cinta de balizamiento atravesada en la calle'
+      fr: 'Rubalise en travers de la rue'
+      de: 'Absperrband quer über der Straße'
+    description:
+      en: 'Someone has stretched barrier tape across the road. I cannot see why.'
+      es: 'Alguien ha puesto cinta de balizamiento atravesada en la calle. No veo por qué.'
+      fr: 'Quelqu''un a tendu de la rubalise en travers de la rue. Je ne vois pas pourquoi.'
+      de: 'Jemand hat Absperrband quer über die Straße gespannt. Ich sehe nicht, warum.'
+    history:
+      - status: unconfirmed
+        days_ago: 1
+        note:
+          en: 'Thank you, we have received your report. We will check it.'
+          es: 'Gracias, hemos recibido tu aviso. Lo vamos a comprobar.'
+          fr: 'Merci, nous avons bien reçu votre signalement. Nous allons le vérifier.'
+          de: 'Danke, deine Meldung ist eingegangen. Wir prüfen sie.'
