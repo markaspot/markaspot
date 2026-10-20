@@ -24,6 +24,7 @@ use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_fastmap\EventSubscriber\DemoSessionSubscriber;
 use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Drupal\markaspot_fastmap\Service\DemoWorkspaceReset;
+use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_fastmap\Service\DemoWorkspaceSeeder;
 use Drupal\media\Entity\Media;
 use Drupal\node\Entity\Node;
@@ -849,6 +850,23 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $database->insert('sessions')->fields(['sid' => 'd', 'uid' => $account->id(), 'timestamp' => 1])->execute();
     $this->reset()->resetWorkspace('demo-school-routes', $seed);
     $this->assertSame(['c'], $database->select('sessions', 's')->fields('s', ['sid'])->execute()->fetchCol());
+  }
+
+  /**
+   * The auth status tells the frontend about the demo account.
+   */
+  public function testAuthStatusReportsDemoAccount(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $currentUser = $this->container->get('current_user');
+    $request = Request::create('/api/auth/status');
+
+    $currentUser->setAccount($this->staffAccount()->load('demo-school-routes'));
+    $status = json_decode((string) PasswordlessAuthController::create($this->container)->status($request)->getContent(), TRUE);
+    $this->assertTrue($status['user']['is_demo_account']);
+
+    $currentUser->setAccount(User::load(1));
+    $status = json_decode((string) PasswordlessAuthController::create($this->container)->status($request)->getContent(), TRUE);
+    $this->assertFalse($status['user']['is_demo_account']);
   }
 
   /**

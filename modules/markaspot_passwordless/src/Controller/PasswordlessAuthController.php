@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_passwordless\Controller;
 
+use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
 
 use Symfony\Component\HttpFoundation\Cookie;
@@ -145,6 +146,8 @@ class PasswordlessAuthController extends ControllerBase {
    *   The frontend URL service.
    * @param \Drupal\markaspot_group\Service\WorkspaceVisibilityInterface|null $workspaceVisibility
    *   The workspace report visibility policy.
+   * @param \Drupal\markaspot_fastmap\Service\DemoStaffAccount|null $demoStaffAccount
+   *   Recognises the shared staff accounts of template demos.
    */
   public function __construct(
     OtpService $otp_service,
@@ -159,6 +162,7 @@ class PasswordlessAuthController extends ControllerBase {
     protected ?EntityRepositoryInterface $entityRepository = NULL,
     protected ?FrontendUrlService $frontendUrlService = NULL,
     protected ?WorkspaceVisibilityInterface $workspaceVisibility = NULL,
+    protected ?DemoStaffAccount $demoStaffAccount = NULL,
   ) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
@@ -187,6 +191,8 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('markaspot_nuxt.frontend_url'),
       $container->has('markaspot_group.workspace_visibility')
         ? $container->get('markaspot_group.workspace_visibility') : NULL,
+      $container->has('markaspot_fastmap.demo_staff_account')
+        ? $container->get('markaspot_fastmap.demo_staff_account') : NULL,
     );
   }
 
@@ -909,6 +915,8 @@ class PasswordlessAuthController extends ControllerBase {
       'report_view_jurisdictions' => $this->workspaceVisibility?->getReportViewJurisdictionIds($account) ?? [],
       'groups' => $user ? $this->getUserGroups($user) : [],
       'preferred_langcode' => $preferred_langcode,
+      // The shared staff account of a template demo (markaspot_fastmap).
+      'is_demo_account' => $this->demoStaffAccount?->isDemoAccount($account) ?? FALSE,
     ] + $this->getTosAcceptancePayload($user);
   }
 
