@@ -50,6 +50,14 @@ final class DemoSeedTest extends UnitTestCase {
     $this->assertContains('closed', $finalMappings, 'The example needs a resolved case.');
     $this->assertTrue($hasQuestion, 'The example needs a question back to the reporter.');
     $this->assertArrayHasKey('de', $seed->data['task']);
+
+    $photos = array_filter(array_column($seed->data['reports'], 'photo', 'key'));
+    $this->assertCount(5, $photos);
+    foreach ($photos as $photo) {
+      $this->assertFileExists($photo['path']);
+      $this->assertSame([1280, 960], array_slice(getimagesize($photo['path']), 0, 2));
+      $this->assertSame(['en', 'es', 'fr', 'de'], array_keys($photo['alt']));
+    }
   }
 
   /**
@@ -91,8 +99,16 @@ final class DemoSeedTest extends UnitTestCase {
       'alt' => ['en' => 'Crossing', 'es' => 'Cruce', 'fr' => 'Traversée', 'de' => 'Querung'],
     ];
 
+    foreach (array_slice($raw['reports'], 1) as $report) {
+      if (isset($report['photo'])) {
+        copy(dirname(self::EXAMPLE) . '/' . $report['photo']['file'], $directory . '/' . $report['photo']['file']);
+      }
+    }
+
     $seed = DemoSeed::fromArray($raw, $directory);
-    unlink($directory . '/images/crossing.png');
+    array_map('unlink', glob($directory . '/images/*') ?: []);
+    rmdir($directory . '/images');
+    rmdir($directory);
     $rebuilt = DemoSeed::fromStorage($seed->toStorage());
 
     $this->assertSame($seed->data, $rebuilt->data);
@@ -108,7 +124,7 @@ final class DemoSeedTest extends UnitTestCase {
     $raw['reports'][0]['history'][1]['time'] = '20:40';
     $raw['reports'][0]['history'][2]['time'] = '06:05';
     unset($raw['reports'][0]['history'][3]['time']);
-    $report = DemoSeed::fromArray($raw, sys_get_temp_dir())->data['reports'][0];
+    $report = DemoSeed::fromArray($raw, dirname(self::EXAMPLE))->data['reports'][0];
 
     $this->assertArrayNotHasKey('time', $report);
     $this->assertSame(['07:52', '20:40', '06:05'], array_slice(array_column($report['history'], 'time'), 0, 3));
@@ -144,7 +160,7 @@ final class DemoSeedTest extends UnitTestCase {
     unset($raw['reports'][0]['time'], $raw['reports'][0]['history'][1]['time']);
     $raw['reports'][0]['history'][1]['days_ago'] = $raw['reports'][0]['history'][0]['days_ago'];
     $raw['reports'][0]['history'][0]['time'] = '18:20';
-    $history = DemoSeed::fromArray($raw, sys_get_temp_dir())->data['reports'][0]['history'];
+    $history = DemoSeed::fromArray($raw, dirname(self::EXAMPLE))->data['reports'][0]['history'];
     $this->assertSame('18:35', $history[1]['time']);
   }
 
@@ -158,7 +174,7 @@ final class DemoSeedTest extends UnitTestCase {
 
     $this->expectException(\InvalidArgumentException::class);
     $this->expectExceptionMessage($message);
-    DemoSeed::fromArray($raw, sys_get_temp_dir());
+    DemoSeed::fromArray($raw, dirname(self::EXAMPLE));
   }
 
   /**

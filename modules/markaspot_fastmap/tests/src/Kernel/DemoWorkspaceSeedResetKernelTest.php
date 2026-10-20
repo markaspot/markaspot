@@ -312,6 +312,12 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertTrue($media->isPublished());
     $this->assertFileExists($media->get('field_media_image')->entity->getFileUri());
     $this->assertTrue($this->container->get('keyvalue')->get('markaspot_open311.media_publication_manual')->get($media->id()));
+    $hedgePhoto = $this->seededEntity('node', 'report', 'hedge-corner')->get('field_request_media')->entity;
+    $this->assertInstanceOf(Media::class, $hedgePhoto);
+    $this->assertTrue($hedgePhoto->isPublished());
+    $this->assertStringStartsWith('A tall, dense hedge', $hedgePhoto->get('field_media_image')->alt);
+    $this->assertSame(960, (int) $hedgePhoto->get('field_media_image')->height);
+    $this->assertTrue($this->seededEntity('node', 'report', 'speeding')->get('field_request_media')->isEmpty());
 
     // The start page is translated and carries the mini task.
     $page = $this->seededEntity('node', 'page', 'start');
@@ -363,6 +369,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['demo-school-routes', 'customer'])->save();
 
     $requestIdsBefore = DemoWorkspace::block($demo)['translations'];
+    $sidewalkPhotoBefore = $this->seededEntity('media', 'media', 'blocked-sidewalk');
     $crossing = $this->seededEntity('taxonomy_term', 'category', 'crossing');
 
     // Visitor content in the allowlisted demo.
@@ -409,6 +416,13 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertNull(Media::load($visitorMedia->id()));
     $this->assertNull(File::load($visitorMedia->get('field_media_image')->target_id));
     $this->assertNull(Term::load($extraTerm->id()));
+
+    // Seeded photos survive the reset unchanged.
+    $sidewalkPhoto = $this->seededEntity('media', 'media', 'blocked-sidewalk');
+    $this->assertSame((int) $sidewalkPhotoBefore->id(), (int) $sidewalkPhoto->id());
+    $this->assertSame((int) $sidewalkPhotoBefore->get('field_media_image')->target_id, (int) $sidewalkPhoto->get('field_media_image')->target_id);
+    $this->assertFileExists($sidewalkPhoto->get('field_media_image')->entity->getFileUri());
+    $this->assertSame((int) $sidewalkPhoto->id(), (int) $this->seededEntity('node', 'report', 'blocked-sidewalk')->get('field_request_media')->target_id);
 
     // Seeded content is back in its seeded state, with the same request IDs.
     $restored = $this->seededEntity('node', 'report', 'dangerous-crossing');
@@ -674,6 +688,12 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     // for installations with the organisations feature.
     $raw['organisations'] = [['key' => 'traffic', 'name' => 'Traffic Department']];
     $raw['reports'][0]['organisation'] = 'traffic';
+    // The shipped photos of the other reports, under their own names.
+    foreach (array_slice($raw['reports'], 1) as $report) {
+      if (isset($report['photo'])) {
+        copy(dirname(__DIR__, 3) . '/demo_seeds/' . $report['photo']['file'], $this->seedDir . '/' . $report['photo']['file']);
+      }
+    }
     $raw['reports'][0]['photo'] = [
       'file' => 'images/crossing.png',
       'alt' => [

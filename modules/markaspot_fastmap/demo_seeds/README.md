@@ -180,3 +180,11 @@ in the morning and answers of a volunteer initiative in the evening.
 Writing guidelines: keep reporter fields empty (the seed has no fields for
 them), use fictional places and people, use the workspace wording, and do not
 promise functions the product does not have.
+
+## Photos
+
+`images/school-routes-*.jpg` are AI-generated with OpenAI image generation via
+Codex on 2026-10-18 for Civic Patches. They show fictional scenes: no
+recognisable faces, no readable number plates, metadata stripped, 1280 px
+JPEG. Photos for new seeds follow the same rules. Alt texts describe the
+scene, not the category of the report.

@@ -111,6 +111,13 @@ reports:
     lat: 50.8301
     lng: 6.9052
     time: '07:52'
+    photo:
+      file: images/school-routes-crossing.jpg
+      alt:
+        en: 'A child with a school backpack walks between two parked cars towards the school gate.'
+        es: 'Un escolar con mochila camina entre dos coches aparcados hacia la verja del colegio.'
+        fr: 'Un enfant avec un cartable marche entre deux voitures garées vers la grille de l''école.'
+        de: 'Ein Kind mit Schulranzen geht zwischen zwei parkenden Autos auf das Schultor zu.'
     title:
       en: 'Children cross between parked cars'
       es: 'Los niños cruzan entre coches aparcados'
@@ -159,6 +166,13 @@ reports:
     lat: 50.8289
     lng: 6.9039
     time: '07:41'
+    photo:
+      file: images/school-routes-blocked-sidewalk.jpg
+      alt:
+        en: 'A red and white construction fence with warning lights stands across the sidewalk, an open trench behind it and parked cars alongside.'
+        es: 'Una valla de obra roja y blanca con balizas luminosas atraviesa la acera, con una zanja abierta detrás y coches aparcados al lado.'
+        fr: 'Une barrière de chantier rouge et blanche avec des feux clignotants barre le trottoir, avec une tranchée ouverte derrière et des voitures garées à côté.'
+        de: 'Ein rot-weißer Bauzaun mit Warnleuchten steht quer über dem Gehweg, dahinter ein offener Graben, daneben parkende Autos.'
     title:
       en: 'Construction fence blocks the sidewalk'
       es: 'Una valla de obra bloquea la acera'
@@ -198,6 +212,13 @@ reports:
     category: visibility
     lat: 50.8306
     lng: 6.9031
+    photo:
+      file: images/school-routes-hedge-corner.jpg
+      alt:
+        en: 'A tall, dense hedge grows over a low wall at a street corner and reaches the edge of the sidewalk.'
+        es: 'Un seto alto y tupido sobresale de un murete en una esquina y llega hasta el borde de la acera.'
+        fr: 'Une haie haute et touffue déborde d''un muret à un coin de rue et avance jusqu''au bord du trottoir.'
+        de: 'Eine hohe, dichte Hecke wächst an einer Straßenecke über eine niedrige Mauer bis an den Rand des Gehwegs.'
     title:
       en: 'Hedge hides the corner'
       es: 'Un seto tapa la esquina'
@@ -230,6 +251,13 @@ reports:
     lat: 50.8293
     lng: 6.9061
     time: '07:45'
+    photo:
+      file: images/school-routes-parked-cars-crossing.jpg
+      alt:
+        en: 'A zebra crossing on a residential street in autumn, with cars parked close to it on both sides.'
+        es: 'Un paso de cebra en una calle residencial en otoño, con coches aparcados muy cerca a ambos lados.'
+        fr: 'Un passage piéton dans une rue résidentielle en automne, avec des voitures garées tout près des deux côtés.'
+        de: 'Ein Zebrastreifen in einer Wohnstraße im Herbst, auf beiden Seiten parken Autos dicht daneben.'
     title:
       en: 'Cars parked right up to the crossing'
       es: 'Coches aparcados justo hasta el cruce'
@@ -277,6 +305,13 @@ reports:
     lat: 50.8312
     lng: 6.9044
     time: '07:20'
+    photo:
+      file: images/school-routes-dark-footpath.jpg
+      alt:
+        en: 'A paved footpath through a park before sunrise, between bare trees and fallen leaves.'
+        es: 'Un camino asfaltado atraviesa un parque antes del amanecer, entre árboles sin hojas y hojarasca.'
+        fr: 'Un chemin goudronné traverse un parc avant le lever du jour, entre des arbres dénudés et des feuilles mortes.'
+        de: 'Ein asphaltierter Fußweg führt vor Sonnenaufgang durch einen Park, zwischen kahlen Bäumen und Laub.'
     title:
       en: 'Footpath through the park is dark'
       es: 'El camino del parque está a oscuras'
