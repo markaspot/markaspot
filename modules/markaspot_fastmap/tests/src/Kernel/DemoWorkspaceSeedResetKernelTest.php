@@ -1251,6 +1251,46 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   }
 
   /**
+   * Content of a demo session carries no mail trigger, contact or markup.
+   */
+  public function testDemoSessionContentIsNeutralized(): void {
+    $groupId = (int) $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id'];
+    $currentUser = $this->container->get('current_user');
+    $values = [
+      'type' => 'service_request',
+      'title' => 'Visitor report',
+      'field_jurisdiction' => $groupId,
+      'field_notification' => TRUE,
+      'field_e_mail' => 'someone@example.com',
+      'body' => [
+        'value' => '<p onclick="x()">Hello <a href="https://example.com">link</a></p>',
+        'format' => 'basic_html',
+      ],
+    ];
+
+    $currentUser->setAccount($this->staffAccount()->load('demo-school-routes'));
+    $report = Node::create($values);
+    $report->save();
+    $this->assertFalse((bool) $report->get('field_notification')->value, 'No notification mail to a typed-in address.');
+    $this->assertTrue($report->get('field_e_mail')->isEmpty(), 'No contact data stays for the next visitor.');
+    $this->assertSame('plain_text', $report->get('body')->format, 'Text is stored as plain text.');
+    $note = Paragraph::create([
+      'type' => 'status',
+      'field_status_note' => ['value' => '<b>note</b>', 'format' => 'basic_html'],
+    ]);
+    $note->save();
+    $this->assertSame('plain_text', $note->get('field_status_note')->format);
+
+    // Regular accounts keep what they enter.
+    $currentUser->setAccount(User::load(1));
+    $regular = Node::create($values);
+    $regular->save();
+    $this->assertTrue((bool) $regular->get('field_notification')->value);
+    $this->assertSame('someone@example.com', $regular->get('field_e_mail')->value);
+    $this->assertSame('basic_html', $regular->get('body')->format);
+  }
+
+  /**
    * Returns the demo staff account service.
    */
   private function staffAccount(): DemoStaffAccount {

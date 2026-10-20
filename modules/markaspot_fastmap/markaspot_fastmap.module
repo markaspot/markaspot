@@ -13,6 +13,7 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -497,6 +498,7 @@ function markaspot_fastmap_group_update(GroupInterface $group): void {
  * saving when the published limit is reached.
  */
 function markaspot_fastmap_node_presave(NodeInterface $node): void {
+  _markaspot_fastmap_neutralize_demo_content($node);
   if ($node->bundle() !== 'service_request' || !$node->isPublished()) {
     return;
   }
@@ -1511,3 +1513,39 @@ function markaspot_fastmap_user_login(UserInterface $account): void {
   user_logout();
 }
 
+/**
+ * Implements hook_ENTITY_TYPE_presave() for paragraph entities.
+ */
+function markaspot_fastmap_paragraph_presave(FieldableEntityInterface $paragraph): void {
+  _markaspot_fastmap_neutralize_demo_content($paragraph);
+}
+
+/**
+ * Keeps what a demo staff session writes harmless for the next visitor.
+ *
+ * Every visitor shares the account, and the content stays until the next
+ * reset: no notification mail to an address a visitor typed in, no contact
+ * data, no markup. Text fields are stored as plain text.
+ */
+function _markaspot_fastmap_neutralize_demo_content(FieldableEntityInterface $entity): void {
+  $account = \Drupal::currentUser();
+  if ($account->isAnonymous() || !\Drupal::hasService('markaspot_fastmap.demo_staff_account')
+    || !\Drupal::service('markaspot_fastmap.demo_staff_account')->isDemoAccount($account)) {
+    return;
+  }
+  if ($entity->hasField('field_notification')) {
+    $entity->set('field_notification', FALSE);
+  }
+  foreach (['field_e_mail', 'field_first_name', 'field_last_name', 'field_phone'] as $field) {
+    if ($entity->hasField($field)) {
+      $entity->set($field, NULL);
+    }
+  }
+  foreach ($entity->getFieldDefinitions() as $name => $definition) {
+    if (in_array($definition->getType(), ['text', 'text_long', 'text_with_summary'], TRUE)) {
+      foreach ($entity->get($name) as $item) {
+        $item->set('format', 'plain_text');
+      }
+    }
+  }
+}
