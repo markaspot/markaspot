@@ -596,7 +596,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
   public function testBuildReportabilityInstructionCoversBothCases(): void {
     $service = $this->createService();
 
-    $instruction = $this->invokeMethod($service, 'buildReportabilityInstruction', []);
+    $instruction = $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]);
 
     $this->assertStringContainsString('is_reportable_issue', $instruction);
     // True case: a project-relevant observation, including positive findings.
@@ -624,8 +624,11 @@ class ImageProcessingServiceTest extends UnitTestCase {
       . "list to satisfy the schema, but describe only what is visible and state uncertainty; never invent "
       . "a defect to justify the category. The application offers manual selection for false results. "
       . "Relevance does not override privacy or hazard assessment.";
-    $this->assertSame($expected, $this->invokeMethod($service, 'buildReportabilityInstruction', []));
-    $this->assertSame(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE, substr($expected, -strlen(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE)));
+    $this->assertStringContainsString($expected . "\n\nPRIVACY INSTRUCTION", $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]));
+    // The editable part ends before the fixed off-domain rule.
+    $rule = ' ' . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE;
+    $this->assertSame($rule, substr($expected, -strlen($rule)));
+    $this->assertSame(substr($expected, 0, -strlen($rule)), $this->invokeMethod($service, 'buildReportabilityInstruction', []));
   }
 
   /**
@@ -637,12 +640,14 @@ class ImageProcessingServiceTest extends UnitTestCase {
   public function testSystemInstructionDefaultsAndParts(): void {
     $service = $this->createService();
     $default = $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]);
-    $this->assertStringContainsString($this->invokeMethod($service, 'buildReportabilityInstruction', []) . "\n\nPRIVACY INSTRUCTION", $default);
+    $rule = ' ' . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE;
+    $this->assertStringContainsString($this->invokeMethod($service, 'buildReportabilityInstruction', []) . $rule . "\n\nPRIVACY INSTRUCTION", $default);
     $this->assertStringNotContainsString('DESCRIPTION FRAMING', $default);
     $this->assertStringNotContainsString('screenshots', $default);
 
     $custom = $this->invokeMethod($service, 'buildSystemInstruction', ['Ideas', 'German', FALSE, 1, "\n\nRULE", "\n\nFRAME"]);
-    $this->assertStringContainsString("\n\nRULE\n\nFRAME\n\nPRIVACY INSTRUCTION", $custom);
+    // A replaced relevance part keeps the off-domain and category fallback.
+    $this->assertStringContainsString("\n\nRULE" . $rule . "\n\nFRAME\n\nPRIVACY INSTRUCTION", $custom);
     $this->assertStringNotContainsString('PROJECT RELEVANCE', $custom);
   }
 

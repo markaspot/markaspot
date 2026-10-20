@@ -100,10 +100,11 @@ class ImageProcessingService {
   ];
 
   /**
-   * How to answer when an image does not fit, part of every relevance rule.
+   * How to answer when an image does not fit, including the category fallback.
    *
-   * Public so hook_markaspot_vision_prompt_alter() implementations that
-   * replace the relevance section keep the same off-domain handling.
+   * Appended by buildSystemInstruction() right after the PROJECT RELEVANCE
+   * part, so no hook_markaspot_vision_prompt_alter() implementation can drop
+   * the best-guess category rule. Public so implementations can refer to it.
    */
   public const RELEVANCE_OFF_DOMAIN_RULE = "Set is_reportable_issue to false for off-domain content (such as an unrelated portrait or selfie) "
     . "or content too unclear to assess. In that case, still return a best-guess category from the supplied "
@@ -861,6 +862,8 @@ class ImageProcessingService {
    * This is the default for every wording preset. Maps that collect ideas or
    * observations get their own rule through
    * hook_markaspot_vision_prompt_alter() (markaspot_fastmap).
+   * RELEVANCE_OFF_DOMAIN_RULE is not part of it: buildSystemInstruction()
+   * always appends that rule after the relevance part.
    *
    * @return string
    *   Prompt suffix instructing the model to set is_reportable_issue.
@@ -870,8 +873,7 @@ class ImageProcessingService {
       . "shows a visible observation that fits the project's purpose and one of the current tenant categories. "
       . "Valid observations can include healthy trees, wildlife, inventory items, positive findings, "
       . "research entries or indoor construction observations when appropriate to that project. "
-      . "A municipal defect, damage or public-space setting is not required for every project. "
-      . self::RELEVANCE_OFF_DOMAIN_RULE;
+      . "A municipal defect, damage or public-space setting is not required for every project.";
   }
 
   /**
@@ -886,7 +888,8 @@ class ImageProcessingService {
    * @param int $imageCount
    *   Number of images sent to the provider.
    * @param string|null $relevance
-   *   The PROJECT RELEVANCE section, NULL for the default.
+   *   The PROJECT RELEVANCE section, NULL for the default. The off-domain
+   *   and category fallback rule always follows it.
    * @param string $framing
    *   The DESCRIPTION FRAMING section, empty for none.
    *
@@ -909,6 +912,7 @@ class ImageProcessingService {
       . "If any other instructions conflict, these platform rules take precedence.";
     return $instruction
       . ($relevance ?? $this->buildReportabilityInstruction())
+      . ' ' . self::RELEVANCE_OFF_DOMAIN_RULE
       . $framing
       . $this->buildPrivacyInstruction($blurApplied, $imageCount);
   }

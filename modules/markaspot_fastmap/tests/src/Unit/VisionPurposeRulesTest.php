@@ -100,7 +100,9 @@ final class VisionPurposeRulesTest extends UnitTestCase {
     $relevance = $this->apply($preset)['relevance'];
     $this->assertStringStartsWith("\n\nPROJECT RELEVANCE: This workspace collects {$plural}, not defects.", $relevance);
     $this->assertStringContainsString('only when the image shows a real subject that fits the purpose in the project context and at least one of the current tenant categories', $relevance);
-    $this->assertStringContainsString(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE, $relevance);
+    // The vision service appends the off-domain and category fallback rule.
+    $this->assertStringNotContainsString(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE, $relevance);
+    $this->assertStringEndsWith('The category you must return is never a reason to set is_reportable_issue to true.', $relevance);
     $this->assertStringContainsString('anything the project context excludes; exclusions take precedence', $relevance);
     $this->assertStringContainsString('The category you must return is never a reason to set is_reportable_issue to true.', $relevance);
     // The 11.9.222 examples were climate and neighbourhood specific.

@@ -30,7 +30,9 @@ declare(strict_types=1);
  *     jurisdiction, else the global markaspot_vision.settings:system_prompt.
  *     Embedded as a JSON string, so it stays data.
  *   - relevance: the PROJECT RELEVANCE section of the system instruction,
- *     which tells the model when to set is_reportable_issue.
+ *     which tells the model when to set is_reportable_issue. The fixed
+ *     ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE (off-domain answers
+ *     and the best-guess category for false results) always follows it.
  *   - framing: the DESCRIPTION FRAMING section after it, empty by default.
  *   - user_prefix: the first sentence of the user prompt, which asks for one
  *     analysis of all images.

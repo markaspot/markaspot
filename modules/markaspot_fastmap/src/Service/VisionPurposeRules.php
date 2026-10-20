@@ -6,7 +6,6 @@ namespace Drupal\markaspot_fastmap\Service;
 
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
-use Drupal\markaspot_vision\Service\ImageProcessingService;
 
 /**
  * Judges photos on maps that collect ideas, observations or contributions.
@@ -116,6 +115,9 @@ final class VisionPurposeRules {
 
   /**
    * Builds the relevance section from the purpose, not from examples.
+   *
+   * The vision service appends its RELEVANCE_OFF_DOMAIN_RULE (best-guess
+   * category for false results) after this section.
    */
   private function relevance(string $preset, string $plural): string {
     $lead = "\n\nPROJECT RELEVANCE: This workspace collects {$plural}, not defects. Set is_reportable_issue to true "
@@ -124,11 +126,9 @@ final class VisionPurposeRules {
     return match ($preset) {
       // The idea itself does not exist yet: the photo shows its place.
       'suggestion' => $lead . " The photo usually shows the place or object an idea relates to: nothing needs to "
-        . "be damaged or wrong, the suggested change is usually not visible yet. "
-        . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE . self::STRICT_RULE,
-      'entry' => $lead . " Positive and neutral conditions count as much as problems. "
-        . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE . self::STRICT_RULE,
-      default => $lead . ' ' . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE . self::CONTRIBUTION_RULE,
+        . "be damaged or wrong, the suggested change is usually not visible yet." . self::STRICT_RULE,
+      'entry' => $lead . " Positive and neutral conditions count as much as problems." . self::STRICT_RULE,
+      default => $lead . self::CONTRIBUTION_RULE,
     };
   }
 

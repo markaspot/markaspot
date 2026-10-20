@@ -163,7 +163,8 @@ final class ProviderPayloadGoldenTest extends UnitTestCase {
     $system = $payload['messages'][0]['content'][0]['text'];
     $user = $payload['messages'][1]['content'][0]['text'];
     $this->assertStringContainsString('Project context (JSON string): "CONTEXT-MARK"', $system);
-    $this->assertStringContainsString("RELEVANCE-MARK\n\nFRAMING-MARK\n\nPRIVACY INSTRUCTION", $system);
+    // The off-domain and category fallback rule survives a full replacement.
+    $this->assertStringContainsString("RELEVANCE-MARK " . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE . "\n\nFRAMING-MARK\n\nPRIVACY INSTRUCTION", $system);
     $this->assertStringNotContainsString('PROJECT RELEVANCE', $system);
     $this->assertStringStartsWith('PREFIX-MARK USER-FRAMING-MARK Analyze the provided image(s)', $user);
     $this->assertStringNotContainsString('ignored', $user . $system);
