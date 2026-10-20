@@ -192,10 +192,27 @@ settings passing the visitor IP through.
   preferred language on every status check, so one stored choice would
   switch every visitor. The user presave guard also keeps languages and time
   zone fixed.
-- What a demo session writes stays harmless for the next visitor until the
-  reset: reports and paragraphs get no notification flag and no contact
-  fields (`field_e_mail`, names, phone), and their text fields are stored as
-  `plain_text`.
+- A demo session writes reports of its demo workspace only, whatever path
+  saves them (JSON:API, feedback, dashboard endpoints): saving a report
+  whose jurisdiction is or was another workspace, moving one out, and every
+  page are refused (`hook_entity_presave()`, after the other presave hooks
+  derived the jurisdiction), and node access denies update and delete
+  outside the demo and on pages. What it writes stays harmless for the next
+  visitor until the reset: no notification flag, no contact fields
+  (`field_e_mail`, names, phone), text fields as `plain_text`.
+- Photos of a demo session must name the demo workspace on upload
+  (`X-Markaspot-Jurisdiction`), so markaspot_vision binds them to it, and
+  `/api/vision/analyze` accepts only the demo workspace as `jurisdiction_id`:
+  analyses run on the demo budget, and the reset can remove the uploads.
+- Every field of the account is fixed for the session (the presave guard
+  compares all fields except the core timestamps), and `/api/accept-tos`,
+  citizen feedback (`/api/feedback`, `/feedback`), `/node/add`, the account
+  pages `/user/<id>`, `/user/password` and `/user/register` answer 403.
+- JSON:API rules follow `jsonapi.base_path`.
+- Known gap: media created directly through JSON:API without the upload
+  header carry no binding, so the orphan purge cannot attribute them to the
+  demo (a demo session cannot create them, but other clients can). A later
+  cleanup may sweep unreferenced, unbound media.
 - Mail to `@civicspot.invalid` is dropped in `hook_mail_alter()`, so the
   account never receives assignment, status, OTP or password mails.
 - `/api/auth/status` reports `user.is_demo_account: true` for the account, so
