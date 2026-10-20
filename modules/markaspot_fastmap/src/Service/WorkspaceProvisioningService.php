@@ -27,6 +27,7 @@ use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
 use Drupal\markaspot_group\JurisdictionTeardownContext;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\markaspot_nuxt\Plugin\Validation\Constraint\ProjectPromptConstraint;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\node\NodeInterface;
 use Drupal\language\Entity\ConfigurableLanguage;
@@ -1304,7 +1305,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $wording = is_string($wordingCandidate) && CitizenWordingResolver::isSupportedPreset($wordingCandidate)
       ? $wordingCandidate
       : NULL;
-    $aiSystemPrompt = isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
+    $aiSystemPrompt = isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt']) ? ProjectPromptConstraint::normalize($data['ai_system_prompt']) : '';
     $startPageContent = $data['start_page'] ?? NULL;
     $startPageTranslations = $data['start_page_translations'] ?? [];
 

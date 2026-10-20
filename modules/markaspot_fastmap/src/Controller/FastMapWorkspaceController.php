@@ -19,6 +19,7 @@ use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Drupal\markaspot_fastmap\Validation\CategoryTranslations;
 use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
+use Drupal\markaspot_nuxt\Plugin\Validation\Constraint\ProjectPromptConstraint;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
@@ -410,7 +411,7 @@ class FastMapWorkspaceController extends ControllerBase {
         'selected_tier' => $selectedTier,
         'client_claim' => $clientClaim,
         'ai_system_prompt' => isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt'])
-          ? mb_substr(trim($data['ai_system_prompt']), 0, 2000)
+          ? ProjectPromptConstraint::normalize($data['ai_system_prompt'])
           : '',
       ];
 

@@ -10,6 +10,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_nuxt\Plugin\Validation\Constraint\ProjectPromptConstraint;
 use PHPUnit\Framework\Attributes\Group as TestGroup;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
@@ -159,6 +160,41 @@ final class ProjectPromptConstraintKernelTest extends KernelTestBase {
 
     $group->set('field_ai_system_prompt', 'Kurzer neuer Zweck.');
     $this->assertSame([], $this->promptViolations($group));
+  }
+
+  /**
+   * Line endings count as line feeds, so a form re-submit changes nothing.
+   */
+  public function testCrlfLineEndingsCountAsLineFeeds(): void {
+    // 2000 characters with line feeds, 2050 bytes as a browser submits it.
+    $prompt = str_repeat('a', 1900) . str_repeat("\nb", 50);
+    $submitted = str_replace("\n", "\r\n", $prompt);
+    $group = $this->jurisdiction($prompt);
+    $this->assertSame([], $this->promptViolations($group));
+    $group->save();
+
+    $group = Group::load($group->id());
+    $group->set('field_ai_system_prompt', $submitted);
+    $this->assertSame([], $this->promptViolations($group), 'An untouched prompt re-submitted with CRLF is not a change.');
+
+    $this->assertSame([], $this->promptViolations($this->jurisdiction($submitted)));
+    $this->assertSame(
+      ['The image-analysis context can have at most 2000 characters (2001 given).'],
+      $this->promptViolations($this->jurisdiction($submitted . 'c')),
+    );
+  }
+
+  /**
+   * Writers that skip validation store values the constraint accepts.
+   */
+  public function testNormalizedValuesPassTheConstraint(): void {
+    $this->assertSame("Katzen\n\tGültig", ProjectPromptConstraint::normalize("  Kat\x07zen\r\n\tGül\x00tig\x7F \n"));
+    $this->assertSame('Zweck?', ProjectPromptConstraint::normalize("Zweck\xC3"));
+    $this->assertSame(2000, mb_strlen(ProjectPromptConstraint::normalize(str_repeat('ä', 2100))));
+    $this->assertSame('', ProjectPromptConstraint::normalize(" \x1B\r\n"));
+    foreach (["Purpose\x1Btext\r\nmore", str_repeat("ä\r\n", 1500), "Zweck\xC3\xA4\xC3"] as $raw) {
+      $this->assertSame([], $this->promptViolations($this->jurisdiction(ProjectPromptConstraint::normalize($raw))), bin2hex(substr($raw, 0, 12)));
+    }
   }
 
 }

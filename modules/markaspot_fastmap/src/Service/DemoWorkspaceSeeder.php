@@ -24,6 +24,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\markaspot_fastmap\Demo\DemoSeed;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
+use Drupal\markaspot_nuxt\Plugin\Validation\Constraint\ProjectPromptConstraint;
 use Drupal\node\NodeInterface;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -370,9 +371,9 @@ final class DemoWorkspaceSeeder {
     $this->setIfField($group, 'field_platform_name', $data['name']);
     // The project context the image analysis gets: what the map collects,
     // valid subjects and exclusions. Without it the model only knows the
-    // categories. Same length limit as the onboarding chat.
-    $purpose = trim((string) ($data['ai_system_prompt'] ?? ''));
-    $this->setIfField($group, 'field_ai_system_prompt', $purpose === '' ? NULL : mb_substr($purpose, 0, 2000));
+    // categories. Same bounds as the onboarding chat.
+    $purpose = ProjectPromptConstraint::normalize((string) ($data['ai_system_prompt'] ?? ''));
+    $this->setIfField($group, 'field_ai_system_prompt', $purpose === '' ? NULL : $purpose);
     $this->setIfField($group, 'field_boundary', $boundary);
     // Permanent: an expiry date would put the workspace into the trial "demo
     // state", whose GDPR gate unpublishes every new report.

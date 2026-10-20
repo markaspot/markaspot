@@ -19,11 +19,6 @@ use Symfony\Component\Validator\ConstraintValidator;
 final class ProjectPromptConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
   /**
-   * Control characters the onboarding refuses; tab, LF and CR are allowed.
-   */
-  private const CONTROL_CHARACTERS = '/[\x{0000}-\x{0008}\x{000B}\x{000C}\x{000E}-\x{001F}\x{007F}]/u';
-
-  /**
    * Constructs the validator.
    */
   public function __construct(private readonly EntityTypeManagerInterface $entityTypeManager) {}
@@ -46,7 +41,7 @@ final class ProjectPromptConstraintValidator extends ConstraintValidator impleme
     if (!is_string($prompt) || $prompt === '' || !$this->isNewOrChanged($value, $prompt)) {
       return;
     }
-    $length = mb_strlen(trim($prompt));
+    $length = mb_strlen(trim(ProjectPromptConstraint::lineFeeds($prompt)));
     if ($length > ProjectPromptConstraint::MAX_LENGTH) {
       $this->context->addViolation($constraint->tooLongMessage, [
         '@max' => ProjectPromptConstraint::MAX_LENGTH,
@@ -54,13 +49,16 @@ final class ProjectPromptConstraintValidator extends ConstraintValidator impleme
       ]);
     }
     // FALSE means invalid UTF-8, which is not plain text either.
-    if (preg_match(self::CONTROL_CHARACTERS, $prompt) !== 0) {
+    if (preg_match(ProjectPromptConstraint::CONTROL_CHARACTERS, $prompt) !== 0) {
       $this->context->addViolation($constraint->controlCharacterMessage);
     }
   }
 
   /**
    * Whether the value differs from the stored one of the same translation.
+   *
+   * A form re-submits an untouched stored prompt with CRLF line endings, so
+   * line endings are compared as line feeds.
    */
   private function isNewOrChanged(FieldItemListInterface $items, string $prompt): bool {
     $entity = $items->getEntity();
@@ -82,7 +80,7 @@ final class ProjectPromptConstraintValidator extends ConstraintValidator impleme
     if (!$stored->hasField($name) || $stored->get($name)->isEmpty()) {
       return TRUE;
     }
-    return $stored->get($name)->value !== $prompt;
+    return ProjectPromptConstraint::lineFeeds((string) $stored->get($name)->value) !== ProjectPromptConstraint::lineFeeds($prompt);
   }
 
 }
