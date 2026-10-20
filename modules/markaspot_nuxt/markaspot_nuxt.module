@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Field\FieldDefinitionInterface;
@@ -262,6 +263,19 @@ function markaspot_nuxt_entity_bundle_field_info(\Drupal\Core\Entity\EntityTypeI
     ->setTranslatable(FALSE);
 
   return $fields;
+}
+
+/**
+ * Implements hook_entity_bundle_field_info_alter().
+ *
+ * Bounds the image-analysis project context of every group bundle that has
+ * one. markaspot_nuxt and markaspot_vision both ship the field storage, so
+ * the constraint is added here by field name instead of in either config.
+ */
+function markaspot_nuxt_entity_bundle_field_info_alter(array &$fields, EntityTypeInterface $entity_type, string $bundle): void {
+  if ($entity_type->id() === 'group' && isset($fields['field_ai_system_prompt'])) {
+    $fields['field_ai_system_prompt']->addConstraint('MarkaspotProjectPrompt');
+  }
 }
 
 /**
