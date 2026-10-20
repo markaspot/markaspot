@@ -57,7 +57,7 @@ final class DemoSessionSubscriber implements EventSubscriberInterface {
       return;
     }
     if (!$this->staffAccount->isSessionExpired($this->currentUser, $request->getSession())) {
-      if (DemoStaffAccount::isDeniedPath($request->getPathInfo(), $request->getMethod())) {
+      if (DemoStaffAccount::isDeniedPath($request->getPathInfo(), $request->getMethod(), DemoStaffAccount::jsonApiBasePath())) {
         throw new AccessDeniedHttpException('Demo staff accounts cannot use this function.');
       }
       return;
@@ -81,8 +81,15 @@ final class DemoSessionSubscriber implements EventSubscriberInterface {
     }
     $request = $event->getRequest();
     $route = $request->attributes->get(RouteObjectInterface::ROUTE_OBJECT);
-    if ($route instanceof Route && DemoStaffAccount::isDeniedPath($route->getPath(), $request->getMethod())) {
+    if ($route instanceof Route && DemoStaffAccount::isDeniedPath($route->getPath(), $request->getMethod(), DemoStaffAccount::jsonApiBasePath())) {
       throw new AccessDeniedHttpException('Demo staff accounts cannot use this function.');
+    }
+    // Image analysis is paid per call: only for the demo's own uploads.
+    if ($request->attributes->get(RouteObjectInterface::ROUTE_NAME) === 'markaspot_vision.image_processing') {
+      $body = json_decode((string) $request->getContent(), TRUE);
+      if (!is_array($body) || !$this->staffAccount->isOwnWorkspace($this->currentUser, $body['jurisdiction_id'] ?? NULL)) {
+        throw new AccessDeniedHttpException('Demo staff accounts analyse images of their demo workspace only.');
+      }
     }
   }
 

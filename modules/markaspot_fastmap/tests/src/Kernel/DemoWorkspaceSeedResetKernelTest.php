@@ -807,7 +807,13 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertFalse($account->access('delete', $account));
 
     // Neither credentials nor the shared language and time zone change.
-    foreach (['mail' => 'visitor@example.com', 'preferred_langcode' => 'de', 'timezone' => 'Europe/Paris'] as $field => $value) {
+    $changes = [
+      'mail' => 'visitor@example.com',
+      'preferred_langcode' => 'de',
+      'timezone' => 'Europe/Paris',
+      'init' => 'visitor@example.com',
+    ];
+    foreach ($changes as $field => $value) {
       $changed = $this->staffAccount()->load('demo-school-routes');
       try {
         $changed->set($field, $value)->save();
@@ -1024,6 +1030,9 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
       'functions outside report work' => [
         AccessResult::allowedIfHasPermission($account, 'access dashboard kpis'),
       ],
+      'feedback and operator terms' => [
+        AccessResult::allowedIf($account->access('update', $account)),
+      ],
       'user administration' => [
         AccessResult::allowedIf($account->access('update', $account)),
         AccessResult::allowedIfHasPermission($account, 'administer users'),
@@ -1103,6 +1112,14 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
         ['GET', '/admin/people'],
         ['GET', '/api/admin/jurisdictions'],
         ['POST', '/api/auth/switch-user'],
+        ['GET', '/user/{uid}'],
+        ['POST', '/user/password'],
+        ['GET', '/node/add/page'],
+      ]],
+      'feedback and operator terms' => ['feedback and operator terms', [
+        ['POST', '/api/feedback/00000000-0000-0000-0000-000000000000'],
+        ['GET', '/feedback/00000000-0000-0000-0000-000000000000'],
+        ['POST', '/api/accept-tos'],
       ]],
     ];
   }
@@ -1122,7 +1139,6 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
       ['PATCH', '/jsonapi/node/service_request/00000000-0000-0000-0000-000000000000'],
       ['GET', '/jsonapi/group/jur'],
       ['GET', '/api/mark-a-spot-settings'],
-      ['GET', '/user/1'],
       ['POST', '/jsonapi/node/service_request'],
       ['POST', '/api/dashboard/status-notes'],
       ['PATCH', '/api/request-responsibility/1'],
@@ -1288,6 +1304,114 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertTrue((bool) $regular->get('field_notification')->value);
     $this->assertSame('someone@example.com', $regular->get('field_e_mail')->value);
     $this->assertSame('basic_html', $regular->get('body')->format);
+  }
+
+  /**
+   * A demo session writes reports of its demo workspace only.
+   */
+  public function testDemoSessionWritesOnlyItsWorkspace(): void {
+    $demoId = (int) $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id'];
+    $customer = Group::create(['type' => 'jur', 'label' => 'Customer', 'field_slug' => 'customer']);
+    $customer->save();
+    $category = $this->seededEntity('taxonomy_term', 'category', 'crossing');
+    $foreign = $this->createReport($customer, (int) $category->id());
+    $foreign->set('field_e_mail', 'citizen@example.org')->save();
+    $page = Node::create(['type' => 'page', 'title' => 'Start', 'field_jurisdiction' => $demoId]);
+    $page->save();
+
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $this->container->get('current_user')->setAccount($account);
+    $nodeStorage = $this->container->get('entity_type.manager')->getStorage('node');
+    $refused = function (callable $save, string $message): void {
+      try {
+        $save();
+        $this->fail($message);
+      }
+      catch (EntityStorageException) {
+        // Refused, by the demo guard or an earlier jurisdiction guard.
+        $this->addToAssertionCount(1);
+      }
+    };
+
+    // A foreign report (the feedback path saves any report it names) is
+    // refused before the neutralisation touches its contact data.
+    $refused(fn() => $nodeStorage->load($foreign->id())->set('title', 'Feedback')->save(), 'A foreign report was saved.');
+    $nodeStorage->resetCache([$foreign->id()]);
+    $this->assertSame('citizen@example.org', $nodeStorage->load($foreign->id())->get('field_e_mail')->value);
+
+    $refused(fn() => Node::create(['type' => 'service_request', 'title' => 'x', 'field_jurisdiction' => $customer->id()])->save(), 'A report was created in another workspace.');
+    $own = $this->seededEntity('node', 'report', 'dangerous-crossing');
+    $refused(fn() => $own->set('field_jurisdiction', [$demoId, $customer->id()])->save(), 'A report was moved into another workspace.');
+    $refused(fn() => $nodeStorage->load($page->id())->set('title', 'Defaced')->save(), 'A page was changed.');
+    $refused(fn() => Node::create(['type' => 'page', 'title' => 'x', 'field_jurisdiction' => $demoId])->save(), 'A page was created.');
+
+    $handler = $this->container->get('entity_type.manager')->getAccessControlHandler('node');
+    $handler->resetCache();
+    $this->assertFalse($nodeStorage->load($page->id())->access('update', $account));
+    $this->assertFalse($nodeStorage->load($page->id())->access('delete', $account));
+    $this->assertFalse($nodeStorage->load($foreign->id())->access('update', $account));
+    $this->assertFalse($handler->createAccess('page', $account));
+
+    // A new report in the demo workspace is fine.
+    $report = Node::create(['type' => 'service_request', 'title' => 'Visitor', 'field_jurisdiction' => $demoId]);
+    $report->save();
+    $this->assertNotNull($report->id());
+  }
+
+  /**
+   * Photos of a demo session are bound to and analysed for the demo only.
+   */
+  public function testDemoSessionUploadsAndAnalysisStayInTheDemo(): void {
+    $demoId = (int) $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id'];
+    Group::create(['type' => 'jur', 'label' => 'Customer', 'field_slug' => 'customer'])->save();
+    $this->allowlist(['demo-school-routes']);
+    $this->assertSame(200, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    $requestStack = $this->container->get('request_stack');
+
+    foreach (['customer' => FALSE, NULL => FALSE, 'demo-school-routes' => TRUE, (string) $demoId => TRUE] as $header => $allowed) {
+      $request = Request::create('/jsonapi/media/request_image', 'POST');
+      if ($header !== '') {
+        $request->headers->set(DemoStaffAccount::UPLOAD_JURISDICTION_HEADER, (string) $header);
+      }
+      $requestStack->push($request);
+      try {
+        $this->createVisitorMedia('upload-' . md5((string) $header) . '.png');
+        $this->assertTrue($allowed, sprintf('Upload for "%s" was accepted.', $header));
+      }
+      catch (EntityStorageException $e) {
+        $this->assertFalse($allowed, sprintf('Upload for "%s" was refused.', $header));
+      }
+      finally {
+        $requestStack->pop();
+      }
+    }
+
+    $subscriber = $this->container->get('markaspot_fastmap.demo_session_subscriber');
+    foreach (['customer' => FALSE, 'demo-school-routes' => TRUE, $demoId => TRUE] as $jurisdiction => $allowed) {
+      $session = $requestStack->getCurrentRequest()->getSession();
+      $body = (string) json_encode(['media_ids' => ['x'], 'jurisdiction_id' => $jurisdiction]);
+      $request = Request::create('/api/vision/analyze', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $body);
+      $request->setSession($session);
+      $request->attributes->set(RouteObjectInterface::ROUTE_OBJECT, new Route('/api/vision/analyze'));
+      $request->attributes->set(RouteObjectInterface::ROUTE_NAME, 'markaspot_vision.image_processing');
+      try {
+        $subscriber->onRoutedRequest(new RequestEvent($this->container->get('http_kernel'), $request, HttpKernelInterface::MAIN_REQUEST));
+        $this->assertTrue($allowed, sprintf('Analysis for "%s" was accepted.', $jurisdiction));
+      }
+      catch (AccessDeniedHttpException) {
+        $this->assertFalse($allowed, sprintf('Analysis for "%s" was refused.', $jurisdiction));
+      }
+    }
+  }
+
+  /**
+   * JSON:API rules follow the configured base path.
+   */
+  public function testDeniedPathsFollowJsonApiBasePath(): void {
+    $this->assertTrue(DemoStaffAccount::isDeniedPath('/api/jsonapi/user/user', 'GET', '/api/jsonapi'));
+    $this->assertTrue(DemoStaffAccount::isDeniedPath('/api/jsonapi/group/jur/1', 'PATCH', '/api/jsonapi'));
+    $this->assertFalse(DemoStaffAccount::isDeniedPath('/api/jsonapi/node/service_request', 'GET', '/api/jsonapi'));
+    $this->assertTrue(DemoStaffAccount::isDeniedPath('/jsonapi/user/user', 'GET'));
   }
 
   /**

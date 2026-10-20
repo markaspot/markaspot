@@ -66,6 +66,13 @@ final class DemoStaffAccount {
   public const SESSION_KEY = 'markaspot_fastmap_demo_session';
 
   /**
+   * Header naming the jurisdiction of an upload.
+   *
+   * MediaTenantScopeResolver::UPLOAD_HEADER of markaspot_vision.
+   */
+  public const UPLOAD_JURISDICTION_HEADER = 'X-Markaspot-Jurisdiction';
+
+  /**
    * Seconds a demo session lives at most, independent of the hourly reset.
    */
   public const MAX_SESSION_AGE = 7200;
@@ -91,7 +98,7 @@ final class DemoStaffAccount {
     '#^/api/group-members(/|$)#i' => NULL,
     // Workspace settings.
     '#^/api/tenant-settings(/|$)#i' => NULL,
-    '#^/jsonapi/(group|group_relationship)/#i' => ['POST', 'PATCH', 'DELETE'],
+    '#^%jsonapi%/(group|group_relationship)/#i' => ['POST', 'PATCH', 'DELETE'],
     '#^/api/dashboard/status-selection(/|$)#i' => ['POST', 'PATCH', 'DELETE'],
     '#^/api/dashboard/mail-texts(/|$)#i' => NULL,
     '#^/api/platform/#i' => ['POST', 'PATCH', 'PUT', 'DELETE'],
@@ -106,8 +113,14 @@ final class DemoStaffAccount {
     '#^/api/admin(/|$)#i' => NULL,
     '#^/admin(/|$)#i' => NULL,
     '#^/group/#i' => NULL,
-    '#^/user/(\d+|\{[^}]+\})/(edit|cancel)(/|$)#i' => NULL,
-    '#^/jsonapi/user/#i' => NULL,
+    '#^/user/(\d+|\{[^}]+\})(/|$)#i' => NULL,
+    '#^/user/(password|register)(/|$)#i' => NULL,
+    '#^/node/add(/|$)#i' => NULL,
+    // Citizen feedback saves any report it names; the demo has no reporter.
+    '#^(/api)?/feedback(/|$)#i' => NULL,
+    // The operator terms apply to real workspace owners only.
+    '#^/api/accept-tos$#i' => NULL,
+    '#^%jsonapi%/user/#i' => NULL,
     // The account itself: no switching, no other login from this session,
     // no handoff of the session. One visitor's language choice would apply
     // to every visitor.
@@ -127,6 +140,13 @@ final class DemoStaffAccount {
    * User ID whose next login the endpoint started, NULL otherwise.
    */
   private ?int $expectedLogin = NULL;
+
+  /**
+   * Demo workspace group ID per slug.
+   *
+   * @var array<string, int|null>
+   */
+  private array $workspaceIds = [];
 
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -256,14 +276,58 @@ final class DemoStaffAccount {
 
   /**
    * Whether a demo account is denied a request path and method.
+   *
+   * JSON:API rules follow the configured base path (jsonapi.base_path).
    */
-  public static function isDeniedPath(string $path, string $method): bool {
+  public static function isDeniedPath(string $path, string $method, string $jsonApiBasePath = '/jsonapi'): bool {
+    $jsonApiBasePath = preg_quote(rtrim($jsonApiBasePath, '/'), '#');
     foreach (self::DENIED_PATHS as $pattern => $methods) {
+      $pattern = str_replace('%jsonapi%', $jsonApiBasePath, $pattern);
       if (preg_match($pattern, $path) && ($methods === NULL || in_array(strtoupper($method), $methods, TRUE))) {
         return TRUE;
       }
     }
     return FALSE;
+  }
+
+  /**
+   * Returns the group ID of the demo workspace a demo account belongs to.
+   */
+  public function workspaceId(AccountInterface $account): ?int {
+    $slug = $this->workspaceSlug($account);
+    if ($slug === NULL) {
+      return NULL;
+    }
+    if (!array_key_exists($slug, $this->workspaceIds)) {
+      $ids = $this->entityTypeManager->getStorage('group')->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('field_slug', $slug)
+        ->range(0, 2)
+        ->execute();
+      // A slug held by two groups is ambiguous; trust neither.
+      $this->workspaceIds[$slug] = count($ids) === 1 ? (int) reset($ids) : NULL;
+    }
+    return $this->workspaceIds[$slug];
+  }
+
+  /**
+   * Whether a jurisdiction reference (ID or slug) names the demo workspace.
+   */
+  public function isOwnWorkspace(AccountInterface $account, mixed $reference): bool {
+    $id = $this->workspaceId($account);
+    if ($id === NULL || !(is_string($reference) || is_int($reference))) {
+      return FALSE;
+    }
+    $reference = trim((string) $reference);
+    return $reference === (string) $id || $reference === $this->workspaceSlug($account);
+  }
+
+  /**
+   * Returns the JSON:API base path of the site.
+   */
+  public static function jsonApiBasePath(): string {
+    $container = \Drupal::getContainer();
+    return $container->hasParameter('jsonapi.base_path') ? (string) $container->getParameter('jsonapi.base_path') : '/jsonapi';
   }
 
   /**

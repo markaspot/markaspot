@@ -498,7 +498,6 @@ function markaspot_fastmap_group_update(GroupInterface $group): void {
  * saving when the published limit is reached.
  */
 function markaspot_fastmap_node_presave(NodeInterface $node): void {
-  _markaspot_fastmap_neutralize_demo_content($node);
   if ($node->bundle() !== 'service_request' || !$node->isPublished()) {
     return;
   }
@@ -1439,9 +1438,8 @@ function markaspot_fastmap_user_access(EntityInterface $entity, string $operatio
  * Implements hook_ENTITY_TYPE_presave() for user entities.
  *
  * Backstop behind markaspot_fastmap_user_access() for code that saves users
- * without an access check: the name, mail, password, status, roles,
- * languages and time zone of a demo staff account change only for user
- * administrators and the seeder.
+ * without an access check: no field of a demo staff account changes, except
+ * for user administrators and the seeder.
  */
 function markaspot_fastmap_user_presave(UserInterface $user): void {
   $original = $user->isNew() ? NULL : $user->getOriginal();
@@ -1456,12 +1454,12 @@ function markaspot_fastmap_user_presave(UserInterface $user): void {
   if ((int) $actor->id() === 1 || $actor->hasPermission('administer users')) {
     return;
   }
-  // Language and time zone too: all visitors share the account.
-  $guarded = [
-    'name', 'mail', 'pass', 'status', 'roles',
-    'preferred_langcode', 'preferred_admin_langcode', 'langcode', 'timezone',
-  ];
-  foreach ($guarded as $field) {
+  // Every field: all visitors share the account. Only the timestamps core
+  // maintains itself may move.
+  foreach (array_keys($user->getFields()) as $field) {
+    if (in_array($field, ['changed', 'access', 'login'], TRUE)) {
+      continue;
+    }
     if (!$user->get($field)->equals($original->get($field))) {
       throw new EntityStorageException(sprintf('The %s of a demo staff account cannot be changed.', $field));
     }
@@ -1514,25 +1512,63 @@ function markaspot_fastmap_user_login(UserInterface $account): void {
 }
 
 /**
- * Implements hook_ENTITY_TYPE_presave() for paragraph entities.
+ * Implements hook_entity_presave().
+ *
+ * Runs after every hook_ENTITY_TYPE_presave(), so the demo content guard
+ * sees the jurisdiction other modules derive for a new report.
  */
-function markaspot_fastmap_paragraph_presave(FieldableEntityInterface $paragraph): void {
-  _markaspot_fastmap_neutralize_demo_content($paragraph);
+function markaspot_fastmap_entity_presave(EntityInterface $entity): void {
+  if ($entity instanceof FieldableEntityInterface && in_array($entity->getEntityTypeId(), ['node', 'paragraph'], TRUE)) {
+    _markaspot_fastmap_guard_demo_content($entity);
+  }
 }
 
 /**
- * Keeps what a demo staff session writes harmless for the next visitor.
+ * Keeps what a demo staff session writes inside its demo, and harmless.
  *
- * Every visitor shares the account, and the content stays until the next
- * reset: no notification mail to an address a visitor typed in, no contact
- * data, no markup. Text fields are stored as plain text.
+ * Every visitor shares the account, so the rules hold for whatever path
+ * saves the content (JSON:API, feedback, dashboard endpoints):
+ * - Only reports, only in the demo workspace. A report whose jurisdiction
+ *   is or was another workspace, or a page, is refused before anything
+ *   about it changes.
+ * - What stays until the next reset carries no notification mail to an
+ *   address a visitor typed in, no contact data and no markup.
  */
-function _markaspot_fastmap_neutralize_demo_content(FieldableEntityInterface $entity): void {
+function _markaspot_fastmap_guard_demo_content(FieldableEntityInterface $entity): void {
   $account = \Drupal::currentUser();
-  if ($account->isAnonymous() || !\Drupal::hasService('markaspot_fastmap.demo_staff_account')
-    || !\Drupal::service('markaspot_fastmap.demo_staff_account')->isDemoAccount($account)) {
+  if ($account->isAnonymous() || !\Drupal::hasService('markaspot_fastmap.demo_staff_account')) {
     return;
   }
+  $staffAccount = \Drupal::service('markaspot_fastmap.demo_staff_account');
+  if (!$staffAccount->isDemoAccount($account)) {
+    return;
+  }
+  $workspaceId = $staffAccount->workspaceId($account);
+
+  $report = $entity instanceof NodeInterface ? $entity : NULL;
+  if ($entity->getEntityTypeId() === 'paragraph' && method_exists($entity, 'getParentEntity')) {
+    $parent = $entity->getParentEntity();
+    // A paragraph created before its report is checked with that report.
+    $report = $parent instanceof NodeInterface ? $parent : NULL;
+    if ($parent !== NULL && !$parent instanceof NodeInterface) {
+      throw new EntityStorageException('Demo staff accounts change reports of their demo workspace only.');
+    }
+  }
+  if ($report !== NULL) {
+    $targets = array_map('intval', array_column($report->hasField('field_jurisdiction') ? $report->get('field_jurisdiction')->getValue() : [], 'target_id'));
+    $original = $report->isNew() ? NULL : ($report->getOriginal() ?? \Drupal::entityTypeManager()->getStorage('node')->loadUnchanged($report->id()));
+    $before = $original instanceof NodeInterface && $original->hasField('field_jurisdiction')
+      ? array_map('intval', array_column($original->get('field_jurisdiction')->getValue(), 'target_id'))
+      : [];
+    if ($workspaceId === NULL
+      || $report->bundle() !== 'service_request'
+      || $targets === []
+      || array_diff($targets, [$workspaceId]) !== []
+      || ($original !== NULL && array_diff($before, [$workspaceId]) !== [])) {
+      throw new EntityStorageException('Demo staff accounts change reports of their demo workspace only.');
+    }
+  }
+
   if ($entity->hasField('field_notification')) {
     $entity->set('field_notification', FALSE);
   }
@@ -1547,5 +1583,62 @@ function _markaspot_fastmap_neutralize_demo_content(FieldableEntityInterface $en
         $item->set('format', 'plain_text');
       }
     }
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_access() for node entities.
+ *
+ * The demo staff account works on reports of its demo workspace; pages and
+ * every other workspace are closed to it, whatever its group roles grant.
+ */
+function markaspot_fastmap_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResult {
+  if ($operation === 'view' || $account->isAnonymous()) {
+    return AccessResult::neutral();
+  }
+  $staffAccount = \Drupal::service('markaspot_fastmap.demo_staff_account');
+  if (!$staffAccount->isDemoAccount($account)) {
+    return AccessResult::neutral()->cachePerUser();
+  }
+  $workspaceId = $staffAccount->workspaceId($account);
+  $targets = $node->hasField('field_jurisdiction')
+    ? array_map('intval', array_column($node->get('field_jurisdiction')->getValue(), 'target_id'))
+    : [];
+  $own = $node->bundle() === 'service_request' && $workspaceId !== NULL && $targets !== [] && array_diff($targets, [$workspaceId]) === [];
+  return AccessResult::forbiddenIf(!$own || $operation === 'delete', 'Demo staff accounts change reports of their demo workspace only.')
+    ->cachePerUser()
+    ->addCacheableDependency($node);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_create_access() for node entities.
+ */
+function markaspot_fastmap_node_create_access(AccountInterface $account, array $context, ?string $entity_bundle): AccessResult {
+  if ($account->isAnonymous() || $entity_bundle === 'service_request'
+    || !\Drupal::service('markaspot_fastmap.demo_staff_account')->isDemoAccount($account)) {
+    return AccessResult::neutral()->cachePerUser();
+  }
+  return AccessResult::forbidden('Demo staff accounts create reports only.')->cachePerUser();
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for media entities.
+ *
+ * A photo uploaded in a demo session must be bound to the demo workspace
+ * (markaspot_vision binds it to the jurisdiction the upload names), so its
+ * analysis runs on the demo budget and the reset can remove it.
+ */
+function markaspot_fastmap_media_presave(EntityInterface $media): void {
+  $account = \Drupal::currentUser();
+  if (!$media->isNew() || $account->isAnonymous() || !\Drupal::hasService('markaspot_fastmap.demo_staff_account')) {
+    return;
+  }
+  $staffAccount = \Drupal::service('markaspot_fastmap.demo_staff_account');
+  if (!$staffAccount->isDemoAccount($account)) {
+    return;
+  }
+  $request = \Drupal::request();
+  if (!$staffAccount->isOwnWorkspace($account, $request->headers->get(DemoStaffAccount::UPLOAD_JURISDICTION_HEADER))) {
+    throw new EntityStorageException('Demo staff accounts upload photos for their demo workspace only.');
   }
 }
