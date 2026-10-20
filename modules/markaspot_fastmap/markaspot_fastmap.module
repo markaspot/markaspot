@@ -1099,6 +1099,16 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
 }
 
 /**
+ * Implements hook_markaspot_vision_prompt_alter().
+ *
+ * Idea, observation and contribution maps judge photos by their purpose and
+ * categories; report maps keep the vision defaults.
+ */
+function markaspot_fastmap_markaspot_vision_prompt_alter(array &$parts, array $context): void {
+  \Drupal::service('markaspot_fastmap.vision_purpose_rules')->alter($parts, $context);
+}
+
+/**
  * Implements hook_cron().
  *
  * Two hourly tasks:

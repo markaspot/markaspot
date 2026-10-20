@@ -100,6 +100,18 @@ class ImageProcessingService {
   ];
 
   /**
+   * How to answer when an image does not fit, part of every relevance rule.
+   *
+   * Public so hook_markaspot_vision_prompt_alter() implementations that
+   * replace the relevance section keep the same off-domain handling.
+   */
+  public const RELEVANCE_OFF_DOMAIN_RULE = "Set is_reportable_issue to false for off-domain content (such as an unrelated portrait or selfie) "
+    . "or content too unclear to assess. In that case, still return a best-guess category from the supplied "
+    . "list to satisfy the schema, but describe only what is visible and state uncertainty; never invent "
+    . "a defect to justify the category. The application offers manual selection for false results. "
+    . "Relevance does not override privacy or hazard assessment.";
+
+  /**
    * The HTTP client.
    *
    * @var \GuzzleHttp\ClientInterface
@@ -609,8 +621,8 @@ class ImageProcessingService {
       $preset = $this->wordingPreset($jurisdictionId);
       $parts = $this->promptParts([
         'project_context' => $system_prompt,
-        'relevance' => $this->buildReportabilityInstruction($preset),
-        'framing' => $this->buildWordingInstruction($preset),
+        'relevance' => $this->buildReportabilityInstruction(),
+        'framing' => '',
         'user_prefix' => "The following set of {$image_count} images shows a single situation or issue. "
           . "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ",
         'user_framing' => '',
@@ -846,69 +858,20 @@ class ImageProcessingService {
    * coarse, reliable yes/no so the UI can ask the citizen to choose a category
    * rather than acting on a made-up one. It never gates moderation.
    *
+   * This is the default for every wording preset. Maps that collect ideas or
+   * observations get their own rule through
+   * hook_markaspot_vision_prompt_alter() (markaspot_fastmap).
+   *
    * @return string
    *   Prompt suffix instructing the model to set is_reportable_issue.
    */
-  protected function buildReportabilityInstruction(string $preset = 'report'): string {
-    $common = "Set is_reportable_issue to false for off-domain content (such as an unrelated portrait or selfie) "
-      . "or content too unclear to assess. In that case, still return a best-guess category from the supplied "
-      . "list to satisfy the schema, but describe only what is visible and state uncertainty; never invent "
-      . "a defect to justify the category. The application offers manual selection for false results. "
-      . "Relevance does not override privacy or hazard assessment.";
-    // Non-report maps accept far more subjects, so the model is quick to call
-    // anything relevant. Spell out what never counts (evaluation showed
-    // spreadsheet screenshots and an empty tree pit on a cat map accepted).
-    $strict = " Set is_reportable_issue to false for documents, screenshots, tables, charts, text and other "
-      . "non-photographic content, for images that do not show the subject this project is about (for example "
-      . "no animal on a map about animals), and for anything the project context excludes; exclusions take "
-      . "precedence. The examples above are only illustrations: the project context decides what fits. The "
-      . "category you must return is never a reason to set is_reportable_issue to true.";
-    return match ($preset) {
-      // Idea maps: the photo shows the place, the idea does not exist yet.
-      // Contribution maps (memories, old photos, stories) keep the neutral
-      // default until they get their own rules.
-      'suggestion' => "\n\nPROJECT RELEVANCE: This workspace collects "
-        . 'ideas and suggestions'
-        . " for a place, not defects. Set is_reportable_issue to true when the image shows a place, "
-        . "a situation or an object that "
-        . 'an idea for the neighbourhood'
-        . " can relate to and that fits one of the current tenant categories, such as a square, a street, "
-        . "a courtyard, a tree pit, an empty corner or a building front. Nothing needs to be damaged or wrong: "
-        . "the suggested change is usually not visible yet. " . $common . $strict,
-      // Observation maps: a state, good or bad, not a case to fix.
-      'entry' => "\n\nPROJECT RELEVANCE: This workspace collects observations of a condition, not defects. "
-        . "Set is_reportable_issue to true when the image shows an observable condition that fits the "
-        . "project's purpose and one of the current tenant categories, for example shade or its absence, "
-        . "standing water, vegetation, a sealed surface or a measurement setting. Positive and neutral "
-        . "conditions count as much as problems. " . $common . $strict,
-      default => "\n\nPROJECT RELEVANCE: Set is_reportable_issue to true when the image "
-        . "shows a visible observation that fits the project's purpose and one of the current tenant categories. "
-        . "Valid observations can include healthy trees, wildlife, inventory items, positive findings, "
-        . "research entries or indoor construction observations when appropriate to that project. "
-        . "A municipal defect, damage or public-space setting is not required for every project. " . $common,
-    };
-  }
-
-  /**
-   * Builds the description framing for workspaces that do not collect defects.
-   *
-   * The image prompt is written for reports ("issues or problems"); on idea
-   * and observation maps that framing would produce problem texts.
-   *
-   * @return string
-   *   Prompt suffix, empty for the report preset.
-   */
-  protected function buildWordingInstruction(string $preset): string {
-    return match ($preset) {
-      'suggestion' => "\n\nDESCRIPTION FRAMING: Describe the place neutrally (what is there, "
-        . "how it looks and is used) and add one short hint at what could be suggested there. Do not describe "
-        . "the place as a problem, defect or damage unless such damage is clearly visible. Set hazard_flag to "
-        . "true only for a hazard that is actually visible.",
-      'entry' => "\n\nDESCRIPTION FRAMING: Describe the observed condition factually, as an observation, "
-        . "not as a defect to be repaired. Do not judge or speculate beyond what is visible. Set hazard_flag "
-        . "to true only for a hazard that is actually visible.",
-      default => '',
-    };
+  protected function buildReportabilityInstruction(): string {
+    return "\n\nPROJECT RELEVANCE: Set is_reportable_issue to true when the image "
+      . "shows a visible observation that fits the project's purpose and one of the current tenant categories. "
+      . "Valid observations can include healthy trees, wildlife, inventory items, positive findings, "
+      . "research entries or indoor construction observations when appropriate to that project. "
+      . "A municipal defect, damage or public-space setting is not required for every project. "
+      . self::RELEVANCE_OFF_DOMAIN_RULE;
   }
 
   /**

@@ -625,61 +625,25 @@ class ImageProcessingServiceTest extends UnitTestCase {
       . "a defect to justify the category. The application offers manual selection for false results. "
       . "Relevance does not override privacy or hazard assessment.";
     $this->assertSame($expected, $this->invokeMethod($service, 'buildReportabilityInstruction', []));
-    $this->assertSame($expected, $this->invokeMethod($service, 'buildReportabilityInstruction', ['report']));
-    $this->assertSame('', $this->invokeMethod($service, 'buildWordingInstruction', ['report']));
+    $this->assertSame(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE, substr($expected, -strlen(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE)));
   }
 
   /**
-   * Idea and observation maps get their own relevance and framing.
+   * Without an implementation the system instruction carries no framing.
+   *
+   * Rules for idea, observation and contribution maps come from
+   * hook_markaspot_vision_prompt_alter() (markaspot_fastmap).
    */
-  public function testIdeaAndObservationPresetsChangeRelevanceAndFraming(): void {
+  public function testSystemInstructionDefaultsAndParts(): void {
     $service = $this->createService();
+    $default = $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]);
+    $this->assertStringContainsString($this->invokeMethod($service, 'buildReportabilityInstruction', []) . "\n\nPRIVACY INSTRUCTION", $default);
+    $this->assertStringNotContainsString('DESCRIPTION FRAMING', $default);
+    $this->assertStringNotContainsString('screenshots', $default);
 
-    $suggestion = $this->invokeMethod($service, 'buildReportabilityInstruction', ['suggestion']);
-    $this->assertStringContainsString('ideas and suggestions', $suggestion);
-    $this->assertStringContainsString('Nothing needs to be damaged or wrong', $suggestion);
-    $this->assertStringContainsString('portrait or selfie', $suggestion);
-    $this->assertStringContainsString('best-guess category', $suggestion);
-    $this->assertStringContainsString('what could be suggested there', $this->invokeMethod($service, 'buildWordingInstruction', ['suggestion']));
-
-    $entry = $this->invokeMethod($service, 'buildReportabilityInstruction', ['entry']);
-    $this->assertStringContainsString('observable condition', $entry);
-    $this->assertStringContainsString('Positive and neutral conditions count', $entry);
-    $this->assertStringContainsString('not as a defect', $this->invokeMethod($service, 'buildWordingInstruction', ['entry']));
-
-    // Contribution maps keep the neutral default for now.
-    $this->assertSame(
-      $this->invokeMethod($service, 'buildReportabilityInstruction', ['report']),
-      $this->invokeMethod($service, 'buildReportabilityInstruction', ['contribution'])
-    );
-    $this->assertSame('', $this->invokeMethod($service, 'buildWordingInstruction', ['contribution']));
-
-    // The system instruction carries the preset's parts.
-    $arguments = [
-      'Neighbourhood ideas', 'German', FALSE, 1,
-      $this->invokeMethod($service, 'buildReportabilityInstruction', ['suggestion']),
-      $this->invokeMethod($service, 'buildWordingInstruction', ['suggestion']),
-    ];
-    $system = $this->invokeMethod($service, 'buildSystemInstruction', $arguments);
-    $this->assertStringContainsString('ideas and suggestions', $system);
-    $this->assertStringContainsString('DESCRIPTION FRAMING', $system);
-    $report = $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]);
-    $this->assertStringNotContainsString('DESCRIPTION FRAMING', $report);
-  }
-
-  /**
-   * Non-report maps refuse documents and missing subjects; reports stay as is.
-   */
-  public function testNonReportPresetsRefuseOffDomainContent(): void {
-    $service = $this->createService();
-    foreach (['suggestion', 'entry'] as $preset) {
-      $instruction = $this->invokeMethod($service, 'buildReportabilityInstruction', [$preset]);
-      $this->assertStringContainsString('documents, screenshots, tables, charts', $instruction, $preset);
-      $this->assertStringContainsString('do not show the subject this project is about', $instruction, $preset);
-      $this->assertStringContainsString('exclusions take precedence', $instruction, $preset);
-      $this->assertStringContainsString('never a reason to set is_reportable_issue to true', $instruction, $preset);
-    }
-    $this->assertStringNotContainsString('screenshots', $this->invokeMethod($service, 'buildReportabilityInstruction', ['report']));
+    $custom = $this->invokeMethod($service, 'buildSystemInstruction', ['Ideas', 'German', FALSE, 1, "\n\nRULE", "\n\nFRAME"]);
+    $this->assertStringContainsString("\n\nRULE\n\nFRAME\n\nPRIVACY INSTRUCTION", $custom);
+    $this->assertStringNotContainsString('PROJECT RELEVANCE', $custom);
   }
 
   /**

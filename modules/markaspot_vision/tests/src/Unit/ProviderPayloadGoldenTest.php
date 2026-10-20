@@ -179,6 +179,20 @@ final class ProviderPayloadGoldenTest extends UnitTestCase {
   }
 
   /**
+   * Without an implementation every preset gets the report prompt.
+   */
+  public function testPresetsShareTheDefaultsWithoutImplementation(): void {
+    foreach (['suggestion', 'entry', 'contribution'] as $preset) {
+      $case = self::categoryPartCases()[$preset . '-de'][0];
+      $this->assertSame(
+        $this->captureProviderBody(['preset' => 'report'] + $case),
+        $this->captureProviderBody($case, $this->createMock(ModuleHandlerInterface::class)),
+        $preset,
+      );
+    }
+  }
+
+  /**
    * Non-report presets: category part cases.
    */
   public static function categoryPartCases(): array {
