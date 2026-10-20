@@ -10,6 +10,7 @@ services:
       - '@state'
       - '@datetime.time'
       - '@file.usage'
+      - '@?markaspot_nuxt.citizen_wording_resolver'
   markaspot_vision.original_image_store:
     class: Drupal\markaspot_vision\Service\OriginalImageStore
     arguments:

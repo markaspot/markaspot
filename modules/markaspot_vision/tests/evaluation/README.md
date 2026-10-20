@@ -2,7 +2,7 @@
 
 Prepared 2026-09-19. **Dataset specification prepared; actual model quality is untested.** No model API or image generation was invoked, no responses were scored, and no benchmark pass is claimed.
 
-`cases.json` contains six tenant contexts, five openly licensed source images, sixteen scenario specifications and six output language variants per scenario: German, English, French, Spanish, Dutch and Ukrainian. This yields 96 planned runs, not 96 completed tests. The same image deliberately appears in different contexts. In particular, a tree is relevant to a tree inventory and irrelevant to a road-defect-only service.
+`cases.json` contains eight tenant contexts, five openly licensed source images, twenty scenario specifications and six output language variants per scenario: German, English, French, Spanish, Dutch and Ukrainian. This yields 120 planned runs, not 96 completed tests. The same image deliberately appears in different contexts. In particular, a tree is relevant to a tree inventory and irrelevant to a road-defect-only service.
 
 ## Status and execution boundary
 
@@ -22,6 +22,8 @@ Prepared 2026-09-19. **Dataset specification prepared; actual model quality is u
 | Construction condition documentation | Cracked concrete and exposed reinforcement | Tree | 401 crack, 402 material |
 | Healthy tree inventory | Standing leafy tree, with health unknown | Pothole without tree evidence | 501 tree with no visible damage, 502 visible tree damage |
 | Wildlife and field research | Squirrel observation | Pothole without organism evidence | 601 wildlife, 602 vegetation |
+| Neighbourhood ideas (wording `suggestion`) | Tree or street corner as a place for an idea | Squirrel close-up | 701 greening, 702 seating and meeting |
+| Climate observations (wording `entry`) | Tree as shade observation | (none yet) | 801 shade, 802 sealed surface or water |
 
 The school-route context intentionally accepts documentation of crossings without requiring a proven hazard. The accessibility context accepts existing access features. The inventory label “healthy” means no damage visibly established, never a diagnosis of health. Construction accepts condition documentation, not only active building sites. Relevance is defined by the tenant context, not by a global assumption that every image must depict a municipal defect.
 
@@ -51,3 +53,7 @@ The proposed synthetic transformations use public-domain/CC0 images. Any later m
 ## Limits
 
 This is a small, hand-selected regression fixture set with reused images, not a representative benchmark. It cannot estimate real-world accuracy, calibration, demographic fairness or performance on citizen uploads. Images have not been visually annotated, so the proposed categories require human confirmation. No dedicated obstruction, barrier, tree-damage, material-only, night, multi-image, rotating-camera or crowded-scene fixture is present. Several categories are deliberately negative distractors. Multilingual content quality requires fluent review, especially Ukrainian. Repeated model runs and a larger consented, separately held-out dataset are needed before making quality claims.
+
+## Wording presets (added 2026-10-19)
+
+Contexts carry `wordingPreset` where the workspace is not a defect map. The service builds the relevance and description instructions from the preset (`ImageProcessingService::buildReportabilityInstruction()` and `buildWordingInstruction()`): on `suggestion` and `contribution` maps the photo shows the place an idea relates to, on `entry` maps an observed condition. These cases are specifications as well; no model was called.

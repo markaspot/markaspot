@@ -610,6 +610,56 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
+   * The report preset keeps the defect-oriented instruction unchanged.
+   */
+  public function testReportPresetInstructionIsUnchanged(): void {
+    $service = $this->createService();
+    $expected = "\n\nPROJECT RELEVANCE: Set is_reportable_issue to true when the image "
+      . "shows a visible observation that fits the project's purpose and one of the current tenant categories. "
+      . "Valid observations can include healthy trees, wildlife, inventory items, positive findings, "
+      . "research entries or indoor construction observations when appropriate to that project. "
+      . "A municipal defect, damage or public-space setting is not required for every project. "
+      . "Set is_reportable_issue to false for off-domain content (such as an unrelated portrait or selfie) "
+      . "or content too unclear to assess. In that case, still return a best-guess category from the supplied "
+      . "list to satisfy the schema, but describe only what is visible and state uncertainty; never invent "
+      . "a defect to justify the category. The application offers manual selection for false results. "
+      . "Relevance does not override privacy or hazard assessment.";
+    $this->assertSame($expected, $this->invokeMethod($service, 'buildReportabilityInstruction', []));
+    $this->assertSame($expected, $this->invokeMethod($service, 'buildReportabilityInstruction', ['report']));
+    $this->assertSame('', $this->invokeMethod($service, 'buildWordingInstruction', ['report']));
+  }
+
+  /**
+   * Idea and observation maps get their own relevance and framing.
+   */
+  public function testIdeaAndObservationPresetsChangeRelevanceAndFraming(): void {
+    $service = $this->createService();
+
+    $suggestion = $this->invokeMethod($service, 'buildReportabilityInstruction', ['suggestion']);
+    $this->assertStringContainsString('ideas and suggestions', $suggestion);
+    $this->assertStringContainsString('Nothing needs to be damaged or wrong', $suggestion);
+    $this->assertStringContainsString('portrait or selfie', $suggestion);
+    $this->assertStringContainsString('best-guess category', $suggestion);
+    $this->assertStringContainsString('what could be suggested there', $this->invokeMethod($service, 'buildWordingInstruction', ['suggestion']));
+
+    $entry = $this->invokeMethod($service, 'buildReportabilityInstruction', ['entry']);
+    $this->assertStringContainsString('observable condition', $entry);
+    $this->assertStringContainsString('Positive and neutral conditions count', $entry);
+    $this->assertStringContainsString('not as a defect', $this->invokeMethod($service, 'buildWordingInstruction', ['entry']));
+
+    $contribution = $this->invokeMethod($service, 'buildReportabilityInstruction', ['contribution']);
+    $this->assertStringContainsString('contributions for a place, not defects', $contribution);
+
+    // The system instruction carries the preset's parts.
+    $arguments = ['Neighbourhood ideas', 'German', FALSE, 1, 'suggestion'];
+    $system = $this->invokeMethod($service, 'buildSystemInstruction', $arguments);
+    $this->assertStringContainsString('ideas and suggestions', $system);
+    $this->assertStringContainsString('DESCRIPTION FRAMING', $system);
+    $report = $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]);
+    $this->assertStringNotContainsString('DESCRIPTION FRAMING', $report);
+  }
+
+  /**
    * Disabled blur preprocessing returns the original image.
    */
   public function testBlurSensitiveAreasReturnsOriginalWhenDisabled(): void {

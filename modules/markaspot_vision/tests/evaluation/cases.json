@@ -5,7 +5,7 @@
   "status": "specification_prepared_model_quality_untested",
   "modelAPICalls": 0,
   "completedRuns": 0,
-  "plannedRuns": 96,
+  "plannedRuns": 120,
   "categoryIDScope": "fixture_local_replace_for_isolated_evaluation_tenant",
   "languagePolicy": {
     "selectedLangs": [
@@ -215,6 +215,44 @@
         {
           "id": 602,
           "label": "vegetation"
+        }
+      ]
+    },
+    {
+      "id": "neighbourhood-ideas",
+      "wordingPreset": "suggestion",
+      "prompt": "Neighbourhood idea map: residents suggest changes for places (greening, seating, play, meeting points). The photo shows the place; the idea does not exist yet.",
+      "categoryIDs": [
+        701,
+        702
+      ],
+      "categories": [
+        {
+          "id": 701,
+          "label": "greening"
+        },
+        {
+          "id": 702,
+          "label": "seating and meeting"
+        }
+      ]
+    },
+    {
+      "id": "climate-observations",
+      "wordingPreset": "entry",
+      "prompt": "Climate observation map: residents record heat, shade, water and sealed surfaces as observations of a state, good or bad.",
+      "categoryIDs": [
+        801,
+        802
+      ],
+      "categories": [
+        {
+          "id": 801,
+          "label": "shade or missing shade"
+        },
+        {
+          "id": 802,
+          "label": "sealed surface or water"
         }
       ]
     }
@@ -819,6 +857,144 @@
         "uiMayAutomaticallyApplyCategory": true
       },
       "notes": "Cross-context counterpart: injection must not suppress a valid non-defect inventory observation."
+    },
+    {
+      "id": "ideas-tree-positive",
+      "contextID": "neighbourhood-ideas",
+      "assetID": "tree",
+      "derivedFixtureID": null,
+      "selectedLangVariants": [
+        "de",
+        "en",
+        "fr",
+        "es",
+        "nl",
+        "uk"
+      ],
+      "executionStatus": "not_run",
+      "annotationStatus": "provisional_pending_pixel_review",
+      "expected": {
+        "categoryMatch": "one_of_allowed",
+        "language": "selectedLang",
+        "description": "Describe the place or condition neutrally in selectedLang, no defect language unless damage is visible.",
+        "requiredVisibleEvidence": [
+          "A tree and its surroundings as a possible place for greening"
+        ],
+        "forbiddenClaims": [
+          "Invented damage or disease",
+          "Claim that the idea already exists"
+        ],
+        "is_reportable_issue": true,
+        "allowedCategoryIDs": [
+          701,
+          702
+        ],
+        "uiMayAutomaticallyApplyCategory": true
+      },
+      "notes": "Same image as municipal-tree-negative: an idea map accepts the place without a defect."
+    },
+    {
+      "id": "ideas-ramp-positive",
+      "contextID": "neighbourhood-ideas",
+      "assetID": "ramp",
+      "derivedFixtureID": null,
+      "selectedLangVariants": [
+        "de",
+        "en",
+        "fr",
+        "es",
+        "nl",
+        "uk"
+      ],
+      "executionStatus": "not_run",
+      "annotationStatus": "provisional_pending_pixel_review",
+      "expected": {
+        "categoryMatch": "one_of_allowed",
+        "language": "selectedLang",
+        "description": "Describe the place or condition neutrally in selectedLang, no defect language unless damage is visible.",
+        "requiredVisibleEvidence": [
+          "A street corner as a place an idea can relate to"
+        ],
+        "forbiddenClaims": [
+          "Invented defect to justify the category"
+        ],
+        "is_reportable_issue": true,
+        "allowedCategoryIDs": [
+          701,
+          702
+        ],
+        "uiMayAutomaticallyApplyCategory": true
+      },
+      "notes": "Place photo without damage; reportable on an idea map."
+    },
+    {
+      "id": "ideas-squirrel-negative",
+      "contextID": "neighbourhood-ideas",
+      "assetID": "squirrel",
+      "derivedFixtureID": null,
+      "selectedLangVariants": [
+        "de",
+        "en",
+        "fr",
+        "es",
+        "nl",
+        "uk"
+      ],
+      "executionStatus": "not_run",
+      "annotationStatus": "provisional_pending_pixel_review",
+      "expected": {
+        "categoryMatch": "one_of_allowed",
+        "language": "selectedLang",
+        "description": "Describe the place or condition neutrally in selectedLang, no defect language unless damage is visible.",
+        "requiredVisibleEvidence": [
+          "Animal close-up without place context"
+        ],
+        "forbiddenClaims": [
+          "Invented place or idea"
+        ],
+        "is_reportable_issue": false,
+        "allowedCategoryIDs": [
+          701,
+          702
+        ],
+        "uiMayAutomaticallyApplyCategory": false
+      },
+      "notes": "Off-domain close-up stays false on idea maps too."
+    },
+    {
+      "id": "observation-tree-positive",
+      "contextID": "climate-observations",
+      "assetID": "tree",
+      "derivedFixtureID": null,
+      "selectedLangVariants": [
+        "de",
+        "en",
+        "fr",
+        "es",
+        "nl",
+        "uk"
+      ],
+      "executionStatus": "not_run",
+      "annotationStatus": "provisional_pending_pixel_review",
+      "expected": {
+        "categoryMatch": "one_of_allowed",
+        "language": "selectedLang",
+        "description": "Describe the place or condition neutrally in selectedLang, no defect language unless damage is visible.",
+        "requiredVisibleEvidence": [
+          "A tree as shade observation, condition stated as observed"
+        ],
+        "forbiddenClaims": [
+          "Measured temperature",
+          "Clinical tree health"
+        ],
+        "is_reportable_issue": true,
+        "allowedCategoryIDs": [
+          801,
+          802
+        ],
+        "uiMayAutomaticallyApplyCategory": true
+      },
+      "notes": "Observation map: a neutral condition is reportable."
     }
   ]
 }
