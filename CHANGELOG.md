@@ -1,5 +1,46 @@
 # Changelog
 
+## [11.9.222](https://github.com/markaspot/markaspot/compare/11.9.221...11.9.222) (2026-10-19)
+
+### Features
+
+* **fastmap:** add photos to the school route demo ([a2250e6](https://github.com/markaspot/markaspot/commit/a2250e61701c6f133a92e309dbba01e51848f5e0))
+* **fastmap:** cap AI analyses of a template demo at 30 per reset window ([1c1bff9](https://github.com/markaspot/markaspot/commit/1c1bff91760705a907d01999ac3d9f36c678be6e))
+* **fastmap:** deny demo staff sessions billing, team, workspace settings and user administration ([891eaa9](https://github.com/markaspot/markaspot/commit/891eaa9eac0d02634714754fa4c4415c7c35b070))
+* **fastmap:** give each template demo a shared staff account with a one-click session ([ae48649](https://github.com/markaspot/markaspot/commit/ae48649913fe650262a389b2feae5f012015689d))
+* **fastmap:** give every demo workspace a purpose text for the image analysis ([7d8ec07](https://github.com/markaspot/markaspot/commit/7d8ec07d3844c41bfc237f401d1a04e7c88cd882))
+* **fastmap:** give seeded demo history entries plausible times of day ([1d0c291](https://github.com/markaspot/markaspot/commit/1d0c2914312525afec273266991c0012700d3013))
+* **fastmap:** give the speeding and bus stop reports of the school route demo a photo ([7c0d3ab](https://github.com/markaspot/markaspot/commit/7c0d3ab230487ac5f254a6c31dd8d5be4382f95c))
+* **fastmap:** publish the showcase request of a template demo in the settings ([3d32532](https://github.com/markaspot/markaspot/commit/3d325323a75f5716daa7e522ba8c59d17c40bc4d))
+* **fastmap:** remove abandoned photo uploads of a template demo at reset ([de1a076](https://github.com/markaspot/markaspot/commit/de1a07673c7598a107c253933b9cd5b3a1d3a482))
+* **fastmap:** ship six more template demo seeds and give every seeded report a street-level address ([5fc6213](https://github.com/markaspot/markaspot/commit/5fc62132dcdc89a6ce739583eedd7edd649bc152))
+* **fastmap:** switch between demo sessions and let a demo session use other workspaces as an anonymous visitor ([f9287cb](https://github.com/markaspot/markaspot/commit/f9287cba371851e5ddce3de017a7074682fd40c0))
+* **passwordless:** report demo staff accounts in the auth status ([49b412c](https://github.com/markaspot/markaspot/commit/49b412cfb74f68c42984731b370f7d42212c544e))
+
+### Bug Fixes
+
+* **fastmap:** address readers formally in the German and Spanish school route demo ([9bfaea2](https://github.com/markaspot/markaspot/commit/9bfaea25e7271b71e3550ca336398715efdbeed8))
+* **fastmap:** address visitors of the school route demo informally like the marketing pages ([0d2bdf9](https://github.com/markaspot/markaspot/commit/0d2bdf9d999f84ed92d7850dab66f6a66e7b3c65))
+* **fastmap:** align the demo staff tests with the showcase field and the staff permissions ([3861d5c](https://github.com/markaspot/markaspot/commit/3861d5ce6a7a3aed150ccfd29ec710a92b03e40b))
+* **fastmap:** confine demo staff sessions to reports, uploads and analyses of their demo workspace ([04ed02f](https://github.com/markaspot/markaspot/commit/04ed02f670d627741b154c5ec6740b8198de27b2))
+* **fastmap:** give the in-progress default status its own colour for new workspaces ([81a6d74](https://github.com/markaspot/markaspot/commit/81a6d742dc34e2e3b92e28b70fbc5d7977636224))
+* **fastmap:** keep demo staff sessions out of account self-service, language preferences and functions outside report work ([9dc9cb8](https://github.com/markaspot/markaspot/commit/9dc9cb891f6e4afa28894f1d863772a174192513))
+* **fastmap:** keep the session alive when switching from one demo to another ([22b19f3](https://github.com/markaspot/markaspot/commit/22b19f385e2be7e5042bed8caa9a6e74f02a50c2))
+* **fastmap:** keep what a demo staff session writes free of mail triggers, contact data and markup ([b996981](https://github.com/markaspot/markaspot/commit/b9969817e0c78ab3873bea0b360fe6afb225f919))
+* **fastmap:** match the demo staff denylist on the routed path, case-insensitive ([cc351b0](https://github.com/markaspot/markaspot/commit/cc351b0ef69c779d9bd1bb5a08d05733e813520e))
+* **fastmap:** move provisioned demo requests to their intended status without notifications ([3204a1f](https://github.com/markaspot/markaspot/commit/3204a1f15c4f438d9e91a5bba9df43c05e215900))
+* **fastmap:** name the demo staff account after its workspace without doubling the demo prefix ([79a7c07](https://github.com/markaspot/markaspot/commit/79a7c0747f7994b968bb6ffd706771c3f2414fa7))
+* **open311:** skip the flood limit only for the session of the current non-demo account ([07f0ce3](https://github.com/markaspot/markaspot/commit/07f0ce3709010c9e62e6fd362cc81f71358fd718))
+* **vision:** judge photos on idea and observation maps by the place or condition, not by a defect ([1573d5c](https://github.com/markaspot/markaspot/commit/1573d5c26aebb917a5076195b39a6b3903582c15))
+* **vision:** keep the neutral default prompt for contribution maps ([9a3eeb1](https://github.com/markaspot/markaspot/commit/9a3eeb1e4e3bd09e644f79d8dc865284a2ad562f))
+* **vision:** refuse documents, screenshots and missing subjects on idea, observation and contribution maps ([dc88d29](https://github.com/markaspot/markaspot/commit/dc88d29154a937d9dd4fb3a657c5a7ab600a5fb3))
+
+### Documentation
+
+* **fastmap:** document the demo staff login and the showcase request ([b8a2448](https://github.com/markaspot/markaspot/commit/b8a244815d22d8b4292662ba3f36d05b7bc3fe6f))
+* **fastmap:** document the demo workspace confinement and the unbound upload gap ([64e7a19](https://github.com/markaspot/markaspot/commit/64e7a19854b8b9ab2f0ba27459e975424ea43817))
+* **fastmap:** document the routed demo denylist, neutralised demo content and the public demo login endpoint ([e3d03ec](https://github.com/markaspot/markaspot/commit/e3d03ec7f13cdb875d09cc46c06c9e9dbe703e2d))
+
 ## [11.9.221](https://github.com/markaspot/markaspot/compare/11.9.220...11.9.221) (2026-10-19)
 
 ### Bug Fixes
