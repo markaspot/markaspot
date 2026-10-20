@@ -633,6 +633,16 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * The default status set gives every status its own colour.
+   */
+  public function testDefaultStatusesHaveDistinctColours(): void {
+    $statuses = (new \ReflectionClassConstant(WorkspaceProvisioningService::class, 'DEFAULT_STATUSES'))->getValue();
+    $colours = array_column($statuses, 'hex', 'mapping');
+    $this->assertSame('#2563EB', $colours['open']);
+    $this->assertCount(count($statuses), array_unique(array_column($statuses, 'hex')));
+  }
+
+  /**
    * @covers ::addGroupMembership
    */
   public function testTenantAdminProvisioningKeepsMemberBaseRole(): void {

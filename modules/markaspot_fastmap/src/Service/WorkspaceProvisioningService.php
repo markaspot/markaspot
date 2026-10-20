@@ -88,7 +88,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'uk' => 'У роботі',
         'ar' => 'قيد المعالجة',
       ],
-      'hex' => '#D97706',
+      'hex' => '#2563EB',
       'icon' => 'i-lucide-clock',
       'mapping' => 'open',
     ],
