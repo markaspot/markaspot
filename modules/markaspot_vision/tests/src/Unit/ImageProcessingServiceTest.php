@@ -624,7 +624,8 @@ class ImageProcessingServiceTest extends UnitTestCase {
       . "list to satisfy the schema, but describe only what is visible and state uncertainty; never invent "
       . "a defect to justify the category. The application offers manual selection for false results. "
       . "Relevance does not override privacy or hazard assessment.";
-    $this->assertStringContainsString($expected . "\n\nPRIVACY INSTRUCTION", $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]));
+    $system = $this->invokeMethod($service, 'buildSystemInstruction', ['Defects', 'German', FALSE, 1]);
+    $this->assertStringContainsString($expected . "\n\nPRIVACY INSTRUCTION", $system);
     // The editable part ends before the fixed off-domain rule.
     $rule = ' ' . ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE;
     $this->assertSame($rule, substr($expected, -strlen($rule)));
