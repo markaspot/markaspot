@@ -43,6 +43,7 @@ final class DemoWorkspaceReset {
     private readonly FileUsageInterface $fileUsage,
     private readonly TimeInterface $time,
     private readonly LoggerInterface $logger,
+    private readonly DemoStaffAccount $staffAccount,
   ) {}
 
   /**
@@ -153,7 +154,13 @@ final class DemoWorkspaceReset {
       $this->lock->release($lockName);
     }
 
-    $this->logger->notice('Demo workspace @slug reset: @nodes visitor nodes, @media media, @terms terms removed.', [
+    // Visitors of the shared staff account start over with the content.
+    $account = $this->staffAccount->load($slug);
+    if ($account !== NULL) {
+      $this->staffAccount->deleteSessions($account);
+    }
+
+    $this->logger->notice('Demo workspace @slug reset: @nodes visitor nodes, @media media, @terms terms removed, staff sessions ended.', [
       '@slug' => $slug,
       '@nodes' => $removed['node'],
       '@media' => $removed['media'],

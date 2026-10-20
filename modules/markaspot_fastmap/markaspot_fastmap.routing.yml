@@ -119,6 +119,22 @@ markaspot_fastmap.demo_content_remove:
     _auth: ['cookie']
     no_cache: 'TRUE'
 
+markaspot_fastmap.demo_session:
+  path: '/api/fastmap/demo-session'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\DemoSessionController::start'
+    _title: 'Start a demo staff session'
+  methods: [POST]
+  requirements:
+    # Anonymous visitors log in here. The controller only accepts allowlisted
+    # demo workspaces and never replaces another account's session.
+    _access: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+    _format: 'json'
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
+
 markaspot_fastmap.accept_tos:
   path: '/api/accept-tos'
   defaults:

@@ -74,6 +74,7 @@ services:
       - '@datetime.time'
       - '@account_switcher'
       - '@logger.channel.markaspot_fastmap'
+      - '@markaspot_fastmap.demo_staff_account'
       - '@?markaspot_fastmap.legal_notice_generator'
 
   markaspot_fastmap.demo_workspace_reset:
@@ -87,3 +88,21 @@ services:
       - '@file.usage'
       - '@datetime.time'
       - '@logger.channel.markaspot_fastmap'
+      - '@markaspot_fastmap.demo_staff_account'
+
+  markaspot_fastmap.demo_staff_account:
+    class: Drupal\markaspot_fastmap\Service\DemoStaffAccount
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@Drupal\Core\Session\UserSessionRepositoryInterface'
+      - '@datetime.time'
+
+  markaspot_fastmap.demo_session_subscriber:
+    class: Drupal\markaspot_fastmap\EventSubscriber\DemoSessionSubscriber
+    arguments:
+      - '@current_user'
+      - '@markaspot_fastmap.demo_staff_account'
+      - '@logger.channel.markaspot_fastmap'
+    tags:
+      - { name: event_subscriber }

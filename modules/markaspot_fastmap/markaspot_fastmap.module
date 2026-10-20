@@ -11,12 +11,15 @@ use Drupal\Component\Serialization\Yaml;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
+use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
@@ -1388,4 +1391,114 @@ function _markaspot_fastmap_jurisdiction_group_type(): string {
 function _markaspot_fastmap_is_jurisdiction_group(mixed $group): bool {
   return $group instanceof GroupInterface
     && $group->bundle() === _markaspot_fastmap_jurisdiction_group_type();
+}
+
+/**
+ * Implements hook_mail_alter().
+ *
+ * Demo staff accounts share the undeliverable civicspot.invalid domain. Mail
+ * to them (assignment, status, OTP, password reset) is dropped here, so no
+ * notification path needs its own exception.
+ */
+function markaspot_fastmap_mail_alter(array &$message): void {
+  $recipients = array_filter(array_map('trim', explode(',', (string) ($message['to'] ?? ''))));
+  $kept = array_filter($recipients, static fn(string $address): bool => !DemoStaffAccount::isDemoMail($address));
+  if (count($kept) === count($recipients)) {
+    return;
+  }
+  if ($kept === []) {
+    $message['send'] = FALSE;
+    return;
+  }
+  $message['to'] = implode(', ', $kept);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_access() for user entities.
+ *
+ * Visitors share a demo staff account, so none of them may change or delete
+ * it. Only user administrators can.
+ */
+function markaspot_fastmap_user_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  if (!in_array($operation, ['update', 'delete'], TRUE) || !$entity instanceof UserInterface) {
+    return AccessResult::neutral();
+  }
+  if (!\Drupal::service('markaspot_fastmap.demo_staff_account')->isDemoAccount($entity)) {
+    return AccessResult::neutral()->addCacheableDependency($entity);
+  }
+  return AccessResult::forbiddenIf(!$account->hasPermission('administer users'), 'Demo staff accounts cannot be changed.')
+    ->cachePerPermissions()
+    ->addCacheableDependency($entity);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for user entities.
+ *
+ * Backstop behind markaspot_fastmap_user_access() for code that saves users
+ * without an access check: the name, mail, password, status and roles of a
+ * demo staff account change only for user administrators and the seeder.
+ */
+function markaspot_fastmap_user_presave(UserInterface $user): void {
+  $original = $user->isNew() ? NULL : $user->getOriginal();
+  if (!$original instanceof UserInterface) {
+    return;
+  }
+  if (!\Drupal::service('markaspot_fastmap.demo_staff_account')->isDemoAccount($original)) {
+    return;
+  }
+  $actor = \Drupal::currentUser();
+  // The seeder runs as uid 1.
+  if ((int) $actor->id() === 1 || $actor->hasPermission('administer users')) {
+    return;
+  }
+  foreach (['name', 'mail', 'pass', 'status', 'roles'] as $field) {
+    if (!$user->get($field)->equals($original->get($field))) {
+      throw new EntityStorageException(sprintf('The %s of a demo staff account cannot be changed.', $field));
+    }
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for group_relationship entities.
+ *
+ * A demo staff account belongs to its demo workspace only: invitations,
+ * team dialogs and imports cannot add it anywhere else.
+ */
+function markaspot_fastmap_group_relationship_presave(GroupRelationshipInterface $relationship): void {
+  if ($relationship->getPluginId() !== 'group_membership') {
+    return;
+  }
+  $member = $relationship->getEntity();
+  if (!$member instanceof UserInterface) {
+    return;
+  }
+  $slug = \Drupal::service('markaspot_fastmap.demo_staff_account')->workspaceSlug($member);
+  if ($slug === NULL) {
+    return;
+  }
+  $group = $relationship->getGroup();
+  $groupSlug = _markaspot_fastmap_is_jurisdiction_group($group) && $group->hasField('field_slug')
+    ? $group->get('field_slug')->value
+    : NULL;
+  if ($groupSlug !== $slug) {
+    throw new EntityStorageException(sprintf('Demo staff account "%s" can only be a member of its demo workspace.', $member->getAccountName()));
+  }
+}
+
+/**
+ * Implements hook_user_login().
+ *
+ * A demo staff session starts only through POST /api/fastmap/demo-session.
+ * Every other login of a demo account (password, OTP, one-time link, user
+ * switching, session handoff) is ended right away.
+ */
+function markaspot_fastmap_user_login(UserInterface $account): void {
+  $staffAccount = \Drupal::service('markaspot_fastmap.demo_staff_account');
+  if (!$staffAccount->isDemoAccount($account) || $staffAccount->isExpectedLogin($account)) {
+    return;
+  }
+  \Drupal::logger('markaspot_fastmap')->warning('Login of demo staff account @name outside the demo endpoint ended.', [
+    '@name' => $account->getAccountName(),
+  ]);
+  user_logout();
 }

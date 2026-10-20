@@ -6,6 +6,8 @@ namespace Drupal\Tests\markaspot_fastmap\Kernel;
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -16,8 +18,11 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
+use Drupal\markaspot_fastmap\Controller\DemoSessionController;
 use Drupal\markaspot_fastmap\Demo\DemoSeed;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
+use Drupal\markaspot_fastmap\EventSubscriber\DemoSessionSubscriber;
+use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Drupal\markaspot_fastmap\Service\DemoWorkspaceReset;
 use Drupal\markaspot_fastmap\Service\DemoWorkspaceSeeder;
 use Drupal\media\Entity\Media;
@@ -33,12 +38,19 @@ use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group as TestGroup;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
  * Tests seeding and resetting template demo workspaces.
  */
 #[CoversClass(DemoWorkspaceSeeder::class)]
 #[CoversClass(DemoWorkspaceReset::class)]
+#[CoversClass(DemoStaffAccount::class)]
+#[CoversClass(DemoSessionController::class)]
+#[CoversClass(DemoSessionSubscriber::class)]
 #[TestGroup('markaspot_fastmap')]
 #[RunTestsInSeparateProcesses]
 final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
@@ -124,7 +136,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
     GroupType::create(['id' => 'org', 'label' => 'Organisation'])->save();
-    foreach (['jur-member', 'jur-org_member'] as $roleId) {
+    foreach (['jur-member', 'jur-org_member', 'jur-moderator'] as $roleId) {
       GroupRole::create(['id' => $roleId, 'label' => $roleId, 'group_type' => 'jur', 'scope' => 'individual'])->save();
     }
     NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
@@ -469,6 +481,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertSame('safe-routes', $settings['demo']['template']);
     $this->assertCount(7, $settings['demo']['translations']);
     $this->assertContains('config:markaspot_fastmap.settings', $metadata->getCacheTags());
+
   }
 
   /**
@@ -610,6 +623,315 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $second = $this->createReport($group, (int) $crossing->id());
     $this->reset()->runIfDue();
     $this->assertNotNull(Node::load($second->id()));
+  }
+
+  /**
+   * The seed creates one shared staff account, idempotently.
+   */
+  public function testSeedCreatesDemoStaffAccount(): void {
+    $seed = DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml');
+    $groupId = $this->seeder()->seed($seed)['group_id'];
+    $first = $this->staffAccount()->load('demo-school-routes');
+    $this->assertInstanceOf(User::class, $first);
+    $hash = $first->getPassword();
+
+    $this->seeder()->seed($seed);
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $this->assertSame($first->id(), $account->id(), 'A second run reuses the account.');
+    $this->assertCount(1, User::loadMultiple(\Drupal::entityQuery('user')->accessCheck(FALSE)->condition('name', 'demo-demo-school-routes')->execute()));
+
+    $this->assertSame('demo-demo-school-routes', $account->getAccountName());
+    $this->assertSame('demo+demo-school-routes@civicspot.invalid', $account->getEmail());
+    $this->assertTrue($account->isActive());
+    // The role set is part of the security contract: changing it must be a
+    // deliberate edit of this test as well.
+    $this->assertSame([], DemoStaffAccount::GLOBAL_ROLES);
+    $this->assertSame(['member', 'moderator'], DemoStaffAccount::MEMBERSHIP_ROLES);
+    $this->assertSame(['authenticated'], $account->getRoles(), 'No global roles.');
+    $this->assertNotSame($hash, $account->getPassword(), 'The random password rotates on every run.');
+    $this->assertSame($this->staffAccount()->uuid('demo-school-routes'), $account->uuid());
+    $this->assertTrue($this->staffAccount()->isDemoAccount($account));
+    $this->assertSame('demo-school-routes', $this->staffAccount()->workspaceSlug($account));
+
+    $memberships = $this->container->get('entity_type.manager')->getStorage('group_relationship')
+      ->loadByProperties(['plugin_id' => 'group_membership', 'entity_id' => $account->id()]);
+    $this->assertCount(1, $memberships, 'Member of the demo workspace only.');
+    $membership = reset($memberships);
+    $this->assertSame($groupId, (int) $membership->get('gid')->target_id);
+    $this->assertSame(['jur-member', 'jur-moderator'], array_column($membership->get('group_roles')->getValue(), 'target_id'));
+
+    // A look-alike account is not a demo account.
+    $impostor = User::create(['name' => 'demo-demo-other', 'mail' => 'x@example.com', 'status' => 1]);
+    $impostor->save();
+    $this->assertFalse($this->staffAccount()->isDemoAccount($impostor));
+  }
+
+  /**
+   * Without an individual moderator role, the seed skips the account.
+   */
+  public function testSeedSkipsStaffAccountWithoutModeratorRole(): void {
+    GroupRole::load('jur-moderator')->delete();
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->assertNull($this->staffAccount()->load('demo-school-routes'));
+  }
+
+  /**
+   * The endpoint answers 404 for anything but an allowlisted, seeded demo.
+   */
+  public function testDemoSessionNotFound(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+
+    // Seeded but not allowlisted.
+    $this->assertSame(404, $this->postDemoSession('demo-school-routes')->getStatusCode());
+
+    // Allowlisted, but a customer workspace without the demo block.
+    Group::create(['type' => 'jur', 'label' => 'Customer', 'field_slug' => 'demo-customer'])->save();
+    $this->allowlist(['demo-school-routes', 'demo-customer', 'demo-missing']);
+    $this->assertSame(404, $this->postDemoSession('demo-customer')->getStatusCode());
+    $this->assertSame(404, $this->postDemoSession('demo-missing')->getStatusCode());
+    $this->assertSame(404, $this->postDemoSession('../etc')->getStatusCode());
+
+    // A blocked account turns the demo login off. Only administrators (here
+    // uid 1) may block it.
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $this->staffAccount()->load('demo-school-routes')->block()->save();
+    $this->container->get('current_user')->setAccount(new AnonymousUserSession());
+    $this->assertSame(404, $this->postDemoSession('demo-school-routes')->getStatusCode());
+
+    $this->assertSame(400, $this->postDemoSession(NULL)->getStatusCode());
+    $this->assertSame(415, $this->postDemoSession('demo-school-routes', 'text/plain')->getStatusCode());
+    $this->assertTrue($this->container->get('current_user')->isAnonymous());
+  }
+
+  /**
+   * A visitor is logged in as the demo account; a real session stays.
+   */
+  public function testDemoSessionLogin(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->allowlist(['demo-school-routes']);
+    $account = $this->staffAccount()->load('demo-school-routes');
+
+    // A real session is never replaced.
+    $real = User::create(['name' => 'staff', 'mail' => 'staff@example.com', 'status' => 1]);
+    $real->save();
+    $this->container->get('current_user')->setAccount($real);
+    $this->assertSame(409, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    $this->assertSame((int) $real->id(), (int) $this->container->get('current_user')->id());
+
+    $this->container->get('current_user')->setAccount(new AnonymousUserSession());
+    $response = $this->postDemoSession('demo-school-routes');
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame(['ok' => TRUE, 'dashboard' => '/demo-school-routes/dashboard'], json_decode((string) $response->getContent(), TRUE));
+    $this->assertSame((int) $account->id(), (int) $this->container->get('current_user')->id());
+    $session = $this->container->get('request_stack')->getCurrentRequest()->getSession();
+    $this->assertFalse($this->staffAccount()->isSessionExpired($this->container->get('current_user'), $session));
+
+    // Already the demo account: no new login, no flood entry.
+    $flood = $this->container->get('flood');
+    $response = $this->postDemoSession('demo-school-routes');
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertTrue($flood->isAllowed(DemoSessionController::FLOOD_EVENT, 2, DemoSessionController::FLOOD_WINDOW));
+  }
+
+  /**
+   * New demo sessions are limited per client IP.
+   */
+  public function testDemoSessionFloodControl(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->allowlist(['demo-school-routes']);
+    for ($i = 0; $i < DemoSessionController::FLOOD_THRESHOLD; $i++) {
+      $this->container->get('flood')->register(DemoSessionController::FLOOD_EVENT, DemoSessionController::FLOOD_WINDOW);
+    }
+    $response = $this->postDemoSession('demo-school-routes');
+    $this->assertSame(429, $response->getStatusCode());
+    $this->assertSame('3600', $response->headers->get('Retry-After'));
+    $this->assertTrue($this->container->get('current_user')->isAnonymous());
+  }
+
+  /**
+   * Visitors cannot change the shared account or move it elsewhere.
+   */
+  public function testDemoAccountGuardRails(): void {
+    $groupId = $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id'];
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $this->container->get('current_user')->setAccount($account);
+
+    $this->assertFalse($account->access('update', $account));
+    $this->assertFalse($account->access('delete', $account));
+
+    // Preferences may change; credentials may not.
+    $account->set('preferred_langcode', 'de')->save();
+    try {
+      $account->setEmail('visitor@example.com')->save();
+      $this->fail('A visitor changed the demo account mail.');
+    }
+    catch (EntityStorageException $e) {
+      $this->assertStringContainsString('cannot be changed', $e->getMessage());
+    }
+
+    // No membership outside the demo workspace.
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $other = Group::create(['type' => 'jur', 'label' => 'Other', 'field_slug' => 'other']);
+    $other->save();
+    try {
+      $other->addMember($this->staffAccount()->load('demo-school-routes'));
+      $this->fail('The demo account joined another workspace.');
+    }
+    catch (EntityStorageException $e) {
+      $this->assertStringContainsString('only be a member of its demo workspace', $e->getMessage());
+    }
+    $this->assertNotFalse(Group::load($groupId)->getMember($account));
+
+    // Mail to the reserved domain is dropped.
+    $message = ['to' => 'demo+demo-school-routes@civicspot.invalid', 'send' => TRUE];
+    markaspot_fastmap_mail_alter($message);
+    $this->assertFalse($message['send']);
+    $message = ['to' => 'Demo <demo+demo-school-routes@civicspot.invalid>, staff@example.com', 'send' => TRUE];
+    markaspot_fastmap_mail_alter($message);
+    $this->assertTrue($message['send']);
+    $this->assertSame('staff@example.com', $message['to']);
+  }
+
+  /**
+   * Only the endpoint starts a demo session; old sessions end.
+   */
+  public function testDemoSessionLifetime(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->allowlist(['demo-school-routes']);
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $currentUser = $this->container->get('current_user');
+
+    // Any other login path is ended right away.
+    user_login_finalize($account);
+    $this->assertTrue($currentUser->isAnonymous());
+
+    $this->assertSame(200, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    $request = $this->container->get('request_stack')->getCurrentRequest();
+    $subscriber = $this->container->get('markaspot_fastmap.demo_session_subscriber');
+    $event = new RequestEvent($this->container->get('http_kernel'), $request, HttpKernelInterface::MAIN_REQUEST);
+    $subscriber->onRequest($event);
+    $this->assertSame((int) $account->id(), (int) $currentUser->id(), 'A fresh session stays.');
+
+    $marker = $request->getSession()->get(DemoStaffAccount::SESSION_KEY);
+    // The login ran on a later request time than the test's main request.
+    $marker['started'] -= DemoStaffAccount::MAX_SESSION_AGE + 60;
+    $request->getSession()->set(DemoStaffAccount::SESSION_KEY, $marker);
+    $subscriber->onRequest($event);
+    $this->assertTrue($currentUser->isAnonymous(), 'An expired session is logged out.');
+  }
+
+  /**
+   * The reset ends every session of the demo account.
+   */
+  public function testResetDeletesDemoSessions(): void {
+    $seed = DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml');
+    $this->seeder()->seed($seed);
+    $this->allowlist(['demo-school-routes']);
+    $account = $this->staffAccount()->load('demo-school-routes');
+
+    $database = $this->container->get('database');
+    $database->schema()->createTable('sessions', [
+      'fields' => [
+        'uid' => ['type' => 'int', 'unsigned' => TRUE, 'not null' => TRUE],
+        'sid' => ['type' => 'varchar_ascii', 'length' => 128, 'not null' => TRUE],
+        'timestamp' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      ],
+      'primary key' => ['sid'],
+    ]);
+    foreach (['a' => $account->id(), 'b' => $account->id(), 'c' => 1] as $sid => $uid) {
+      $database->insert('sessions')->fields(['sid' => $sid, 'uid' => $uid, 'timestamp' => 1])->execute();
+    }
+
+    // Leave the password alone: core also ends sessions when it changes.
+    $this->container->get('markaspot_fastmap.demo_staff_account')->deleteSessions($account);
+    $this->assertSame(['c'], $database->select('sessions', 's')->fields('s', ['sid'])->execute()->fetchCol());
+
+    $database->insert('sessions')->fields(['sid' => 'd', 'uid' => $account->id(), 'timestamp' => 1])->execute();
+    $this->reset()->resetWorkspace('demo-school-routes', $seed);
+    $this->assertSame(['c'], $database->select('sessions', 's')->fields('s', ['sid'])->execute()->fetchCol());
+  }
+
+  /**
+   * The demo account works in its own workspace and nowhere else.
+   */
+  public function testDemoAccountIsScopedToItsWorkspace(): void {
+    // Group permissions as the profile ships them for staff memberships and
+    // for outsiders of a public workspace.
+    GroupRole::load('jur-member')->grantPermissions([
+      'view group',
+      'view group_node:service_request entity',
+      'view unpublished group_node:service_request entity',
+      'update any group_node:service_request entity',
+    ])->save();
+    GroupRole::create([
+      'id' => 'jur-outsider',
+      'label' => 'Outsider',
+      'group_type' => 'jur',
+      'scope' => 'outsider',
+      'global_role' => 'authenticated',
+      'permissions' => ['view group', 'view group_node:service_request entity'],
+    ])->save();
+
+    $result = $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $own = $this->seededEntity('node', 'report', 'dangerous-crossing');
+    // Per-jurisdiction sequence: the first seeded report is the deep link
+    // target of the solution pages.
+    $this->assertSame('1-' . date('Y'), $result['reports']['dangerous-crossing']);
+
+    $this->writeSeed('demo-other');
+    $otherId = $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-other.yml'))['group_id'];
+    $foreign = $this->createReport(Group::load($otherId), (int) $this->terms('service_category', $otherId)[array_key_first($this->terms('service_category', $otherId))]->id());
+    $foreign->setUnpublished()->save();
+
+    $handler = $this->container->get('entity_type.manager')->getAccessControlHandler('node');
+    $handler->resetCache();
+    $this->assertTrue($own->access('update', $account), 'Edits reports of its demo workspace.');
+    $this->assertFalse($own->access('delete', $account));
+    $this->assertFalse($foreign->access('update', $account), 'Cannot edit reports of another workspace.');
+    $this->assertFalse($foreign->access('delete', $account));
+    $this->assertFalse($foreign->access('view', $account), 'Cannot see unpublished reports of another workspace.');
+
+    // No workspace administration, here or elsewhere.
+    $group = Group::load($result['group_id']);
+    foreach (['update', 'delete'] as $operation) {
+      $this->assertFalse($group->access($operation, $account));
+      $this->assertFalse(Group::load($otherId)->access($operation, $account));
+    }
+    $this->assertFalse($group->hasPermission('administer members', $account));
+    $this->assertFalse($account->hasPermission('administer users'));
+  }
+
+  /**
+   * Returns the demo staff account service.
+   */
+  private function staffAccount(): DemoStaffAccount {
+    return $this->container->get('markaspot_fastmap.demo_staff_account');
+  }
+
+  /**
+   * Sets the demo allowlist.
+   */
+  private function allowlist(array $slugs): void {
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', $slugs)->save();
+  }
+
+  /**
+   * Posts to the demo session endpoint on the current session.
+   */
+  private function postDemoSession(?string $slug, string $contentType = 'application/json'): JsonResponse {
+    $requestStack = $this->container->get('request_stack');
+    $session = $requestStack->getCurrentRequest()->getSession();
+    $body = $slug === NULL ? '{}' : (string) json_encode(['workspace' => $slug]);
+    $request = Request::create('/api/fastmap/demo-session', 'POST', [], [], [], ['CONTENT_TYPE' => $contentType], $body);
+    $request->setSession($session);
+    $requestStack->push($request);
+    try {
+      return DemoSessionController::create($this->container)->start($request);
+    }
+    finally {
+      $requestStack->pop();
+    }
   }
 
   /**

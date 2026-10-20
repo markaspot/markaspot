@@ -19,7 +19,9 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\group\PermissionScopeInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\markaspot_fastmap\Demo\DemoSeed;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\node\NodeInterface;
@@ -82,6 +84,7 @@ final class DemoWorkspaceSeeder {
     private readonly TimeInterface $time,
     private readonly AccountSwitcherInterface $accountSwitcher,
     private readonly LoggerInterface $logger,
+    private readonly DemoStaffAccount $staffAccount,
     private readonly ?LegalNoticeGenerator $legalNoticeGenerator = NULL,
   ) {}
 
@@ -207,6 +210,7 @@ final class DemoWorkspaceSeeder {
 
     [$group, $created] = $this->upsertWorkspace($seed);
     $groupId = (int) $group->id();
+    $this->upsertStaffAccount($seed, $group);
 
     $statusIds = [];
     foreach ($data['statuses'] as $weight => $status) {
@@ -381,6 +385,89 @@ final class DemoWorkspaceSeeder {
     $this->provisioning->addApiUserMembership($group);
 
     return [$group, $created];
+  }
+
+  /**
+   * Creates or rewrites the shared staff account of the workspace.
+   *
+   * Every run restores the account to its seeded shape: name, mail, a fresh
+   * random password nobody knows, active, no global roles, and exactly one
+   * membership, the moderator membership in this workspace. Memberships
+   * elsewhere are removed. See DemoStaffAccount.
+   */
+  private function upsertStaffAccount(DemoSeed $seed, GroupInterface $group): void {
+    $slug = $seed->data['slug'];
+    $roleIds = array_map(static fn(string $role): string => $group->bundle() . '-' . $role, DemoStaffAccount::MEMBERSHIP_ROLES);
+    $roles = $this->entityTypeManager->getStorage('group_role')->loadMultiple($roleIds);
+    foreach ($roleIds as $roleId) {
+      $role = $roles[$roleId] ?? NULL;
+      if (!$role instanceof GroupRoleInterface || $role->getScope() !== PermissionScopeInterface::INDIVIDUAL_ID) {
+        // The demo works without staff login; the endpoint answers 404.
+        $this->logger->error('Demo workspace @slug has no staff account: group role @role is missing or not an individual role.', [
+          '@slug' => $slug,
+          '@role' => $roleId,
+        ]);
+        return;
+      }
+    }
+
+    $globalRoles = DemoStaffAccount::GLOBAL_ROLES === [] ? [] : $this->entityTypeManager->getStorage('user_role')->loadMultiple(DemoStaffAccount::GLOBAL_ROLES);
+    if (count($globalRoles) !== count(DemoStaffAccount::GLOBAL_ROLES)) {
+      $this->logger->error('Demo workspace @slug has no staff account: a global role of @roles is missing.', [
+        '@slug' => $slug,
+        '@roles' => implode(', ', DemoStaffAccount::GLOBAL_ROLES),
+      ]);
+      return;
+    }
+
+    $userStorage = $this->entityTypeManager->getStorage('user');
+    $uuid = $this->staffAccount->uuid($slug);
+    $name = DemoStaffAccount::accountName($slug);
+    $mail = DemoStaffAccount::mail($slug);
+    $matches = $userStorage->loadByProperties(['uuid' => $uuid]);
+    $account = reset($matches);
+    foreach (['name' => $name, 'mail' => $mail] as $property => $value) {
+      foreach ($userStorage->loadByProperties([$property => $value]) as $other) {
+        if ($other->uuid() !== $uuid) {
+          throw new \RuntimeException(sprintf('The %s of the demo staff account "%s" belongs to another account; refusing to touch it.', $property, $name));
+        }
+      }
+    }
+    if (!$account instanceof UserInterface) {
+      $account = $userStorage->create(['uuid' => $uuid, 'name' => $name]);
+      assert($account instanceof UserInterface);
+    }
+    $account->setUsername($name);
+    $account->setEmail($mail);
+    $account->set('init', $mail);
+    $account->setPassword(bin2hex(random_bytes(32)));
+    $account->activate();
+    $account->set('roles', DemoStaffAccount::GLOBAL_ROLES);
+    $account->set('langcode', $seed->data['default_language']);
+    $account->set('preferred_langcode', $seed->data['default_language']);
+    $this->setIfField($account, 'field_all_groups_member', FALSE);
+    // Visitors are not workspace operators; the operator terms do not apply.
+    if ($account->hasField('field_tos_accepted_at') && $account->get('field_tos_accepted_at')->isEmpty()) {
+      $account->set('field_tos_accepted_at', $this->time->getRequestTime());
+    }
+    $account->save();
+
+    $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
+    $own = NULL;
+    foreach ($relationshipStorage->loadByProperties(['plugin_id' => 'group_membership', 'entity_id' => $account->id()]) as $membership) {
+      if ((int) $membership->get('gid')->target_id === (int) $group->id() && $own === NULL) {
+        $own = $membership;
+        continue;
+      }
+      $membership->delete();
+    }
+    if ($own === NULL) {
+      $group->addMember($account, ['group_roles' => $roleIds]);
+    }
+    elseif (array_column($own->get('group_roles')->getValue(), 'target_id') !== $roleIds) {
+      $own->set('group_roles', $roleIds);
+      $own->save();
+    }
   }
 
   /**
