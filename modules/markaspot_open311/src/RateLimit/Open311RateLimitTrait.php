@@ -98,13 +98,25 @@ trait Open311RateLimitTrait {
     $request = $this->requestStack->getCurrentRequest();
     if ($request && $request->hasSession()) {
       $session = $request->getSession();
-      $uid = $session->get('uid');
-      if (!empty($uid) && $uid > 0) {
+      $uid = (int) $session->get('uid');
+      // Only the account this request actually runs as counts. A request can
+      // run as anonymous while its session still names an account (a demo
+      // session degraded on a foreign workspace), and anyone can open a free
+      // demo session, so demo accounts never skip the flood limit.
+      if ($uid > 0 && $uid === (int) $this->currentUser->id() && !$this->rateLimitAccountIsDemo()) {
         return TRUE;
       }
     }
 
     return FALSE;
+  }
+
+  /**
+   * Whether the current account is a public one-click demo account.
+   */
+  protected function rateLimitAccountIsDemo(): bool {
+    return \Drupal::hasService('markaspot_fastmap.demo_staff_account')
+      && \Drupal::service('markaspot_fastmap.demo_staff_account')->isDemoAccount($this->currentUser);
   }
 
   /**

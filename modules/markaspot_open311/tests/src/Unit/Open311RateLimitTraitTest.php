@@ -13,6 +13,8 @@ use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 /**
  * Tests the configurable, create-specific Open311 flood control (#474).
@@ -36,7 +38,7 @@ class Open311RateLimitTraitTest extends UnitTestCase {
    * @return object
    *   The anonymous trait subject exposing the protected methods.
    */
-  private function makeSubject(array $config, bool $anonymous, array $roles, FloodInterface $flood): object {
+  private function makeSubject(array $config, bool $anonymous, array $roles, FloodInterface $flood, ?int $sessionUid = NULL, bool $demo = FALSE): object {
     $immutable = $this->createMock(ImmutableConfig::class);
     $immutable->method('get')->willReturnCallback(static fn ($key) => $config[$key] ?? NULL);
 
@@ -47,12 +49,22 @@ class Open311RateLimitTraitTest extends UnitTestCase {
 
     $request = Request::create('/georeport/v2/requests.json', 'POST');
     $request->server->set('REMOTE_ADDR', '203.0.113.5');
+    if ($sessionUid !== NULL) {
+      $session = new Session(new MockArraySessionStorage());
+      $session->set('uid', $sessionUid);
+      $request->setSession($session);
+    }
     $stack = new RequestStack();
     $stack->push($request);
 
-    return new class($flood, $account, $stack, $immutable, $this->createMock(LoggerInterface::class)) {
+    return new class($flood, $account, $stack, $immutable, $this->createMock(LoggerInterface::class), $demo) {
 
       use Open311RateLimitTrait;
+
+      /**
+       * Whether the current account counts as a public demo account.
+       */
+      public bool $demo = FALSE;
 
       /**
        * Constructs the trait subject from the injected contract.
@@ -63,7 +75,17 @@ class Open311RateLimitTraitTest extends UnitTestCase {
         public RequestStack $requestStack,
         public ImmutableConfig $config,
         public LoggerInterface $logger,
-      ) {}
+        bool $demo = FALSE,
+      ) {
+        $this->demo = $demo;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function rateLimitAccountIsDemo(): bool {
+        return $this->demo;
+      }
 
       /**
        * Exposes the protected threshold resolver.
@@ -169,6 +191,39 @@ class Open311RateLimitTraitTest extends UnitTestCase {
 
     $subject = $this->makeSubject([], FALSE, ['moderator'], $flood);
     $subject->check('georeport_api_create');
+  }
+
+  /**
+   * A logged-in session of the current account skips the flood limit.
+   */
+  public function testOwnSessionBypassesFlood(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->never())->method('isAllowed');
+    $subject = $this->makeSubject([], FALSE, ['authenticated'], $flood, 7);
+    $subject->check('georeport_api_read');
+  }
+
+  /**
+   * A session naming another account than the current one does not count.
+   *
+   * A demo session degraded to anonymous on a foreign workspace keeps its
+   * session uid while the request runs as anonymous.
+   */
+  public function testForeignSessionUidDoesNotBypassFlood(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->once())->method('isAllowed')->willReturn(TRUE);
+    $subject = $this->makeSubject([], TRUE, ['anonymous'], $flood, 42);
+    $subject->check('georeport_api_read');
+  }
+
+  /**
+   * A one-click demo account never skips the flood limit.
+   */
+  public function testDemoSessionDoesNotBypassFlood(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->once())->method('isAllowed')->willReturn(TRUE);
+    $subject = $this->makeSubject([], FALSE, ['authenticated'], $flood, 7, TRUE);
+    $subject->check('georeport_api_read');
   }
 
 }
