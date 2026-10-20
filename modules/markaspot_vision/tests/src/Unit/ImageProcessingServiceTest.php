@@ -647,8 +647,12 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertStringContainsString('Positive and neutral conditions count', $entry);
     $this->assertStringContainsString('not as a defect', $this->invokeMethod($service, 'buildWordingInstruction', ['entry']));
 
-    $contribution = $this->invokeMethod($service, 'buildReportabilityInstruction', ['contribution']);
-    $this->assertStringContainsString('contributions for a place, not defects', $contribution);
+    // Contribution maps keep the neutral default for now.
+    $this->assertSame(
+      $this->invokeMethod($service, 'buildReportabilityInstruction', ['report']),
+      $this->invokeMethod($service, 'buildReportabilityInstruction', ['contribution'])
+    );
+    $this->assertSame('', $this->invokeMethod($service, 'buildWordingInstruction', ['contribution']));
 
     // The system instruction carries the preset's parts.
     $arguments = ['Neighbourhood ideas', 'German', FALSE, 1, 'suggestion'];
@@ -664,7 +668,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
    */
   public function testNonReportPresetsRefuseOffDomainContent(): void {
     $service = $this->createService();
-    foreach (['suggestion', 'entry', 'contribution'] as $preset) {
+    foreach (['suggestion', 'entry'] as $preset) {
       $instruction = $this->invokeMethod($service, 'buildReportabilityInstruction', [$preset]);
       $this->assertStringContainsString('documents, screenshots, tables, charts', $instruction, $preset);
       $this->assertStringContainsString('do not show the subject this project is about', $instruction, $preset);

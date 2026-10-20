@@ -840,11 +840,13 @@ class ImageProcessingService {
       . "category you must return is never a reason to set is_reportable_issue to true.";
     return match ($preset) {
       // Idea maps: the photo shows the place, the idea does not exist yet.
-      'suggestion', 'contribution' => "\n\nPROJECT RELEVANCE: This workspace collects "
-        . ($preset === 'suggestion' ? 'ideas and suggestions' : 'contributions')
+      // Contribution maps (memories, old photos, stories) keep the neutral
+      // default until they get their own rules.
+      'suggestion' => "\n\nPROJECT RELEVANCE: This workspace collects "
+        . 'ideas and suggestions'
         . " for a place, not defects. Set is_reportable_issue to true when the image shows a place, "
         . "a situation or an object that "
-        . ($preset === 'suggestion' ? 'an idea for the neighbourhood' : 'a contribution')
+        . 'an idea for the neighbourhood'
         . " can relate to and that fits one of the current tenant categories, such as a square, a street, "
         . "a courtyard, a tree pit, an empty corner or a building front. Nothing needs to be damaged or wrong: "
         . "the suggested change is usually not visible yet. " . $common . $strict,
@@ -873,7 +875,7 @@ class ImageProcessingService {
    */
   protected function buildWordingInstruction(string $preset): string {
     return match ($preset) {
-      'suggestion', 'contribution' => "\n\nDESCRIPTION FRAMING: Describe the place neutrally (what is there, "
+      'suggestion' => "\n\nDESCRIPTION FRAMING: Describe the place neutrally (what is there, "
         . "how it looks and is used) and add one short hint at what could be suggested there. Do not describe "
         . "the place as a problem, defect or damage unless such damage is clearly visible. Set hazard_flag to "
         . "true only for a hazard that is actually visible.",
