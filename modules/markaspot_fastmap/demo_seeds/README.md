@@ -150,6 +150,12 @@ X-CSRF-Token: <token from /session/token>
 | 415 | Content-Type is not `application/json` (or `application/vnd.api+json`) |
 | 429 | more than 20 new demo sessions per client IP and hour (flood event `markaspot_fastmap.demo_session`, `Retry-After` header) |
 
+The endpoint is public by design. A direct backend request needs neither a
+cookie nor a CSRF token (see below), so the flood limit is the only bound on
+how many demo sessions a single client can open; a distributed client is
+bounded only by the per-IP count. The cost of each session is one sessions
+row and the login timestamp update of the shared account.
+
 Cross-site requests: Drupal checks the CSRF header token only for
 authenticated sessions. Anonymous visitors have no persistent session, so
 `/session/token` hands them a new token on every call that cannot be
@@ -177,10 +183,19 @@ settings passing the visitor IP through.
   JSON:API group writes, `/group/…`) and user administration (`/admin`,
   `/user/<id>/edit|cancel`, `/jsonapi/user`, `/api/admin`, user switching)
   answer 403 to a demo session (`DemoStaffAccount::isDeniedPath()`), even if
-  a later role change would let the controllers through.
+  a later role change would let the controllers through. The list is matched
+  case-insensitively against the request path and, after routing, against
+  the path of the matched route, so a language prefix (`/de/jsonapi/user/…`)
+  or another spelling of the URL gets the same 403.
 - The account has no preferred language, and `PATCH /api/auth/preferences`
-  is denied: the dashboard follows a user's preferred language on every
-  status check, so one stored choice would switch every visitor.
+  is denied (route list and controller): the dashboard follows a user's
+  preferred language on every status check, so one stored choice would
+  switch every visitor. The user presave guard also keeps languages and time
+  zone fixed.
+- What a demo session writes stays harmless for the next visitor until the
+  reset: reports and paragraphs get no notification flag and no contact
+  fields (`field_e_mail`, names, phone), and their text fields are stored as
+  `plain_text`.
 - Mail to `@civicspot.invalid` is dropped in `hook_mail_alter()`, so the
   account never receives assignment, status, OTP or password mails.
 - `/api/auth/status` reports `user.is_demo_account: true` for the account, so
