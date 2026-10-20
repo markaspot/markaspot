@@ -2,7 +2,7 @@
 
 Prepared 2026-09-19. **Dataset specification prepared; actual model quality is untested.** No model API or image generation was invoked, no responses were scored, and no benchmark pass is claimed.
 
-`cases.json` contains eight tenant contexts, five openly licensed source images, twenty scenario specifications and six output language variants per scenario: German, English, French, Spanish, Dutch and Ukrainian. This yields 120 planned runs, not 96 completed tests. The same image deliberately appears in different contexts. In particular, a tree is relevant to a tree inventory and irrelevant to a road-defect-only service.
+`cases.json` contains eight tenant contexts, five openly licensed source images, twenty scenario specifications and six output language variants per scenario: German, English, French, Spanish, Dutch and Ukrainian. This yields 120 planned runs, not 96 completed tests. The purpose cases added on 2026-10-19 (see below) bring six contexts, six bundled demo seed photos, one specified screenshot fixture and thirteen scenarios in German and English, 146 planned runs in total. The same image deliberately appears in different contexts. In particular, a tree is relevant to a tree inventory and irrelevant to a road-defect-only service.
 
 ## Status and execution boundary
 
@@ -56,4 +56,27 @@ This is a small, hand-selected regression fixture set with reused images, not a 
 
 ## Wording presets (added 2026-10-19)
 
-Contexts carry `wordingPreset` where the workspace is not a defect map. The service builds the relevance and description instructions from the preset (`ImageProcessingService::buildReportabilityInstruction()` and `buildWordingInstruction()`): on `suggestion` and `contribution` maps the photo shows the place an idea relates to, on `entry` maps an observed condition. These cases are specifications as well; no model was called.
+Contexts carry `wordingPreset` where the workspace is not a defect map. `markaspot_vision` builds the same prompt for every preset; on FastMap installs `markaspot_fastmap` adapts it through `hook_markaspot_vision_prompt_alter()` (`VisionPurposeRules`):
+
+- Relevance comes from the map's purpose and categories: `is_reportable_issue` is true only for a real subject that fits the purpose and at least one category. Exclusions in the purpose take precedence, and the mandatory category is never a reason for true.
+- `suggestion` and `entry` maps refuse documents, screenshots, tables, charts and text. `contribution` maps refuse them unless the purpose explicitly collects such material, for example scanned historic photos.
+- The description framing follows the preset. A hazard is set only when it is acute and visible.
+- A workspace without `field_ai_system_prompt` gets one sentence of purpose built from its name, the preset noun and its category names.
+
+Report maps and installs without FastMap keep the request byte for byte; `tests/src/Unit/ProviderPayloadGoldenTest.php` pins it against fixtures recorded from the 11.9.222 code. These cases are specifications as well; no model was called.
+
+## Purpose cases (added 2026-10-19)
+
+Thirteen cases, each in German and English, cover every non-report preset with a document or screenshot, an off-topic photo and a subject the purpose excludes, plus positives for freely described purposes:
+
+| Preset | Context | Negative cases | Positive cases |
+| --- | --- | --- | --- |
+| `suggestion` | `neighbourhood-ideas`, `neighbourhood-greening` | spreadsheet screenshot; pothole excluded by the purpose; squirrel close-up (existing) | tree pit as a place for planting |
+| `entry` | `climate-observations`, `courtyard-cats`, `courtyard-cats-no-purpose`, `historic-facades`, `benches-fountains` | spreadsheet screenshot; empty tree pit on the cat map, with and without a written purpose; pothole on the facade map | street of historic facades; older facade with entrance steps; broken bench |
+| `contribution` | `street-art` | spreadsheet screenshot; tree pit; plain tags excluded by the purpose | none yet: no mural, stencil or scanned historic photo in the asset set |
+
+The negatives reproduce real-model failures from October 2026: the spreadsheet screenshot accepted on an `entry` map 4 of 4 times with an invented "sealed surface", the empty tree pit accepted on a cat map ("no cat visible, but the area is suitable"), the pothole accepted on a facade map that excluded road damage, and a screenshot accepted as a "street sign" on a `contribution` map. Release criterion: the spreadsheet screenshot and the empty tree pit on the cat map come out `false`, and the matching photos stay `true`.
+
+The `seed-*` assets are the profile's own demo seed photos (`modules/markaspot_fastmap/demo_seeds/images/`, AI-generated fictional scenes, see that README), bundled with SHA-256 and inspected on 2026-10-19: no faces, no readable plates. The `spreadsheet-screenshot` fixture is specified, not rendered; create it from synthetic data as described in `derivedFixtures` before a run. `courtyard-cats-no-purpose` has an empty prompt on purpose: with FastMap the service supplies the fallback sentence for the workspace name "Courtyard cats".
+
+**Not run.** These cases need a real-model run against an isolated evaluation tenant before release; record model, prompt version, image hash and output per case as described above.
