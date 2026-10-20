@@ -13,7 +13,7 @@
 version: 1
 slug: demo-school-routes
 template: safe-routes
-seed_version: 4
+seed_version: 5
 default_language: en
 languages: [en, es, fr, de]
 wording: report
@@ -281,6 +281,13 @@ reports:
     category: speed
     lat: 50.8284
     lng: 6.9055
+    photo:
+      file: images/school-routes-speeding.jpg
+      alt:
+        en: 'A car drives past a 30 km/h sign and a children warning sign on a residential street, blurred by its speed.'
+        es: 'Un coche pasa junto a una señal de 30 km/h y una señal de niños en una calle residencial, borroso por la velocidad.'
+        fr: 'Une voiture passe devant un panneau 30 km/h et un panneau enfants dans une rue résidentielle, floue à cause de sa vitesse.'
+        de: 'Ein Auto fährt in einer Wohnstraße an einem Tempo-30-Schild und einem Kinder-Warnschild vorbei, verwischt von seiner Geschwindigkeit.'
     title:
       en: 'Cars drive too fast in front of the school'
       es: 'Los coches van demasiado rápido delante del colegio'
@@ -336,6 +343,13 @@ reports:
     lat: 50.8299
     lng: 6.9068
     time: '13:25'
+    photo:
+      file: images/school-routes-bus-stop.jpg
+      alt:
+        en: 'A child with a school backpack, seen from behind, steps off the kerb behind a bus waiting at a bus stop.'
+        es: 'Un niño con mochila escolar, visto de espaldas, baja de la acera detrás de un autobús parado en la parada.'
+        fr: 'Un enfant avec un cartable, vu de dos, descend du trottoir derrière un bus arrêté à l''arrêt.'
+        de: 'Ein Kind mit Schulranzen, von hinten gesehen, tritt hinter einem an der Haltestelle wartenden Bus vom Bordstein.'
     title:
       en: 'Children run across behind the bus'
       es: 'Los niños cruzan corriendo por detrás del autobús'

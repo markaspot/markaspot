@@ -284,7 +284,9 @@ promise functions the product does not have.
 ## Photos
 
 `images/school-routes-*.jpg` are AI-generated with OpenAI image generation via
-Codex on 2026-10-18 for Civic Patches. They show fictional scenes: no
+Codex on 2026-10-18 for Civic Patches (`school-routes-speeding.jpg` and
+`school-routes-bus-stop.jpg` added the same day, seed version 5, so every
+report of the demo has a photo). They show fictional scenes: no
 recognisable faces, no readable number plates, metadata stripped, 1280 px
 JPEG. Photos for new seeds follow the same rules. Alt texts describe the
 scene, not the category of the report.

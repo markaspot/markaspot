@@ -339,7 +339,14 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertTrue($hedgePhoto->isPublished());
     $this->assertStringStartsWith('A tall, dense hedge', $hedgePhoto->get('field_media_image')->alt);
     $this->assertSame(960, (int) $hedgePhoto->get('field_media_image')->height);
-    $this->assertTrue($this->seededEntity('node', 'report', 'speeding')->get('field_request_media')->isEmpty());
+    // Every report of the reference seed carries a published photo.
+    foreach ($this->reports((int) $group->id()) as $report) {
+      $photo = $report->get('field_request_media')->entity;
+      $this->assertInstanceOf(Media::class, $photo, sprintf('Report %s has a photo.', $report->get('request_id')->value));
+      $this->assertTrue($photo->isPublished());
+      $this->assertNotSame('', (string) $photo->get('field_media_image')->alt);
+    }
+    $this->assertStringStartsWith('A car drives past a 30 km/h sign', $this->seededEntity('node', 'report', 'speeding')->get('field_request_media')->entity->get('field_media_image')->alt);
 
     // The start page is translated and carries the mini task.
     $page = $this->seededEntity('node', 'page', 'start');

@@ -52,7 +52,7 @@ final class DemoSeedTest extends UnitTestCase {
     $this->assertArrayHasKey('de', $seed->data['task']);
 
     $photos = array_filter(array_column($seed->data['reports'], 'photo', 'key'));
-    $this->assertCount(5, $photos);
+    $this->assertCount(count($seed->data['reports']), $photos, 'Every report of the example has a photo.');
     foreach ($photos as $photo) {
       $this->assertFileExists($photo['path']);
       $this->assertSame([1280, 960], array_slice(getimagesize($photo['path']), 0, 2));
