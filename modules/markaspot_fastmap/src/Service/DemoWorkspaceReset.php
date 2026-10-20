@@ -65,6 +65,7 @@ final class DemoWorkspaceReset {
     private readonly Connection $database,
     private readonly EntityFieldManagerInterface $entityFieldManager,
     private readonly KeyValueFactoryInterface $keyValueFactory,
+    private readonly ?TierConfigService $tierConfig = NULL,
   ) {}
 
   /**
@@ -180,6 +181,8 @@ final class DemoWorkspaceReset {
     if ($account !== NULL) {
       $this->staffAccount->deleteSessions($account);
     }
+    // A fresh AI budget (DemoWorkspace::AI_BUDGET) for the next window.
+    $removed['ai_usage'] = $this->tierConfig?->resetAIUsage((int) $group->id()) ?? 0;
 
     $this->logger->notice('Demo workspace @slug reset: @nodes visitor nodes, @media media, @terms terms removed, staff sessions ended.', [
       '@slug' => $slug,

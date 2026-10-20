@@ -186,6 +186,19 @@ settings passing the visitor IP through.
 - `/api/auth/status` reports `user.is_demo_account: true` for the account, so
   the frontend can show a demo banner and hide account settings.
 
+## AI analysis budget
+
+Photo analysis costs money per call, and every visitor of a demo shares one
+workspace. An allowlisted demo therefore gets `DemoWorkspace::AI_BUDGET`
+(30) analyses per reset window instead of its tier budget (heart: 100 per
+month), and every reset deletes the demo's `markaspot_ai_usage` records.
+With the hourly reset (`demo_reset_interval: 3600`) the cost cap is 30
+analyses per hour and demo, at most 720 per day (24 resets). Beyond it the
+vision endpoint answers its normal `429 budget_exhausted` and the frontend
+shows its usual hint; the settings API reports the demo budget in
+`jurisdiction.ai_budget`. Usage of other workspaces is never touched. Without
+a cron reset the 30 apply per calendar month.
+
 ## Recognising seeded content
 
 Seeded entities have deterministic UUIDs derived from the site UUID, the slug,

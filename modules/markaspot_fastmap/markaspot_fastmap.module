@@ -1070,8 +1070,10 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
 
     /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
     $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
-    $aiBudget = $tierConfig->getAIBudget($tier);
+    $aiBudget = $tierConfig->getEffectiveAIBudget((int) $group->id(), $tier);
     $aiUsage = $tierConfig->countAIAnalyses((int) $group->id());
+    // The demo budget depends on the allowlist.
+    $cache_metadata?->addCacheableDependency(\Drupal::config('markaspot_fastmap.settings'));
 
     $settings['jurisdiction']['ai_budget'] = [
       'limit' => $aiBudget,

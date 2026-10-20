@@ -9,6 +9,8 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -460,10 +462,67 @@ class TierConfigService {
       ])
       ->execute();
 
-    // Invalidate the cached count for this jurisdiction/month.
+    $this->invalidateUsageCount($groupId);
+  }
+
+  /**
+   * Drops the cached usage count of a jurisdiction for the current month.
+   */
+  private function invalidateUsageCount(int $groupId): void {
     $monthKey = date('Y-m', $this->time->getRequestTime());
     // phpcs:ignore DrupalPractice.Objects.GlobalDrupal.GlobalDrupal
     \Drupal::cache()->delete('markaspot_ai_usage:' . $groupId . ':' . $monthKey);
+  }
+
+  /**
+   * Returns the AI budget that applies to one workspace.
+   *
+   * The tier budget, except for allowlisted template demos, which get
+   * DemoWorkspace::AI_BUDGET per reset window.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param string $tier
+   *   The tier machine name.
+   *
+   * @return int
+   *   The number of analyses, 0 for unlimited.
+   */
+  // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
+  public function getEffectiveAIBudget(int $groupId, string $tier): int {
+    return $this->isAllowlistedDemo($groupId) ? DemoWorkspace::AI_BUDGET : $this->getAIBudget($tier);
+  }
+
+  /**
+   * Deletes the AI usage records of one workspace.
+   *
+   * Only the template demo reset calls this; it restarts the demo budget.
+   *
+   * @return int
+   *   Number of deleted records.
+   */
+  // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
+  public function resetAIUsage(int $groupId): int {
+    if (!$this->database->schema()->tableExists('markaspot_ai_usage')) {
+      return 0;
+    }
+    $deleted = (int) $this->database->delete('markaspot_ai_usage')
+      ->condition('group_id', $groupId)
+      ->execute();
+    $this->invalidateUsageCount($groupId);
+    return $deleted;
+  }
+
+  /**
+   * Whether a group is a template demo listed in demo_workspaces.
+   */
+  private function isAllowlistedDemo(int $groupId): bool {
+    $allowlist = $this->configFactory->get('markaspot_fastmap.settings')->get('demo_workspaces');
+    if (!is_array($allowlist) || $allowlist === []) {
+      return FALSE;
+    }
+    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
+    return $group instanceof GroupInterface && DemoWorkspace::deliverable($group, $allowlist) !== NULL;
   }
 
   /**
@@ -479,7 +538,7 @@ class TierConfigService {
    */
   // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public function isAIBudgetExhausted(int $groupId, string $tier): bool {
-    $budget = $this->getAIBudget($tier);
+    $budget = $this->getEffectiveAIBudget($groupId, $tier);
     if ($budget === 0) {
       return FALSE;
     }

@@ -92,6 +92,7 @@ services:
       - '@database'
       - '@entity_field.manager'
       - '@keyvalue'
+      - '@markaspot_fastmap.tier_config'
 
   markaspot_fastmap.demo_staff_account:
     class: Drupal\markaspot_fastmap\Service\DemoStaffAccount

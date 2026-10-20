@@ -1189,6 +1189,52 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   }
 
   /**
+   * A demo gets DemoWorkspace::AI_BUDGET per reset window, others their tier.
+   */
+  public function testDemoAiBudgetPerResetWindow(): void {
+    $this->installSchema('markaspot_fastmap', ['markaspot_ai_usage']);
+    $seed = DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml');
+    $demoId = (int) $this->seeder()->seed($seed)['group_id'];
+    $this->writeSeed('demo-other');
+    $unlistedDemoId = (int) $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-other.yml'))['group_id'];
+    $customer = Group::create([
+      'type' => 'jur',
+      'label' => 'Customer',
+      'field_slug' => 'customer',
+      'field_tier' => 'heart',
+    ]);
+    $customer->save();
+    $customerId = (int) $customer->id();
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['demo-school-routes'])->save();
+    $tierConfig = $this->container->get('markaspot_fastmap.tier_config');
+
+    $this->assertSame(30, DemoWorkspace::AI_BUDGET);
+    $this->assertSame(DemoWorkspace::AI_BUDGET, $tierConfig->getEffectiveAIBudget($demoId, 'heart'));
+    $this->assertSame(100, $tierConfig->getEffectiveAIBudget($customerId, 'heart'), 'A regular heart workspace keeps its tier budget.');
+    $this->assertSame(100, $tierConfig->getEffectiveAIBudget($unlistedDemoId, 'heart'), 'Only allowlisted demos get the demo budget.');
+
+    for ($i = 1; $i < DemoWorkspace::AI_BUDGET; $i++) {
+      $tierConfig->recordAIAnalysis($demoId);
+      $tierConfig->recordAIAnalysis($customerId);
+    }
+    $this->assertFalse($tierConfig->isAIBudgetExhausted($demoId, 'heart'));
+    $tierConfig->recordAIAnalysis($demoId);
+    $tierConfig->recordAIAnalysis($customerId);
+    $this->assertTrue($tierConfig->isAIBudgetExhausted($demoId, 'heart'), 'The demo is blocked at 30 analyses.');
+    $this->assertFalse($tierConfig->isAIBudgetExhausted($customerId, 'heart'), 'A regular heart workspace goes on to 100.');
+
+    $result = $this->reset()->resetWorkspace('demo-school-routes', $seed);
+    $this->assertSame(DemoWorkspace::AI_BUDGET, $result['removed']['ai_usage']);
+    $this->assertFalse($tierConfig->isAIBudgetExhausted($demoId, 'heart'), 'The reset lifts the block.');
+    $this->assertSame(0, $tierConfig->countAIAnalyses($demoId));
+    $this->assertSame(DemoWorkspace::AI_BUDGET, $tierConfig->countAIAnalyses($customerId), 'The reset never touches other workspaces.');
+
+    // The settings API reports the demo budget to the frontend.
+    $budget = $this->settingsFor(Group::load($demoId))[0]['jurisdiction']['ai_budget'];
+    $this->assertSame(['limit' => DemoWorkspace::AI_BUDGET, 'used' => 0, 'remaining' => DemoWorkspace::AI_BUDGET], $budget);
+  }
+
+  /**
    * Returns the demo staff account service.
    */
   private function staffAccount(): DemoStaffAccount {

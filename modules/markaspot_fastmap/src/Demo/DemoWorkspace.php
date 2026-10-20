@@ -34,6 +34,15 @@ final class DemoWorkspace {
   public const SLUG_PREFIX = 'demo-';
 
   /**
+   * AI analyses an allowlisted demo may run between two resets.
+   *
+   * Replaces the tier budget for template demos. Every reset deletes the
+   * demo's usage records, so with the hourly reset this caps the cost at 30
+   * analyses per hour and demo (24 resets per day).
+   */
+  public const AI_BUDGET = 30;
+
+  /**
    * Valid template demo slug: the reserved prefix plus 1 to 25 characters.
    */
   public const SLUG_PATTERN = '/^demo-[a-z0-9-]{1,25}$/D';
