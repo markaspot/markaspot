@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_vision\Unit;
 
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\Tests\markaspot_vision\Traits\ProviderPayloadCaptureTrait;
 use Drupal\Tests\UnitTestCase;
@@ -117,6 +118,64 @@ final class ProviderPayloadGoldenTest extends UnitTestCase {
     $name = $this->dataName();
     $body = $this->captureProviderBody($case);
     $this->assertMatchesFixture('report-' . $name, $body);
+  }
+
+  /**
+   * A module handler without implementations leaves the request unchanged.
+   */
+  #[DataProvider('reportCases')]
+  public function testReportPayloadUnchangedWithoutImplementation(array $case): void {
+    $name = $this->dataName();
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->expects($this->once())->method('alter')
+      ->with('markaspot_vision_prompt', $this->anything(), $this->callback(static fn (array $context): bool => isset($context['preset'], $context['categories'], $context['language'])));
+    $this->assertMatchesFixture('report-' . $name, $this->captureProviderBody($case, $moduleHandler));
+  }
+
+  /**
+   * An implementation reaches its parts, never the category part.
+   */
+  public function testAlteredPartsLeaveCategoryPartUntouched(): void {
+    $seen = NULL;
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('alter')->willReturnCallback(function (string $hook, array &$parts, array $context) use (&$seen): void {
+      $seen = $context;
+      $parts = [
+        'project_context' => 'CONTEXT-MARK',
+        'relevance' => "\n\nRELEVANCE-MARK",
+        'framing' => "\n\nFRAMING-MARK",
+        'user_prefix' => 'PREFIX-MARK ',
+        'user_framing' => 'USER-FRAMING-MARK ',
+        'extra' => 'ignored',
+      ];
+    });
+    $case = self::categoryPartCases()['entry-de'][0];
+    $payload = json_decode($this->captureProviderBody($case, $moduleHandler), TRUE, 512, JSON_THROW_ON_ERROR);
+    $system = $payload['messages'][0]['content'][0]['text'];
+    $user = $payload['messages'][1]['content'][0]['text'];
+    $this->assertStringContainsString('Project context (JSON string): "CONTEXT-MARK"', $system);
+    $this->assertStringContainsString("RELEVANCE-MARK\n\nFRAMING-MARK\n\nPRIVACY INSTRUCTION", $system);
+    $this->assertStringNotContainsString('PROJECT RELEVANCE', $system);
+    $this->assertStringStartsWith('PREFIX-MARK USER-FRAMING-MARK Analyze the provided image(s)', $user);
+    $this->assertStringNotContainsString('ignored', $user . $system);
+    $this->assertMatchesFixture('category-entry-de', self::categoryPart($payload));
+    $this->assertSame('entry', $seen['preset']);
+    $this->assertSame('Ideen und Beobachtungen für den Stadtteil.', $seen['tenant_context']);
+    $this->assertSame('Musterstadt', $seen['group']->label());
+    $this->assertSame([71, 72, 73], array_column($seen['categories'], 'tid'));
+    $this->assertSame(2, $seen['image_count']);
+  }
+
+  /**
+   * Non-string values from an implementation keep the defaults.
+   */
+  public function testNonStringPartsKeepTheirDefaults(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('alter')->willReturnCallback(static function (string $hook, array &$parts): void {
+      $parts = ['relevance' => NULL, 'framing' => ['x'], 'user_prefix' => 3];
+    });
+    $case = self::reportCases()['tenant-and-global-de'][0];
+    $this->assertMatchesFixture('report-tenant-and-global-de', $this->captureProviderBody($case, $moduleHandler));
   }
 
   /**

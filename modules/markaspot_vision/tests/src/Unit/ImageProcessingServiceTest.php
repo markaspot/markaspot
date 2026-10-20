@@ -655,7 +655,11 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertSame('', $this->invokeMethod($service, 'buildWordingInstruction', ['contribution']));
 
     // The system instruction carries the preset's parts.
-    $arguments = ['Neighbourhood ideas', 'German', FALSE, 1, 'suggestion'];
+    $arguments = [
+      'Neighbourhood ideas', 'German', FALSE, 1,
+      $this->invokeMethod($service, 'buildReportabilityInstruction', ['suggestion']),
+      $this->invokeMethod($service, 'buildWordingInstruction', ['suggestion']),
+    ];
     $system = $this->invokeMethod($service, 'buildSystemInstruction', $arguments);
     $this->assertStringContainsString('ideas and suggestions', $system);
     $this->assertStringContainsString('DESCRIPTION FRAMING', $system);
