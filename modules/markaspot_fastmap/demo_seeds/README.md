@@ -103,8 +103,8 @@ The seeder creates the account and restores it on every run and reset:
 
 | Property | Value |
 |---|---|
-| Name | `demo-<slug>`, e.g. `demo-demo-school-routes` |
-| Mail | `demo+<slug>@civicspot.invalid` (never deliverable) |
+| Name | `<slug>-team`, e.g. `demo-school-routes-team` (the slug carries the `demo-` prefix) |
+| Mail | `<slug>-team@civicspot.invalid` (never deliverable) |
 | UUID | derived like every seeded entity (kind `user`, key `staff`); this is how code recognises the account |
 | Password | random on every run, never stored or shown |
 | Global roles | none besides `authenticated` |

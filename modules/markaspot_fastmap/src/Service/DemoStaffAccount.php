@@ -38,9 +38,12 @@ final class DemoStaffAccount {
   public const MAIL_DOMAIN = 'civicspot.invalid';
 
   /**
-   * Prefix of the account name, followed by the workspace slug.
+   * Suffix of the account name and mail local part after the workspace slug.
+   *
+   * The slug already starts with "demo-", so the name reads
+   * "demo-school-routes-team".
    */
-  public const NAME_PREFIX = 'demo-';
+  public const NAME_SUFFIX = '-team';
 
   /**
    * Membership roles in the demo workspace, without the group type prefix.
@@ -90,14 +93,14 @@ final class DemoStaffAccount {
    * Returns the account name for a demo workspace slug.
    */
   public static function accountName(string $slug): string {
-    return self::NAME_PREFIX . $slug;
+    return $slug . self::NAME_SUFFIX;
   }
 
   /**
    * Returns the mail address for a demo workspace slug.
    */
   public static function mail(string $slug): string {
-    return 'demo+' . $slug . '@' . self::MAIL_DOMAIN;
+    return self::accountName($slug) . '@' . self::MAIL_DOMAIN;
   }
 
   /**
@@ -139,8 +142,8 @@ final class DemoStaffAccount {
       $this->slugs[$uid] = FALSE;
       // The name check is a cheap prefilter; the UUID decides.
       $name = (string) $account->getAccountName();
-      $slug = substr($name, strlen(self::NAME_PREFIX));
-      if (str_starts_with($name, self::NAME_PREFIX) && preg_match(DemoWorkspace::SLUG_PATTERN, $slug)) {
+      $slug = substr($name, 0, -strlen(self::NAME_SUFFIX));
+      if (str_ends_with($name, self::NAME_SUFFIX) && preg_match(DemoWorkspace::SLUG_PATTERN, $slug)) {
         $user = $this->entityTypeManager->getStorage('user')->load($uid);
         if ($user instanceof UserInterface && $user->uuid() === $this->uuid($slug)) {
           $this->slugs[$uid] = $slug;

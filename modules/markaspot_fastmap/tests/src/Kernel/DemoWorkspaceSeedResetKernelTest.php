@@ -646,10 +646,10 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->seeder()->seed($seed);
     $account = $this->staffAccount()->load('demo-school-routes');
     $this->assertSame($first->id(), $account->id(), 'A second run reuses the account.');
-    $this->assertCount(1, User::loadMultiple(\Drupal::entityQuery('user')->accessCheck(FALSE)->condition('name', 'demo-demo-school-routes')->execute()));
+    $this->assertCount(1, User::loadMultiple(\Drupal::entityQuery('user')->accessCheck(FALSE)->condition('name', 'demo-school-routes-team')->execute()));
 
-    $this->assertSame('demo-demo-school-routes', $account->getAccountName());
-    $this->assertSame('demo+demo-school-routes@civicspot.invalid', $account->getEmail());
+    $this->assertSame('demo-school-routes-team', $account->getAccountName());
+    $this->assertSame('demo-school-routes-team@civicspot.invalid', $account->getEmail());
     $this->assertTrue($account->isActive());
     // The role set is part of the security contract: changing it must be a
     // deliberate edit of this test as well.
@@ -669,9 +669,30 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertSame(['jur-member', 'jur-moderator'], array_column($membership->get('group_roles')->getValue(), 'target_id'));
 
     // A look-alike account is not a demo account.
-    $impostor = User::create(['name' => 'demo-demo-other', 'mail' => 'x@example.com', 'status' => 1]);
+    $impostor = User::create(['name' => 'demo-other-team', 'mail' => 'x@example.com', 'status' => 1]);
     $impostor->save();
     $this->assertFalse($this->staffAccount()->isDemoAccount($impostor));
+  }
+
+  /**
+   * A seed run renames an account that carries an older name scheme.
+   */
+  public function testSeedRenamesDemoStaffAccount(): void {
+    $seed = DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml');
+    $this->seeder()->seed($seed);
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $uid = $account->id();
+
+    // The first scheme doubled the prefix: demo-demo-school-routes.
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $account->setUsername('demo-demo-school-routes')->setEmail('demo+demo-school-routes@civicspot.invalid')->save();
+    $this->assertNull($this->staffAccount()->load('demo-school-routes'));
+
+    $this->seeder()->seed($seed);
+    $renamed = User::load($uid);
+    $this->assertSame('demo-school-routes-team', $renamed->getAccountName());
+    $this->assertSame('demo-school-routes-team@civicspot.invalid', $renamed->getEmail());
+    $this->assertSame($uid, $this->staffAccount()->load('demo-school-routes')->id());
   }
 
   /**
@@ -791,10 +812,10 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertNotFalse(Group::load($groupId)->getMember($account));
 
     // Mail to the reserved domain is dropped.
-    $message = ['to' => 'demo+demo-school-routes@civicspot.invalid', 'send' => TRUE];
+    $message = ['to' => 'demo-school-routes-team@civicspot.invalid', 'send' => TRUE];
     markaspot_fastmap_mail_alter($message);
     $this->assertFalse($message['send']);
-    $message = ['to' => 'Demo <demo+demo-school-routes@civicspot.invalid>, staff@example.com', 'send' => TRUE];
+    $message = ['to' => 'Demo <demo-school-routes-team@civicspot.invalid>, staff@example.com', 'send' => TRUE];
     markaspot_fastmap_mail_alter($message);
     $this->assertTrue($message['send']);
     $this->assertSame('staff@example.com', $message['to']);
