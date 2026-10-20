@@ -830,6 +830,14 @@ class ImageProcessingService {
       . "list to satisfy the schema, but describe only what is visible and state uncertainty; never invent "
       . "a defect to justify the category. The application offers manual selection for false results. "
       . "Relevance does not override privacy or hazard assessment.";
+    // Non-report maps accept far more subjects, so the model is quick to call
+    // anything relevant. Spell out what never counts (evaluation showed
+    // spreadsheet screenshots and an empty tree pit on a cat map accepted).
+    $strict = " Set is_reportable_issue to false for documents, screenshots, tables, charts, text and other "
+      . "non-photographic content, for images that do not show the subject this project is about (for example "
+      . "no animal on a map about animals), and for anything the project context excludes; exclusions take "
+      . "precedence. The examples above are only illustrations: the project context decides what fits. The "
+      . "category you must return is never a reason to set is_reportable_issue to true.";
     return match ($preset) {
       // Idea maps: the photo shows the place, the idea does not exist yet.
       'suggestion', 'contribution' => "\n\nPROJECT RELEVANCE: This workspace collects "
@@ -839,13 +847,13 @@ class ImageProcessingService {
         . ($preset === 'suggestion' ? 'an idea for the neighbourhood' : 'a contribution')
         . " can relate to and that fits one of the current tenant categories, such as a square, a street, "
         . "a courtyard, a tree pit, an empty corner or a building front. Nothing needs to be damaged or wrong: "
-        . "the suggested change is usually not visible yet. " . $common,
+        . "the suggested change is usually not visible yet. " . $common . $strict,
       // Observation maps: a state, good or bad, not a case to fix.
       'entry' => "\n\nPROJECT RELEVANCE: This workspace collects observations of a condition, not defects. "
         . "Set is_reportable_issue to true when the image shows an observable condition that fits the "
         . "project's purpose and one of the current tenant categories, for example shade or its absence, "
         . "standing water, vegetation, a sealed surface or a measurement setting. Positive and neutral "
-        . "conditions count as much as problems. " . $common,
+        . "conditions count as much as problems. " . $common . $strict,
       default => "\n\nPROJECT RELEVANCE: Set is_reportable_issue to true when the image "
         . "shows a visible observation that fits the project's purpose and one of the current tenant categories. "
         . "Valid observations can include healthy trees, wildlife, inventory items, positive findings, "

@@ -660,6 +660,21 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
+   * Non-report maps refuse documents and missing subjects; reports stay as is.
+   */
+  public function testNonReportPresetsRefuseOffDomainContent(): void {
+    $service = $this->createService();
+    foreach (['suggestion', 'entry', 'contribution'] as $preset) {
+      $instruction = $this->invokeMethod($service, 'buildReportabilityInstruction', [$preset]);
+      $this->assertStringContainsString('documents, screenshots, tables, charts', $instruction, $preset);
+      $this->assertStringContainsString('do not show the subject this project is about', $instruction, $preset);
+      $this->assertStringContainsString('exclusions take precedence', $instruction, $preset);
+      $this->assertStringContainsString('never a reason to set is_reportable_issue to true', $instruction, $preset);
+    }
+    $this->assertStringNotContainsString('screenshots', $this->invokeMethod($service, 'buildReportabilityInstruction', ['report']));
+  }
+
+  /**
    * Disabled blur preprocessing returns the original image.
    */
   public function testBlurSensitiveAreasReturnsOriginalWhenDisabled(): void {
