@@ -192,7 +192,10 @@ Seeded entities have deterministic UUIDs derived from the site UUID, the slug,
 the entity kind and the seed key. Nothing is written into visible fields. The
 reset deletes every node in the workspace whose UUID the seed does not own,
 together with its status history, media and unused files, and removes
-categories and statuses the seed does not define.
+categories and statuses the seed does not define. Uploads that never became
+part of a report are removed too: request images that markaspot_vision bound
+to the workspace at upload, that no report revision references and that are
+older than 30 minutes (a form in progress keeps its photo).
 
 ## Format
 

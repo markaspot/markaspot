@@ -6,7 +6,11 @@ namespace Drupal\markaspot_fastmap\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Sql\SqlEntityStorageInterface;
+use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\file\FileInterface;
@@ -34,6 +38,20 @@ final class DemoWorkspaceReset {
    */
   public const LAST_RUN_STATE = 'markaspot_fastmap.last_demo_workspace_reset';
 
+  /**
+   * Key/value collection of markaspot_vision's upload bindings.
+   *
+   * MediaTenantScopeResolver::STORE: media UUID => the jurisdiction the
+   * upload request named. It is the only record of which workspace an
+   * upload that never became a report belongs to.
+   */
+  public const UPLOAD_BINDING_STORE = 'markaspot_vision_media_tenant';
+
+  /**
+   * Seconds an unattached upload is kept, so a form in progress keeps it.
+   */
+  public const ORPHAN_UPLOAD_GRACE = 1800;
+
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
@@ -44,6 +62,9 @@ final class DemoWorkspaceReset {
     private readonly TimeInterface $time,
     private readonly LoggerInterface $logger,
     private readonly DemoStaffAccount $staffAccount,
+    private readonly Connection $database,
+    private readonly EntityFieldManagerInterface $entityFieldManager,
+    private readonly KeyValueFactoryInterface $keyValueFactory,
   ) {}
 
   /**
@@ -243,6 +264,8 @@ final class DemoWorkspaceReset {
       }
     }
 
+    $this->purgeOrphanUploads($groupId, $owned['media'] ?? [], $removed);
+
     // Terms the demo account may have added in the dashboard. Statuses go
     // last; the seeded statuses keep every Open311 mapping covered, so the
     // status integrity guards allow removing the extra ones.
@@ -271,6 +294,64 @@ final class DemoWorkspaceReset {
     }
 
     return $removed;
+  }
+
+  /**
+   * Deletes uploads of the workspace that never became part of a report.
+   *
+   * A photo is uploaded before its report exists. Uploads the visitor then
+   * abandons stay as unpublished media without any report. They count as
+   * workspace content when markaspot_vision bound them to this workspace at
+   * upload, no report revision references them, the seed does not own them,
+   * and they are older than ORPHAN_UPLOAD_GRACE.
+   *
+   * @param int $groupId
+   *   The workspace.
+   * @param array<string, int> $ownedMedia
+   *   Seeded media UUIDs as keys.
+   * @param array<string, int> $removed
+   *   The reset counters, updated in place.
+   */
+  private function purgeOrphanUploads(int $groupId, array $ownedMedia, array &$removed): void {
+    $fieldStorage = $this->entityFieldManager->getFieldStorageDefinitions('node')['field_request_media'] ?? NULL;
+    $mediaStorage = $this->entityTypeManager->getStorage('media');
+    $nodeStorage = $this->entityTypeManager->getStorage('node');
+    if ($fieldStorage === NULL || !$nodeStorage instanceof SqlEntityStorageInterface || !$mediaStorage instanceof SqlEntityStorageInterface) {
+      return;
+    }
+    $nodeMapping = $nodeStorage->getTableMapping();
+    $referenceTable = $nodeMapping->getDedicatedRevisionTableName($fieldStorage);
+    $referenceColumn = $nodeMapping->getFieldColumnName($fieldStorage, 'target_id');
+    $mediaType = $this->entityTypeManager->getDefinition('media');
+
+    // Request images no report revision references, on any workspace. The
+    // binding store then tells which of them were uploaded for this one.
+    $query = $this->database->select($mediaType->getBaseTable(), 'm');
+    $query->fields('m', ['mid', 'uuid']);
+    $query->innerJoin($mediaType->getDataTable(), 'd', 'd.mid = m.mid AND d.default_langcode = 1');
+    $query->leftJoin($referenceTable, 'r', 'r.' . $referenceColumn . ' = m.mid');
+    $query->condition('m.bundle', 'request_image')
+      ->condition('d.created', $this->time->getRequestTime() - self::ORPHAN_UPLOAD_GRACE, '<')
+      ->isNull('r.entity_id');
+    $orphans = array_diff_key($query->execute()->fetchAllKeyed(1, 0), $ownedMedia);
+    if ($orphans === []) {
+      return;
+    }
+    $bindings = $this->keyValueFactory->get(self::UPLOAD_BINDING_STORE)->getMultiple(array_keys($orphans));
+    $ids = [];
+    foreach ($bindings as $uuid => $boundTo) {
+      if ((is_int($boundTo) || (is_string($boundTo) && ctype_digit($boundTo))) && (int) $boundTo === $groupId) {
+        $ids[] = $orphans[$uuid];
+      }
+    }
+    foreach (array_chunk($ids, 50) as $chunk) {
+      foreach ($mediaStorage->loadMultiple($chunk) as $media) {
+        if ($media instanceof MediaInterface) {
+          $removed['file'] += $this->deleteMedia($media);
+          $removed['media']++;
+        }
+      }
+    }
   }
 
   /**

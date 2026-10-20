@@ -89,6 +89,9 @@ services:
       - '@datetime.time'
       - '@logger.channel.markaspot_fastmap'
       - '@markaspot_fastmap.demo_staff_account'
+      - '@database'
+      - '@entity_field.manager'
+      - '@keyvalue'
 
   markaspot_fastmap.demo_staff_account:
     class: Drupal\markaspot_fastmap\Service\DemoStaffAccount

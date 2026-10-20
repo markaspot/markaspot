@@ -1141,6 +1141,54 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   }
 
   /**
+   * The reset removes abandoned uploads of the demo, nothing else.
+   */
+  public function testResetRemovesOrphanUploads(): void {
+    $seed = DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml');
+    $demoId = (int) $this->seeder()->seed($seed)['group_id'];
+    $this->writeSeed('demo-other');
+    $otherId = (int) $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-other.yml'))['group_id'];
+    $this->config('markaspot_fastmap.settings')->set('demo_workspaces', ['demo-school-routes'])->save();
+    $bindings = $this->container->get('keyvalue')->get(DemoWorkspaceReset::UPLOAD_BINDING_STORE);
+
+    $now = $this->container->get('datetime.time')->getRequestTime();
+    $upload = function (string $name, int $boundTo, bool $old) use ($bindings, $now): Media {
+      $media = $this->createVisitorMedia($name . '.png');
+      $media->setUnpublished();
+      $media->setCreatedTime($old ? $now - DemoWorkspaceReset::ORPHAN_UPLOAD_GRACE - 60 : $now);
+      $media->save();
+      $bindings->set($media->uuid(), $boundTo);
+      return $media;
+    };
+    $abandoned = $upload('abandoned', $demoId, TRUE);
+    $inProgress = $upload('in-progress', $demoId, FALSE);
+    $elsewhere = $upload('elsewhere', $otherId, TRUE);
+    $usedOutside = $upload('used-outside', $demoId, TRUE);
+    $this->createReport(Group::load($otherId), (int) $this->seededEntityOf('demo-other', 'taxonomy_term', 'category', 'crossing')->id(), $usedOutside);
+    // Seeded photos are never orphans, even if bound to the workspace.
+    $seededPhoto = $this->seededEntity('node', 'report', 'dangerous-crossing')->get('field_request_media')->entity;
+    $bindings->set($seededPhoto->uuid(), $demoId);
+
+    $result = $this->reset()->resetWorkspace('demo-school-routes', $seed);
+
+    $this->assertNull(Media::load($abandoned->id()), 'An abandoned upload of the demo is removed.');
+    $this->assertSame(1, $result['removed']['media']);
+    $this->assertNotNull(Media::load($inProgress->id()), 'An upload of a form in progress stays.');
+    $this->assertNotNull(Media::load($elsewhere->id()), 'Uploads of other workspaces stay.');
+    $this->assertNotNull(Media::load($usedOutside->id()), 'Uploads used by a report elsewhere stay.');
+    $this->assertNotNull(Media::load($seededPhoto->id()), 'Seeded photos stay.');
+  }
+
+  /**
+   * Loads a seeded entity of another demo by its seed key.
+   */
+  private function seededEntityOf(string $slug, string $entityTypeId, string $kind, string $key): object {
+    $uuid = DemoWorkspace::uuid((string) $this->config('system.site')->get('uuid'), $slug, $kind, $key);
+    $matches = $this->container->get('entity_type.manager')->getStorage($entityTypeId)->loadByProperties(['uuid' => $uuid]);
+    return reset($matches);
+  }
+
+  /**
    * Returns the demo staff account service.
    */
   private function staffAccount(): DemoStaffAccount {
