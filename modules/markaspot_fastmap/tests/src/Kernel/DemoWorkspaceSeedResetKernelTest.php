@@ -35,6 +35,7 @@ use Drupal\paragraphs\Entity\ParagraphsType;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\Tests\media\Traits\MediaTypeCreationTrait;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group as TestGroup;
@@ -879,8 +880,9 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
    * The demo account works in its own workspace and nowhere else.
    */
   public function testDemoAccountIsScopedToItsWorkspace(): void {
-    // Group permissions as the profile ships them for staff memberships and
-    // for outsiders of a public workspace.
+    // Site and group permissions as the profile ships them for staff
+    // memberships and for outsiders of a public workspace.
+    Role::load('authenticated')->grantPermission('access content')->save();
     GroupRole::load('jur-member')->grantPermissions([
       'view group',
       'view group_node:service_request entity',

@@ -15,8 +15,9 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * Ends demo staff sessions that are not valid (any more).
  *
  * Valid means started by the demo endpoint and younger than
- * DemoStaffAccount::MAX_SESSION_AGE. Runs right after authentication, so the rest of the request is anonymous.
- * Regular accounts cost one name comparison.
+ * DemoStaffAccount::MAX_SESSION_AGE. Runs right after authentication, so
+ * the rest of the request is anonymous. Regular accounts cost one name
+ * comparison.
  */
 final class DemoSessionSubscriber implements EventSubscriberInterface {
 

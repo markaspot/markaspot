@@ -129,7 +129,7 @@ final class DemoWorkspaceTest extends UnitTestCase {
     $result = DemoWorkspace::sanitizeForDelivery(['template' => 'crisis-map']);
 
     $this->assertSame(
-      '{"template":"crisis-map","seedVersion":0,"translations":{},"task":{}}',
+      '{"template":"crisis-map","seedVersion":0,"translations":{},"task":{},"showcase_request_id":null}',
       json_encode($result),
     );
   }

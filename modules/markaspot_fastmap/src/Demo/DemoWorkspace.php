@@ -122,9 +122,9 @@ final class DemoWorkspace {
    * {<lang>: {title, description, statusNotes: [<text>]}}}, task: {<lang>:
    * <text>}, showcase_request_id: <service_request_id>|null}. The showcase
    * request is the first seeded report, the deep link target of the
-   * solution pages. Every leaf is plain text: tags are stripped, so the block can
-   * never carry markup even if field_nuxt_config was edited by hand; anything
-   * that is not a string is dropped.
+   * solution pages. Every leaf is plain text: tags are stripped, so the block
+   * can never carry markup even if field_nuxt_config was edited by hand;
+   * anything that is not a string is dropped.
    *
    * @return array|null
    *   The sanitized block, NULL when the input is not a demo block.
