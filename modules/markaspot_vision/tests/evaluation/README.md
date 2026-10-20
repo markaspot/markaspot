@@ -80,4 +80,11 @@ The negatives reproduce real-model failures from October 2026: the spreadsheet s
 
 The `seed-*` assets are the profile's own demo seed photos (`modules/markaspot_fastmap/demo_seeds/images/`, AI-generated fictional scenes, see that README), bundled with SHA-256 and inspected on 2026-10-19: no faces, no readable plates. The `spreadsheet-screenshot` fixture is specified, not rendered; create it from synthetic data as described in `derivedFixtures` before a run. `courtyard-cats-no-purpose` has an empty prompt on purpose: with FastMap the service supplies the fallback sentence for the workspace name "Courtyard cats".
 
-**Not run.** These cases need a real-model run against an isolated evaluation tenant before release; record model, prompt version, image hash and output per case as described above.
+**Real-model run (2026-10-19/20).** gpt-4.1-mini on Azure, local CivicSpot workspaces built after these contexts, 17 cases, 3 rounds per variant, privacy blur active. Counts are correct verdicts on `is_reportable_issue`:
+
+| Variant | Total | Negatives `false` | Positives `true` |
+| --- | --- | --- | --- |
+| Before the observation field | 35/51 | 11/24 | 24/27 |
+| Observation field first (`VisionPurposeRules::OBSERVATION`) | 44/51 | 18/24 | 26/27 |
+
+The spreadsheet screenshot now comes out `false` on every map and in every round. The release criterion is not met yet: the empty tree pit on the cat map with a written purpose passes 2 of 3, without a purpose (fallback sentence) 0 of 3, and the pothole on the facade map 1 of 3. A rule naming the main subject reached 20/24 on the negatives but cost positives and was not kept; a privacy sentence in the observation instruction cost accuracy and was dropped, since the controller discards the observation anyway.
