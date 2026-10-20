@@ -9,15 +9,17 @@ use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * Ends demo staff sessions that are not valid (any more).
+ * Enforces the session and path rules of demo staff accounts.
  *
- * Valid means started by the demo endpoint and younger than
- * DemoStaffAccount::MAX_SESSION_AGE. Runs right after authentication, so
- * the rest of the request is anonymous. Regular accounts cost one name
- * comparison.
+ * A session that the demo endpoint did not start, or that is older than
+ * DemoStaffAccount::MAX_SESSION_AGE, is logged out; the rest of the request
+ * is anonymous. A valid demo session gets 403 on the denied paths
+ * (DemoStaffAccount::isDeniedPath()). Runs right after authentication;
+ * regular accounts cost one name comparison.
  */
 final class DemoSessionSubscriber implements EventSubscriberInterface {
 
@@ -47,6 +49,9 @@ final class DemoSessionSubscriber implements EventSubscriberInterface {
       return;
     }
     if (!$this->staffAccount->isSessionExpired($this->currentUser, $request->getSession())) {
+      if (DemoStaffAccount::isDeniedPath($request->getPathInfo(), $request->getMethod())) {
+        throw new AccessDeniedHttpException('Demo staff accounts cannot use this function.');
+      }
       return;
     }
     $this->logger->notice('Demo session of @name ended: not started by the demo endpoint or older than @max seconds.', [

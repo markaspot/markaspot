@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_fastmap\Kernel;
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Session\AnonymousUserSession;
@@ -18,12 +19,17 @@ use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\language\Entity\ConfigurableLanguage;
+use Drupal\markaspot_fastmap\Controller\BillingController;
 use Drupal\markaspot_fastmap\Controller\DemoSessionController;
+use Drupal\markaspot_fastmap\Controller\WorkspaceUsageController;
 use Drupal\markaspot_fastmap\Demo\DemoSeed;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\markaspot_fastmap\EventSubscriber\DemoSessionSubscriber;
 use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Drupal\markaspot_fastmap\Service\DemoWorkspaceReset;
+use Drupal\markaspot_group\Controller\GroupInvitationController;
+use Drupal\markaspot_group\Controller\GroupMembersController;
+use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_fastmap\Service\DemoWorkspaceSeeder;
 use Drupal\media\Entity\Media;
@@ -38,11 +44,13 @@ use Drupal\Tests\media\Traits\MediaTypeCreationTrait;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group as TestGroup;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
@@ -948,6 +956,135 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     }
     $this->assertFalse($group->hasPermission('administer members', $account));
     $this->assertFalse($account->hasPermission('administer users'));
+  }
+
+  /**
+   * Administrative functions answer 403 to a demo session, by category.
+   */
+  #[DataProvider('deniedPathProvider')]
+  public function testDemoSessionIsDeniedAdministration(string $category, array $denied): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->allowlist(['demo-school-routes']);
+    $this->assertSame(200, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $groupId = (string) $this->seeder()->findWorkspace('demo-school-routes')->id();
+
+    foreach ($denied as [$method, $path]) {
+      $path = str_replace(['{gid}', '{uid}'], [$groupId, (string) $account->id()], $path);
+      try {
+        $this->dispatchAsCurrentSession($path, $method);
+        $this->fail(sprintf('%s: %s %s was not denied.', $category, $method, $path));
+      }
+      catch (AccessDeniedHttpException) {
+        $this->addToAssertionCount(1);
+      }
+      $this->assertSame((int) $account->id(), (int) $this->container->get('current_user')->id(), 'A denied request keeps the session.');
+    }
+
+    // The controllers deny the demo account on their own as well.
+    $resolver = $this->container->get('class_resolver');
+    $controllerAccess = match ($category) {
+      'billing and tier' => [
+        $resolver->getInstanceFromDefinition(BillingController::class)->access('demo-school-routes', $account),
+        $resolver->getInstanceFromDefinition(WorkspaceUsageController::class)->access('demo-school-routes', $account),
+      ],
+      'team and invitations' => [
+        $resolver->getInstanceFromDefinition(GroupMembersController::class)->accessCheck($account),
+        $resolver->getInstanceFromDefinition(GroupInvitationController::class)->accessCheck($account),
+      ],
+      'workspace settings' => [
+        $resolver->getInstanceFromDefinition(TenantSettingsController::class)->accessCheck($account, $groupId),
+        AccessResult::allowedIf((bool) Group::load($groupId)->access('update', $account)),
+      ],
+      'user administration' => [
+        AccessResult::allowedIf($account->access('update', $account)),
+        AccessResult::allowedIfHasPermission($account, 'administer users'),
+      ],
+    };
+    foreach ($controllerAccess as $index => $access) {
+      $this->assertFalse($access->isAllowed(), sprintf('%s: check %d allows the demo account.', $category, $index));
+    }
+  }
+
+  /**
+   * Denied paths per category.
+   */
+  public static function deniedPathProvider(): array {
+    return [
+      'billing and tier' => ['billing and tier', [
+        ['GET', '/api/fastmap/billing/demo-school-routes'],
+        ['PATCH', '/api/fastmap/billing/demo-school-routes'],
+        ['POST', '/api/fastmap/billing/demo-school-routes/sync-token'],
+        ['GET', '/api/fastmap/usage/demo-school-routes'],
+        ['POST', '/api/fastmap/workspace-deletion/request/{gid}'],
+        ['POST', '/api/fastmap/create-workspace'],
+      ]],
+      'team and invitations' => ['team and invitations', [
+        ['GET', '/api/group-members'],
+        ['GET', '/api/group-members/{uid}/detail'],
+        ['PATCH', '/api/group-members/{uid}'],
+        ['POST', '/api/group-members/invite'],
+        ['GET', '/api/group-members/invitations'],
+        ['DELETE', '/api/group-members/invitations/1'],
+        ['POST', '/api/group-members/claim/' . str_repeat('a', 64)],
+        ['POST', '/jsonapi/group_relationship/jur-group_membership'],
+      ]],
+      'workspace settings' => ['workspace settings', [
+        ['GET', '/api/tenant-settings/{gid}/general'],
+        ['PATCH', '/api/tenant-settings/{gid}/general'],
+        ['PATCH', '/api/tenant-settings/{gid}/features'],
+        ['POST', '/api/tenant-settings/{gid}/logo'],
+        ['PATCH', '/jsonapi/group/jur/00000000-0000-0000-0000-000000000000'],
+        ['GET', '/group/{gid}/edit'],
+      ]],
+      'user administration' => ['user administration', [
+        ['GET', '/user/{uid}/edit'],
+        ['POST', '/user/{uid}/cancel'],
+        ['PATCH', '/jsonapi/user/user/00000000-0000-0000-0000-000000000000'],
+        ['GET', '/jsonapi/user/user'],
+        ['GET', '/admin/people'],
+        ['GET', '/api/admin/jurisdictions'],
+        ['POST', '/api/auth/switch-user'],
+      ]],
+    ];
+  }
+
+  /**
+   * Report work and the demo's own session paths stay open.
+   */
+  public function testDemoSessionKeepsWorkPaths(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->allowlist(['demo-school-routes']);
+    $this->assertSame(200, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    foreach ([
+      ['GET', '/api/auth/status'],
+      ['POST', '/api/auth/logout'],
+      ['POST', '/api/fastmap/demo-session'],
+      ['GET', '/jsonapi/node/service_request'],
+      ['PATCH', '/jsonapi/node/service_request/00000000-0000-0000-0000-000000000000'],
+      ['GET', '/jsonapi/group/jur'],
+      ['GET', '/api/mark-a-spot-settings'],
+      ['GET', '/user/1'],
+    ] as [$method, $path]) {
+      $this->dispatchAsCurrentSession($path, $method);
+    }
+    $this->assertFalse($this->container->get('current_user')->isAnonymous());
+
+    // Regular accounts are not affected by the list.
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $this->dispatchAsCurrentSession('/api/group-members', 'GET');
+    $this->addToAssertionCount(1);
+  }
+
+  /**
+   * Runs the demo session subscriber for a request on the current session.
+   */
+  private function dispatchAsCurrentSession(string $path, string $method): void {
+    $session = $this->container->get('request_stack')->getCurrentRequest()->getSession();
+    $request = Request::create($path, $method);
+    $request->setSession($session);
+    $event = new RequestEvent($this->container->get('http_kernel'), $request, HttpKernelInterface::MAIN_REQUEST);
+    $this->container->get('markaspot_fastmap.demo_session_subscriber')->onRequest($event);
   }
 
   /**

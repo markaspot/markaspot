@@ -171,6 +171,13 @@ settings passing the visitor IP through.
   saves users cannot change its name, mail, password, status or roles unless
   a user administrator acts.
 - The account cannot become a member of any other group.
+- Billing and tier (`/api/fastmap/billing`, `usage`, `workspace-deletion`,
+  `create-workspace`), team and invitations (`/api/group-members`, JSON:API
+  group relationship writes), workspace settings (`/api/tenant-settings`,
+  JSON:API group writes, `/group/…`) and user administration (`/admin`,
+  `/user/<id>/edit|cancel`, `/jsonapi/user`, `/api/admin`, user switching)
+  answer 403 to a demo session (`DemoStaffAccount::isDeniedPath()`), even if
+  a later role change would let the controllers through.
 - Mail to `@civicspot.invalid` is dropped in `hook_mail_alter()`, so the
   account never receives assignment, status, OTP or password mails.
 - `/api/auth/status` reports `user.is_demo_account: true` for the account, so

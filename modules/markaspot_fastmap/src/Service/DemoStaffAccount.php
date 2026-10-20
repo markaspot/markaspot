@@ -71,6 +71,32 @@ final class DemoStaffAccount {
   public const MAX_SESSION_AGE = 7200;
 
   /**
+   * Paths a demo account never reaches, whatever its roles grant.
+   *
+   * Keyed by pattern on the path; the value lists the denied HTTP methods,
+   * NULL for all. Billing and tier, team and invitations, workspace
+   * settings and user administration stay with real accounts, also when a
+   * visitor calls the backend directly. The controllers check their own
+   * access as well; this list keeps that true if the role set grows.
+   */
+  private const DENIED_PATHS = [
+    // Billing, tier, usage, deletion, new workspaces.
+    '#^/api/fastmap/(billing|usage|workspace-deletion|create-workspace|claim-login-token)(/|$)#' => NULL,
+    // Member list, member edits, invitations.
+    '#^/api/group-members(/|$)#' => NULL,
+    // Workspace settings.
+    '#^/api/tenant-settings(/|$)#' => NULL,
+    '#^/jsonapi/(group|group_relationship)/#' => ['POST', 'PATCH', 'DELETE'],
+    // Platform and user administration.
+    '#^/api/admin(/|$)#' => NULL,
+    '#^/admin(/|$)#' => NULL,
+    '#^/group/#' => NULL,
+    '#^/user/\d+/(edit|cancel)(/|$)#' => NULL,
+    '#^/jsonapi/user/#' => NULL,
+    '#^/api/auth/switch-#' => NULL,
+  ];
+
+  /**
    * Workspace slug per user ID, FALSE for regular accounts.
    *
    * @var array<int, string|false>
@@ -206,6 +232,18 @@ final class DemoStaffAccount {
       return TRUE;
     }
     return $this->time->getRequestTime() - $marker['started'] >= self::MAX_SESSION_AGE;
+  }
+
+  /**
+   * Whether a demo account is denied a request path and method.
+   */
+  public static function isDeniedPath(string $path, string $method): bool {
+    foreach (self::DENIED_PATHS as $pattern => $methods) {
+      if (preg_match($pattern, $path) && ($methods === NULL || in_array(strtoupper($method), $methods, TRUE))) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**
