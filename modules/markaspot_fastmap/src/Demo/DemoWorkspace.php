@@ -120,7 +120,9 @@ final class DemoWorkspace {
    *
    * Shape: {template, seedVersion, translations: {<service_request_id>:
    * {<lang>: {title, description, statusNotes: [<text>]}}}, task: {<lang>:
-   * <text>}}. Every leaf is plain text: tags are stripped, so the block can
+   * <text>}, showcase_request_id: <service_request_id>|null}. The showcase
+   * request is the first seeded report, the deep link target of the
+   * solution pages. Every leaf is plain text: tags are stripped, so the block can
    * never carry markup even if field_nuxt_config was edited by hand; anything
    * that is not a string is dropped.
    *
@@ -137,6 +139,7 @@ final class DemoWorkspace {
       'seedVersion' => is_int($block['seedVersion'] ?? NULL) ? $block['seedVersion'] : 0,
       'translations' => [],
       'task' => [],
+      'showcase_request_id' => self::isRequestId($block['showcase_request_id'] ?? NULL) ? $block['showcase_request_id'] : NULL,
     ];
 
     $translations = is_array($block['translations'] ?? NULL) ? $block['translations'] : [];
@@ -145,7 +148,7 @@ final class DemoWorkspace {
         continue;
       }
       $requestId = (string) $requestId;
-      if (!preg_match('/^[A-Za-z0-9._-]{1,64}$/D', $requestId) || !is_array($languages)) {
+      if (!self::isRequestId($requestId) || !is_array($languages)) {
         continue;
       }
       foreach ($languages as $langcode => $texts) {
@@ -196,6 +199,13 @@ final class DemoWorkspace {
    */
   private static function isText(mixed $value): bool {
     return is_string($value) && mb_strlen($value) <= self::MAX_TEXT_LENGTH;
+  }
+
+  /**
+   * Whether a value looks like an Open311 service_request_id.
+   */
+  private static function isRequestId(mixed $value): bool {
+    return is_string($value) && (bool) preg_match('/^[A-Za-z0-9._-]{1,64}$/D', $value);
   }
 
   /**

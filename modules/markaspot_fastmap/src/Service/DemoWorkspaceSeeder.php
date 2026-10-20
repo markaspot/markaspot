@@ -261,6 +261,9 @@ final class DemoWorkspaceSeeder {
     // block heals itself if a seeded report ever had to be re-created.
     $config = DemoWorkspace::nuxtConfig($group);
     $config[DemoWorkspace::CONFIG_KEY]['translations'] = $translations;
+    // The first report is the deep link target of the solution pages. Its
+    // request ID comes from the live node: IDs count per workspace and year.
+    $config[DemoWorkspace::CONFIG_KEY]['showcase_request_id'] = $requestIds[$data['reports'][0]['key']] ?? NULL;
     $group->set('field_nuxt_config', $this->encode($config));
     $group->save();
 

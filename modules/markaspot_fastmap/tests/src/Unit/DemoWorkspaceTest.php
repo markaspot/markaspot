@@ -69,6 +69,7 @@ final class DemoWorkspaceTest extends UnitTestCase {
         'bad id with spaces' => ['es' => ['title' => 'x']],
       ],
       'task' => ['es' => 'Abre', 'de' => ['nested']],
+      'showcase_request_id' => '12-2026',
     ]);
 
     $this->assertSame([
@@ -85,7 +86,16 @@ final class DemoWorkspaceTest extends UnitTestCase {
         ],
       ],
       'task' => ['es' => 'Abre'],
+      'showcase_request_id' => '12-2026',
     ], $result);
+
+    // Anything but a request ID is delivered as NULL.
+    foreach ([NULL, 12, '<b>1</b>', ['1-2026']] as $invalid) {
+      $this->assertNull(DemoWorkspace::sanitizeForDelivery([
+        'template' => 'safe-routes',
+        'showcase_request_id' => $invalid,
+      ])['showcase_request_id']);
+    }
   }
 
   /**

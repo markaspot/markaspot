@@ -483,6 +483,12 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->assertCount(7, $settings['demo']['translations']);
     $this->assertContains('config:markaspot_fastmap.settings', $metadata->getCacheTags());
 
+    // The showcase request is the live first report; a reset keeps its node
+    // and therefore its request ID.
+    $showcase = $this->seededEntity('node', 'report', 'dangerous-crossing')->get('request_id')->value;
+    $this->assertSame($showcase, $settings['demo']['showcase_request_id']);
+    $this->reset()->resetWorkspace('demo-school-routes', DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->assertSame($showcase, $this->settingsFor(Group::load($demo->id()))[0]['demo']['showcase_request_id']);
   }
 
   /**
@@ -896,6 +902,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     // Per-jurisdiction sequence: the first seeded report is the deep link
     // target of the solution pages.
     $this->assertSame('1-' . date('Y'), $result['reports']['dangerous-crossing']);
+    $this->assertSame($own->get('request_id')->value, DemoWorkspace::block(Group::load($result['group_id']))['showcase_request_id']);
 
     $this->writeSeed('demo-other');
     $otherId = $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-other.yml'))['group_id'];
