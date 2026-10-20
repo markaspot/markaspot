@@ -98,7 +98,10 @@ final class VisionPurposeRulesTest extends UnitTestCase {
   #[DataProvider('nonReportPresets')]
   public function testRelevanceComesFromThePurpose(string $preset, string $plural): void {
     $relevance = $this->apply($preset)['relevance'];
-    $this->assertStringStartsWith("\n\nPROJECT RELEVANCE: This workspace collects {$plural}, not defects.", $relevance);
+    $this->assertStringStartsWith("\n\nPROJECT RELEVANCE: This workspace collects {$plural}; it is not a defect-reporting map.", $relevance);
+    // The map's intent is not a defect map; its subjects may still be broken.
+    $this->assertStringContainsString('A damaged or broken subject still counts when it fits.', $relevance);
+    $this->assertStringNotContainsString('not defects', $relevance);
     $this->assertStringContainsString('only when the image shows a real subject that fits the purpose in the project context and at least one of the current tenant categories', $relevance);
     // The vision service appends the off-domain and category fallback rule.
     $this->assertStringNotContainsString(ImageProcessingService::RELEVANCE_OFF_DOMAIN_RULE, $relevance);
@@ -121,7 +124,10 @@ final class VisionPurposeRulesTest extends UnitTestCase {
       $this->assertStringContainsString('do not show the subject this project is about', $relevance, $preset);
       $this->assertStringNotContainsString('unless the project context explicitly collects', $relevance, $preset);
     }
-    $this->assertStringContainsString('nothing needs to be damaged or wrong', $this->apply('suggestion')['relevance']);
+    $suggestion = $this->apply('suggestion')['relevance'];
+    $this->assertStringContainsString('nothing needs to be damaged or wrong', $suggestion);
+    $this->assertStringContainsString('On this map the subject is the place or object an idea relates to', $suggestion);
+    $this->assertStringContainsString('a place that fits the purpose counts even when the suggested change is not visible yet', $suggestion);
     $this->assertStringContainsString('Positive and neutral conditions count', $this->apply('entry')['relevance']);
   }
 
@@ -131,6 +137,9 @@ final class VisionPurposeRulesTest extends UnitTestCase {
   public function testContributionMapsLetThePurposeDecideAboutReproductions(): void {
     $relevance = $this->apply('contribution')['relevance'];
     $this->assertStringContainsString('screenshots, tables, charts, text and other non-photographic content unless the project context explicitly collects such material', $relevance);
+    // Reproductions of photos need no explicit purpose, only no exclusion.
+    $this->assertStringContainsString('Photographed or scanned photos, such as old or historic photos, count as photos unless the project context excludes them.', $relevance);
+    $this->assertStringNotContainsString('scanned historic photos or documents', $relevance);
     $this->assertStringNotContainsString('documents, screenshots', $relevance);
   }
 
@@ -142,7 +151,7 @@ final class VisionPurposeRulesTest extends UnitTestCase {
     $parts = $this->apply($preset);
     $this->assertStringStartsWith("\n\nDESCRIPTION FRAMING: ", $parts['framing']);
     $this->assertStringContainsString('only for an acute hazard that is clearly visible in the image now', $parts['framing']);
-    $this->assertStringContainsString('hazard_level to 0, hazard_category to null and hazard_issues to an empty array', $parts['framing']);
+    $this->assertStringContainsString('hazard_level to 0 (no hazard assessed), hazard_category to null and hazard_issues to an empty array', $parts['framing']);
     $this->assertStringContainsString([
       'suggestion' => 'what could be suggested there',
       'entry' => 'as an observation, not as a defect',
@@ -157,7 +166,10 @@ final class VisionPurposeRulesTest extends UnitTestCase {
   public function testNeutralUserFraming(string $preset, string $plural): void {
     $parts = $this->apply($preset);
     $this->assertSame('The following set of 2 images shows one scene. Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ', $parts['user_prefix']);
-    $this->assertStringStartsWith("This map does not collect defects: it collects {$plural}", $parts['user_framing']);
+    $this->assertStringStartsWith("This is not a defect-reporting map: it collects {$plural}", $parts['user_framing']);
+    // The reframing covers description and hazards, never the categorization.
+    $this->assertStringContainsString('Read the scene description and the hazard assessment below in that sense; the categorization rules apply unchanged.', $parts['user_framing']);
+    $this->assertStringNotContainsString('Read the tasks below', $parts['user_framing']);
     $this->assertStringEndsWith("\n\n", $parts['user_framing']);
     $this->assertStringNotContainsString('issue.', $parts['user_prefix']);
   }

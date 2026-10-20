@@ -80,7 +80,7 @@ final class VisionPurposePayloadTest extends UnitTestCase {
     $this->assertStringContainsString('This workspace collects', $system);
     $this->assertStringContainsString('DESCRIPTION FRAMING', $system);
     $this->assertStringContainsString('shows one scene.', $user);
-    $this->assertStringContainsString("Read the tasks below in that sense. Describe what is visible and matters for this purpose; mention infrastructure issues or problems only when they are actually visible. The hazard assessment applies only to an acute hazard that is visible in the image.\n\nAnalyze the provided image(s)", $user);
+    $this->assertStringContainsString("Read the scene description and the hazard assessment below in that sense; the categorization rules apply unchanged. Describe what is visible and matters for this purpose; mention damage, infrastructure issues or problems only when they are actually visible. The hazard assessment applies only to an acute hazard that is visible in the image.\n\nAnalyze the provided image(s)", $user);
     // The platform rules stay in front of every editable part.
     $this->assertLessThan(strpos($system, 'PROJECT RELEVANCE'), strpos($system, 'PLATFORM RULES'));
     $this->assertStringEndsWith('Describe the situation and the issue, not the people.', $system);

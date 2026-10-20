@@ -59,7 +59,8 @@ This is a small, hand-selected regression fixture set with reused images, not a 
 Contexts carry `wordingPreset` where the workspace is not a defect map. `markaspot_vision` builds the same prompt for every preset; on FastMap installs `markaspot_fastmap` adapts it through `hook_markaspot_vision_prompt_alter()` (`VisionPurposeRules`):
 
 - Relevance comes from the map's purpose and categories: `is_reportable_issue` is true only for a real subject that fits the purpose and at least one category. Exclusions in the purpose take precedence, and the mandatory category is never a reason for true.
-- `suggestion` and `entry` maps refuse documents, screenshots, tables, charts and text. `contribution` maps refuse them unless the purpose explicitly collects such material, for example scanned historic photos.
+- `suggestion` and `entry` maps refuse documents, screenshots, tables, charts and text. On `suggestion` maps the place an idea relates to is the subject, even when the suggested change is not visible yet. `contribution` maps accept photographed or scanned photos unless the purpose excludes them, and refuse other non-photographic content unless the purpose explicitly collects it, for example documents.
+- These maps are not defect-reporting maps, but a damaged or broken subject that fits the purpose still counts. The neutral user framing applies to the scene description and the hazard assessment; the categorization rules stay unchanged.
 - The description framing follows the preset. A hazard is set only when it is acute and visible.
 - A workspace without `field_ai_system_prompt` gets one sentence of purpose built from its name, the preset noun and its category names.
 

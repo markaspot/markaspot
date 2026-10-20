@@ -37,8 +37,8 @@ final class VisionPurposeRules {
    */
   private const ACUTE_HAZARD_RULE = " Set hazard_flag to true only for an acute hazard that is clearly visible "
     . "in the image now, such as an open hole, broken glass, exposed wiring, fire or flooding. Possible, future "
-    . "or speculative risks are not hazards on this map: then set hazard_flag to false, hazard_level to 0, "
-    . "hazard_category to null and hazard_issues to an empty array.";
+    . "or speculative risks are not hazards on this map: then set hazard_flag to false, hazard_level to 0 (no "
+    . "hazard assessed), hazard_category to null and hazard_issues to an empty array.";
 
   /**
    * Off-domain rule shipped for idea and observation maps in 11.9.222.
@@ -55,13 +55,16 @@ final class VisionPurposeRules {
   /**
    * Off-domain rule for contribution maps.
    *
-   * Contributions can be old photos, scans or other reproductions, so the
-   * purpose decides whether such material is the subject. A spreadsheet
-   * screenshot was still accepted as a "street sign" without this rule.
+   * Contributions can be old photos, scans or other reproductions of photos;
+   * they count unless the purpose excludes them, also when the workspace
+   * only has the fallback purpose. Other material such as documents needs a
+   * purpose that collects it. A spreadsheet screenshot was still accepted as
+   * a "street sign" without this rule.
    */
-  private const CONTRIBUTION_RULE = " Set is_reportable_issue to false for screenshots, tables, charts, text "
-    . "and other non-photographic content unless the project context explicitly collects such material (for "
-    . "example scanned historic photos or documents), for images that do not show what this project is about, "
+  private const CONTRIBUTION_RULE = " Photographed or scanned photos, such as old or historic photos, count as "
+    . "photos unless the project context excludes them. Set is_reportable_issue to false for screenshots, "
+    . "tables, charts, text and other non-photographic content unless the project context explicitly collects "
+    . "such material (for example documents or plans), for images that do not show what this project is about, "
     . "and for anything the project context excludes; exclusions take precedence. The category you must "
     . "return is never a reason to set is_reportable_issue to true.";
 
@@ -102,10 +105,11 @@ final class VisionPurposeRules {
     $parts['framing'] = $this->framing($preset);
     $parts['user_prefix'] = "The following set of {$imageCount} images shows one scene. "
       . "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ";
-    $parts['user_framing'] = "This map does not collect defects: it collects {$plural} for the purpose described in "
-      . "the project context. Read the tasks below in that sense. Describe what is visible and matters for this "
-      . "purpose; mention infrastructure issues or problems only when they are actually visible. The hazard "
-      . "assessment applies only to an acute hazard that is visible in the image.\n\n";
+    $parts['user_framing'] = "This is not a defect-reporting map: it collects {$plural} for the purpose described "
+      . "in the project context. Read the scene description and the hazard assessment below in that sense; the "
+      . "categorization rules apply unchanged. Describe what is visible and matters for this purpose; mention "
+      . "damage, infrastructure issues or problems only when they are actually visible. The hazard assessment "
+      . "applies only to an acute hazard that is visible in the image.\n\n";
 
     // Never replaces a purpose the workspace has.
     if (($context['tenant_context'] ?? '') === '') {
@@ -120,13 +124,15 @@ final class VisionPurposeRules {
    * category for false results) after this section.
    */
   private function relevance(string $preset, string $plural): string {
-    $lead = "\n\nPROJECT RELEVANCE: This workspace collects {$plural}, not defects. Set is_reportable_issue to true "
-      . "only when the image shows a real subject that fits the purpose in the project context and at least one "
-      . "of the current tenant categories.";
+    $lead = "\n\nPROJECT RELEVANCE: This workspace collects {$plural}; it is not a defect-reporting map. Set "
+      . "is_reportable_issue to true only when the image shows a real subject that fits the purpose in the "
+      . "project context and at least one of the current tenant categories. A damaged or broken subject still "
+      . "counts when it fits.";
     return match ($preset) {
       // The idea itself does not exist yet: the photo shows its place.
-      'suggestion' => $lead . " The photo usually shows the place or object an idea relates to: nothing needs to "
-        . "be damaged or wrong, the suggested change is usually not visible yet." . self::STRICT_RULE,
+      'suggestion' => $lead . " On this map the subject is the place or object an idea relates to: nothing needs "
+        . "to be damaged or wrong, and a place that fits the purpose counts even when the suggested change is not "
+        . "visible yet." . self::STRICT_RULE,
       'entry' => $lead . " Positive and neutral conditions count as much as problems." . self::STRICT_RULE,
       default => $lead . self::CONTRIBUTION_RULE,
     };
