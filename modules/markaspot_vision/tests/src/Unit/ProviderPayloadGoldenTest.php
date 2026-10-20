@@ -97,6 +97,15 @@ final class ProviderPayloadGoldenTest extends UnitTestCase {
         'settings' => ['system_prompt' => 'Stadtweite Mängelmeldungen.'],
         'langcode' => 'de',
       ]],
+      'blur-applied-de' => [[
+        'tenant_prompt' => 'Meldungen zu Straßenschäden und Grünflächen in Musterstadt.',
+        'settings' => [
+          'enable_blur_preprocessing' => TRUE,
+          'blur_service_url' => 'https://blur.invalid/blur',
+        ],
+        'langcode' => 'de',
+        'images' => 2,
+      ]],
       'json-object-mode-en' => [[
         'tenant_prompt' => 'Inventory healthy trees.',
         'settings' => [

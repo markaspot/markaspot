@@ -61,7 +61,8 @@ trait ProviderPayloadCaptureTrait {
    *   no field_ai_system_prompt), jurisdiction_id (NULL: single install),
    *   langcode, images, preset (NULL: no wording resolver, otherwise the
    *   i18n.wording value; "report" stores no wording like provisioning),
-   *   group_label, service_definitions (bool).
+   *   group_label, service_definitions (bool). Blur preprocessing against
+   *   https://blur.invalid/... reports every image as blurred.
    * @param mixed $moduleHandler
    *   Optional module handler handed to the service after the resolver.
    *
@@ -114,6 +115,10 @@ trait ProviderPayloadCaptureTrait {
 
       $body = NULL;
       $handler = function (RequestInterface $request) use (&$body, $case) {
+        // The blur service answers with the same pixel, marked as blurred.
+        if ($request->getUri()->getHost() === 'blur.invalid') {
+          return new FulfilledPromise(new Response(200, ['X-Image-Blurred' => 'true', 'X-Detections-Faces' => '1'], base64_decode(self::$goldenPixel)));
+        }
         $body = (string) $request->getBody();
         return new FulfilledPromise(new Response(200, [], json_encode(['choices' => [['message' => ['content' => json_encode([
           'category' => 71,
