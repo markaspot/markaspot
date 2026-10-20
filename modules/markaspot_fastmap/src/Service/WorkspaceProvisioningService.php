@@ -8,6 +8,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\TransactionException;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryException;
@@ -27,6 +28,7 @@ use Drupal\markaspot_fastmap\Validation\WorkspaceClaim;
 use Drupal\markaspot_group\JurisdictionTeardownContext;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
+use Drupal\node\NodeInterface;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -2804,7 +2806,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
 
         $node = $nodeStorage->create($values);
+        // Synthetic content never notifies anyone; this also keeps the status
+        // mails on the update below from firing.
+        if ($node instanceof NodeInterface && $node->hasField('field_notification')) {
+          $node->set('field_notification', FALSE);
+        }
         $node->save();
+        if ($node instanceof NodeInterface) {
+          $this->applyDemoStatus($node, $statusTid);
+        }
       }
     }
     finally {
@@ -2816,6 +2826,54 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       '@name' => $data['name'] ?? '',
       '@id' => $groupId,
     ]);
+  }
+
+  /**
+   * Moves a just-created demo request to its intended status.
+   *
+   * Every new report starts on the jurisdiction's initial status (forced in
+   * markaspot_group's node presave), so the intended status needs a second
+   * save. The status history gets an entry for the new status without a
+   * text: the status note hook in service_request then finds the change
+   * already recorded and adds no generic "Status changed." note, and the
+   * history never claims an answer nobody wrote.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The saved demo request.
+   * @param int|null $statusTid
+   *   The intended status term ID.
+   */
+  private function applyDemoStatus(NodeInterface $node, ?int $statusTid): void {
+    if (!$statusTid || !$node->hasField('field_status') || (int) $node->get('field_status')->target_id === $statusTid) {
+      return;
+    }
+
+    if ($node->hasField('field_status_notes') && $this->entityTypeManager->hasDefinition('paragraph')) {
+      // Strictly after the creation note: the frontend keys and sorts the
+      // history by this timestamp.
+      $created = $this->time->getCurrentTime();
+      foreach ($node->get('field_status_notes')->referencedEntities() as $note) {
+        if ($note instanceof ContentEntityInterface && $note->hasField('created')) {
+          $created = max($created, (int) $note->get('created')->value + 1);
+        }
+      }
+      $paragraph = $this->entityTypeManager->getStorage('paragraph')->create([
+        'type' => 'status',
+        'created' => $created,
+      ]);
+      if ($paragraph instanceof ContentEntityInterface && $paragraph->hasField('field_status_term')) {
+        $paragraph->set('field_status_term', ['target_id' => $statusTid]);
+        $paragraph->save();
+        $node->get('field_status_notes')->appendItem([
+          'target_id' => $paragraph->id(),
+          'target_revision_id' => $paragraph->getRevisionId(),
+        ]);
+      }
+    }
+
+    $node->set('field_status', ['target_id' => $statusTid]);
+    $node->setNewRevision(FALSE);
+    $node->save();
   }
 
   /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Kernel;
 
+use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\filter\Entity\FilterFormat;
@@ -16,17 +17,22 @@ use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
 use Drupal\node\Entity\Node;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
+use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\paragraphs\Entity\ParagraphsType;
+use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\Group as TestGroup;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
- * Tests that provisioned demo requests pass the demo-state publication gate.
+ * Tests the demo requests a provisioned workspace starts with.
  *
  * A new workspace is in demo state (expiry set, no Stripe subscription), and
  * the gate in markaspot_fastmap_node_presave() unpublishes every new report
  * there. Only the synthetic demo requests that provisioning saves are exempt.
+ * They also show a spread of statuses although every new report starts on
+ * the initial one.
  *
  * @covers \Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService::provisionWorkspace
  */
@@ -52,6 +58,8 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
     'color_field',
     'geolocation',
     'entity',
+    'entity_reference_revisions',
+    'paragraphs',
     'flexible_permissions',
     'group',
     'gnode',
@@ -61,6 +69,9 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
     'markaspot_nuxt',
     'markaspot_passwordless',
     'markaspot_fastmap',
+    // After markaspot_group, like the alphabetical order in production: the
+    // initial status is forced before the creation note is written.
+    'service_request',
   ];
 
   /**
@@ -70,7 +81,7 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
     parent::setUp();
 
     $entityTypes = [
-      'user', 'node', 'file', 'taxonomy_term',
+      'user', 'node', 'file', 'taxonomy_term', 'paragraph',
       'group', 'group_relationship', 'group_config_wrapper',
     ];
     foreach ($entityTypes as $entityType) {
@@ -86,6 +97,7 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
     $this->createContentModel();
     $this->createJurisdictionModel();
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+    $this->stubProcessor();
   }
 
   /**
@@ -141,6 +153,69 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Demo requests spread over the statuses without a fake history or mail.
+   */
+  public function testDemoRequestsSpreadOverStatuses(): void {
+    $result = $this->container->get('markaspot_fastmap.workspace_provisioning')->provisionWorkspace([
+      'name' => 'Lindenhof School Routes',
+      'slug' => 'lindenhof',
+      'email' => 'parents@example.test',
+      'categories' => [
+        'Dangerous crossing', 'Blocked sidewalk', 'Poor visibility', 'Speeding',
+        'Dark spot', 'Missing crossing guard', 'Bus stop', 'Parking at the gate',
+      ],
+      'language' => 'en',
+      'lat' => 50.83,
+      'lng' => 6.9,
+      'zoom' => 15,
+      'template' => 'safe-routes',
+    ]);
+    $groupId = (int) $result['group_id'];
+    $statuses = [];
+    foreach (Term::loadMultiple($this->container->get('entity_type.manager')->getStorage('taxonomy_term')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('vid', 'service_status')
+      ->condition('field_jurisdiction', $groupId)
+      ->execute()) as $term) {
+      $statuses[(int) $term->id()] = $term;
+    }
+    $question = array_filter($statuses, static fn(Term $term): bool => $term->label() === 'Question to reporter');
+    $this->assertCount(1, $question, 'The safe-routes template has a question status.');
+
+    $demoRequests = $this->reports($groupId);
+    $this->assertCount(8, $demoRequests);
+    $mappings = [];
+    foreach ($demoRequests as $demo) {
+      $statusId = (int) $demo->get('field_status')->target_id;
+      $this->assertArrayHasKey($statusId, $statuses);
+      $this->assertArrayNotHasKey($statusId, $question, 'No demo request waits for an answer to a question nobody asked.');
+      $mapping = (string) $statuses[$statusId]->get('field_open311_mapping')->value;
+      $mappings[] = $mapping;
+      $this->assertFalse((bool) $demo->get('field_notification')->value, 'Demo requests never notify anyone.');
+
+      // The history: the creation note, plus one entry for the status the
+      // request was moved to. No generic "Status changed." text.
+      $notes = $demo->get('field_status_notes')->referencedEntities();
+      $this->assertCount($mapping === 'initial' ? 1 : 2, $notes);
+      $this->assertSame($statusId, (int) end($notes)->get('field_status_term')->target_id);
+      $this->assertSame('initial', $statuses[(int) $notes[0]->get('field_status_term')->target_id]->get('field_open311_mapping')->value);
+      if (count($notes) === 2) {
+        $this->assertTrue($notes[1]->get('field_status_note')->isEmpty());
+        $this->assertGreaterThan((int) $notes[0]->get('created')->value, (int) $notes[1]->get('created')->value);
+      }
+      $revisions = $this->container->get('entity_type.manager')->getStorage('node')->getQuery()
+        ->accessCheck(FALSE)
+        ->allRevisions()
+        ->condition('nid', $demo->id())
+        ->count()
+        ->execute();
+      $this->assertSame(1, (int) $revisions, 'The status move adds no revision.');
+    }
+    $this->assertSame(['initial', 'initial', 'initial', 'open', 'open', 'closed', 'closed', 'initial'], $mappings);
+    $this->assertSame([], $this->container->get('state')->get('system.test_mail_collector', []), 'Provisioning the demo requests sends no mail.');
+  }
+
+  /**
    * Loads the service requests of a jurisdiction, oldest first.
    *
    * @return \Drupal\node\NodeInterface[]
@@ -179,6 +254,58 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
   }
 
   /**
+   * Stubs the Open311 processor the report hooks consult.
+   *
+   * Like production, markaspot_group forces a new report to the
+   * jurisdiction's initial status, and service_request writes the creation
+   * note through the processor.
+   */
+  private function stubProcessor(): void {
+    $termStorage = $this->container->get('entity_type.manager')->getStorage('taxonomy_term');
+    $this->container->set('markaspot_open311.processor', new class($termStorage) {
+
+      public function __construct(
+        private readonly EntityStorageInterface $termStorage,
+      ) {}
+
+      /**
+       * Returns the lowest-weight initial status of a jurisdiction.
+       */
+      public function getInitialStatusTid(?int $jurisdictionId = NULL): ?int {
+        $tids = $this->termStorage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('vid', 'service_status')
+          ->condition('field_jurisdiction', $jurisdictionId)
+          ->condition('field_open311_mapping', 'initial')
+          ->sort('weight')
+          ->range(0, 1)
+          ->execute();
+        return $tids ? (int) reset($tids) : NULL;
+      }
+
+      /**
+       * No boilerplates in this test.
+       */
+      public function getInitialBoilerplateId(?int $jurisdictionId = NULL): ?int {
+        return NULL;
+      }
+
+      /**
+       * Creates a status note like the real processor, without boilerplates.
+       */
+      public function createStatusNoteParagraph(array $fields, string $langcode = ''): Paragraph {
+        $paragraph = Paragraph::create(['type' => 'status']);
+        if (!empty($fields['status_term_id'])) {
+          $paragraph->set('field_status_term', $fields['status_term_id']);
+        }
+        $paragraph->save();
+        return $paragraph;
+      }
+
+    });
+  }
+
+  /**
    * Creates the node and taxonomy model provisioning writes to.
    */
   private function createContentModel(): void {
@@ -208,6 +335,13 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
     $this->createField('node', 'service_request', 'field_category', 'entity_reference', ['target_type' => 'taxonomy_term']);
     $this->createField('node', 'service_request', 'field_geolocation', 'geolocation');
     $this->createField('node', 'service_request', 'field_address', 'string');
+    $this->createField('node', 'service_request', 'field_status', 'entity_reference', ['target_type' => 'taxonomy_term']);
+    $this->createField('node', 'service_request', 'field_notification', 'boolean');
+
+    ParagraphsType::create(['id' => 'status', 'label' => 'Status'])->save();
+    $this->createField('paragraph', 'status', 'field_status_term', 'entity_reference', ['target_type' => 'taxonomy_term']);
+    $this->createField('paragraph', 'status', 'field_status_note', 'text_long');
+    $this->createField('node', 'service_request', 'field_status_notes', 'entity_reference_revisions', ['target_type' => 'paragraph'], -1);
   }
 
   /**
