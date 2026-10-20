@@ -296,6 +296,10 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     );
     $now = $this->container->get('datetime.time')->getRequestTime();
     $this->assertEqualsWithDelta($now - 21 * 86400, (int) $crossingReport->getCreatedTime(), 86400);
+    // Submitted on the way to school, answered in the evening.
+    $timezone = new \DateTimeZone((string) ($this->config('system.date')->get('timezone.default') ?: date_default_timezone_get()));
+    $this->assertSame('07:52', (new \DateTimeImmutable('@' . $crossingReport->getCreatedTime()))->setTimezone($timezone)->format('H:i'));
+    $this->assertSame('20:40', (new \DateTimeImmutable('@' . $notes[1]->get('created')->value))->setTimezone($timezone)->format('H:i'));
     $this->assertNotEmpty($crossingReport->get('field_organisation')->target_id, 'The report is assigned to the seeded organisation.');
 
     // The solved case.

@@ -139,6 +139,7 @@ reports:                        # 1 to 20, 6 to 8 recommended
     organisation: traffic       # optional
     lat: 50.8301
     lng: 6.9052
+    time: '07:52'               # optional submission time, HH:MM (see Times)
     address:                    # optional; without it the geocoder fills the address
       { address_line1: …, postal_code: …, locality: …, country_code: DE }
     photo:                      # optional JPEG/PNG, path relative to the YAML file
@@ -152,8 +153,29 @@ reports:                        # 1 to 20, 6 to 8 recommended
         note: { en: …, … }
       - status: question
         days_ago: 19
+        time: '20:40'           # optional, HH:MM (see Times)
         note: { en: …, … }
 ```
+
+### Times
+
+Each history entry lands on the day `days_ago` before the seed run, at a time
+of day in the site time zone (`system.date:timezone.default`). The first
+entry is the submission, so its timestamp is also the report's creation date.
+
+- `time: 'HH:MM'` on a history entry sets that entry's time. Quote it.
+- `time` on a report sets the submission time; it is the same as `time` on
+  the first history entry, so set only one of the two.
+- Without a time, the entry gets one between 07:00 and 18:30, derived from
+  the report key and the entry position. It is the same on every run, so a
+  reset does not shuffle the history. A later entry on the same day comes at
+  least 15 minutes after the one before it.
+- An explicit time on the same day as the entry before it must be later.
+- Nothing is dated in the future: an entry of today (`days_ago: 0`) with a
+  time that has not come yet is placed at the time of the run.
+
+Give times when they tell the story, for example reports on the way to school
+in the morning and answers of a volunteer initiative in the evening.
 
 Writing guidelines: keep reporter fields empty (the seed has no fields for
 them), use fictional places and people, use the workspace wording, and do not

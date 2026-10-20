@@ -34,6 +34,26 @@ final class DemoSeed {
   private const KEY_PATTERN = '/^[a-z][a-z0-9_-]{0,63}$/D';
 
   /**
+   * Time of day of a history entry, 24-hour HH:MM.
+   */
+  private const TIME_PATTERN = '/^([01]\d|2[0-3]):[0-5]\d$/D';
+
+  /**
+   * Earliest derived time in minutes after midnight: 07:00.
+   */
+  private const DERIVED_TIME_FIRST = 7 * 60;
+
+  /**
+   * Latest derived time in minutes after midnight: 18:30.
+   */
+  private const DERIVED_TIME_LAST = 18 * 60 + 30;
+
+  /**
+   * Minimum gap in minutes after an earlier entry on the same day.
+   */
+  private const SAME_DAY_GAP = 15;
+
+  /**
    * Allowed top-level keys.
    */
   private const TOP_LEVEL_KEYS = [
@@ -48,7 +68,7 @@ final class DemoSeed {
    */
   private const REPORT_KEYS = [
     'key', 'category', 'lat', 'lng', 'address', 'organisation', 'photo',
-    'title', 'description', 'history',
+    'title', 'description', 'history', 'time',
   ];
 
   /**
@@ -513,10 +533,20 @@ final class DemoSeed {
       if (!is_array($history) || !array_is_list($history) || $history === [] || count($history) > 10) {
         throw new \InvalidArgumentException(sprintf('Report "%s" needs a history of 1 to 10 entries.', $key));
       }
+      // The report's own time is the time it was submitted: its first entry.
+      if (isset($report['time'])) {
+        if (is_array($history[0]) && isset($history[0]['time'])) {
+          throw new \InvalidArgumentException(sprintf('Report "%s" sets its time twice: on the report and on its first history entry.', $key));
+        }
+        if (is_array($history[0])) {
+          $history[0]['time'] = $report['time'];
+        }
+      }
       $entries = [];
       $previousDaysAgo = PHP_INT_MAX;
+      $previousTime = NULL;
       foreach ($history as $index => $entry) {
-        if (!is_array($entry) || array_diff(array_keys($entry), ['status', 'days_ago', 'note']) !== []) {
+        if (!is_array($entry) || array_diff(array_keys($entry), ['status', 'days_ago', 'time', 'note']) !== []) {
           throw new \InvalidArgumentException(sprintf('Report "%s" history entry %d has unknown keys.', $key, $index));
         }
         if (!isset($statuses[$entry['status'] ?? ''])) {
@@ -526,10 +556,20 @@ final class DemoSeed {
         if (!is_int($daysAgo) || $daysAgo < 0 || $daysAgo > 365 || $daysAgo > $previousDaysAgo) {
           throw new \InvalidArgumentException(sprintf('Report "%s" history must be chronological with days_ago 0..365.', $key));
         }
+        $earlierSameDay = $daysAgo === $previousDaysAgo ? $previousTime : NULL;
+        $time = $entry['time'] ?? self::derivedTime($key, $index, $earlierSameDay);
+        if (!is_string($time) || !preg_match(self::TIME_PATTERN, $time)) {
+          throw new \InvalidArgumentException(sprintf('Report "%s" history entry %d needs a time as HH:MM.', $key, $index));
+        }
+        if ($earlierSameDay !== NULL && $time <= $earlierSameDay) {
+          throw new \InvalidArgumentException(sprintf('Report "%s" history entry %d is not later than the entry before it on the same day.', $key, $index));
+        }
         $previousDaysAgo = $daysAgo;
+        $previousTime = $time;
         $entries[] = [
           'status' => $entry['status'],
           'days_ago' => $daysAgo,
+          'time' => $time,
           'note' => self::localized($entry['note'] ?? NULL, $label . '.history.' . $index . '.note', $languages, 2000),
         ];
       }
@@ -553,6 +593,36 @@ final class DemoSeed {
       $result[] = $normalized;
     }
     return $result;
+  }
+
+  /**
+   * Derives a plausible, stable time of day for a history entry.
+   *
+   * Seeded reports and notes should not all carry the time of the seed run.
+   * The time depends only on the report key and the entry position, so every
+   * run of the same seed produces the same times.
+   *
+   * @param string $reportKey
+   *   The seed key of the report.
+   * @param int $index
+   *   The position of the entry in the report history.
+   * @param string|null $after
+   *   The time (HH:MM) of an earlier entry on the same day, if any.
+   *
+   * @return string
+   *   A time as HH:MM between 07:00 and 18:30, or after $after when that
+   *   leaves no room in the window.
+   */
+  public static function derivedTime(string $reportKey, int $index, ?string $after = NULL): string {
+    $first = self::DERIVED_TIME_FIRST;
+    if ($after !== NULL && preg_match(self::TIME_PATTERN, $after)) {
+      [$hours, $minutes] = array_map('intval', explode(':', $after));
+      $first = max($first, $hours * 60 + $minutes + self::SAME_DAY_GAP);
+    }
+    $first = min($first, 23 * 60 + 59);
+    $last = max($first, self::DERIVED_TIME_LAST);
+    $minute = $first + crc32($reportKey . '#' . $index) % ($last - $first + 1);
+    return sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60);
   }
 
   /**

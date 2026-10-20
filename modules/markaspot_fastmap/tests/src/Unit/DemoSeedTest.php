@@ -100,6 +100,55 @@ final class DemoSeedTest extends UnitTestCase {
   }
 
   /**
+   * Explicit times are kept; the report time is the first entry's time.
+   */
+  public function testExplicitTimes(): void {
+    $raw = $this->example();
+    $raw['reports'][0]['time'] = '07:52';
+    $raw['reports'][0]['history'][1]['time'] = '20:40';
+    $raw['reports'][0]['history'][2]['time'] = '06:05';
+    unset($raw['reports'][0]['history'][3]['time']);
+    $report = DemoSeed::fromArray($raw, sys_get_temp_dir())->data['reports'][0];
+
+    $this->assertArrayNotHasKey('time', $report);
+    $this->assertSame(['07:52', '20:40', '06:05'], array_slice(array_column($report['history'], 'time'), 0, 3));
+    $this->assertSame(DemoSeed::derivedTime($report['key'], 3), $report['history'][3]['time']);
+  }
+
+  /**
+   * Missing times are derived: plausible, stable and in order.
+   */
+  public function testDerivedTimes(): void {
+    $times = [];
+    foreach (['dangerous-crossing', 'blocked-sidewalk', 'hedge-corner', 'speeding'] as $key) {
+      foreach (range(0, 3) as $index) {
+        $time = DemoSeed::derivedTime($key, $index);
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}$/', $time);
+        $this->assertGreaterThanOrEqual('07:00', $time);
+        $this->assertLessThanOrEqual('18:30', $time);
+        $this->assertSame($time, DemoSeed::derivedTime($key, $index), 'The same entry always gets the same time.');
+        $times[] = $time;
+      }
+    }
+    $this->assertGreaterThan(8, count(array_unique($times)), 'Times differ between entries.');
+
+    // A later entry on the same day comes at least 15 minutes later, also
+    // when the earlier one is late in the day.
+    $after = DemoSeed::derivedTime('speeding', 1, '09:00');
+    $this->assertGreaterThanOrEqual('09:15', $after);
+    $this->assertLessThanOrEqual('18:30', $after);
+    $this->assertSame('20:15', DemoSeed::derivedTime('speeding', 1, '20:00'));
+
+    // Seed parsing applies the same rule.
+    $raw = $this->example();
+    unset($raw['reports'][0]['time'], $raw['reports'][0]['history'][1]['time']);
+    $raw['reports'][0]['history'][1]['days_ago'] = $raw['reports'][0]['history'][0]['days_ago'];
+    $raw['reports'][0]['history'][0]['time'] = '18:20';
+    $history = DemoSeed::fromArray($raw, sys_get_temp_dir())->data['reports'][0]['history'];
+    $this->assertSame('18:35', $history[1]['time']);
+  }
+
+  /**
    * Invalid seeds are rejected before anything is written.
    */
   #[DataProvider('invalidSeeds')]
@@ -177,6 +226,28 @@ final class DemoSeedTest extends UnitTestCase {
           $raw['reports'][0]['e_mail'] = 'someone@example.com';
         },
         'unknown keys',
+      ],
+      'malformed time' => [
+        static function (array &$raw): void {
+          $raw['reports'][0]['history'][1]['time'] = '7:5';
+        },
+        'needs a time as HH:MM',
+      ],
+      'time on the report and its first entry' => [
+        static function (array &$raw): void {
+          $raw['reports'][0]['time'] = '07:30';
+          $raw['reports'][0]['history'][0]['time'] = '07:40';
+        },
+        'sets its time twice',
+      ],
+      'earlier time on the same day' => [
+        static function (array &$raw): void {
+          unset($raw['reports'][0]['time']);
+          $raw['reports'][0]['history'][1]['days_ago'] = $raw['reports'][0]['history'][0]['days_ago'];
+          $raw['reports'][0]['history'][0]['time'] = '18:00';
+          $raw['reports'][0]['history'][1]['time'] = '09:00';
+        },
+        'not later than the entry before it',
       ],
       'unsupported language' => [
         static function (array &$raw): void {

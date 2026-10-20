@@ -5,6 +5,8 @@
 # address of each pin, so the address never contradicts the map tiles.
 # Story: a parents' initiative runs the map on its own. It sorts the reports,
 # asks back, solves what it can and takes the rest to the school and the city.
+# Times: parents report on the way to school in the morning, the initiative
+# answers in the evening; entries without a time get a stable derived one.
 # The statuses mirror the safe-routes set in
 # WorkspaceProvisioningService::STATUS_TEMPLATES exactly (keys, names,
 # mappings), so the demo shows the workflow a real workspace gets.
@@ -108,6 +110,7 @@ reports:
     category: crossing
     lat: 50.8301
     lng: 6.9052
+    time: '07:52'
     title:
       en: 'Children cross between parked cars'
       es: 'Los niños cruzan entre coches aparcados'
@@ -128,6 +131,7 @@ reports:
           de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
       - status: question
         days_ago: 19
+        time: '20:40'
         note:
           en: 'Thank you for the report. Does this happen mainly before school starts, or also in the afternoon?'
           es: 'Gracias por el aviso. ¿Ocurre sobre todo antes de que empiecen las clases o también por la tarde?'
@@ -135,6 +139,7 @@ reports:
           de: 'Danke für die Meldung. Passiert das vor allem vor Schulbeginn oder auch am Nachmittag?'
       - status: in-progress
         days_ago: 15
+        time: '21:10'
         note:
           en: 'Thanks for your answer: it happens mostly between 7:40 and 8:00. Parents will count the cars on two mornings so that we can show the city real numbers.'
           es: 'Gracias por su respuesta: pasa sobre todo entre las 7:40 y las 8:00. Algunas familias contarán los coches durante dos mañanas para poder enseñar al ayuntamiento cifras reales.'
@@ -142,6 +147,7 @@ reports:
           de: 'Danke für die Antwort: Es passiert vor allem zwischen 7:40 und 8:00 Uhr. Eltern zählen an zwei Morgen die Autos, damit wir der Stadt echte Zahlen zeigen können.'
       - status: handed-over
         days_ago: 12
+        time: '19:45'
         note:
           en: 'Parents counted the cars on two mornings. We have sent the numbers to the city and asked for a crossing guard. Until then, parents take turns at the gate.'
           es: 'Algunas familias contaron los coches durante dos mañanas. Hemos enviado las cifras al ayuntamiento y pedido un vigilante de cruce. Mientras tanto, madres y padres se turnan en la puerta.'
@@ -152,6 +158,7 @@ reports:
     category: sidewalk
     lat: 50.8289
     lng: 6.9039
+    time: '07:41'
     title:
       en: 'Construction fence blocks the sidewalk'
       es: 'Una valla de obra bloquea la acera'
@@ -172,6 +179,7 @@ reports:
           de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
       - status: in-progress
         days_ago: 9
+        time: '18:55'
         note:
           en: 'We have spoken to the site manager and asked for a safe walkway.'
           es: 'Hemos hablado con el jefe de obra y le hemos pedido un paso seguro.'
@@ -179,6 +187,7 @@ reports:
           de: 'Wir haben mit der Bauleitung gesprochen und um einen sicheren Durchgang gebeten.'
       - status: resolved
         days_ago: 2
+        time: '20:30'
         note:
           en: 'The fence has been moved. A marked temporary walkway is in place again until the work is finished.'
           es: 'La valla se ha desplazado. Hasta el final de la obra vuelve a haber un paso provisional señalizado.'
@@ -209,6 +218,7 @@ reports:
           de: 'Vielen Dank, Ihre Meldung ist eingegangen.'
       - status: in-progress
         days_ago: 6
+        time: '19:30'
         note:
           en: 'We rang the owner''s doorbell. He did not know about the problem and will trim the hedge this month.'
           es: 'Llamamos a la puerta del propietario. No conocía el problema y recortará el seto este mes.'
@@ -219,6 +229,7 @@ reports:
     category: visibility
     lat: 50.8293
     lng: 6.9061
+    time: '07:45'
     title:
       en: 'Cars parked right up to the crossing'
       es: 'Coches aparcados justo hasta el cruce'
@@ -265,6 +276,7 @@ reports:
     category: lighting
     lat: 50.8312
     lng: 6.9044
+    time: '07:20'
     title:
       en: 'Footpath through the park is dark'
       es: 'El camino del parque está a oscuras'
@@ -288,6 +300,7 @@ reports:
     category: crossing
     lat: 50.8299
     lng: 6.9068
+    time: '13:25'
     title:
       en: 'Children run across behind the bus'
       es: 'Los niños cruzan corriendo por detrás del autobús'

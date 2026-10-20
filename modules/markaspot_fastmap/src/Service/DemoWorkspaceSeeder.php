@@ -61,11 +61,6 @@ final class DemoWorkspaceSeeder {
   ];
 
   /**
-   * Seconds between seeded reports that share the same day offset.
-   */
-  private const REPORT_TIME_STEP = 1800;
-
-  /**
    * Media keyvalue marking an editorial publication decision.
    *
    * Media listed here are left alone by the AI publication pipeline
@@ -242,8 +237,8 @@ final class DemoWorkspaceSeeder {
 
     $requestIds = [];
     $translations = [];
-    foreach ($data['reports'] as $index => $report) {
-      $node = $this->upsertReport($seed, $report, $index, $groupId, $statusIds, $categoryIds, $organisationIds);
+    foreach ($data['reports'] as $report) {
+      $node = $this->upsertReport($seed, $report, $groupId, $statusIds, $categoryIds, $organisationIds);
       $requestId = $node->hasField('request_id') ? (string) $node->get('request_id')->value : '';
       if ($requestId === '') {
         throw new \RuntimeException('Seeded reports have no request ID; markaspot_request_id must be enabled.');
@@ -517,7 +512,7 @@ final class DemoWorkspaceSeeder {
   /**
    * Creates or rewrites one seeded report with its status history and photo.
    */
-  private function upsertReport(DemoSeed $seed, array $report, int $index, int $groupId, array $statusIds, array $categoryIds, array $organisationIds): NodeInterface {
+  private function upsertReport(DemoSeed $seed, array $report, int $groupId, array $statusIds, array $categoryIds, array $organisationIds): NodeInterface {
     $data = $seed->data;
     $default = $data['default_language'];
     $nodeStorage = $this->entityTypeManager->getStorage('node');
@@ -527,16 +522,7 @@ final class DemoWorkspaceSeeder {
       throw new \RuntimeException(sprintf('Seeded report "%s" is not a service request any more.', $report['key']));
     }
 
-    // Timestamps: whole days from the seed, plus a per-report offset so the
-    // reports of one day keep the seed order.
-    $now = $this->time->getRequestTime();
-    $timestamps = [];
-    $previous = 0;
-    foreach ($report['history'] as $entry) {
-      $timestamp = max($previous + 60, $now - $entry['days_ago'] * 86400 - ($index + 1) * self::REPORT_TIME_STEP);
-      $timestamps[] = $timestamp;
-      $previous = $timestamp;
-    }
+    $timestamps = $this->historyTimestamps($report['history']);
 
     $finalStatus = $statusIds[end($report['history'])['status']];
     $mediaId = isset($report['photo']) ? $this->upsertPhoto($seed, $report, $groupId) : NULL;
@@ -650,6 +636,37 @@ final class DemoWorkspaceSeeder {
     }
 
     return $saved instanceof NodeInterface ? $saved : $node;
+  }
+
+  /**
+   * Places the history entries of a report on the clock.
+   *
+   * Each entry lands on the day "days_ago" before today, at its time of day
+   * in the site's time zone (DemoSeed resolves a stable time for every
+   * entry). Nothing lies in the future, and the entries stay in order.
+   *
+   * @param array<int, array{days_ago: int, time: string}> $history
+   *   The normalized report history.
+   *
+   * @return int[]
+   *   One Unix timestamp per entry.
+   */
+  private function historyTimestamps(array $history): array {
+    $now = $this->time->getRequestTime();
+    $timezone = new \DateTimeZone((string) ($this->configFactory->get('system.date')->get('timezone.default') ?: date_default_timezone_get()));
+    $timestamps = [];
+    $previous = 0;
+    foreach ($history as $entry) {
+      [$hours, $minutes] = array_map('intval', explode(':', $entry['time']));
+      $timestamp = (new \DateTimeImmutable('@' . ($now - $entry['days_ago'] * 86400)))
+        ->setTimezone($timezone)
+        ->setTime($hours, $minutes)
+        ->getTimestamp();
+      $timestamp = max($previous + 60, min($timestamp, $now));
+      $timestamps[] = $timestamp;
+      $previous = $timestamp;
+    }
+    return $timestamps;
   }
 
   /**
