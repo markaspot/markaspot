@@ -90,11 +90,16 @@ final class DemoSessionController implements ContainerInjectionInterface {
     }
     $response = ['ok' => TRUE, 'dashboard' => '/' . $slug . '/dashboard'];
 
+    $switching = FALSE;
     if ($this->currentUser->isAuthenticated()) {
       if ((int) $this->currentUser->id() === (int) $account->id()) {
         return new JsonResponse($response);
       }
-      return new JsonResponse(['error' => 'Log out first to explore the demo.'], 409);
+      // A real session is never replaced; another demo's session is.
+      if (!$this->staffAccount->isDemoAccount($this->currentUser)) {
+        return new JsonResponse(['error' => 'Log out first to explore the demo.'], 409);
+      }
+      $switching = TRUE;
     }
 
     if (!$this->flood->isAllowed(self::FLOOD_EVENT, self::FLOOD_THRESHOLD, self::FLOOD_WINDOW)) {
@@ -104,6 +109,9 @@ final class DemoSessionController implements ContainerInjectionInterface {
     }
     $this->flood->register(self::FLOOD_EVENT, self::FLOOD_WINDOW);
 
+    if ($switching) {
+      user_logout();
+    }
     $this->staffAccount->startSession($account, $request->getSession());
     $this->logger->notice('Demo session started for workspace @slug (account @uid).', [
       '@slug' => $slug,

@@ -146,7 +146,7 @@ X-CSRF-Token: <token from /session/token>
 | 200 `{"ok": true, "dashboard": "/<slug>/dashboard"}` | logged in as the demo account; also when the session already is that account (no new login) |
 | 400 | body is not `{"workspace": "<string>"}` |
 | 404 | slug not in `demo_workspaces`, no demo block, or no active staff account with membership; all cases look the same |
-| 409 | the visitor is logged in as any other account; a real session is never replaced |
+| 409 | the visitor is logged in as a real account; a real session is never replaced. A session of another demo's account is switched (logout, new session ID, login as this demo's account) and counts as a new login for the flood limit |
 | 415 | Content-Type is not `application/json` (or `application/vnd.api+json`) |
 | 429 | more than 20 new demo sessions per client IP and hour (flood event `markaspot_fastmap.demo_session`, `Retry-After` header) |
 
@@ -209,6 +209,13 @@ settings passing the visitor IP through.
   citizen feedback (`/api/feedback`, `/feedback`), `/node/add`, the account
   pages `/user/<id>`, `/user/password` and `/user/register` answer 403.
 - JSON:API rules follow `jsonapi.base_path`.
+- On another workspace's pages a demo session is never worse off than an
+  anonymous visitor: a request that names another jurisdiction (query
+  `jurisdiction`/`jurisdiction_id`, JSON:API filters on `field_jurisdiction`,
+  the upload header, `jurisdiction_id` or the `field_jurisdiction`
+  relationship in a JSON body) runs as anonymous. Categories, statuses,
+  pages, the report form, uploads and their analysis work as for any
+  visitor; the session stays the demo session.
 - Known gap: media created directly through JSON:API without the upload
   header carry no binding, so the orphan purge cannot attribute them to the
   demo (a demo session cannot create them, but other clients can). A later

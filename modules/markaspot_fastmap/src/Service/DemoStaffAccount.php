@@ -11,6 +11,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\UserSessionRepositoryInterface;
 use Drupal\markaspot_fastmap\Demo\DemoWorkspace;
 use Drupal\user\UserInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 
 /**
@@ -320,6 +321,87 @@ final class DemoStaffAccount {
     }
     $reference = trim((string) $reference);
     return $reference === (string) $id || $reference === $this->workspaceSlug($account);
+  }
+
+  /**
+   * Whether a request names a jurisdiction other than the demo workspace.
+   *
+   * Looks where the frontend names the workspace it works in: the query
+   * (jurisdiction, jurisdiction_id, JSON:API filters on field_jurisdiction),
+   * the upload header, and a JSON body (jurisdiction_id, the field_jurisdiction
+   * relationship). A demo session on another workspace's pages then works as
+   * an anonymous visitor would, instead of being refused as the demo account.
+   */
+  public function namesForeignWorkspace(AccountInterface $account, Request $request): bool {
+    foreach ($this->jurisdictionReferences($request) as $reference) {
+      if (!$this->isOwnWorkspace($account, $reference) && !$this->isOwnWorkspaceUuid($account, $reference)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  /**
+   * Collects jurisdiction references (IDs, slugs, UUIDs) from a request.
+   *
+   * @return string[]
+   *   The references, as sent.
+   */
+  private function jurisdictionReferences(Request $request): array {
+    $references = [];
+    foreach (['jurisdiction', 'jurisdiction_id'] as $key) {
+      $value = $request->query->all()[$key] ?? NULL;
+      if (is_scalar($value) && (string) $value !== '') {
+        $references[] = (string) $value;
+      }
+    }
+    // JSON:API filters, short (filter[field_jurisdiction...]=80) and long
+    // (filter[x][condition][path]=field_jurisdiction..., [value]=80).
+    $filter = $request->query->all()['filter'] ?? NULL;
+    foreach (is_array($filter) ? $filter : [] as $name => $value) {
+      $path = is_array($value) ? (string) ($value['condition']['path'] ?? '') : (string) $name;
+      $values = is_array($value) ? ($value['condition']['value'] ?? NULL) : $value;
+      if (!str_starts_with($path, 'field_jurisdiction')) {
+        continue;
+      }
+      foreach ((array) $values as $item) {
+        if (is_scalar($item) && (string) $item !== '') {
+          $references[] = (string) $item;
+        }
+      }
+    }
+    $header = $request->headers->get(self::UPLOAD_JURISDICTION_HEADER);
+    if (is_string($header) && trim($header) !== '') {
+      $references[] = trim($header);
+    }
+    if (str_contains((string) $request->headers->get('Content-Type'), 'json')) {
+      $body = json_decode((string) $request->getContent(), TRUE);
+      if (is_array($body)) {
+        if (is_scalar($body['jurisdiction_id'] ?? NULL) && (string) $body['jurisdiction_id'] !== '') {
+          $references[] = (string) $body['jurisdiction_id'];
+        }
+        $data = $body['data']['relationships']['field_jurisdiction']['data'] ?? NULL;
+        $items = is_array($data) && isset($data['id']) ? [$data] : (is_array($data) ? $data : []);
+        foreach ($items as $item) {
+          if (is_array($item) && is_string($item['id'] ?? NULL)) {
+            $references[] = $item['id'];
+          }
+        }
+      }
+    }
+    return $references;
+  }
+
+  /**
+   * Whether a UUID names the demo workspace.
+   */
+  private function isOwnWorkspaceUuid(AccountInterface $account, string $reference): bool {
+    $id = $this->workspaceId($account);
+    if ($id === NULL || !preg_match('/^[0-9a-f-]{36}$/i', $reference)) {
+      return FALSE;
+    }
+    $group = $this->entityTypeManager->getStorage('group')->load($id);
+    return $group !== NULL && $group->uuid() === $reference;
   }
 
   /**

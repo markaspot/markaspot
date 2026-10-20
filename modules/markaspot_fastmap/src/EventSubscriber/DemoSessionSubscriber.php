@@ -6,6 +6,7 @@ namespace Drupal\markaspot_fastmap\EventSubscriber;
 
 use Drupal\Core\Routing\RouteObjectInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\markaspot_fastmap\Service\DemoStaffAccount;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -19,7 +20,8 @@ use Symfony\Component\Routing\Route;
  *
  * A session that the demo endpoint did not start, or that is older than
  * DemoStaffAccount::MAX_SESSION_AGE, is logged out; the rest of the request
- * is anonymous. A valid demo session gets 403 on the denied paths
+ * is anonymous. A valid demo session that works on another workspace runs
+ * that request as anonymous. Otherwise it gets 403 on the denied paths
  * (DemoStaffAccount::isDeniedPath()). Runs right after authentication;
  * regular accounts cost one name comparison.
  */
@@ -57,6 +59,12 @@ final class DemoSessionSubscriber implements EventSubscriberInterface {
       return;
     }
     if (!$this->staffAccount->isSessionExpired($this->currentUser, $request->getSession())) {
+      // On another workspace the demo session works as an anonymous visitor
+      // would: reads, reports, uploads and their analysis. The session stays.
+      if ($this->staffAccount->namesForeignWorkspace($this->currentUser, $request)) {
+        $this->currentUser->setAccount(new AnonymousUserSession());
+        return;
+      }
       if (DemoStaffAccount::isDeniedPath($request->getPathInfo(), $request->getMethod(), DemoStaffAccount::jsonApiBasePath())) {
         throw new AccessDeniedHttpException('Demo staff accounts cannot use this function.');
       }

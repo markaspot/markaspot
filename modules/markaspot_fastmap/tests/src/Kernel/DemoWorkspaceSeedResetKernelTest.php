@@ -1415,6 +1415,83 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
   }
 
   /**
+   * A demo session moves to another demo instead of getting 409.
+   */
+  public function testDemoSessionSwitchesBetweenDemos(): void {
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+    $this->writeSeed('demo-other');
+    $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-other.yml'));
+    $this->allowlist(['demo-school-routes', 'demo-other']);
+    $currentUser = $this->container->get('current_user');
+
+    $this->assertSame(200, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    $response = $this->postDemoSession('demo-other');
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame('/demo-other/dashboard', json_decode((string) $response->getContent(), TRUE)['dashboard']);
+    $this->assertSame((int) $this->staffAccount()->load('demo-other')->id(), (int) $currentUser->id());
+    $session = $this->container->get('request_stack')->getCurrentRequest()->getSession();
+    $this->assertFalse($this->staffAccount()->isSessionExpired($currentUser, $session));
+
+    // A real account still gets 409.
+    $currentUser->setAccount(User::load(1));
+    $this->assertSame(409, $this->postDemoSession('demo-other')->getStatusCode());
+  }
+
+  /**
+   * On another workspace a demo session works as an anonymous visitor.
+   */
+  public function testDemoSessionOnForeignWorkspaceRunsAnonymous(): void {
+    $demoId = (int) $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'))['group_id'];
+    $customer = Group::create(['type' => 'jur', 'label' => 'Customer', 'field_slug' => 'customer']);
+    $customer->save();
+    $demoUuid = Group::load($demoId)->uuid();
+    $this->allowlist(['demo-school-routes']);
+    $this->assertSame(200, $this->postDemoSession('demo-school-routes')->getStatusCode());
+    $currentUser = $this->container->get('current_user');
+    $account = $this->staffAccount()->load('demo-school-routes');
+    $requestStack = $this->container->get('request_stack');
+    $subscriber = $this->container->get('markaspot_fastmap.demo_session_subscriber');
+
+    $relationship = static fn(string $uuid): string => (string) json_encode([
+      'data' => [
+        'type' => 'node--service_request',
+        'relationships' => [
+          'field_jurisdiction' => ['data' => [['type' => 'group--jur', 'id' => $uuid]]],
+        ],
+      ],
+    ]);
+    $get = static fn(string $path, array $query): Request => Request::create($path, 'GET', $query);
+    $post = static fn(string $path, string $body): Request => Request::create($path, 'POST', [], [], [], ['CONTENT_TYPE' => 'application/vnd.api+json'], $body);
+    $customerId = (string) $customer->id();
+    $path = 'field_jurisdiction.meta.drupal_internal__target_id';
+    $categories = '/jsonapi/taxonomy_term/service_category';
+    $longFilter = ['j' => ['condition' => ['path' => $path, 'value' => $customerId]]];
+    $analysis = Request::create('/api/vision/analyze', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], '{"jurisdiction_id":"customer"}');
+    $cases = [
+      'other settings' => [$get('/api/mark-a-spot-settings', ['jurisdiction' => $customerId]), FALSE],
+      'category filter' => [$get($categories, ['filter' => [$path => $customerId]]), FALSE],
+      'long filter' => [$get('/jsonapi/node/service_request', ['filter' => $longFilter]), FALSE],
+      'report in another workspace' => [$post('/jsonapi/node/service_request', $relationship($customer->uuid())), FALSE],
+      'analysis for another workspace' => [$analysis, FALSE],
+      'own settings' => [$get('/api/mark-a-spot-settings', ['jurisdiction' => 'demo-school-routes']), TRUE],
+      'own report' => [$post('/jsonapi/node/service_request', $relationship($demoUuid)), TRUE],
+      'no workspace named' => [Request::create('/api/auth/status'), TRUE],
+    ];
+    $upload = Request::create('/jsonapi/media/request_image/field_media_image', 'POST');
+    $upload->headers->set(DemoStaffAccount::UPLOAD_JURISDICTION_HEADER, 'customer');
+    $cases['upload for another workspace'] = [$upload, FALSE];
+
+    foreach ($cases as $label => [$request, $staysDemo]) {
+      $currentUser->setAccount($account);
+      $request->setSession($requestStack->getCurrentRequest()->getSession());
+      $subscriber->onRequest(new RequestEvent($this->container->get('http_kernel'), $request, HttpKernelInterface::MAIN_REQUEST));
+      $this->assertSame($staysDemo ? (int) $account->id() : 0, (int) $currentUser->id(), $label);
+    }
+    // The session itself stays a demo session.
+    $this->assertFalse($this->staffAccount()->isSessionExpired($account, $requestStack->getCurrentRequest()->getSession()));
+  }
+
+  /**
    * Returns the demo staff account service.
    */
   private function staffAccount(): DemoStaffAccount {
