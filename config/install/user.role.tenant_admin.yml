@@ -167,5 +167,6 @@ permissions:
   - 'view own field_status_notes'
   - 'view own unpublished content'
   - 'view own unpublished media'
+  - 'view service_request revisions'
   - 'view the administration theme'
   - 'view unpublished paragraphs'

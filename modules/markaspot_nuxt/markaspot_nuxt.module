@@ -13,6 +13,7 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\file\Entity\File;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Access\VersionHistoryAccessCheck;
 use Drupal\markaspot_nuxt\Field\DashboardMediaItemList;
 use Drupal\markaspot_nuxt\Field\DashboardReferenceData;
 use Drupal\markaspot_nuxt\Field\DashboardStatusNotesItemList;
@@ -20,6 +21,7 @@ use Drupal\node\NodeInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\user\RoleInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -225,6 +227,35 @@ function markaspot_nuxt_group_update(GroupInterface $group): void {
   }
 
   Cache::invalidateTags(['group:' . $group->id(), 'group_list']);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for user_role entities.
+ *
+ * On the shared self-service platform the edit history of a report belongs
+ * to the platform operator only (decision 2026-10-20). The profile roles ship
+ * the revision permission for enterprise stacks, so it is stripped here from
+ * every non-admin role whenever a role is saved on the platform, including a
+ * fresh install and a config import. The enterprise showcase keeps it; a
+ * showcase switched on after install grants it again with
+ * `drush role:perm:add tenant_admin "view service_request revisions"`.
+ */
+function markaspot_nuxt_user_role_presave(RoleInterface $role): void {
+  if ($role->isAdmin() || !\Drupal::hasService('markaspot_nuxt.feature_scope_resolver')) {
+    return;
+  }
+  if (\Drupal::service('markaspot_nuxt.feature_scope_resolver')->allowsEnterpriseFeatures()) {
+    return;
+  }
+  foreach (VersionHistoryAccessCheck::REVISION_PERMISSIONS as $permission) {
+    if ($role->hasPermission($permission)) {
+      $role->revokePermission($permission);
+      \Drupal::logger('markaspot_nuxt')->notice('Removed "@permission" from role @role: the edit history is reserved for the platform operator on the self-service platform.', [
+        '@permission' => $permission,
+        '@role' => $role->id(),
+      ]);
+    }
+  }
 }
 
 /**

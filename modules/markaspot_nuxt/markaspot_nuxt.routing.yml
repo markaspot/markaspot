@@ -9,10 +9,11 @@
 # entity param resolution (options.parameters.entity.type: entity:node).
 #
 # Staff-only gate: revision author identity is exposed, so the route requires
-# the node revision permission OR the service_request editor permission (comma =
+# a node revision permission OR the service_request editor permission ('+' =
 # OR). Anonymous / reporter accounts get 403, consistent with the revision_uid
 # hardening (markaspot_nuxt_update_11904). _entity_access ensures the caller can
-# also view the underlying node.
+# also view the underlying node. On the shared self-service platform
+# _custom_access limits the history to the platform operator.
 markaspot_nuxt.service_request_version_history:
   path: '/%jsonapi%/node/service_request/{entity}/version-history'
   defaults:
@@ -25,8 +26,9 @@ markaspot_nuxt.service_request_version_history:
     # getRouteResourceTypes().
     resource_type: 'node--service_request'
   requirements:
-    _permission: 'view all revisions+edit any service_request content'
+    _permission: 'view all revisions+view service_request revisions+edit any service_request content'
     _entity_access: 'entity.view'
+    _custom_access: 'markaspot_nuxt.version_history_access_check:check'
   options:
     parameters:
       entity:

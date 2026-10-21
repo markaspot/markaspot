@@ -480,6 +480,35 @@ final class WorkspaceVisibilityQueryKernelTest extends KernelTestBase {
   }
 
   /**
+   * The revision overview requires view access to the report itself.
+   */
+  public function testRevisionOverviewRequiresReportViewAccess(): void {
+    Role::create([
+      'id' => 'revision_viewer',
+      'label' => 'Revision viewer',
+      'permissions' => ['access content', 'view service_request revisions'],
+    ])->save();
+    $account = $this->createAccount('revision-viewer', ['revision_viewer']);
+    $handler = WorkspaceVisibilityNodeAccessControlHandler::createInstance(
+      $this->container,
+      $this->container->get('entity_type.manager')->getDefinition('node'),
+    );
+
+    $published = Node::load($this->requestIds['public']);
+    $this->assertTrue($handler->access($published, 'view all revisions', $account, TRUE)->isAllowed());
+
+    $jurisdiction_id = (int) $published->get('field_jurisdiction')->target_id;
+    $unpublished = Node::load($this->createRequest('Unpublished request', [$jurisdiction_id]));
+    $unpublished->setUnpublished()->save();
+    $handler->resetCache();
+    $this->assertFalse($handler->access($unpublished, 'view', $account, TRUE)->isAllowed());
+    $this->assertFalse(
+      $handler->access($unpublished, 'view all revisions', $account, TRUE)->isAllowed(),
+      'The revision permission alone must not open the history of a report the account cannot view.',
+    );
+  }
+
+  /**
    * Form-only denies citizens, generic members and foreign staff on all reads.
    */
   public function testFormOnlyRequiresScopedStaffAndInvalidatesMembershipCache(): void {

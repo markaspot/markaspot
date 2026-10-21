@@ -146,6 +146,14 @@ final class WorkspaceVisibilityNodeAccessControlHandler extends NodeAccessContro
     /** @var \Drupal\Core\Access\AccessResultInterface $result */
     $result = parent::access($entity, $operation, $account, TRUE);
     $result->addCacheableDependency($workspace_access);
+    // Core allows the revision overview on the revision permission alone,
+    // without asking whether the account may view the report itself. Tenant
+    // admins hold "view service_request revisions" on enterprise stacks; the
+    // overview must not open unpublished or foreign-jurisdiction reports.
+    if ($operation === 'view all revisions' && $result->isAllowed()
+      && $entity instanceof NodeInterface && $entity->bundle() === 'service_request') {
+      $result = $result->andIf($this->access($entity, 'view', $account, TRUE));
+    }
     if (isset($template_access)) {
       $result->addCacheableDependency($template_access);
     }

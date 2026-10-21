@@ -7,6 +7,7 @@
 
 use Drupal\Core\Site\Settings;
 use Drupal\Core\Config\FileStorage;
+use Drupal\markaspot_nuxt\Access\VersionHistoryAccessCheck;
 
 /**
  * Implements hook_install().
@@ -1065,4 +1066,48 @@ function markaspot_nuxt_update_11916(): string {
   $resource->save();
 
   return 'Exposed ' . implode(', ', $exposed) . ' on the node--boilerplate JSON:API resource.';
+}
+
+/**
+ * Shows the report edit history to tenant admins on enterprise stacks.
+ *
+ * Revisions were stored, but tenant_admin lacked a revision permission, so
+ * only moderators (through "edit any service_request content") reached the
+ * version history. Enterprise stacks grant the bundle-scoped permission. On
+ * the shared self-service platform the history stays with the platform
+ * operator: saving each role lets markaspot_nuxt_user_role_presave() strip
+ * revision permissions from non-admin roles. Idempotent.
+ */
+function markaspot_nuxt_update_11917(): string {
+  $resolver = \Drupal::service('markaspot_nuxt.feature_scope_resolver');
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+
+  if (!$resolver->allowsEnterpriseFeatures()) {
+    $stripped = [];
+    foreach ($role_storage->loadMultiple() as $role) {
+      if ($role->isAdmin()) {
+        continue;
+      }
+      foreach (VersionHistoryAccessCheck::REVISION_PERMISSIONS as $permission) {
+        if ($role->hasPermission($permission)) {
+          $role->save();
+          $stripped[] = $role->id();
+          break;
+        }
+      }
+    }
+    return $stripped
+      ? 'Removed revision permissions on the self-service platform from: ' . implode(', ', $stripped) . '.'
+      : 'Self-service platform: no role holds revision permissions.';
+  }
+
+  $role = $role_storage->load('tenant_admin');
+  if (!$role) {
+    return 'Skipped: tenant_admin role not found.';
+  }
+  if ($role->hasPermission('view service_request revisions') || $role->hasPermission('view all revisions')) {
+    return 'tenant_admin already sees the report edit history.';
+  }
+  $role->grantPermission('view service_request revisions')->save();
+  return 'Granted "view service_request revisions" to tenant_admin.';
 }

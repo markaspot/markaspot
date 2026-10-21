@@ -44,8 +44,9 @@ use Symfony\Component\Routing\Route;
  *
  * Security: this endpoint exposes the revision author identity and assignment
  * labels, so it is both staff-only and tenant-scoped. Route permissions provide
- * the staff gate; process() additionally requires the same field-level view
- * access as field_assignee. Author identity and assignment history are never
+ * the staff gate, VersionHistoryAccessCheck limits it to the platform operator
+ * on the shared self-service platform; process() additionally requires the
+ * same field-level view access as field_assignee. Author identity and assignment history are never
  * exposed to anonymous, reporter, or foreign-tenant accounts.
  *
  * @internal

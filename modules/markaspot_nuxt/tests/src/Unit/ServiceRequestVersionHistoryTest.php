@@ -347,11 +347,16 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     // ('+' is OR in Drupal's _permission requirement). Author identity is never
     // exposed to anonymous / reporter accounts.
     $this->assertSame(
-      'view all revisions+edit any service_request content',
+      'view all revisions+view service_request revisions+edit any service_request content',
       $route['requirements']['_permission']
     );
     // The caller must also be able to view the underlying node.
     $this->assertSame('entity.view', $route['requirements']['_entity_access']);
+    // On the self-service platform only the operator passes.
+    $this->assertSame(
+      'markaspot_nuxt.version_history_access_check:check',
+      $route['requirements']['_custom_access']
+    );
   }
 
   /**
