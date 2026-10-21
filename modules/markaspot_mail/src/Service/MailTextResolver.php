@@ -170,7 +170,7 @@ class MailTextResolver {
         continue;
       }
       if (in_array($slot, self::HTML_SLOTS, TRUE)) {
-        $value = Xss::filter($value, self::MAIL_ALLOWED_TAGS);
+        $value = self::lineBreaksToHtml(Xss::filter($value, self::MAIL_ALLOWED_TAGS));
       }
       $slots[$slot] = (string) $this->token->replace($value, $tokenData, $options);
     }
@@ -179,7 +179,7 @@ class MailTextResolver {
     if (is_array($blocks) && $blocks !== []) {
       $slots['body_blocks'] = array_map(
         fn(string $block): string => (string) $this->token->replace(
-          Xss::filter($block, self::MAIL_ALLOWED_TAGS),
+          self::lineBreaksToHtml(Xss::filter($block, self::MAIL_ALLOWED_TAGS)),
           $tokenData,
           $options
         ),
@@ -189,6 +189,30 @@ class MailTextResolver {
 
     /** @var array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string} $slots */
     return $slots;
+  }
+
+  /**
+   * Turns single line breaks in an HTML text slot into <br> tags.
+   *
+   * Editors type Enter in a plain textarea, but intro and body_blocks are
+   * rendered `|raw`, where a bare newline collapses to a space. An existing
+   * "<br>\n" pair yields one <br>. Text with block or list HTML is left
+   * alone to avoid shapes like "<ul><br><li>"; unlike
+   * SplitParagraphsTrait, an existing <br> does not stop the conversion,
+   * so a migrated block keeps working after an editor adds a line.
+   *
+   * @param string $html
+   *   An already Xss-filtered slot value.
+   *
+   * @return string
+   *   The value with line breaks as <br>.
+   */
+  public static function lineBreaksToHtml(string $html): string {
+    $html = trim(str_replace(["\r\n", "\r"], "\n", $html));
+    if (!str_contains($html, "\n") || preg_match('#</?(?:p|ul|ol|li|h2|h3)\b#i', $html) === 1) {
+      return $html;
+    }
+    return (string) preg_replace('#(?:<br\s*/?>)?\n#i', '<br>', $html);
   }
 
   /**

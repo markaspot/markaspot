@@ -132,6 +132,35 @@ final class MailTextResolverTest extends UnitTestCase {
   }
 
   /**
+   * Line breaks typed in the editor reach the mail as <br>.
+   */
+  public function testReplaceTokensTurnsLineBreaksIntoBrInIntroAndBodyBlocks(): void {
+    $resolver = $this->buildResolverWithToken($this->buildPassthroughToken());
+
+    $slots = $this->emptySlots();
+    $slots['subject'] = "Line\nbreak";
+    $slots['intro'] = "Dear resident,\r\nthank you.";
+    $slots['body_blocks'] = [
+      "Kind regards<br>City services\nCustomer desk<br>\nMain Street 1",
+      "<ul>\n<li>a</li>\n</ul>",
+      "<p>One</p>\n<p>Two</p>",
+      "Self<br />\nclosing\rbreak",
+      "\nTrimmed\n",
+    ];
+    $replaced = $resolver->replaceTokens($slots, [], 'en');
+
+    self::assertSame("Line\nbreak", $replaced['subject']);
+    self::assertSame('Dear resident,<br>thank you.', $replaced['intro']);
+    self::assertSame([
+      'Kind regards<br>City services<br>Customer desk<br>Main Street 1',
+      "<ul>\n<li>a</li>\n</ul>",
+      "<p>One</p>\n<p>Two</p>",
+      'Self<br>closing<br>break',
+      'Trimmed',
+    ], $replaced['body_blocks']);
+  }
+
+  /**
    * Admin-authored HTML in `intro` is sanitized against the mail allowlist.
    */
   public function testReplaceTokensStripsScriptFromIntroButKeepsAllowedTags(): void {
