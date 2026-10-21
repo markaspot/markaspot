@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.225](https://github.com/markaspot/markaspot/compare/11.9.224...11.9.225) (2026-10-20)
+
+### Features
+
+* **revisions:** show the report edit history to tenant admins, keep it operator-only on the self-service platform ([25ba399](https://github.com/markaspot/markaspot/commit/25ba399fbec7aeae3444adc2eda8ed1990219052))
+
 ## [11.9.224](https://github.com/markaspot/markaspot/compare/11.9.223...11.9.224) (2026-10-20)
 
 ### Bug Fixes
