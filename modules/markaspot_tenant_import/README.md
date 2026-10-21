@@ -204,9 +204,11 @@ suggests `drush cr` if newly created terms are not immediately visible.
 
 ## Supplied example
 
-`tests/fixtures/tenant-config.example.json` is an unchanged copy of the current
-specification, including category `3`. The Kernel test imports it directly. A
-separate negative test deliberately removes that parent to test validation.
+`tests/fixtures/tenant-config.example.json` follows the current specification,
+including category `3`, with a fictional tenant (City of Fairhaven, `.example`
+domains). The Kernel test imports it directly. A separate negative test
+deliberately removes that parent to test validation. Real tenant seeds never
+belong in this public repository; they live in the private provisioning repo.
 
 The v1 attribute whitelist is `code`, `datatype`, `description`, `required`,
 `variable`, `order`, `values`, and `media_type`. Unknown keys are discarded, not

@@ -172,7 +172,7 @@ final class TenantImporterTest extends KernelTestBase {
     $this->jurisdiction = Group::create([
       'type' => 'jur',
       'label' => 'Fresh jurisdiction',
-      'field_slug' => 'erfurt',
+      'field_slug' => 'fairhaven',
     ]);
     $this->jurisdiction->save();
     $this->importer = $this->container->get('markaspot_tenant_import.tenant_importer');
@@ -988,7 +988,7 @@ final class TenantImporterTest extends KernelTestBase {
    */
   public function testDedicatedBootstrapRejectsUnownedRoot(): void {
     $configuration = $this->prepareDedicatedBootstrap();
-    Group::create(['type' => 'jur', 'label' => 'Existing', 'field_slug' => 'erfurt'])->save();
+    Group::create(['type' => 'jur', 'label' => 'Existing', 'field_slug' => 'fairhaven'])->save();
     $this->expectException(\RuntimeException::class);
     $this->expectExceptionMessage('Refusing adoption');
     $this->container->get('markaspot_tenant_import.tenant_bootstrapper')->bootstrap($configuration, NULL, TRUE);
@@ -1427,11 +1427,11 @@ final class TenantImporterTest extends KernelTestBase {
     $this->assertInstanceOf(GroupInterface::class, $jurisdiction);
     $this->assertCount(5, $jurisdiction->get('field_service_categories'));
     $this->assertCount(4, $jurisdiction->get('field_service_statuses'));
-    $this->assertSame('Mängelmelder Erfurt', $jurisdiction->get('field_platform_name')->value);
-    $this->assertSame('maengelmelder@erfurt.de', $jurisdiction->get('field_jurisdiction_e_mail')->value);
-    $this->assertSame('Fischmarkt 1', $jurisdiction->get('field_jurisdiction_address')->address_line1);
-    $this->assertSame('99084', $jurisdiction->get('field_jurisdiction_address')->postal_code);
-    $this->assertSame('Erfurt', $jurisdiction->get('field_jurisdiction_address')->locality);
+    $this->assertSame('Fairhaven Issue Reporter', $jurisdiction->get('field_platform_name')->value);
+    $this->assertSame('maengelmelder@fairhaven.example', $jurisdiction->get('field_jurisdiction_e_mail')->value);
+    $this->assertSame('Main Street 1', $jurisdiction->get('field_jurisdiction_address')->address_line1);
+    $this->assertSame('12345', $jurisdiction->get('field_jurisdiction_address')->postal_code);
+    $this->assertSame('Fairhaven', $jurisdiction->get('field_jurisdiction_address')->locality);
 
     $tba = $this->loadOrganisation('TBA');
     $swe = $this->loadOrganisation('SWE');
@@ -1470,12 +1470,12 @@ final class TenantImporterTest extends KernelTestBase {
     $userStorage = $this->container->get('entity_type.manager')->getStorage('user');
     $userIds = $userStorage->getQuery()->accessCheck(FALSE)->condition('uid', 1, '>')->execute();
     $this->assertCount(6, $userIds);
-    $tenantAdmin = $this->loadUser('erika.muster@erfurt.de');
-    $moderator = $this->loadUser('max.beispiel@erfurt.de');
-    $editorial = $this->loadUser('presse@erfurt.de');
-    $orgMember = $this->loadUser('lampen@stadtwerke-erfurt.de');
-    $orgModerator = $this->loadUser('gruenpflege@erfurt.de');
-    $orgContractor = $this->loadUser('auftrag@stadtwerke-erfurt.de');
+    $tenantAdmin = $this->loadUser('jane.doe@fairhaven.example');
+    $moderator = $this->loadUser('sam.sample@fairhaven.example');
+    $editorial = $this->loadUser('presse@fairhaven.example');
+    $orgMember = $this->loadUser('lampen@fairhaven-utilities.example');
+    $orgModerator = $this->loadUser('gruenpflege@fairhaven.example');
+    $orgContractor = $this->loadUser('auftrag@fairhaven-utilities.example');
     $this->assertSame(['authenticated', 'moderator'], $orgModerator->getRoles());
     $this->assertSame(['authenticated', 'contractor'], $orgContractor->getRoles());
     $this->assertArrayHasKey('org-insider', GroupMembership::loadSingle($this->loadOrganisation('GFA'), $orgModerator)->getRoles());
@@ -2455,7 +2455,7 @@ final class TenantImporterTest extends KernelTestBase {
     $child = Group::create([
       'type' => 'jur',
       'label' => 'Child',
-      'field_slug' => 'erfurt',
+      'field_slug' => 'fairhaven',
       'field_parent_jurisdiction' => $this->jurisdiction->id(),
     ]);
     $child->save();
@@ -2498,7 +2498,7 @@ final class TenantImporterTest extends KernelTestBase {
       $sibling = Group::create([
         'type' => 'jur',
         'label' => $label,
-        'field_slug' => 'erfurt',
+        'field_slug' => 'fairhaven',
         'field_parent_jurisdiction' => $this->jurisdiction->id(),
       ]);
       $sibling->save();

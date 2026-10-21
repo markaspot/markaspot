@@ -2,27 +2,27 @@
   "$comment": "Mark-a-Spot Mandantenkonfiguration v1. Wird vom Drush-Befehl mas:tenant:import eingelesen und ergaenzt jurisdiction-config.json (Branding/Features) in markaspot-cloud/setup/<tenant>/. Idempotenz-Schluessel: categories.code, statuses.name, organisations.code, users.email.",
   "version": 1,
   "tenant": {
-    "slug": "erfurt",
-    "label": "Landeshauptstadt Erfurt",
-    "short_name": "Erfurt",
-    "platform_name": "Mängelmelder Erfurt",
-    "email": "maengelmelder@erfurt.de",
-    "address": "Fischmarkt 1, 99084 Erfurt",
+    "slug": "fairhaven",
+    "label": "City of Fairhaven",
+    "short_name": "Fairhaven",
+    "platform_name": "Fairhaven Issue Reporter",
+    "email": "maengelmelder@fairhaven.example",
+    "address": "Main Street 1, 12345 Fairhaven",
     "languages": [
       "de"
     ],
     "contact": {
-      "name": "Erika Muster",
-      "email": "erika.muster@erfurt.de",
+      "name": "Jane Doe",
+      "email": "jane.doe@fairhaven.example",
       "phone": "+49 361 0000",
       "unit": "Amt für Digitalisierung"
     },
-    "map_center_address": "Fischmarkt 1, 99084 Erfurt",
+    "map_center_address": "Main Street 1, 12345 Fairhaven",
     "primary_color": "#1F3E5D",
-    "logo_file": "logos/erfurt.svg",
-    "custom_domain": "maengelmelder.erfurt.de",
-    "legal_notice_url": "https://www.erfurt.de/impressum",
-    "privacy_policy_url": "https://www.erfurt.de/datenschutz",
+    "logo_file": "logos/fairhaven.svg",
+    "custom_domain": "issues.fairhaven.example",
+    "legal_notice_url": "https://www.fairhaven.example/impressum",
+    "privacy_policy_url": "https://www.fairhaven.example/datenschutz",
     "features": {
       "aiAnalysis": true,
       "publicReports": true,
@@ -33,21 +33,21 @@
     {
       "code": "TBA",
       "name": "Tiefbau- und Verkehrsamt",
-      "email": "tiefbau@erfurt.de",
+      "email": "tiefbau@fairhaven.example",
       "type": "internal",
       "parent_code": null
     },
     {
       "code": "GFA",
       "name": "Garten- und Friedhofsamt",
-      "email": "gruen@erfurt.de",
+      "email": "gruen@fairhaven.example",
       "type": "internal",
       "parent_code": null
     },
     {
       "code": "SWE",
-      "name": "Stadtwerke Erfurt (Beleuchtung)",
-      "email": "stoerung@stadtwerke-erfurt.de",
+      "name": "Fairhaven Utilities (Street lighting)",
+      "email": "stoerung@fairhaven-utilities.example",
       "type": "contractor",
       "parent_code": null
     }
@@ -156,42 +156,42 @@
   ],
   "users": [
     {
-      "email": "erika.muster@erfurt.de",
-      "first_name": "Erika",
-      "last_name": "Muster",
+      "email": "jane.doe@fairhaven.example",
+      "first_name": "Jane",
+      "last_name": "Doe",
       "role": "tenant_admin",
       "organisation_code": null
     },
     {
-      "email": "max.beispiel@erfurt.de",
-      "first_name": "Max",
-      "last_name": "Beispiel",
+      "email": "sam.sample@fairhaven.example",
+      "first_name": "Sam",
+      "last_name": "Sample",
       "role": "moderator",
       "organisation_code": null
     },
     {
-      "email": "lampen@stadtwerke-erfurt.de",
+      "email": "lampen@fairhaven-utilities.example",
       "first_name": "Störungsdienst",
       "last_name": "Stadtwerke",
       "role": "org_member",
       "organisation_code": "SWE"
     },
     {
-      "email": "presse@erfurt.de",
+      "email": "presse@fairhaven.example",
       "first_name": "Pressestelle",
-      "last_name": "Erfurt",
+      "last_name": "Fairhaven",
       "role": "editorial",
       "organisation_code": null
     },
     {
-      "email": "gruenpflege@erfurt.de",
+      "email": "gruenpflege@fairhaven.example",
       "first_name": "Grünpflege",
       "last_name": "Gartenamt",
       "role": "org_moderator",
       "organisation_code": "GFA"
     },
     {
-      "email": "auftrag@stadtwerke-erfurt.de",
+      "email": "auftrag@fairhaven-utilities.example",
       "first_name": "Auftragsannahme",
       "last_name": "Stadtwerke",
       "role": "org_contractor",
