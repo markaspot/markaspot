@@ -1,5 +1,14 @@
 # Changelog
 
+## [11.9.226](https://github.com/markaspot/markaspot/compare/11.9.225...11.9.226) (2026-10-21)
+
+### Bug Fixes
+
+* **dashboard:** keep config metadata out of the mail texts catalog ([0cc43df](https://github.com/markaspot/markaspot/commit/0cc43dfbd733aae114c1ae3a91f6041d81679ed9))
+* drop customer names and links from shipped mail texts ([829efda](https://github.com/markaspot/markaspot/commit/829efda3700ac06c513ad81a3729620a06c37bf6))
+* **mail:** link organisation notifications to the report edit form ([e3b3b1e](https://github.com/markaspot/markaspot/commit/e3b3b1e0503e063a49a0e6b87b6ac0d6e19962b6))
+* **mail:** render line breaks in mail text slots as br ([e61ad86](https://github.com/markaspot/markaspot/commit/e61ad869db74eedcfcb0c212914fdaa5cf17dbcc))
+
 ## [11.9.225](https://github.com/markaspot/markaspot/compare/11.9.224...11.9.225) (2026-10-20)
 
 ### Features
