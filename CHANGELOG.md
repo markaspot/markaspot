@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.224](https://github.com/markaspot/markaspot/compare/11.9.223...11.9.224) (2026-10-20)
+
+### Bug Fixes
+
+* **health:** pick the status-note smoke pair from the fixture jurisdiction ([740e0f5](https://github.com/markaspot/markaspot/commit/740e0f58e8e771903c9c03e311b9af19437eb2b0))
+* **open311:** force published-only reads for api-key accounts without advanced properties ([2175489](https://github.com/markaspot/markaspot/commit/217548992b19773e5c211b72b5bacb82318eb54c))
+
 ## [11.9.223](https://github.com/markaspot/markaspot/compare/11.9.222...11.9.223) (2026-10-20)
 
 ### Features
