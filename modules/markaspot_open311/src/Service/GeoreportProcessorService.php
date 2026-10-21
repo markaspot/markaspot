@@ -1719,11 +1719,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Query parameters.
    * @param \Drupal\Core\Session\AccountInterface $user
    *   The user account.
+   * @param bool $apiKeyRead
+   *   TRUE when the request authenticated with an API key. A key account
+   *   without 'access open311 advanced properties' reads like an anonymous
+   *   visitor and only gets published requests, whatever group roles the
+   *   account holds in its jurisdictions.
    *
    * @return \Drupal\Core\Entity\Query\QueryInterface
    *   The configured query object.
    */
-  public function createNodeQuery(array $parameters, $user): QueryInterface {
+  public function createNodeQuery(array $parameters, $user, bool $apiKeyRead = FALSE): QueryInterface {
     $query = $this->entityTypeManager->getStorage('node')->getQuery();
     $query->condition('type', 'service_request');
 
@@ -1756,6 +1761,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     else {
       $query->condition('status', 1);
       $query->accessCheck(TRUE);
+    }
+
+    // The frontend proxy and other plain keys get the anonymous response
+    // shape; their result set must not depend on group roles either.
+    if ($apiKeyRead && !$user->isAnonymous() && $user->id() != 1 && !$user->hasPermission('access open311 advanced properties')) {
+      $query->condition('status', 1);
     }
 
     // Apply group membership filter.

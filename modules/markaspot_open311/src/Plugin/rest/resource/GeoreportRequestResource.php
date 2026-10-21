@@ -351,7 +351,7 @@ class GeoreportRequestResource extends ResourceBase {
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
     // Start with the secure base query.
-    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser, $this->currentRequestUsesApiKey());
 
     // Add bundle condition.
     $bundle = $this->config->get('bundle') ?? 'service_request';
@@ -516,7 +516,8 @@ class GeoreportRequestResource extends ResourceBase {
     $scopeJurisdictionIds = $this->resolveSingleRequestJurisdictionScope($parameters, $enforceMembership);
     $query = $this->georeportProcessor->createNodeQuery(
       $this->stripJurisdictionClaims($parameters),
-      $this->currentUser
+      $this->currentUser,
+      $this->currentRequestUsesApiKey()
     );
 
     $bundle = $this->config->get('bundle') ?? 'service_request';

@@ -139,11 +139,15 @@ interface GeoreportProcessorServiceInterface {
    *   The query parameters.
    * @param object $user
    *   The current user.
+   * @param bool $apiKeyRead
+   *   TRUE when the request authenticated with an API key; key accounts
+   *   without 'access open311 advanced properties' only get published
+   *   requests.
    *
    * @return \Drupal\Core\Entity\Query\QueryInterface
    *   The configured query object.
    */
-  public function createNodeQuery(array $parameters, $user): QueryInterface;
+  public function createNodeQuery(array $parameters, $user, bool $apiKeyRead = FALSE): QueryInterface;
 
   /**
    * Maps a node to a service request definition.

@@ -419,7 +419,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
     // Start with the secure base query from the processor service.
-    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser, $this->currentRequestUsesApiKey());
 
     // The summary extension mode is exclusive to this index resource. Keep
     // the public extensions parameter permissive for legacy clients and pass
