@@ -1050,8 +1050,8 @@ final class EcaMailMigrator {
    * frontend_base_url + jurisdiction slug + request_id), so the paragraph
    * carrying them is dropped rather than kept as inert dead-link text.
    *
-   * Deliberately narrow: a bare "https://…" URL (e.g. the Bonn business-
-   * hours link in the shipped process_tunr6d6 defaults) is NOT a link
+   * Deliberately narrow: a bare "https://…" URL (e.g. a tenant's business-
+   * hours page linked from an ECA mail) is NOT a link
    * paragraph here — that is genuine tenant content unrelated to the
    * report-view CTA and must survive the migration untouched.
    */

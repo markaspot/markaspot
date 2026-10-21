@@ -146,12 +146,12 @@ final class EcaMailMigratorTest extends UnitTestCase {
    * business-hours page) and must survive the migration.
    */
   public function testTransformMessagePreservesGenuineExternalLinkAsBodyContent(): void {
-    $message = "Good day!\n\nWe are not responsible.\n\nOur opening hours and contact details are listed on our website.\n\n-- This is an automatically generated email, and unfortunately, you cannot reply to it.";
+    $message = "Good day!\n\nWe are not responsible.\n\nFor our opening hours, please visit: https://www.example.org/opening-hours\n\n-- This is an automatically generated email, and unfortunately, you cannot reply to it.";
 
     $migrator = $this->buildMigrator();
     $result = $migrator->transformMessage($message);
 
-    $this->assertContains('Our opening hours and contact details are listed on our website.', $result['body_blocks']);
+    $this->assertContains('For our opening hours, please visit: https://www.example.org/opening-hours', $result['body_blocks']);
     $this->assertNotContains('-- This is an automatically generated email, and unfortunately, you cannot reply to it.', $result['body_blocks']);
   }
 
