@@ -4,7 +4,7 @@ feedback_request:
   body: |
     Sehr geehrte(r) Bürger/in,
 
-    vielen Dank, dass Sie den Mängelmelder der Stadt Bonn genutzt haben.
+    vielen Dank, dass Sie den Mängelmelder genutzt haben.
 
     {{ citizen_term_singular_title }} "[node:title]" wurde bearbeitet und ist in unserem System als erledigt markiert. Bevor wir diesen Vorgang abschließen, möchten wir Sie um Ihr Feedback bitten.
 
@@ -19,4 +19,3 @@ feedback_request:
 
     Mit freundlichen Grüßen,
     Ihr Team des Mängelmelders
-    Stadt Bonn
