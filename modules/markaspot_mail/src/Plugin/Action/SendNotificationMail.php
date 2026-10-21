@@ -7,6 +7,7 @@ namespace Drupal\markaspot_mail\Plugin\Action;
 use Drupal\Core\Action\Attribute\Action;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 
 /**
@@ -118,13 +119,13 @@ final class SendNotificationMail extends NotificationMailActionBase {
    *
    * @return array<string, string>
    *   Machine key => label, keyed by every top-level key currently present
-   *   in markaspot_mail.texts (excluding the langcode sibling key).
+   *   in markaspot_mail.texts (excluding the langcode and _core metadata).
    */
   private function getNotificationKeyOptions(): array {
     $rawKeys = array_keys((array) $this->configFactory->get('markaspot_mail.texts')->get());
     $options = [];
     foreach ($rawKeys as $key) {
-      if (!is_string($key) || $key === 'langcode') {
+      if (!is_string($key) || in_array($key, MailTextResolver::RESERVED_CONFIG_KEYS, TRUE)) {
         continue;
       }
       $options[$key] = self::KNOWN_KEY_LABELS[$key] ?? ucwords(str_replace('_', ' ', $key));

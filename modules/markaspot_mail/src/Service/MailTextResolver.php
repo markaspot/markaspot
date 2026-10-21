@@ -54,6 +54,14 @@ class MailTextResolver {
   ];
 
   /**
+   * Top-level keys of markaspot_mail.texts that are metadata, not texts.
+   *
+   * "_core" (default_config_hash) is present wherever ConfigInstaller
+   * installed the config; anything listing notification keys skips these.
+   */
+  public const RESERVED_CONFIG_KEYS = ['langcode', '_core'];
+
+  /**
    * Scalar slots rendered `|raw` by mail-card-transactional.html.twig.
    *
    * Subject/headline/cta_label/preheader render as plain/escaped text in

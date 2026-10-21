@@ -17,6 +17,7 @@ use Drupal\markaspot_dashboard\Service\Exception\MailTextsConflictException;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsForbiddenException;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsNotFoundException;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -51,6 +52,14 @@ final class MailTextsService implements MailTextsServiceInterface {
   private const SLOTS = ['subject', 'headline', 'intro', 'body_blocks', 'cta_label', 'preheader'];
 
   private const KEY_PATTERN = '/^[a-z0-9_]{3,64}$/';
+
+  /**
+   * Top-level config keys that are metadata, not mail texts.
+   *
+   * "_core" (default_config_hash) matches KEY_PATTERN, so it must be
+   * excluded explicitly from listing, counting, saving and deleting.
+   */
+  private const RESERVED_KEYS = MailTextResolver::RESERVED_CONFIG_KEYS;
 
   private const SUBJECT_MAX_LENGTH = 200;
 
@@ -211,8 +220,10 @@ final class MailTextsService implements MailTextsServiceInterface {
    * {@inheritdoc}
    */
   public function getCatalog(): array {
-    $raw = (array) $this->configFactory->get(self::CONFIG_NAME)->getRawData();
-    unset($raw['langcode']);
+    $raw = array_diff_key(
+      (array) $this->configFactory->get(self::CONFIG_NAME)->getRawData(),
+      array_flip(self::RESERVED_KEYS),
+    );
 
     $texts = [];
     foreach (self::STANDARD_KEYS as $key) {
@@ -238,6 +249,9 @@ final class MailTextsService implements MailTextsServiceInterface {
   public function saveText(string $key, array $slots, AccountInterface $account): array {
     if (preg_match(self::KEY_PATTERN, $key) !== 1) {
       throw new \InvalidArgumentException(sprintf('Key "%s" must match ^[a-z0-9_]{3,64}$.', $key));
+    }
+    if (in_array($key, self::RESERVED_KEYS, TRUE)) {
+      throw new \InvalidArgumentException(sprintf('Key "%s" is reserved.', $key));
     }
     $this->validateSlots($slots);
 
@@ -293,7 +307,7 @@ final class MailTextsService implements MailTextsServiceInterface {
     }
 
     $config = $this->configFactory->getEditable(self::CONFIG_NAME);
-    if (!is_array($config->get($key))) {
+    if (in_array($key, self::RESERVED_KEYS, TRUE) || !is_array($config->get($key))) {
       throw new MailTextsNotFoundException(sprintf('Key "%s" does not exist.', $key));
     }
     if (in_array($key, self::STANDARD_KEYS, TRUE)) {
@@ -403,8 +417,7 @@ final class MailTextsService implements MailTextsServiceInterface {
    *   The config already holds MAX_CUSTOM_KEYS non-standard keys.
    */
   private function assertCustomKeyLimitNotReached(Config $config): void {
-    $raw = (array) $config->getRawData();
-    unset($raw['langcode']);
+    $raw = array_diff_key((array) $config->getRawData(), array_flip(self::RESERVED_KEYS));
     $customKeyCount = count(array_diff(array_keys($raw), self::STANDARD_KEYS));
 
     if ($customKeyCount >= self::MAX_CUSTOM_KEYS) {

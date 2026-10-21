@@ -351,6 +351,7 @@ class MailTextsServiceTest extends UnitTestCase {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('getRawData')->willReturn([
       'langcode' => 'en',
+      '_core' => ['default_config_hash' => 'abc'],
       'report_confirmation' => [
         'subject' => 'Received',
         'headline' => '',
@@ -394,6 +395,7 @@ class MailTextsServiceTest extends UnitTestCase {
       'preheader' => '',
       'standard' => TRUE,
     ], $catalog['texts']['assignee_notification']);
+    self::assertArrayNotHasKey('_core', $catalog['texts']);
     self::assertFalse($catalog['texts']['status_closed_ampel_sommer']['standard']);
     self::assertSame('Custom subject', $catalog['texts']['status_closed_ampel_sommer']['subject']);
     // Missing slots on the custom key normalize to '' / [].
@@ -427,6 +429,7 @@ class MailTextsServiceTest extends UnitTestCase {
       'space' => ['status open'],
       'dash' => ['status-open'],
       'too long' => [str_repeat('a', 65)],
+      'config metadata' => ['_core'],
     ];
   }
 
@@ -535,6 +538,17 @@ class MailTextsServiceTest extends UnitTestCase {
 
     $this->expectException(MailTextsNotFoundException::class);
     $this->buildService()->deleteText('no_such_key', $this->account);
+  }
+
+  /**
+   * @covers ::deleteText
+   */
+  public function testDeleteTextThrowsNotFoundForConfigMetadataKey(): void {
+    $config = $this->buildEditableConfig(['_core' => ['default_config_hash' => 'abc']]);
+    $this->configFactory->method('getEditable')->with('markaspot_mail.texts')->willReturn($config);
+
+    $this->expectException(MailTextsNotFoundException::class);
+    $this->buildService()->deleteText('_core', $this->account);
   }
 
   /**
@@ -861,7 +875,8 @@ class MailTextsServiceTest extends UnitTestCase {
    * @covers ::saveText
    */
   public function testSaveTextAllowsExactly50thCustomKey(): void {
-    $existingKeys = [];
+    // Config metadata must not count towards the custom key limit.
+    $existingKeys = ['_core' => ['default_config_hash' => 'abc']];
     foreach (range(1, 49) as $i) {
       $existingKeys['custom_key_' . $i] = ['subject' => 'x'];
     }
