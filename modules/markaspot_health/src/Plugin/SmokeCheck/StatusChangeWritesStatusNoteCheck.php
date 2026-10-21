@@ -7,6 +7,7 @@ namespace Drupal\markaspot_health\Plugin\SmokeCheck;
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\markaspot_health\SmokeCheckPluginBase;
 use Drupal\markaspot_health\SmokeCheckResult;
@@ -85,6 +86,7 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
     protected EntityTypeManagerInterface $entityTypeManager,
     protected Connection $database,
     protected ConfigFactoryInterface $configFactory,
+    protected EntityFieldManagerInterface $entityFieldManager,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -101,6 +103,7 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
       $container->get('entity_type.manager'),
       $container->get('database'),
       $container->get('config.factory'),
+      $container->get('entity_field.manager'),
     );
   }
 
@@ -385,11 +388,6 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
   protected function discoverFixture(array $context): ?array {
     $this->lastFixtureDiscoveryEvidence = ['attempted' => 'fixture auto-discovery'];
 
-    $statusPair = $this->discoverStatusPair();
-    if ($statusPair === NULL) {
-      return NULL;
-    }
-
     $jurisdictionType = $this->jurisdictionGroupType();
     $forcedJur = $context['jurisdiction'] ?? NULL;
     $forcedJur = is_int($forcedJur) ? $forcedJur : NULL;
@@ -427,6 +425,10 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
       }
       $serviceTid = $this->discoverCategoryForJurisdiction($jurId);
       if ($serviceTid === 0) {
+        continue;
+      }
+      $statusPair = $this->discoverStatusPair($jurId);
+      if ($statusPair === NULL) {
         continue;
       }
       $centroid = $this->boundaryCentroid($jur);
@@ -468,25 +470,41 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
   /**
    * Picks two distinct service_status term ids for the transition.
    *
-   * Service_status terms are global (not jurisdiction-scoped) in the
-   * profile schema, so the lookup deliberately omits a tenant filter.
+   * Tenants that scope their statuses to a jurisdiction (field_jurisdiction
+   * from markaspot_group) get a pair from that jurisdiction; a status of
+   * another jurisdiction would not be a valid transition there. Otherwise
+   * the pair comes from the statuses without a jurisdiction.
    *
    * @return array{0: int, 1: int}|null
-   *   [start_tid, target_tid] tuple, or NULL when fewer than two terms exist.
+   *   [start_tid, target_tid] tuple, or NULL when neither the jurisdiction
+   *   nor the unscoped statuses hold two terms.
    */
-  protected function discoverStatusPair(): ?array {
+  protected function discoverStatusPair(int $jurisdictionId): ?array {
     if (!$this->entityTypeManager->hasDefinition('taxonomy_term')) {
       return NULL;
     }
-    $tids = (array) $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('vid', 'service_status')
-      ->condition('status', 1)
-      ->sort('weight', 'ASC')
-      ->range(0, 5)
-      ->execute();
-    $ids = array_values(array_map('intval', $tids));
-    return count($ids) >= 2 ? [$ids[0], $ids[1]] : NULL;
+    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
+    $scoped = $this->entityFieldManager->getFieldDefinitions('taxonomy_term', 'service_status')['field_jurisdiction'] ?? NULL;
+    $scopes = $scoped !== NULL ? [$jurisdictionId, NULL] : [NULL];
+    foreach ($scopes as $scope) {
+      $query = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('vid', 'service_status')
+        ->condition('status', 1)
+        ->sort('weight', 'ASC')
+        ->range(0, 5);
+      if ($scoped !== NULL && $scope === NULL) {
+        $query->notExists('field_jurisdiction');
+      }
+      elseif ($scoped !== NULL) {
+        $query->condition('field_jurisdiction', $scope);
+      }
+      $ids = array_values(array_map('intval', (array) $query->execute()));
+      if (count($ids) >= 2) {
+        return [$ids[0], $ids[1]];
+      }
+    }
+    return NULL;
   }
 
   /**
