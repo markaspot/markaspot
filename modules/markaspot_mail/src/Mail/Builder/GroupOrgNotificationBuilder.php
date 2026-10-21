@@ -223,7 +223,11 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
   }
 
   /**
-   * Builds the dashboard URL from resolved mail branding.
+   * Builds the dashboard edit URL from resolved mail branding.
+   *
+   * Organisation members act on the report, so the link opens the edit
+   * form. The dashboard (markaspot-ui edit page) sends members without
+   * edit access on to the read-only view; ship that UI no later than this.
    */
   private function resolveRequestUrl(string $requestId, array $branding): string {
     $frontendBase = rtrim((string) ($branding['frontend_base_url'] ?? ''), '/');
@@ -233,7 +237,7 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
     $slug = trim((string) ($branding['jurisdiction_slug'] ?? ''));
     $useJurisdictionPath = (bool) ($branding['frontend_uses_jurisdiction_path'] ?? ($slug !== ''));
     $prefix = $useJurisdictionPath && $slug !== '' ? '/' . rawurlencode($slug) : '';
-    return $frontendBase . $prefix . '/dashboard/requests/' . rawurlencode($requestId);
+    return $frontendBase . $prefix . '/dashboard/requests/' . rawurlencode($requestId) . '/edit';
   }
 
 }

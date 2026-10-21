@@ -82,7 +82,7 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertSame('Request #7-2026 was assigned to Tiefbauamt', (string) $msg->content['preheader']);
     $this->assertSame('A citizen request is ready for review.', (string) $msg->content['intro']);
     $this->assertSame('Open request', (string) $msg->content['cta_label']);
-    $this->assertSame('https://bonn-mobility.example/bonn/dashboard/requests/7-2026', $msg->content['cta_url']);
+    $this->assertSame('https://bonn-mobility.example/bonn/dashboard/requests/7-2026/edit', $msg->content['cta_url']);
     $this->assertSame([
       'This request has been assigned to your organisation for processing.',
       'Description: Bitte pruefen.',
@@ -219,7 +219,7 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $msg = $builder->build($ctx);
 
     $this->assertNotNull($msg);
-    $this->assertSame('https://bonn-mobility.example/dashboard/requests/7-2026', $msg->content['cta_url']);
+    $this->assertSame('https://bonn-mobility.example/dashboard/requests/7-2026/edit', $msg->content['cta_url']);
   }
 
   /**
