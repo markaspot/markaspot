@@ -5,6 +5,9 @@
  * Install, update and uninstall functions for the markaspot_boilerplate module.
  */
 
+use Drupal\group\Entity\GroupRoleInterface;
+use Drupal\user\Entity\Role;
+
 /**
  * Add field_initial_boilerplate to jurisdiction groups and create default node.
  */
@@ -268,7 +271,7 @@ function markaspot_boilerplate_update_11002(): void {
   }
 
   // 3. Add boilerplate permissions to tenant_admin role.
-  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  $role = Role::load('tenant_admin');
   if ($role) {
     $new_permissions = [
       'create boilerplate content',
@@ -515,7 +518,7 @@ function _markaspot_boilerplate_initialize_manager_permissions(): void {
   }
   $jurisdiction_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
   $role = \Drupal::entityTypeManager()->getStorage('group_role')->load($jurisdiction_type . '-tenant_admin');
-  if (!$role instanceof \Drupal\group\Entity\GroupRoleInterface) {
+  if (!$role instanceof GroupRoleInterface) {
     return;
   }
   $changed = FALSE;
@@ -544,6 +547,25 @@ function _markaspot_boilerplate_initialize_manager_permissions(): void {
 function markaspot_boilerplate_update_11006(): string {
   _markaspot_boilerplate_initialize_manager_permissions();
   return 'Initialized scoped template manager permissions for the enabled module.';
+}
+
+/**
+ * Repairs draft visibility for existing scoped template managers.
+ */
+function markaspot_boilerplate_update_11007(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('gnode')) {
+    return 'Group node support is not installed.';
+  }
+  $type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+  $role = \Drupal::entityTypeManager()->getStorage('group_role')->load($type . '-tenant_admin');
+  if ($role instanceof GroupRoleInterface
+    && ($role->hasPermission('update any group_node:boilerplate entity')
+      || $role->hasPermission('delete any group_node:boilerplate entity'))
+    && !$role->hasPermission('view unpublished group_node:boilerplate entity')) {
+    $role->grantPermission('view unpublished group_node:boilerplate entity')->save();
+    return 'Restored draft visibility for existing jurisdiction template managers.';
+  }
+  return 'Scoped template manager draft visibility already aligned.';
 }
 
 /**

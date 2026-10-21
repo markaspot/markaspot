@@ -24,6 +24,12 @@ use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\jsonapi\Query\EntityCondition;
+use Drupal\jsonapi\Query\EntityConditionGroup;
+use Drupal\jsonapi\Query\Filter;
+use Drupal\jsonapi\ResourceType\ResourceType;
+use Drupal\markaspot_nuxt\JsonApi\CachedCountEntityResource;
 
 require_once dirname(__DIR__, 5) . '/src/Access/SystemWriteContext.php';
 
@@ -31,6 +37,8 @@ require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/TenantAdminHelp
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/WorkspaceVisibilityInterface.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/JurisdictionHierarchyResolverInterface.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/WorkspaceVisibilityNodeAccessControlHandler.php';
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/ManagedContentQueryGuard.php';
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/JsonApi/CachedCountEntityResource.php';
 
 /**
  * Covers template collection, entity and legacy route boundaries.
@@ -47,6 +55,7 @@ final class BoilerplateAccessKernelTest extends KernelTestBase {
     'system', 'user', 'field', 'text', 'node', 'options', 'entity',
     'flexible_permissions', 'group', 'gnode', 'markaspot_boilerplate',
     'boilerplate_access_test',
+    'serialization', 'file', 'jsonapi',
   ];
 
   /**
@@ -166,6 +175,9 @@ final class BoilerplateAccessKernelTest extends KernelTestBase {
     $group_admin = User::create(['name' => 'group-admin', 'status' => 1, 'roles' => ['staff']]);
     $group_admin->save();
     $jur->addMember($group_admin, ['group_roles' => ['jur-tenant_admin']]);
+    $untyped_admin = User::create(['name' => 'manager-without-note-capability', 'status' => 1]);
+    $untyped_admin->save();
+    $jur->addMember($untyped_admin, ['group_roles' => ['jur-tenant_admin']]);
     $controller = LoadController::create($this->container);
     $handler = new WorkspaceVisibilityNodeAccessControlHandler(
       $this->container->get('entity_type.manager')->getDefinition('node'),
@@ -178,6 +190,7 @@ final class BoilerplateAccessKernelTest extends KernelTestBase {
       [$staff, ['shared', 'assigned', 'remarks']],
       [$admin, ['shared', 'assigned', 'other_org', 'remarks', 'inactive']],
       [$group_admin, ['shared', 'assigned', 'other_org', 'remarks', 'inactive']],
+      [$untyped_admin, []],
       [$limited, ['shared']],
       [$outsider, ['foreign']],
       [new AnonymousUserSession(), []],
@@ -188,6 +201,20 @@ final class BoilerplateAccessKernelTest extends KernelTestBase {
       $all_ids = $this->container->get('entity_type.manager')->getStorage('node')->getQuery()->accessCheck(TRUE)->execute();
       $this->assertContains($page->id(), $all_ids);
       $this->assertEqualsCanonicalizing(array_merge($ids, [$page->id()]), array_values($all_ids));
+      // Reproduce JSON:API's additional published-only filter restriction.
+      // Entity's minimal fixture otherwise advertises unrestricted filtering.
+      $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
+      $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+      $resource = $reflection->newInstanceWithoutConstructor();
+      $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+      $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+      $filter = new Filter(new EntityConditionGroup('AND', [
+        new EntityCondition('nid', array_map(static fn($node) => (int) $node->id(), $nodes), 'IN'),
+      ]));
+      $cache = new CacheableMetadata();
+      $query = $reflection->getMethod('getCollectionQuery')->invoke($resource, new ResourceType('node', 'boilerplate', Node::class), [Filter::KEY_NAME => $filter], $cache);
+      $this->assertEqualsCanonicalizing($ids, array_values((clone $query)->execute()));
+      $this->assertSame(count($ids), (int) (clone $query)->count()->execute());
       $expected_ids = array_map(static fn($key) => $nodes[$key]->id(), $expected);
       sort($ids);
       sort($expected_ids);

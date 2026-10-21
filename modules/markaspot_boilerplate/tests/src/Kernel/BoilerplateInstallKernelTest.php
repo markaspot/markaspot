@@ -95,6 +95,20 @@ final class BoilerplateInstallKernelTest extends KernelTestBase {
     $role->save();
     markaspot_boilerplate_modules_installed(['markaspot_group']);
     $this->assertCount(8, GroupRole::load('jur-tenant_admin')->getPermissions());
+    // Imported tenant config can predate the existing draft-view grant.
+    $role = GroupRole::load('jur-tenant_admin');
+    $role->revokePermission('view unpublished group_node:boilerplate entity')->save();
+    markaspot_boilerplate_update_11007();
+    $this->assertCount(8, GroupRole::load('jur-tenant_admin')->getPermissions());
+    markaspot_boilerplate_update_11007();
+    $this->assertCount(8, GroupRole::load('jur-tenant_admin')->getPermissions());
+    $role = GroupRole::load('jur-tenant_admin');
+    foreach (self::PERMISSIONS as $permission) {
+      $role->revokePermission($permission);
+    }
+    $role->save();
+    markaspot_boilerplate_update_11007();
+    $this->assertSame(['view group'], GroupRole::load('jur-tenant_admin')->getPermissions());
     $role->delete();
     markaspot_boilerplate_update_11006();
     $this->assertNull(GroupRole::load('jur-tenant_admin'));

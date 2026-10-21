@@ -2,6 +2,13 @@
 
 namespace Drupal\Tests\markaspot_tenant_admin\Unit;
 
+use Drupal\jsonapi\JsonApiFilter;
+use Drupal\jsonapi\Query\EntityCondition;
+use Drupal\markaspot_nuxt\JsonApi\ManagedContentQueryGuard;
+use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -780,6 +787,68 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
     markaspot_tenant_admin_taxonomy_term_presave($foreign);
     markaspot_tenant_admin_taxonomy_term_predelete($category);
     $this->addToAssertionCount(2);
+  }
+
+  /**
+   * Filtered drafts follow the same inherited scope as direct entity access.
+   */
+  #[\PHPUnit\Framework\Attributes\DataProvider('draftFilterScopes')]
+  public function testFilteredDraftSubsetMatchesInheritedTaxonomyScope(bool $tenant_admin_enabled, array $member_ids, array $expected_ids, bool $veto): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(5);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+    $container = $this->setUpContainer($account);
+    $this->setUpMembershipMocks($container, 5, $member_ids);
+    $this->setUpHierarchyResolver($container, [10 => [8, 9, 10]]);
+    $handler = $this->createMock(ModuleHandlerInterface::class);
+    $handler->method('moduleExists')->willReturnCallback(static fn($module) => $module === 'markaspot_group' || ($tenant_admin_enabled && $module === 'markaspot_tenant_admin'));
+    $handler->method('invokeAllWith')->willReturnCallback(static function ($hook, $callback) use ($veto): void {
+      $callback(static fn() => [
+        JsonApiFilter::AMONG_PUBLISHED => AccessResult::allowed(),
+        JsonApiFilter::AMONG_ALL => $veto ? AccessResult::forbidden() : AccessResult::neutral(),
+      ], 'test_core');
+    });
+    $container->set('module_handler', $handler);
+    \Drupal::setContainer($container);
+    $definition = $this->createMock(EntityTypeInterface::class);
+    $definition->method('id')->willReturn('taxonomy_term');
+    $definition->method('getKey')->willReturnCallback(static fn($key) => $key === 'published' ? 'status' : NULL);
+    $definition->method('getListCacheTags')->willReturn(['taxonomy_term_list']);
+    ManagedContentQueryGuard::setModuleHandler($handler);
+    $method = new \ReflectionMethod(ManagedContentQueryGuard::class, 'getAccessConditionForKnownSubsets');
+    $cache = new CacheableMetadata();
+    $condition = $method->invoke(NULL, $definition, $account, $cache);
+    if ($expected_ids === [] || $veto) {
+      $this->assertEquals(new EntityCondition('status', 1), $condition);
+      return;
+    }
+    $this->assertSame('OR', $condition->conjunction());
+    [$published, $drafts] = array_values($condition->members());
+    $this->assertEquals(new EntityCondition('status', 1), $published);
+    [$vocabularies, $scope] = array_values($drafts->members());
+    $expected_vocabularies = $tenant_admin_enabled
+      ? ['service_status', 'service_category', 'internal_status']
+      : ['service_status', 'service_category'];
+    $this->assertEquals(new EntityCondition('vid', $expected_vocabularies, 'IN'), $vocabularies);
+    $this->assertEquals([
+      new EntityCondition('field_jurisdiction.target_id', $expected_ids, 'IN'),
+      new EntityCondition('field_jurisdiction.target_id', NULL, 'IS NULL'),
+    ], array_values($scope->members()));
+    $this->assertSame(0, $cache->getCacheMaxAge());
+    $this->assertContains('user', $cache->getCacheContexts());
+  }
+
+  /**
+   * Provides the two existing taxonomy policies and their denial boundaries.
+   */
+  public static function draftFilterScopes(): array {
+    return [
+      'inherited taxonomy' => [TRUE, [10], [8, 9, 10], FALSE],
+      'group-only direct taxonomy' => [FALSE, [10], [10], FALSE],
+      'no membership' => [TRUE, [], [], FALSE],
+      'explicit veto' => [TRUE, [10], [8, 9, 10], TRUE],
+    ];
   }
 
 }

@@ -281,22 +281,6 @@ final class BoilerplateAccess {
     $allowed = $db->select('node_field_data', 'template');
     $allowed->addField('template', 'nid');
     $allowed->condition('template.type', 'boilerplate');
-    if (!self::canManageAny($account)) {
-      $publication = $allowed->orConditionGroup()->condition('template.status', 1);
-      if ($account->isAuthenticated() && ($account->hasPermission('edit own boilerplate content') || $account->hasPermission('delete own boilerplate content'))) {
-        $publication->condition('template.uid', (int) $account->id());
-      }
-      $management = self::managementScope($account);
-      if ($management['any'] !== []) {
-        $publication->condition('template_jur.field_jurisdiction_target_id', $management['any'], 'IN');
-      }
-      if ($management['own'] !== []) {
-        $publication->condition($allowed->andConditionGroup()
-          ->condition('template_jur.field_jurisdiction_target_id', $management['own'], 'IN')
-          ->condition('template.uid', (int) $account->id()));
-      }
-      $allowed->condition($publication);
-    }
     $schema = $db->schema();
     if ($types === [] || (!$scope['global'] && $scope['jurisdictions'] === [])
       || !$schema->tableExists('node__field_boilerplate_type')
@@ -322,6 +306,22 @@ final class BoilerplateAccess {
           $org_scope->condition('template_org.field_organisation_target_id', $scope['orgs'], 'IN');
         }
         $allowed->condition($org_scope);
+      }
+      if (!self::canManageAny($account)) {
+        $publication = $allowed->orConditionGroup()->condition('template.status', 1);
+        if ($account->isAuthenticated() && ($account->hasPermission('edit own boilerplate content') || $account->hasPermission('delete own boilerplate content'))) {
+          $publication->condition('template.uid', (int) $account->id());
+        }
+        $management = self::managementScope($account);
+        if ($management['any'] !== []) {
+          $publication->condition('template_jur.field_jurisdiction_target_id', $management['any'], 'IN');
+        }
+        if ($management['own'] !== []) {
+          $publication->condition($allowed->andConditionGroup()
+            ->condition('template_jur.field_jurisdiction_target_id', $management['own'], 'IN')
+            ->condition('template.uid', (int) $account->id()));
+        }
+        $allowed->condition($publication);
       }
     }
     $query->condition($query->orConditionGroup()

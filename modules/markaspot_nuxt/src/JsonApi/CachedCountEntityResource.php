@@ -78,6 +78,25 @@ final class CachedCountEntityResource extends EntityResource {
    * pass straight through to the inner query.
    */
   protected function getCollectionQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
+    if (in_array($resource_type->getTypeName(), [
+      'node--boilerplate',
+      'taxonomy_term--service_status',
+      'taxonomy_term--service_category',
+      'taxonomy_term--internal_status',
+    ], TRUE)) {
+      $filter = $params[Filter::KEY_NAME] ?? NULL;
+      unset($params[Filter::KEY_NAME]);
+      $query = parent::getCollectionQuery($resource_type, $params, $query_cacheability);
+      if ($filter instanceof Filter) {
+        $query->condition($filter->queryCondition($query));
+        ManagedContentQueryGuard::setFieldManager($this->fieldManager);
+        // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+        ManagedContentQueryGuard::setModuleHandler(\Drupal::moduleHandler());
+        ManagedContentQueryGuard::applyAccessControls($filter, $query, $query_cacheability);
+      }
+      return $query;
+    }
+
     if ($resource_type->getTypeName() === 'group--org') {
       // Keep Core's bundle, paging and accessCheck(TRUE), with Group's query
       // grants as the root access guard. References keep Core's safeguards.
