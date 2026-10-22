@@ -240,6 +240,32 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Elevated jurisdiction staff keep private-field filters on a single
+   * jurisdiction even when they also belong to an organisation.
+   */
+  public function testElevatedStaffWithOrganisationKeepPrivateFieldFilters(): void {
+    GroupRole::create([
+      'id' => 'jur-moderator',
+      'label' => 'Moderator',
+      'group_type' => 'jur',
+      'scope' => 'individual',
+    ])->save();
+    $organisation = Group::create(['type' => 'org', 'label' => 'Tiefbau', 'field_jurisdiction' => $this->tenantA->id()]);
+    $organisation->save();
+    $elevated = $this->account('jur-moderator-with-org', ['moderator']);
+    $this->tenantA->addMember($elevated, ['group_roles' => ['jur-moderator']]);
+    $organisation->addMember($elevated);
+    $orgOnly = $this->account('org-only-filter', ['moderator']);
+    $organisation->addMember($orgOnly);
+
+    $count = &drupal_static('_markaspot_group_jurisdiction_group_count');
+    $count = 1;
+    $definition = $this->reportA->get('field_e_mail')->getFieldDefinition();
+    $this->assertTrue(markaspot_group_jsonapi_entity_field_filter_access($definition, $elevated)->isNeutral());
+    $this->assertTrue(markaspot_group_jsonapi_entity_field_filter_access($definition, $orgOnly)->isForbidden());
+  }
+
+  /**
    * Allowed results vary per user, and one of several jurisdictions suffices.
    */
   public function testAllowedResultVariesPerUserAndAcceptsAnyJurisdiction(): void {

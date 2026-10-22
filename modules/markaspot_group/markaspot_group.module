@@ -2259,11 +2259,19 @@ function _markaspot_group_is_private_service_request_field(FieldDefinitionInterf
  * keep their staff, who are often not group members, unscoped.
  */
 function _markaspot_group_account_bypasses_private_field_scope(AccountInterface $account): bool {
-  return (int) $account->id() === 1
+  if ((int) $account->id() === 1
     || array_intersect(['administrator', 'editorial_board'], $account->getRoles()) !== []
-    || $account->hasPermission('bypass node access')
-    || (_markaspot_group_jurisdiction_group_count() <= 1
-      && _markaspot_group_service_request_organisation_scope($account)['legacy_unscoped']);
+    || $account->hasPermission('bypass node access')) {
+    return TRUE;
+  }
+  if (_markaspot_group_jurisdiction_group_count() > 1) {
+    return FALSE;
+  }
+  // On a single jurisdiction, elevated jurisdiction staff keep the whole
+  // jurisdiction even when they also belong to an organisation; only
+  // organisation-only staff are limited to their organisations.
+  $scope = _markaspot_group_service_request_organisation_scope($account);
+  return $scope['legacy_unscoped'] || $scope['elevated_jurisdiction_ids'] !== [];
 }
 
 /**
