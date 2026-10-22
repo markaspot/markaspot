@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.227](https://github.com/markaspot/markaspot/compare/11.9.226...11.9.227) (2026-10-22)
+
+### Bug Fixes
+
+* align managed draft collections with scoped access ([07b613e](https://github.com/markaspot/markaspot/commit/07b613eced9a5467fa7e6d54d92ae2fb47ffb28e))
+* enforce assignment policy and preserve report revision actions ([108f0f4](https://github.com/markaspot/markaspot/commit/108f0f49d38e49ff885bc3041c03071610e7d32b))
+* harden assignment revisions and privacy erasure ([8b69399](https://github.com/markaspot/markaspot/commit/8b6939927b99bf53bbfae462d7ecaad1abbd0173))
+* keep private-field filters for elevated staff on single-jurisdiction installs ([c30db91](https://github.com/markaspot/markaspot/commit/c30db9132cb04b0e28700aecd287e9ccaa6e388a))
+* protect organisation-scoped revisions and audit logs ([82f2406](https://github.com/markaspot/markaspot/commit/82f2406857b95f5a93ed041d900b179ce576b89f))
+
 ## [11.9.226](https://github.com/markaspot/markaspot/compare/11.9.225...11.9.226) (2026-10-21)
 
 ### Bug Fixes
