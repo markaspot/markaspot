@@ -9,6 +9,7 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\markaspot_privacy\ReportEmailErasureInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -80,8 +81,10 @@ class GDPRForm extends FormBase {
    *   markaspot_dashboard module is not installed.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface|null $module_handler
    *   The module handler, used to announce the anonymization.
+   * @param \Drupal\markaspot_privacy\ReportEmailErasureInterface|null $emailErasure
+   *   Revision-aware email erasure, required when submitting erasure.
    */
-  public function __construct(MessengerInterface $messenger, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, $request_link_service = NULL, ?ModuleHandlerInterface $module_handler = NULL) {
+  public function __construct(MessengerInterface $messenger, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, $request_link_service = NULL, ?ModuleHandlerInterface $module_handler = NULL, protected ?ReportEmailErasureInterface $emailErasure = NULL) {
     $this->messenger = $messenger;
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory->getEditable('markaspot_privacy.settings');
@@ -100,7 +103,8 @@ class GDPRForm extends FormBase {
       $container->has('markaspot_dashboard.request_link')
         ? $container->get('markaspot_dashboard.request_link')
         : NULL,
-      $container->get('module_handler')
+      $container->get('module_handler'),
+      $container->get('markaspot_privacy.report_email_erasure')
     );
   }
 
@@ -177,9 +181,10 @@ class GDPRForm extends FormBase {
    *   The node to anonymize.
    */
   protected function anonymizeNode($node): void {
-    $node->setUnpublished();
-    $node->set('field_e_mail', "anasasaonymous@example.off");
-    $node->save();
+    if ($this->emailErasure === NULL) {
+      throw new \LogicException('Revision-aware report email erasure is required.');
+    }
+    $this->emailErasure->erase($node);
     // The report is kept, so entity delete hooks do not run: let modules
     // purge data derived from it (see hook_markaspot_report_anonymized()).
     $this->moduleHandlerService?->invokeAll('markaspot_report_anonymized', [$node]);

@@ -7,8 +7,10 @@ namespace Drupal\markaspot_nuxt\Access;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Routing\Access\AccessInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
+use Drupal\node\NodeInterface;
 
 /**
  * Restricts the service request version history on the shared platform.
@@ -21,10 +23,9 @@ use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
  * "edit any service_request content", which alone would open the route.
  * The enterprise showcase stack behaves like an enterprise stack.
  *
- * Known limit: core's revision routes and JSON:API resourceVersion also admit
- * "administer nodes". On the platform only the operator-side editorial_board
- * role holds it; markaspot_nuxt_user_role_presave() strips the revision
- * permissions from every other non-admin role.
+ * Core revision routes and JSON:API resourceVersion use accessNode() too.
+ * A snapshot requires private scope on both the current report and revision;
+ * unrelated core revision grants cannot override a scope or platform denial.
  *
  * Combined with the route's _permission and _entity_access requirements by
  * the access manager (AND): this check never grants access on its own.
@@ -47,7 +48,31 @@ final class VersionHistoryAccessCheck implements AccessInterface {
 
   public function __construct(
     private readonly FeatureScopeResolver $featureScopeResolver,
+    private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
+
+  /**
+   * Applies the history contract to core JSON:API historical snapshots too.
+   */
+  public function accessNode(NodeInterface $revision, AccountInterface $account): AccessResultInterface {
+    $result = AccessResult::allowedIf($account->isAuthenticated()
+      && ($account->hasPermission('view all revisions')
+        || $account->hasPermission('view service_request revisions')
+        || $account->hasPermission('edit any service_request content')))
+      ->cachePerUser()->cachePerPermissions()->setCacheMaxAge(0);
+    $current = $this->entityTypeManager->getStorage('node')->loadUnchanged($revision->id());
+    if (!$current instanceof NodeInterface
+      || !$current->hasField('field_assignee') || !$revision->hasField('field_assignee')) {
+      return AccessResult::forbidden()->setCacheMaxAge(0);
+    }
+    $access = $result->andIf($this->check($account))
+      ->andIf($current->access('view', $account, TRUE))
+      ->andIf($current->get('field_assignee')->access('view', $account, TRUE))
+      ->andIf($revision->get('field_assignee')->access('view', $account, TRUE));
+    return $access->isAllowed() ? $access
+      : AccessResult::forbidden('Revision snapshots require the same scope as the report history.')
+        ->addCacheableDependency($access)->setCacheMaxAge(0);
+  }
 
   /**
    * Checks platform-level access to the version history route.

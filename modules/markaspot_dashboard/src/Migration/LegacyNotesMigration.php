@@ -200,7 +200,7 @@ final class LegacyNotesMigration {
       $node->isDefaultRevision(TRUE);
       $node->setRevisionUserId(0);
       $node->setRevisionCreationTime($now);
-      RevisionLog::setMessage($node, 'Legacy field_notes migrated to an internal remark. Original content retained.');
+      RevisionLog::setEvent($node, 'legacy_notes_migrated');
       $this->writer('node')->writeSnapshot($node);
       $storage->resetCache([$nid]);
       $fresh = $storage->loadUnchanged($nid);

@@ -35,7 +35,8 @@ function service_request_install() {
 function service_request_update_11023(): string {
   $type = NodeType::load('service_request');
   if ($type) {
-    $type->setNewRevision(TRUE)->save();
+    $type->setNewRevision(TRUE);
+    $type->save();
   }
   return 'Service request changes always create attributed revisions.';
 }

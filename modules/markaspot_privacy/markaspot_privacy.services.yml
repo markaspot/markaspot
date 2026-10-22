@@ -1,4 +1,4 @@
 services:
- markaspot_privacy.gdpr_form:
-    class: Drupal\markaspot_privacy\Form\GDPRForm.php
-    arguments: ['@messenger', '@entity_type.manager', '@config.factory']
+  markaspot_privacy.report_email_erasure:
+    class: Drupal\markaspot_privacy\ReportEmailErasure
+    arguments: ['@entity_type.manager', '@database', '@datetime.time']

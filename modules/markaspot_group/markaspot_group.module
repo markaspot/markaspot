@@ -2424,6 +2424,22 @@ function _markaspot_group_account_scope_jurisdiction_ids(int $uid): array {
 }
 
 /**
+ * Intersects candidate scopes with the private field's entity-view predicate.
+ *
+ * Organisation membership in a child does not reveal siblings' private fields.
+ * Keeping one predicate also preserves explicit jurisdiction-management grants.
+ *
+ * @return int[]
+ *   Jurisdictions whose private report fields the account can view.
+ */
+function _markaspot_group_private_field_scope_jurisdiction_ids(AccountInterface $account): array {
+  return array_values(array_filter(
+    _markaspot_group_account_scope_jurisdiction_ids((int) $account->id()),
+    static fn(int $id): bool => _markaspot_group_user_is_member_in_jurisdiction_scope($account, $id),
+  ));
+}
+
+/**
  * Counts jurisdiction groups, once per request.
  */
 function _markaspot_group_jurisdiction_group_count(): int {
@@ -2530,7 +2546,7 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
     && \Drupal::moduleHandler()->moduleExists('markaspot_nuxt')) {
     $request = \Drupal::requestStack()->getCurrentRequest();
     $route = $request?->attributes->get('_route_object');
-    $scope_ids = _markaspot_group_account_scope_jurisdiction_ids((int) $account->id());
+    $scope_ids = _markaspot_group_private_field_scope_jurisdiction_ids($account);
     $sort = $request?->query->all()['sort'] ?? '';
     $resource_type = \Drupal::service('jsonapi.resource_type.repository')->get('node', 'service_request');
     $organisation_name = $resource_type?->getPublicName('field_organisation') ?? 'field_organisation';
@@ -3475,7 +3491,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   $route = $request?->attributes->get('_route_object');
   $jsonapi_patch = $request?->getMethod() === 'PATCH'
     && $route instanceof Route
-    && $route->getOption('_is_jsonapi');
+    && $route->getDefault('_is_jsonapi') === TRUE;
   if ((!$node->isNewRevision() || $jsonapi_patch) && $original instanceof NodeInterface
     && $node->getRevisionLogMessage() === $original->getRevisionLogMessage()) {
     $node->setRevisionLogMessage('');
@@ -4062,9 +4078,7 @@ function _markaspot_group_add_assignment_revision_log(NodeInterface $node): void
     && !$node->get('field_assignee')->isEmpty()) {
     $assignee = _markaspot_group_service_request_assignee_user($node);
     if ($assignee instanceof UserInterface) {
-      _markaspot_group_set_assignment_revision_log_message($node, (string) t('Arbeit der Person @person zugewiesen.', [
-        '@person' => $assignee->getDisplayName(),
-      ]));
+      _markaspot_group_start_assignment_revision($node);
     }
     return;
   }
@@ -4075,9 +4089,7 @@ function _markaspot_group_add_assignment_revision_log(NodeInterface $node): void
     && !$original->get('field_assignee')->isEmpty()) {
     $previous_assignee = $original->get('field_assignee')->entity;
     if ($previous_assignee instanceof UserInterface) {
-      _markaspot_group_set_assignment_revision_log_message($node, (string) t('Zuweisung der Person @person aufgehoben.', [
-        '@person' => $previous_assignee->getDisplayName(),
-      ]));
+      _markaspot_group_start_assignment_revision($node);
     }
     return;
   }
@@ -4088,9 +4100,7 @@ function _markaspot_group_add_assignment_revision_log(NodeInterface $node): void
     && !$original->get('field_assigned_team')->isEmpty()) {
     $previous_team = $original->get('field_assigned_team')->entity;
     if ($previous_team instanceof GroupInterface) {
-      _markaspot_group_set_assignment_revision_log_message($node, (string) t('Zuweisung der Einheit @team aufgehoben.', [
-        '@team' => (string) $previous_team->label(),
-      ]));
+      _markaspot_group_start_assignment_revision($node);
     }
   }
 }
@@ -4101,9 +4111,7 @@ function _markaspot_group_add_assignment_revision_log(NodeInterface $node): void
 function _markaspot_group_add_team_assignment_revision_log(NodeInterface $node): void {
   $team = _markaspot_group_service_request_assigned_team_group($node);
   if ($team instanceof GroupInterface) {
-    _markaspot_group_set_assignment_revision_log_message($node, (string) t('Arbeit der Einheit @team zugewiesen.', [
-      '@team' => (string) $team->label(),
-    ]));
+    _markaspot_group_start_assignment_revision($node);
   }
 }
 
@@ -4222,70 +4230,18 @@ function _markaspot_group_add_assignment_sync_revision_log(NodeInterface $node, 
     return;
   }
 
-  $organisation_labels = [];
-  foreach ($node->get('field_organisation')->referencedEntities() as $organisation) {
-    if ($organisation instanceof GroupInterface && $organisation->bundle() === _markaspot_group_get_org_group_type()) {
-      $organisation_labels[] = (string) $organisation->label();
-    }
-  }
-  if ($organisation_labels === []) {
-    return;
-  }
-
-  $message = (string) t('Zuständigkeit folgt Zuweisung an @person: @organisation.', [
-    '@person' => $assignee->getDisplayName(),
-    '@organisation' => implode(', ', $organisation_labels),
-  ]);
-
-  _markaspot_group_append_revision_log_message($node, $message);
+  RevisionLog::setEvent($node, 'assignment_sync');
 }
 
 /**
- * Starts an assignment-owned node revision log.
+ * Attributes assignment changes without duplicating the changed names as text.
  */
-function _markaspot_group_set_assignment_revision_log_message(NodeInterface $node, string $message): void {
-  $message = trim($message);
-  if ($message === '') {
-    return;
-  }
-
-  // Assignment mutations are audit events even when a caller does not use
-  // JSON:API or the bundle's default-new-revision setting. The assignment
-  // subsystem owns this log so a client-supplied message cannot impersonate a
-  // system-generated assignment event.
+function _markaspot_group_start_assignment_revision(NodeInterface $node): void {
   $node->setNewRevision(TRUE);
   $node->setRevisionUserId((int) \Drupal::currentUser()->id());
   $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
-  $reason = RevisionLog::pendingMessage($node);
-  if ($reason !== NULL && $reason !== '' && $reason === (string) $node->getRevisionLogMessage() && $reason !== $message) {
-    $message .= "\n" . $reason;
-  }
-  RevisionLog::setMessage($node, $message);
-}
-
-/**
- * Appends a second assignment-owned message to the pending revision log.
- */
-function _markaspot_group_append_revision_log_message(NodeInterface $node, string $message): void {
-  $message = trim($message);
-  if ($message === '') {
-    return;
-  }
-
-  $raw_log = (string) $node->getRevisionLogMessage();
-  $original = $node->getOriginal();
-  $current_message = RevisionLog::pendingMessage($node)
-    ?? ($original instanceof NodeInterface && $raw_log === (string) $original->getRevisionLogMessage()
-      ? '' : trim(RevisionLog::message($raw_log)));
-  $messages = $current_message === ''
-    ? []
-    : preg_split('/\R/u', $current_message, -1, PREG_SPLIT_NO_EMPTY);
-  $messages = is_array($messages) ? array_map('trim', $messages) : [];
-  if (!in_array($message, $messages, TRUE)) {
-    $messages[] = $message;
-  }
-
-  RevisionLog::setMessage($node, implode("\n", $messages));
+  // Only explicitly marked human reasons survive an assignment-owned save.
+  RevisionLog::setMessage($node, RevisionLog::pendingMessage($node) ?? '');
 }
 
 /**
@@ -4295,7 +4251,7 @@ function _markaspot_group_prepare_scope_revision(NodeInterface $node): void {
   $node->setNewRevision(TRUE);
   $node->setRevisionUserId(0);
   $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
-  RevisionLog::setMessage($node, 'Service request scope synchronized automatically.');
+  RevisionLog::setEvent($node, 'scope_sync');
 }
 
 /**
@@ -6317,9 +6273,17 @@ function _markaspot_group_personal_assignment_is_unchanged(NodeInterface $node):
   }
   $before = _markaspot_group_case_assignment_jurisdiction_group($stored);
   $after = _markaspot_group_case_assignment_jurisdiction_group($node);
-  return $before instanceof GroupInterface && $after instanceof GroupInterface
-    && _markaspot_group_effective_jurisdiction_group($before)->id() === _markaspot_group_effective_jurisdiction_group($after)->id()
-    && _markaspot_group_field_target_ids($stored, 'field_assignee') === _markaspot_group_field_target_ids($node, 'field_assignee');
+  if (_markaspot_group_field_target_ids($stored, 'field_assignee') !== _markaspot_group_field_target_ids($node, 'field_assignee')) {
+    return FALSE;
+  }
+  if ($before instanceof GroupInterface && $after instanceof GroupInterface) {
+    return _markaspot_group_effective_jurisdiction_group($before)->id() === _markaspot_group_effective_jurisdiction_group($after)->id();
+  }
+  // Missing legacy scope must not make unrelated saves impossible. Only an
+  // unchanged, equally unresolved scope retains its existing assignee.
+  return $before === NULL && $after === NULL
+    && _markaspot_group_field_target_ids($stored, 'field_jurisdiction') === _markaspot_group_field_target_ids($node, 'field_jurisdiction')
+    && _markaspot_group_field_target_ids($stored, 'field_organisation') === _markaspot_group_field_target_ids($node, 'field_organisation');
 }
 
 /**

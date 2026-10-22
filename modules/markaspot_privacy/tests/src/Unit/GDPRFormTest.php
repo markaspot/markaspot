@@ -12,6 +12,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\markaspot_privacy\Form\GDPRForm;
+use Drupal\markaspot_privacy\ReportEmailErasureInterface;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -155,9 +156,8 @@ class GDPRFormTest extends UnitTestCase {
     };
 
     $linkedNode = $this->createMock(NodeInterface::class);
-    $linkedNode->expects($this->once())->method('setUnpublished');
-    $linkedNode->expects($this->once())->method('set')->with('field_e_mail', 'anasasaonymous@example.off');
-    $linkedNode->expects($this->once())->method('save');
+    $erasure = $this->createMock(ReportEmailErasureInterface::class);
+    $erasure->expects($this->once())->method('erase')->with($linkedNode);
 
     $nodeStorage = $this->createMock(EntityStorageInterface::class);
     $nodeStorage->method('load')->with(456)->willReturn($linkedNode);
@@ -169,7 +169,8 @@ class GDPRFormTest extends UnitTestCase {
       $this->createMock(MessengerInterface::class),
       $entityTypeManager,
       $this->mockConfigFactory(),
-      $requestLinkService
+      $requestLinkService,
+      emailErasure: $erasure
     );
 
     $form->publicCascade(88);

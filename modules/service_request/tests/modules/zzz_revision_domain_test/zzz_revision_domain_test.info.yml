@@ -1,0 +1,4 @@
+name: Late revision domain test
+type: module
+package: Testing
+core_version_requirement: ^11

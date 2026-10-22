@@ -2372,6 +2372,7 @@ final class TenantSettingsController extends ControllerBase {
         ],
       ],
       'capabilities' => [
+        'caseAssignment' => $this->canUseCaseAssignment($group),
         // Authoritative tier gates. The frontend reads these instead of
         // re-deriving tier rules, so the settings switches can never diverge
         // from the backend enforcement (updateFeatureSettings scrubs the

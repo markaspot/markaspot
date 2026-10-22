@@ -27,7 +27,16 @@ final class MandatoryRevisionKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['system', 'user', 'field', 'filter', 'text', 'node', 'service_request'];
+  protected static $modules = [
+    'system',
+    'user',
+    'field',
+    'filter',
+    'text',
+    'node',
+    'service_request',
+    'zzz_revision_domain_test',
+  ];
 
   /**
    * Every report save retains the old values and attributes the new revision.
@@ -77,6 +86,43 @@ final class MandatoryRevisionKernelTest extends KernelTestBase {
     $this->assertSame(1234567890, (int) $node->getRevisionCreationTime());
     $this->assertSame('Explicit system attribution.', RevisionLog::message((string) $node->getRevisionLogMessage()));
     $this->assertSame('civic.revision.v1', json_decode((string) $node->getRevisionLogMessage(), TRUE)['schema']);
+  }
+
+  /**
+   * Config imports converge while runtime revisions remain mandatory.
+   */
+  public function testConfigImportConvergesAndUpdateSetsDefault(): void {
+    $this->testMandatoryRevisions();
+    $type = NodeType::load('service_request');
+    $type->setSyncing(TRUE);
+    $type->setNewRevision(FALSE);
+    $type->save();
+    $this->assertFalse(NodeType::load('service_request')->shouldCreateNewRevision());
+    $node = Node::create(['type' => 'service_request', 'title' => 'Imported config']);
+    $node->save();
+    $vid = $node->getRevisionId();
+    $node->setTitle('Programmatic edit')->setNewRevision(FALSE);
+    $node->save();
+    $this->assertNotSame($vid, $node->getRevisionId());
+    $this->container->get('module_handler')->loadInclude('service_request', 'install');
+    service_request_update_11023();
+    $this->assertTrue(NodeType::load('service_request')->shouldCreateNewRevision());
+  }
+
+  /**
+   * A late procedural domain hook runs before the explicitly last collector.
+   */
+  public function testFinalDomainStateIsCaptured(): void {
+    $this->testMandatoryRevisions();
+    $node = Node::create(['type' => 'service_request', 'title' => 'Late domain change']);
+    $node->save();
+    $this->container->get('state')->set('revision_domain_test.status', $node->id());
+    $node->setTitle('Updated');
+    $node->save();
+    $entry = RevisionLog::decode((string) $node->getRevisionLogMessage());
+    $status = array_values(array_filter($entry['changes'], fn(array $change): bool => $change['field'] === 'status'));
+    $this->assertSame((string) $node->id(), $status[0]['after'][0]['id']);
+    $this->assertSame([], $status[0]['before']);
   }
 
 }

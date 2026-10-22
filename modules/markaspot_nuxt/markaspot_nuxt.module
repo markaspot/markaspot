@@ -27,6 +27,16 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 /**
+ * Implements hook_node_access().
+ */
+function markaspot_nuxt_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResultInterface {
+  if ($node->bundle() === 'service_request' && in_array($operation, ['view all revisions', 'view revision'], TRUE)) {
+    return \Drupal::service('markaspot_nuxt.version_history_access_check')->accessNode($node, $account);
+  }
+  return AccessResult::neutral();
+}
+
+/**
  * Implements hook_entity_create_access().
  */
 function markaspot_nuxt_entity_create_access(AccountInterface $account, array $context, $entity_bundle): AccessResult {
@@ -274,7 +284,7 @@ function markaspot_nuxt_user_access(UserInterface $user, $operation, AccountInte
 /**
  * Implements hook_entity_bundle_field_info().
  */
-function markaspot_nuxt_entity_bundle_field_info(\Drupal\Core\Entity\EntityTypeInterface $entity_type, string $bundle, array $base_field_definitions): array {
+function markaspot_nuxt_entity_bundle_field_info(EntityTypeInterface $entity_type, string $bundle, array $base_field_definitions): array {
   if ($entity_type->id() !== 'node' || $bundle !== 'service_request') {
     return [];
   }

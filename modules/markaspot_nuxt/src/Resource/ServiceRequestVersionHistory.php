@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\Resource;
 
+use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\RevisionableStorageInterface;
+
 use Drupal\Core\Entity\TranslatableInterface;
 use Drupal\service_request\RevisionLog;
 use Drupal\Core\Cache\CacheableMetadata;
@@ -189,13 +193,8 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
    *   capped at MAX_REVISIONS.
    */
   protected function buildRevisionItems(NodeInterface $entity): array {
-    // Read revision METADATA in ONE query against the node_revision table,
-    // rather than loading each full node revision. Loading a revision pulls
-    // every field, paragraph and media reference, so the old per-vid
-    // loadRevision() loop was O(n) full entity loads — a 16-revision history
-    // took tens of seconds. Only revision metadata is exposed, and the route
-    // already gates staff access + node 'view', so a direct read is safe.
-    // node_revision rows are returned oldest -> newest by the ASC vid sort.
+    // Read metadata first, cap the candidate list, then batch-load only those
+    // revisions to apply historical field scope before exposing any log data.
     $rows = $this->database->select('node_revision', 'nr')
       ->fields('nr', ['vid', 'revision_uid', 'revision_timestamp', 'revision_log'])
       ->condition('nr.nid', $entity->id())
@@ -221,6 +220,17 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       );
     }
 
+    $storage = $this->entityTypeManager->getStorage('node');
+    if (!$storage instanceof RevisionableStorageInterface) {
+      throw new AccessDeniedHttpException('Revision-aware report storage is required.');
+    }
+    $revisions = $rows !== [] ? $storage->loadMultipleRevisions(array_map(static fn($row): int => (int) $row->vid, $rows)) : [];
+    $rows = array_values(array_filter($rows, function ($row) use ($revisions): bool {
+      $revision = $revisions[(int) $row->vid] ?? NULL;
+      return $revision instanceof NodeInterface && $revision->hasField('field_assignee')
+        && $revision->get('field_assignee')->access('view', $this->currentUser, TRUE)->isAllowed();
+    }));
+
     // Resolve author display labels in ONE batch load of the distinct revision
     // users (never the raw account entity, mirroring the revision_uid
     // hardening). uid 0 (system) and deleted users resolve to a null author.
@@ -240,7 +250,8 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
     foreach ($rows as $row) {
       $vid = (int) $row->vid;
       $author_uid = (int) $row->revision_uid;
-      $author = isset($users[$author_uid]) ? $users[$author_uid]->label() : NULL;
+      $author = isset($users[$author_uid]) && $users[$author_uid]->access('view label', $this->currentUser)
+        ? $users[$author_uid]->label() : NULL;
 
       $created = $row->revision_timestamp;
       $timestamp = $created !== NULL
@@ -269,6 +280,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
         'log_message' => $entry['message'] ?? $log_message,
         'action' => $entry['action'] ?? NULL,
         'changes' => $entry['changes'] ?? [],
+        'events' => $entry['events'] ?? [],
         'is_current' => $vid === $current_vid,
       ];
 
@@ -302,6 +314,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       'log_message' => new ResourceTypeAttribute('log_message'),
       'action' => new ResourceTypeAttribute('action'),
       'changes' => new ResourceTypeAttribute('changes'),
+      'events' => new ResourceTypeAttribute('events'),
       'is_current' => new ResourceTypeAttribute('is_current'),
     ];
 
@@ -347,7 +360,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
     $labels = [];
     foreach ($ids as $type => $type_ids) {
       foreach ($this->entityTypeManager->getStorage($type)->loadMultiple(array_values($type_ids)) as $reference) {
-        if (!$reference->access('view', $this->currentUser)) {
+        if (!$this->canViewReferenceLabel($reference)) {
           continue;
         }
         $langcode = $this->languageManager->getCurrentLanguage()->getId();
@@ -362,6 +375,37 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       }
     }
     return $labels;
+  }
+
+  /**
+   * Uses label-only access and a bounded staff catalog fallback for labels.
+   */
+  private function canViewReferenceLabel(EntityInterface $reference): bool {
+    $scoped_catalog = ($reference->getEntityTypeId() === 'group' && in_array($reference->bundle(), ['jur', 'org'], TRUE))
+      || ($reference->getEntityTypeId() === 'taxonomy_term' && $reference->bundle() === 'service_status');
+    if (!$scoped_catalog) {
+      return (bool) $reference->access('view label', $this->currentUser);
+    }
+    // Public group/term view must not reveal a historically foreign catalog
+    // label via the before-side of an otherwise authorised new revision.
+    // Staff may name unpublished local statuses under the same scope rule.
+    if (!$this->currentUser->isAuthenticated()
+      || !function_exists('_markaspot_group_user_is_member_in_jurisdiction_scope')) {
+      return FALSE;
+    }
+    if (\_markaspot_group_account_bypasses_private_field_scope($this->currentUser)) {
+      return TRUE;
+    }
+    $ids = $reference->getEntityTypeId() === 'group' && $reference->bundle() === 'jur'
+      ? [(int) $reference->id()]
+      : ($reference instanceof FieldableEntityInterface && $reference->hasField('field_jurisdiction')
+        ? array_column($reference->get('field_jurisdiction')->getValue(), 'target_id') : []);
+    foreach ($ids as $id) {
+      if (\_markaspot_group_user_is_member_in_jurisdiction_scope($this->currentUser, (int) $id)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
 }

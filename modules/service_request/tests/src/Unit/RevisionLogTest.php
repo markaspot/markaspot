@@ -56,4 +56,23 @@ final class RevisionLogTest extends UnitTestCase {
     $this->assertNull(RevisionLog::pendingMessage($entity));
   }
 
+  /**
+   * Automatic codes are deduplicated and consumed without copying prose.
+   */
+  public function testAutomaticEventsAreIndependentOfHumanReasons(): void {
+    $entity = $this->createMock(NodeInterface::class);
+    $entity->method('hasField')->willReturn(FALSE);
+    RevisionLog::setEvent($entity, 'delegated');
+    RevisionLog::setEvent($entity, 'delegated');
+    RevisionLog::setMessage($entity, 'Bitte prüfen. Please review.');
+    $entry = RevisionLog::decode(RevisionLog::build($entity, []));
+    $this->assertSame(['delegated'], $entry['events']);
+    $this->assertSame('Bitte prüfen. Please review.', $entry['message']);
+    $this->assertSame([], RevisionLog::decode(RevisionLog::build($entity, []))['events']);
+    $entry['events'] = ['translated prose'];
+    $this->assertNull(RevisionLog::decode(json_encode($entry, JSON_THROW_ON_ERROR)));
+    $this->expectException(\InvalidArgumentException::class);
+    RevisionLog::setEvent($entity, 'unknown');
+  }
+
 }

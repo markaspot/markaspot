@@ -20,6 +20,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\jsonapi\JsonApiResource\ResourceObject;
 use Drupal\markaspot_nuxt\Resource\ServiceRequestVersionHistory;
 use Drupal\node\NodeInterface;
+use Drupal\node\NodeStorageInterface;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -54,6 +55,13 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   protected $userStorage;
 
   /**
+   * Revision storage for the historical private-field gate.
+   *
+   * @var \Drupal\node\NodeStorageInterface&\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $nodeStorage;
+
+  /**
    * The database connection mock.
    *
    * @var \Drupal\Core\Database\Connection&\PHPUnit\Framework\MockObject\MockObject
@@ -83,7 +91,11 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     // Author labels are resolved through one user-storage batch load.
     $this->userStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
-    $this->entityTypeManager->method('getStorage')->with('user')->willReturn($this->userStorage);
+    $this->nodeStorage = $this->createMock(NodeStorageInterface::class);
+    $this->entityTypeManager->method('getStorage')->willReturnMap([
+      ['user', $this->userStorage],
+      ['node', $this->nodeStorage],
+    ]);
 
     // Revision metadata is read with one node_revision select.
     $this->database = $this->createMock(Connection::class);
@@ -129,9 +141,10 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   /**
    * Creates a user mock returning the given label.
    */
-  protected function user(string $label): UserInterface {
+  protected function user(string $label, bool $can_view_label = TRUE): UserInterface {
     $user = $this->createMock(UserInterface::class);
     $user->method('label')->willReturn($label);
+    $user->method('access')->with('view label', $this->anything())->willReturn($can_view_label);
     return $user;
   }
 
@@ -143,8 +156,20 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
    *
    * @param \stdClass[] $rows
    *   The revision metadata rows.
+   * @param int[] $denied_vids
+   *   Revisions outside the historical private-field scope.
    */
-  protected function stubRevisionRows(array $rows): void {
+  protected function stubRevisionRows(array $rows, array $denied_vids = []): void {
+    $revisions = [];
+    foreach ($rows as $row) {
+      $revision = $this->createMock(NodeInterface::class);
+      $revision->method('hasField')->with('field_assignee')->willReturn(TRUE);
+      $field = $this->createMock(FieldItemListInterface::class);
+      $field->method('access')->willReturn(in_array((int) $row->vid, $denied_vids, TRUE) ? AccessResult::forbidden() : AccessResult::allowed());
+      $revision->method('get')->with('field_assignee')->willReturn($field);
+      $revisions[(int) $row->vid] = $revision;
+    }
+    $this->nodeStorage->method('loadMultipleRevisions')->willReturn($revisions);
     $statement = $this->createMock(StatementInterface::class);
     $statement->method('fetchAll')->willReturn($rows);
 
@@ -194,10 +219,8 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   public function testStructuredActionsResolveCurrentLabelsAndFallback(): void {
     $visible = $this->user('Current accessible name');
     $visible->method('id')->willReturn(99);
-    $visible->method('access')->willReturn(TRUE);
-    $hidden = $this->user('Hidden name must not escape');
+    $hidden = $this->user('Hidden name must not escape', FALSE);
     $hidden->method('id')->willReturn(100);
-    $hidden->method('access')->willReturn(FALSE);
     $this->stubUsers([99 => $visible, 100 => $hidden]);
     $entry = [
       'schema' => 'civic.revision.v1', 'action' => 'updated',
@@ -211,6 +234,32 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     $changes = $this->attr($items[0], 'changes');
     $this->assertSame('#100', $changes[0]['before'][0]['label']);
     $this->assertSame('Current accessible name', $changes[0]['after'][0]['label']);
+  }
+
+  /**
+   * Revision authors use the same label boundary as assignment references.
+   */
+  public function testForeignAuthorLabelIsHidden(): void {
+    $this->stubUsers([42 => $this->user('Foreign private author', FALSE)]);
+    $this->stubRevisionRows([$this->row(8, 42, 4000, 'Original reason')]);
+    $items = $this->resource()->callBuildRevisionItems($this->node(1, 8))['items'];
+    $this->assertNull($this->attr($items[0], 'author'));
+    $this->assertSame('Original reason', $this->attr($items[0], 'log_message'));
+  }
+
+  /**
+   * Current staff never receive a formerly foreign revision's text or VID.
+   */
+  public function testHistoricallyForeignRevisionIsOmitted(): void {
+    $this->stubUsers([]);
+    $this->stubRevisionRows([
+      $this->row(7, 0, 3000, 'Foreign confidential manual explanation'),
+      $this->row(8, 0, 4000, 'Authorised explanation'),
+    ], [7]);
+    $items = $this->resource()->callBuildRevisionItems($this->node(1, 8))['items'];
+    $this->assertCount(1, $items);
+    $this->assertSame(8, $this->attr($items[0], 'vid'));
+    $this->assertSame('Authorised explanation', $this->attr($items[0], 'log_message'));
   }
 
   /**

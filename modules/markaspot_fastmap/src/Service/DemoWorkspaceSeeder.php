@@ -685,8 +685,11 @@ final class DemoWorkspaceSeeder {
       ]);
     }
     else {
-      // Hourly resets must not grow the revision history of seeded reports.
-      $node->setNewRevision(FALSE);
+      // Restore into a fresh revision, then remove earlier demo-visitor state
+      // only after the complete seeded state has been saved successfully.
+      $node->setNewRevision(TRUE);
+      $node->setRevisionUserId(0);
+      $node->setRevisionCreationTime($this->time->getRequestTime());
       // Dashboard-only processing data goes back to the field defaults.
       foreach (self::DASHBOARD_FIELDS as $field) {
         // Not applyDefaultValue(): that only resets the first item and keeps
@@ -724,11 +727,27 @@ final class DemoWorkspaceSeeder {
       }
     }
     if ($repair) {
-      $saved->setNewRevision(FALSE);
+      $saved->setNewRevision(TRUE);
+      $saved->setRevisionUserId(0);
+      $saved->setRevisionCreationTime($this->time->getRequestTime());
       $saved->save();
       $saved = $nodeStorage->loadUnchanged($node->id());
     }
 
+    if (!$saved instanceof NodeInterface) {
+      throw new \RuntimeException(sprintf('Seeded report "%s" vanished after repair.', $report['key']));
+    }
+
+    // Seeded demo reports are resettable samples, not municipal case records.
+    // Keep only the restored revision, so the next visitor cannot read the
+    // previous visitor's edits and repeated resets do not grow history.
+    $revision_ids = $nodeStorage->getQuery()->allRevisions()->accessCheck(FALSE)
+      ->condition('nid', $saved->id())->execute();
+    foreach (array_keys($revision_ids) as $revision_id) {
+      if ((int) $revision_id !== (int) $saved->getRevisionId()) {
+        $nodeStorage->deleteRevision($revision_id);
+      }
+    }
     $staleParagraphs = array_diff($oldParagraphIds, array_map('intval', array_column($notes, 'target_id')));
     if ($staleParagraphs !== []) {
       $paragraphStorage->delete($paragraphStorage->loadMultiple($staleParagraphs));

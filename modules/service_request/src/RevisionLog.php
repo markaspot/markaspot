@@ -16,11 +16,40 @@ use Drupal\Core\Entity\RevisionLogInterface;
 final class RevisionLog {
 
   /**
+   * Stable automatic causes. Human explanations are kept separately.
+   */
+  public const EVENTS = [
+    'scope_sync', 'assignment_sync', 'escalated', 'delegated',
+    'moderation_hidden', 'moderation_auto_hidden', 'privacy_hold',
+    'anonymized', 'legacy_notes_migrated',
+  ];
+
+  /**
    * Explicit reasons awaiting their entity save.
    *
    * @var \WeakMap<\Drupal\Core\Entity\ContentEntityInterface, string>|null
    */
   private static ?\WeakMap $pendingReasons = NULL;
+
+  /**
+   * Automatic causes awaiting their entity save.
+   *
+   * @var \WeakMap<\Drupal\Core\Entity\ContentEntityInterface, string[]>|null
+   */
+  private static ?\WeakMap $pendingEvents = NULL;
+
+  /**
+   * Marks a server-generated event without storing translated prose or names.
+   */
+  public static function setEvent(ContentEntityInterface $entity, string $event): void {
+    if (!$entity instanceof RevisionLogInterface || !in_array($event, self::EVENTS, TRUE)) {
+      throw new \InvalidArgumentException('A supported revision event is required.');
+    }
+    self::$pendingEvents ??= new \WeakMap();
+    self::$pendingEvents[$entity] = array_values(array_unique([
+      ...(self::$pendingEvents[$entity] ?? []), $event,
+    ]));
+  }
 
   /**
    * Marks an explicit reason, including a deliberate repetition of an old one.
@@ -75,10 +104,15 @@ final class RevisionLog {
         $changes[] = ['field' => $concept, 'before' => $before, 'after' => $after];
       }
     }
+    $events = self::$pendingEvents !== NULL ? (self::$pendingEvents[$entity] ?? []) : [];
+    if (self::$pendingEvents !== NULL) {
+      unset(self::$pendingEvents[$entity]);
+    }
     return json_encode([
       'schema' => 'civic.revision.v1',
       'action' => $entity->isNew() ? 'created' : 'updated',
       'changes' => $changes,
+      'events' => $events,
       'message' => $message,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
   }
@@ -108,6 +142,10 @@ final class RevisionLog {
           }
         }
       }
+    }
+    if (isset($data['events']) && (!is_array($data['events']) || !array_is_list($data['events'])
+      || array_filter($data['events'], static fn($event): bool => !is_string($event) || !in_array($event, self::EVENTS, TRUE)))) {
+      return NULL;
     }
     return $data;
   }

@@ -103,6 +103,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     'markaspot_tenant_admin',
     'markaspot_request_id',
     'markaspot_fastmap',
+    'service_request',
   ];
 
   /**
@@ -120,6 +121,7 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
    */
   protected function setUp(): void {
     parent::setUp();
+    $this->container->get('config.storage')->write('markaspot_open311.settings', ['status_note_auto_create' => FALSE]);
 
     $entityTypes = [
       'user', 'node', 'file', 'media', 'taxonomy_term', 'paragraph',
@@ -386,6 +388,31 @@ final class DemoWorkspaceSeedResetKernelTest extends KernelTestBase {
     $this->expectException(\RuntimeException::class);
     $this->expectExceptionMessage('without a demo block');
     $this->seeder()->seed(DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml'));
+  }
+
+  /**
+   * Mandatory revisions never retain the preceding demo visitor's content.
+   */
+  public function testResetWithMandatoryRevisionsRemovesVisitorHistory(): void {
+    $this->container->get('config.storage')->write('markaspot_open311.settings', ['status_note_auto_create' => FALSE]);
+    $this->allowlist(['demo-school-routes']);
+    $seed = DemoSeed::fromFile($this->seedDir . '/demo-school-routes.yml');
+    $this->seeder()->seed($seed);
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    $node = $this->seededEntity('node', 'report', 'dangerous-crossing');
+    $nid = $node->id();
+    $node->set('body', ['value' => 'Private visitor content', 'format' => 'plain_text']);
+    $node->setRevisionLogMessage('Private visitor explanation');
+    $node->save();
+    $visitor_vid = $node->getRevisionId();
+    $this->reset()->resetAll();
+    $restored = $storage->loadUnchanged($nid);
+    $this->assertNull($storage->loadRevision($visitor_vid));
+    $this->assertCount(1, $storage->getQuery()->allRevisions()->accessCheck(FALSE)->condition('nid', $nid)->execute());
+    $this->assertStringNotContainsString('Private visitor', (string) $restored->getRevisionLogMessage());
+    $this->assertStringNotContainsString('Private visitor', (string) $restored->get('body')->value);
+    $this->reset()->resetAll();
+    $this->assertCount(1, $storage->getQuery()->allRevisions()->accessCheck(FALSE)->condition('nid', $nid)->execute());
   }
 
   /**

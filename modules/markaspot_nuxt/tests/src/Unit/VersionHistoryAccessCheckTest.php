@@ -7,6 +7,11 @@ namespace Drupal\Tests\markaspot_nuxt\Unit;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Access\AccessResult;
+use Drupal\node\NodeInterface;
 use Drupal\markaspot_nuxt\Access\VersionHistoryAccessCheck;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
@@ -37,7 +42,7 @@ class VersionHistoryAccessCheckTest extends UnitTestCase {
   private function createCheck(bool $enterprise): VersionHistoryAccessCheck {
     $resolver = $this->createMock(FeatureScopeResolver::class);
     $resolver->method('allowsEnterpriseFeatures')->willReturn($enterprise);
-    return new VersionHistoryAccessCheck($resolver);
+    return new VersionHistoryAccessCheck($resolver, $this->createMock(EntityTypeManagerInterface::class));
   }
 
   /**
@@ -46,6 +51,7 @@ class VersionHistoryAccessCheckTest extends UnitTestCase {
   private function account(int $uid, array $roles = ['authenticated']): AccountInterface {
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn($uid);
+    $account->method('isAuthenticated')->willReturn($uid > 0);
     $account->method('getRoles')->willReturn($roles);
     return $account;
   }
@@ -74,6 +80,42 @@ class VersionHistoryAccessCheckTest extends UnitTestCase {
     $member = $check->check($this->account(42, ['authenticated', 'tenant_admin', 'moderator']));
     $this->assertFalse($member->isAllowed());
     $this->assertContains('user', $member->getCacheContexts());
+  }
+
+  /**
+   * Core snapshot grants require both current and historical private scope.
+   */
+  public function testSnapshotsRequirePlatformPermissionAndBothScopes(): void {
+    foreach ([
+      [TRUE, TRUE, TRUE, TRUE, TRUE],
+      [TRUE, FALSE, TRUE, TRUE, FALSE],
+      [TRUE, TRUE, FALSE, TRUE, FALSE],
+      [TRUE, TRUE, TRUE, FALSE, FALSE],
+      [FALSE, TRUE, TRUE, TRUE, FALSE],
+    ] as [$enterprise, $current_scope, $old_scope, $permission, $expected]) {
+      $account = $this->account(42);
+      $account->method('hasPermission')->willReturnCallback(fn(string $name): bool => $permission && $name === 'edit any service_request content');
+      $resolver = $this->createMock(FeatureScopeResolver::class);
+      $resolver->method('allowsEnterpriseFeatures')->willReturn($enterprise);
+      $manager = $this->createMock(EntityTypeManagerInterface::class);
+      $storage = $this->createMock(EntityStorageInterface::class);
+      $current = $this->createMock(NodeInterface::class);
+      $historical = $this->createMock(NodeInterface::class);
+      foreach ([[$current, $current_scope], [$historical, $old_scope]] as [$node, $allowed]) {
+        $node->method('hasField')->with('field_assignee')->willReturn(TRUE);
+        $field = $this->createMock(FieldItemListInterface::class);
+        $field->method('access')->willReturn($allowed ? AccessResult::allowed() : AccessResult::neutral());
+        $node->method('get')->with('field_assignee')->willReturn($field);
+      }
+      $current->method('access')->willReturn(AccessResult::allowed());
+      $manager->method('getStorage')->with('node')->willReturn($storage);
+      $storage->method('loadUnchanged')->willReturn($current);
+      $result = (new VersionHistoryAccessCheck($resolver, $manager))->accessNode($historical, $account);
+      $this->assertSame($expected, $result->isAllowed());
+      if (!$expected) {
+        $this->assertTrue($result->isForbidden(), 'Core grants cannot override a scope denial.');
+      }
+    }
   }
 
 }

@@ -58,6 +58,35 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   use StringTranslationTrait;
 
   /**
+   * Returns the last human revision author, skipping system revisions.
+   *
+   * @return array{name: ?string, timestamp: ?int}
+   *   The last staff edit metadata; no value when no human edit exists.
+   */
+  protected function lastHumanEditor(NodeInterface $node): array {
+    $user = $node->getRevisionUser();
+    if ((int) $node->getRevisionUserId() > 0) {
+      return [
+        'name' => $user?->access('view label', $this->currentUser) ? $user->label() : NULL,
+        'timestamp' => $node->getRevisionCreationTime(),
+      ];
+    }
+    $row = $this->database->select('node_revision', 'revision')
+      ->fields('revision', ['revision_uid', 'revision_timestamp'])
+      ->condition('nid', $node->id())
+      ->condition('revision_uid', 0, '>')
+      ->orderBy('vid', 'DESC')->range(0, 1)->execute()->fetchAssoc();
+    if (!$row) {
+      return ['name' => NULL, 'timestamp' => NULL];
+    }
+    $editor = $this->entityTypeManager->getStorage('user')->load($row['revision_uid']);
+    return [
+      'name' => $editor?->access('view label', $this->currentUser) ? $editor->label() : NULL,
+      'timestamp' => isset($row['revision_timestamp']) ? (int) $row['revision_timestamp'] : NULL,
+    ];
+  }
+
+  /**
    * Sort fields supported by the request list endpoint.
    */
   protected const REQUEST_LIST_SORT_FIELDS = [
@@ -2298,24 +2327,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         ];
       }
 
-      // Expose the latest revision author ("last edited by") to staff. The
-      // dashboard edits via JSON:API PATCH, which creates a new revision and
-      // records the editing user as the revision user (the bundle defaults to
-      // new_revision = true). Falls back gracefully when the revision user has
-      // been deleted. These keys live under extended_attributes.markaspot to
-      // match the frontend contract; the getExtendedAttributes() call below
-      // merges (rather than replaces) so they survive when extensions=true.
-      $revisionUser = $node->getRevisionUser();
-      if ($revisionUser !== NULL) {
-        $request['extended_attributes']['markaspot']['last_editor'] = $revisionUser->label();
+      // Technical follow-up revisions remain visible in history, but must not
+      // replace the dashboard's last human editor with Anonymous/Guest.
+      $editor = $this->lastHumanEditor($node);
+      if ($editor['name'] !== NULL) {
+        $request['extended_attributes']['markaspot']['last_editor'] = $editor['name'];
       }
-      // getRevisionCreationTime() is nullable (e.g. revisions created before
-      // the revision metadata key was populated, or partially-built test
-      // doubles). Only expose last_edited when a timestamp is actually present;
-      // formatDateTime() requires a non-null int.
-      $revisionCreated = $node->getRevisionCreationTime();
-      if ($revisionCreated !== NULL) {
-        $request['extended_attributes']['markaspot']['last_edited'] = $this->formatDateTime((int) $revisionCreated);
+      if ($editor['timestamp'] !== NULL) {
+        $request['extended_attributes']['markaspot']['last_edited'] = $this->formatDateTime($editor['timestamp']);
       }
 
       $request['extended_attributes']['markaspot']['assignee'] = NULL;

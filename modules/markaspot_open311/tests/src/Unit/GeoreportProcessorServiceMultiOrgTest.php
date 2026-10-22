@@ -271,6 +271,7 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
   protected function createMockNode(array $orgEntities = []): NodeInterface {
     $nodeId = self::$nextNodeId++;
     $node = $this->createMock(NodeInterface::class);
+    $node->method('getRevisionUserId')->willReturn(42);
     $node->method('id')->willReturn($nodeId);
     $node->method('getTitle')->willReturn('Test Request');
     $node->method('hasTranslation')->willReturn(FALSE);

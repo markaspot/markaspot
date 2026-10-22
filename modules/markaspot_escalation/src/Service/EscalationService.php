@@ -230,14 +230,8 @@ class EscalationService implements EscalationServiceInterface {
 
     // Create a new revision with a descriptive log message.
     $node->setNewRevision(TRUE);
-    RevisionLog::setMessage($node,
-      trim($note) === ''
-        ? (string) $this->t('Escalated to @jurisdiction', ['@jurisdiction' => $jurGroup->label()])
-        : (string) $this->t('Escalated to @jurisdiction: @note', [
-          '@jurisdiction' => $jurGroup->label(),
-          '@note' => $note,
-        ])
-    );
+    RevisionLog::setEvent($node, 'escalated');
+    RevisionLog::setMessage($node, $note);
     $node->setRevisionCreationTime($this->time->getRequestTime());
     $node->setRevisionUserId($this->currentUser->id());
 
@@ -680,14 +674,8 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     $node->setNewRevision(TRUE);
-    RevisionLog::setMessage($node,
-      trim($note) === ''
-        ? (string) $this->t('Delegated to @organisation', ['@organisation' => $orgGroup->label()])
-        : (string) $this->t('Delegated to @organisation: @note', [
-          '@organisation' => $orgGroup->label(),
-          '@note' => $note,
-        ])
-    );
+    RevisionLog::setEvent($node, 'delegated');
+    RevisionLog::setMessage($node, $note);
     $node->setRevisionCreationTime($this->time->getRequestTime());
     $node->setRevisionUserId($this->currentUser->id());
 

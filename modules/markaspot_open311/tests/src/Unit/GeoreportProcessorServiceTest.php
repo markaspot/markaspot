@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\markaspot_open311\Unit;
 
+use Drupal\Core\Database\StatementInterface;
+use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
@@ -1455,6 +1457,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   public function testMapNodeToServiceRequestExposesUnpublishedMediaUrlForManagerShape(): void {
     $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
     $node = $this->buildMappedNodeWithRequestMedia(5002, [$media]);
+    $node->method('getRevisionUserId')->willReturn(42);
 
     $this->currentUser->method('hasPermission')
       ->with('access open311 advanced properties')
@@ -3041,6 +3044,40 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * A technical revision keeps the last human edit without exposing labels.
+   */
+  public function testSystemRevisionPreservesLastHumanEdit(): void {
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('getRevisionUserId')->willReturn(0);
+    $node->method('id')->willReturn(4401);
+    $query = $this->createMock(SelectInterface::class);
+    foreach (['fields', 'condition', 'orderBy', 'range'] as $method) {
+      $query->method($method)->willReturnSelf();
+    }
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn(['revision_uid' => '12', 'revision_timestamp' => '1717500000']);
+    $query->method('execute')->willReturn($statement);
+    $database = $this->createMock(Connection::class);
+    $database->method('select')->with('node_revision', 'revision')->willReturn($query);
+    $manager = $this->createMock(EntityTypeManagerInterface::class);
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $editor = $this->createMock(UserInterface::class);
+    $editor->method('label')->willReturn('Last human');
+    $visible = TRUE;
+    $editor->method('access')->with('view label', $this->currentUser)->willReturnCallback(static function () use (&$visible): bool {
+      return $visible;
+    });
+    $storage->method('load')->with('12')->willReturn($editor);
+    $manager->method('getStorage')->with('user')->willReturn($storage);
+    (new \ReflectionProperty($this->processor, 'database'))->setValue($this->processor, $database);
+    (new \ReflectionProperty($this->processor, 'entityTypeManager'))->setValue($this->processor, $manager);
+    $method = new \ReflectionMethod($this->processor, 'lastHumanEditor');
+    $this->assertSame(['name' => 'Last human', 'timestamp' => 1717500000], $method->invoke($this->processor, $node));
+    $visible = FALSE;
+    $this->assertSame(['name' => NULL, 'timestamp' => 1717500000], $method->invoke($this->processor, $node));
+  }
+
+  /**
    * Managers see the current assignee without leaking email or roles.
    *
    * @covers ::mapNodeToServiceRequest
@@ -4164,8 +4201,10 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     else {
       $revisionUser = $this->createMock(UserInterface::class);
       $revisionUser->method('label')->willReturn($revisionUserName);
+      $revisionUser->method('access')->willReturn(TRUE);
       $node->method('getRevisionUser')->willReturn($revisionUser);
     }
+    $node->method('getRevisionUserId')->willReturn(42);
     $node->method('getRevisionCreationTime')->willReturn($revisionTimestamp);
 
     return $node;

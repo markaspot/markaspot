@@ -32,7 +32,7 @@ services:
     arguments: ['@markaspot_nuxt.feature_flag_checker', '@request_stack', '@entity_type.manager', '@config.factory']
   markaspot_nuxt.version_history_access_check:
     class: Drupal\markaspot_nuxt\Access\VersionHistoryAccessCheck
-    arguments: ['@markaspot_nuxt.feature_scope_resolver']
+    arguments: ['@markaspot_nuxt.feature_scope_resolver', '@entity_type.manager']
   markaspot_nuxt.enterprise_feature_gate:
     class: Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate
     arguments: ['@markaspot_nuxt.feature_scope_resolver']

@@ -321,9 +321,7 @@ class ModerationService implements ModerationServiceInterface {
     // Unpublish the node.
     $node->setUnpublished();
     $node->setNewRevision(TRUE);
-    RevisionLog::setMessage($node,
-      (string) $this->t('Hidden by moderator due to content flags.')
-    );
+    RevisionLog::setEvent($node, 'moderation_hidden');
     $node->setRevisionCreationTime($this->time->getRequestTime());
     $node->setRevisionUserId($uid);
     $node->save();
@@ -476,11 +474,7 @@ class ModerationService implements ModerationServiceInterface {
       // Auto-hide: unpublish the node.
       $node->setUnpublished();
       $node->setNewRevision(TRUE);
-      RevisionLog::setMessage($node,
-        (string) $this->t('Automatically hidden: flag threshold (@count) reached.', [
-          '@count' => $threshold,
-        ])
-      );
+      RevisionLog::setEvent($node, 'moderation_auto_hidden');
       $node->setRevisionCreationTime($this->time->getRequestTime());
       $node->setRevisionUserId(0);
       $node->save();

@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * @file
+ * Simulates a domain module sorting after service_request.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_entity_presave().
+ */
+function zzz_revision_domain_test_entity_presave(EntityInterface $entity): void {
+  $status = \Drupal::state()->get('revision_domain_test.status');
+  if ($status && $entity instanceof NodeInterface && $entity->bundle() === 'service_request') {
+    $entity->set('field_status', $status);
+  }
+}

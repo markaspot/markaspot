@@ -24,12 +24,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 final class ArchiveCommands extends DrushCommands {
 
   /**
-   * Revision log used for staff-triggered GDPR anonymization.
-   */
-  private const AUDIT_REVISION_LOG = 'Reporter contact data anonymized ' .
-    '(GDPR request via drush).';
-
-  /**
    * Optional dashboard service storing split request links.
    */
   private const REQUEST_LINK_SERVICE = 'markaspot_dashboard.request_link';
@@ -520,7 +514,7 @@ final class ArchiveCommands extends DrushCommands {
       $node->setNewRevision(TRUE);
       $node->setRevisionUserId(0);
       $node->setRevisionCreationTime(\time());
-      RevisionLog::setMessage($node, self::AUDIT_REVISION_LOG);
+      RevisionLog::setEvent($node, 'anonymized');
 
       $anonymized_values = $this->archiveService->anonymize($node, $fields);
       $node->save();

@@ -196,7 +196,7 @@ function _markaspot_ai_hold_unscreened_report(NodeInterface $node, string $reaso
   $message = t('Automatic personal-name screening failed (@reason). The report was saved unpublished: check the description for personal names before publishing it.', [
     '@reason' => $reason,
   ], ['langcode' => $node->language()->getId()]);
-  RevisionLog::setMessage($node, (string) $message);
+  RevisionLog::setEvent($node, 'privacy_hold');
   PiiScreeningHold::place($node, $reason);
 
   if ($node->hasField('field_internal_remark')) {
