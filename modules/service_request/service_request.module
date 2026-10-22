@@ -7,6 +7,7 @@
  * This is a content type to run an georeport v2 server.
  */
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Entity\EntityInterface;
@@ -20,6 +21,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\file\FileInterface;
 use Drupal\node\NodeInterface;
+use Drupal\node\NodeTypeInterface;
 use Drupal\paragraphs\ParagraphInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -286,8 +288,20 @@ function _service_request_email_form_required(NodeInterface $node, bool $configu
  * Implements hook_node_presave().
  */
 function service_request_node_presave(EntityInterface $node) {
-  if ($node->bundle() !== 'service_request') {
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
     return;
+  }
+
+  // Every persisted report change must preserve its previous state, including
+  // programmatic saves and callers that explicitly disable new revisions.
+  if (!$node->isNew() && !$node->isNewRevision()) {
+    $original = $node->getOriginal();
+    if ($original instanceof NodeInterface && $node->getRevisionLogMessage() === $original->getRevisionLogMessage()) {
+      $node->setRevisionLogMessage('');
+    }
+    $node->setNewRevision(TRUE);
+    $node->setRevisionUserId((int) \Drupal::currentUser()->id());
+    $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
   }
 
   _service_request_sanitize_address($node);
@@ -326,6 +340,15 @@ function service_request_node_presave(EntityInterface $node) {
   // Service Request Update.
   else {
     _service_request_handle_update($node, $config, $auto_create);
+  }
+}
+
+/**
+ * Implements hook_node_type_presave().
+ */
+function service_request_node_type_presave(NodeTypeInterface $type): void {
+  if ($type->id() === 'service_request') {
+    $type->setNewRevision(TRUE);
   }
 }
 
@@ -694,5 +717,32 @@ function _service_request_derive_status_paragraph_terms(string $entity_type_id, 
       && $paragraph->hasField('field_status_term')) {
       $paragraph->set('field_status_term', $status_tid);
     }
+  }
+}
+
+/**
+ * Implements hook_entity_presave().
+ *
+ * Entity-type hooks run first. Capture the final domain changes after them.
+ */
+function service_request_entity_presave(EntityInterface $entity): void {
+  if (!$entity instanceof NodeInterface || $entity->bundle() !== 'service_request') {
+    return;
+  }
+  $entity->setRevisionLogMessage(RevisionLog::build($entity, [
+    'field_organisation' => 'responsibility', 'field_assignee' => 'person',
+    'field_assigned_team' => 'team', 'field_status' => 'status',
+  ]));
+}
+
+/**
+ * Implements hook_module_implements_alter().
+ */
+#[\Drupal\Core\Hook\Attribute\LegacyModuleImplementsAlter]
+function service_request_module_implements_alter(array &$implementations, string $hook): void {
+  if ($hook === 'entity_presave' && isset($implementations['service_request'])) {
+    $implementation = $implementations['service_request'];
+    unset($implementations['service_request']);
+    $implementations['service_request'] = $implementation;
   }
 }

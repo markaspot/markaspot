@@ -33,9 +33,18 @@ final class OrganisationQueryGuard extends TemporaryQueryGuard {
       // Node grants constrain the root query, not every referenced node alias.
       // Keep Core's original protection for all traversed references.
       TemporaryQueryGuard::applyAccessConditions($query, $entity_type_id, $field_prefix, $cacheability);
-      return;
     }
-    parent::applyAccessConditions($query, $entity_type_id, $field_prefix, $cacheability);
+    else {
+      parent::applyAccessConditions($query, $entity_type_id, $field_prefix, $cacheability);
+    }
+    $scope_ids = \Drupal::requestStack()->getCurrentRequest()?->attributes->get('_markaspot_private_organisation_filter_scope', []);
+    if ($entity_type_id === 'node' && $scope_ids !== []) {
+      $field = $field_prefix === NULL ? 'field_jurisdiction.target_id' : $field_prefix . '.field_jurisdiction.target_id';
+      $query->condition($field, $scope_ids, 'IN');
+      $cacheability->addCacheContexts(['user', 'user.permissions', 'user.node_grants:view']);
+      $cacheability->addCacheTags(['group_list']);
+      $cacheability->setCacheMaxAge(0);
+    }
   }
 
   /**

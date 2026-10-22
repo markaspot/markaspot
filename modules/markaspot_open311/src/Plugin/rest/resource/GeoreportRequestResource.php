@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\filter\FilterFormatRepositoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
@@ -1153,7 +1154,7 @@ class GeoreportRequestResource extends ResourceBase {
     // Handling of revision creation.
     if (isset($values['revision_log_message'])) {
       $node->setNewRevision(TRUE);
-      $node->setRevisionLogMessage($values['revision_log_message']);
+      RevisionLog::setMessage($node, $values['revision_log_message']);
       $node->setRevisionCreationTime($this->time->getRequestTime());
 
       // Attribute the revision to the acting user so the "last edited by"

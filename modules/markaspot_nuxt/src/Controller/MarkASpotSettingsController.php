@@ -560,6 +560,10 @@ class MarkASpotSettingsController extends ControllerBase {
       && function_exists('_markaspot_group_case_assignment_enabled_for_jurisdiction')
       && _markaspot_group_case_assignment_enabled_for_jurisdiction($tierGroup);
 
+    $settings['features']['personalAssignment'] = $tierGroup instanceof GroupInterface
+      && function_exists('_markaspot_group_personal_assignment_enabled_for_jurisdiction')
+      && _markaspot_group_personal_assignment_enabled_for_jurisdiction($tierGroup);
+
     // aiDuplicates capability flag. Requires the module, tenant AI processing,
     // and duplicate_detection.enabled = true in markaspot_ai.settings. When all
     // three conditions are met, the flag defaults to TRUE so existing

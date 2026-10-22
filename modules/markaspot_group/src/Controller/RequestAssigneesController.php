@@ -89,7 +89,8 @@ final class RequestAssigneesController extends ControllerBase {
     return new JsonResponse([
       'current' => $this->currentAssignee($node),
       'current_team' => $this->currentTeam($node),
-      'candidates' => array_values($candidates),
+      'personal_assignment_enabled' => \_markaspot_group_personal_assignment_enabled($node),
+      'candidates' => \_markaspot_group_personal_assignment_enabled($node) ? array_values($candidates) : [],
       'units' => $this->assignableUnits($node),
     ]);
   }

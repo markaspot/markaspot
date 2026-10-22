@@ -3130,6 +3130,39 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Personal assignment defaults on and can be disabled independently.
+   */
+  public function testPersonalAssignmentFeatureRoundTrip(): void {
+    $storedNuxtConfig = json_encode(['features' => []]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $getRequest = Request::create('/api/tenant/14/features', 'GET');
+    $getResponse = $this->controller->getFeatureSettings($getRequest, '14');
+    $getData = json_decode($getResponse->getContent(), TRUE);
+
+    $this->assertEquals(200, $getResponse->getStatusCode());
+    $this->assertTrue($getData['features']['personalAssignment']);
+
+    $patchRequest = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['personalAssignment' => FALSE])
+    );
+    $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
+    $patchData = json_decode($patchResponse->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $patchResponse->getStatusCode());
+    $this->assertFalse($patchData['features']['personalAssignment']);
+    $this->assertFalse($updatedConfig['features']['personalAssignment']);
+  }
+
+  /**
    * Tests getFeatureSettings() defaults loginLink to visible (fail-open).
    *
    * @covers ::getFeatureSettings

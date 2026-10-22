@@ -30,6 +30,7 @@ class FeatureScopeResolver {
     'aiProcessing' => 'tenant',
     'operationsDashboard' => 'tenant',
     'assignmentSyncsOrganisation' => 'tenant',
+    'personalAssignment' => 'tenant',
     'delegationNoteRequired' => 'tenant',
     'dashboard' => 'tenant',
     // Organisation and facility management operate on the root portfolio, so
@@ -81,6 +82,7 @@ class FeatureScopeResolver {
     'aiProcessing' => FALSE,
     'operationsDashboard' => FALSE,
     'assignmentSyncsOrganisation' => FALSE,
+    'personalAssignment' => TRUE,
     'delegationNoteRequired' => FALSE,
     'dashboard' => TRUE,
     // Conservative constant; the effective default is operating-mode aware

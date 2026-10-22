@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Drupal\service_request\RevisionLog;
+use Symfony\Component\Routing\Route;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\service_request\Plugin\Action\OrganisationAwareEmailAction;
 use Drupal\Core\Form\FormState;
 use Drupal\service_request\OrganisationNotificationPolicy;
@@ -264,6 +267,71 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->assertFalse($this->request->get('field_assignee')->access('view', new AnonymousUserSession()));
     $this->assertFalse($this->request->get('field_assignee')->access('view', $this->foreignUser));
     $this->assertFalse($this->request->get('field_assignee')->access('view', $this->foreignAssigner));
+  }
+
+  /**
+   * The personal opt-out preserves teams, existing assignments and removals.
+   */
+  public function testPersonalAssignmentOptOut(): void {
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $this->assertTrue(\_markaspot_group_personal_assignment_enabled($this->request));
+    $this->jurisdiction->set('field_nuxt_config', json_encode(['features' => ['personalAssignment' => FALSE]]))->save();
+    $this->request = $this->reloadNode($this->request);
+    $this->assertFalse(\_markaspot_group_personal_assignment_enabled($this->request));
+    $response = RequestAssigneesController::create($this->container)->assignees($this->request);
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertFalse($data['personal_assignment_enabled']);
+    $this->assertSame([], $data['candidates']);
+    $this->assertNotEmpty($data['units']);
+    $this->assertSame($this->orgMember->uuid(), $data['current']['id']);
+
+    $this->request->setTitle('Unrelated edit keeps the historic assignment');
+    $this->request->save();
+    $this->request->set('field_assignee', NULL);
+    $this->request->set('field_assigned_team', $this->parksOrganisation->id());
+    $this->request->save();
+    $this->assertTrue($this->request->get('field_assignee')->isEmpty());
+    $this->assertSame((int) $this->parksOrganisation->id(), (int) $this->request->get('field_assigned_team')->target_id);
+    $this->request->set('field_assignee', $this->orgMember->id());
+    $this->assertStringContainsString('Personal assignment is disabled', (string) $this->request->validate());
+    $this->expectException(EntityStorageException::class);
+    $this->request->save();
+  }
+
+  /**
+   * An existing assignee is not grandfathered across tenant roots.
+   */
+  public function testPersonalAssignmentExistingPersonCannotCrossTenantRoot(): void {
+    $this->assertFalse($this->request->get('field_assignee')->isEmpty());
+    $this->assertTrue(\_markaspot_group_personal_assignment_is_unchanged($this->request));
+    $other = Group::create([
+      'type' => 'jur',
+      'label' => 'Other tenant root',
+      'field_nuxt_config' => json_encode(['features' => ['personalAssignment' => FALSE]]),
+    ]);
+    $other->save();
+    $this->request->set('field_jurisdiction', $other->id());
+    $this->assertFalse(\_markaspot_group_personal_assignment_is_unchanged($this->request));
+    $this->assertFalse(\_markaspot_group_personal_assignment_enabled($this->request));
+  }
+
+  /**
+   * The tenant opt-out also rejects initial personal assignments on creation.
+   */
+  public function testPersonalAssignmentDisabledOnCreate(): void {
+    $this->jurisdiction->set('field_nuxt_config', json_encode(['features' => ['personalAssignment' => FALSE]]))->save();
+    $this->container->get('entity_type.manager')->getStorage('group')->resetCache();
+    $node = Node::create([
+      'type' => 'service_request',
+      'title' => 'Disabled personal create',
+      'field_jurisdiction' => $this->jurisdiction->id(),
+      'field_organisation' => $this->organisation->id(),
+      'field_assignee' => $this->orgMember->id(),
+    ]);
+    $this->assertStringContainsString('Personal assignment is disabled', (string) $node->validate());
+    $this->expectException(EntityStorageException::class);
+    $node->save();
   }
 
   /**
@@ -839,10 +907,14 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->container->get('current_user')->setAccount($this->jurMember);
     $request->setTitle('Title-only edit by a different user');
     // Match EntityResource::patchIndividual revision metadata handling.
+    $http_request = Request::create('/jsonapi/node/service_request/' . $request->uuid(), 'PATCH');
+    $http_request->attributes->set('_route_object', new Route('/jsonapi/node/service_request/{uuid}', [], [], ['_is_jsonapi' => TRUE]));
+    $this->container->get('request_stack')->push($http_request);
     $request->setNewRevision(TRUE);
     $request->setRevisionUserId($this->jurMember->id());
     $request->setRevisionCreationTime($this->container->get('datetime.time')->getRequestTime());
     $request->save();
+    $this->container->get('request_stack')->pop();
     $request = $this->reloadNode($request);
 
     $this->assertNotSame($assignment_revision, (int) $request->getRevisionId());
@@ -853,6 +925,19 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       ->getStorage('node')->loadRevision($assignment_revision);
     $this->assertSame($assignment_log, $old_revision->getRevisionLogMessage());
     $this->assertSame((int) $this->assigner->id(), (int) $old_revision->getRevisionUserId());
+  }
+
+  /**
+   * Trusted reasons survive an assignment's generated audit message.
+   */
+  public function testAssignmentPreservesExplicitReason(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $request->set('field_assignee', $this->orgMember->id());
+    RevisionLog::setMessage($request, 'Fachlich begründete Weitergabe.');
+    $request->save();
+    $request = $this->reloadNode($request);
+    $this->assertSame("Arbeit der Person org-member zugewiesen.\nFachlich begründete Weitergabe.", RevisionLog::message((string) $request->getRevisionLogMessage()));
   }
 
   /**

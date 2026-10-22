@@ -79,6 +79,7 @@ final class TenantSettingsController extends ControllerBase {
     'loginLink',
     'delegationNoteRequired',
     'assignmentSyncsOrganisation',
+    'personalAssignment',
     'moderation',
   ];
 
@@ -2351,6 +2352,7 @@ final class TenantSettingsController extends ControllerBase {
         'dashboardRequestCreate' => $this->getBooleanFeatureValue($features, 'dashboardRequestCreate', TRUE),
         'operationsDashboard' => $this->getBooleanFeatureValue($features, 'operationsDashboard', FALSE),
         'caseAssignment' => $this->canUseCaseAssignment($group),
+        'personalAssignment' => $this->getBooleanFeatureValue($features, 'personalAssignment', TRUE),
         'contactForm' => $this->getBooleanFeatureValue($features, 'contactForm', FALSE),
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
         'delegationNoteRequired' => $this->getBooleanFeatureValue($features, 'delegationNoteRequired', FALSE),

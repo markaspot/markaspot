@@ -442,6 +442,7 @@ class BillingController extends ControllerBase {
       // capturing the change. Required for GoBD §3.5.3 "Unveränderbarkeit"
       // + "Nachvollziehbarkeit" of billing stammdaten (AO §147).
       $entity->setNewRevision(TRUE);
+      $entity->setRevisionUserId(0);
       $entity->setRevisionLogMessage(sprintf(
         'Billing fields updated via Stripe sync: %s',
         implode(', ', $updated)

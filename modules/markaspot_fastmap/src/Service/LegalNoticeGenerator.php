@@ -142,6 +142,7 @@ final class LegalNoticeGenerator {
     if ($written !== []) {
       try {
         $group->setNewRevision(TRUE);
+        $group->setRevisionUserId(0);
         $group->setRevisionLogMessage('Auto-generated legal notice from operator address');
         $group->setRevisionCreationTime(\time());
         $group->save();

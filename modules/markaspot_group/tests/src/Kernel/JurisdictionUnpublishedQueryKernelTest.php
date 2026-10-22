@@ -234,6 +234,42 @@ final class JurisdictionUnpublishedQueryKernelTest extends KernelTestBase {
   }
 
   /**
+   * A private organisation predicate cannot escape scope via a client OR.
+   */
+  public function testPrivateOrganisationFilterScopeIntersectsRowsAndCounts(): void {
+    $foreign = $this->foreignDraft->get('field_jurisdiction')->entity;
+    $foreign_public = $this->createRequest($foreign, TRUE);
+    $own_public = $this->createRequest($this->jurisdiction, TRUE);
+    $request = Request::create('/jsonapi/node/service_request');
+    $request->setSession($this->container->get('request_stack')->getCurrentRequest()->getSession());
+    $request->attributes->set('_markaspot_private_organisation_filter_scope', [(int) $this->jurisdiction->id()]);
+    $this->container->get('request_stack')->push($request);
+    try {
+      $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
+      TemporaryQueryGuard::setModuleHandler($this->container->get('module_handler'));
+      $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+      $resource = $reflection->newInstanceWithoutConstructor();
+      $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+      $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+      $type = new ResourceType('node', 'service_request', Node::class);
+      $filter = new Filter(new EntityConditionGroup('OR', [
+        new EntityCondition('nid', (int) $own_public->id()),
+        new EntityCondition('nid', (int) $foreign_public->id()),
+      ]));
+      $params = [Filter::KEY_NAME => $filter];
+      $cache = new CacheableMetadata();
+      $query = $reflection->getMethod('getCollectionQuery')->invoke($resource, $type, $params, $cache);
+      $this->assertSame([(int) $own_public->id()], array_map('intval', array_values($query->execute())));
+      $count = $reflection->getMethod('getCollectionCountQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+      $this->assertSame(1, (int) $count->execute());
+      $this->assertSame(0, $cache->getCacheMaxAge());
+    }
+    finally {
+      $this->container->get('request_stack')->pop();
+    }
+  }
+
+  /**
    * Unfiltered count caching cannot retain drafts after permission revocation.
    */
   public function testPermissionRevocationInvalidatesUnfilteredCount(): void {
@@ -366,6 +402,45 @@ final class JurisdictionUnpublishedQueryKernelTest extends KernelTestBase {
     $draft = Node::load($this->draft->id());
     $draft->set('field_test_reference', $this->foreignDraft->id())->save();
     $this->container->get('current_user')->setAccount($this->manager);
+    $this->assertSame([(int) $draft->id()], $this->draftIds());
+    $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
+    TemporaryQueryGuard::setModuleHandler($this->container->get('module_handler'));
+    $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+    $resource = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+    $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+    $filter = new Filter(new EntityConditionGroup('AND', [
+      new EntityCondition('nid', (int) $draft->id()),
+      new EntityCondition('field_test_reference.entity.nid', (int) $this->foreignDraft->id()),
+    ]));
+    $query = $reflection->getMethod('getCollectionQuery')->invoke($resource, new ResourceType('node', 'service_request', Node::class), [Filter::KEY_NAME => $filter], new CacheableMetadata());
+    $this->assertSame([], $query->execute());
+  }
+
+  /**
+   * Scoped private predicates cannot probe a foreign published reference.
+   */
+  public function testScopedOrganisationFilterKeepsForeignPublicReferenceHidden(): void {
+    FieldStorageConfig::create([
+      'field_name' => 'field_test_reference',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'node'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_test_reference',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Referenced request',
+    ])->save();
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $this->container->get('entity_type.manager')->getStorage('node')->resetCache();
+    $foreign_draft = Node::load($this->foreignDraft->id());
+    $foreign_draft->setPublished()->save();
+    $draft = Node::load($this->draft->id());
+    $draft->set('field_test_reference', $this->foreignDraft->id())->save();
+    $this->container->get('current_user')->setAccount($this->manager);
+    $this->container->get('request_stack')->getCurrentRequest()->attributes->set('_markaspot_private_organisation_filter_scope', [(int) $this->jurisdiction->id()]);
     $this->assertSame([(int) $draft->id()], $this->draftIds());
     $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
     TemporaryQueryGuard::setModuleHandler($this->container->get('module_handler'));

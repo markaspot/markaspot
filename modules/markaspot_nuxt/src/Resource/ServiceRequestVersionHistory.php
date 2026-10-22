@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\Resource;
 
+use Drupal\Core\Entity\TranslatableInterface;
+use Drupal\service_request\RevisionLog;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\jsonapi\JsonApiResource\LinkCollection;
 use Drupal\jsonapi\JsonApiResource\ResourceObject;
@@ -83,6 +86,8 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
    *   The markaspot_nuxt logger channel.
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $languageManager
+   *   The language manager.
    */
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
@@ -90,6 +95,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
     protected DateFormatterInterface $dateFormatter,
     protected LoggerInterface $logger,
     protected Connection $database,
+    protected LanguageManagerInterface $languageManager,
   ) {}
 
   /**
@@ -105,6 +111,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       $container->get('date.formatter'),
       $container->get('logger.factory')->get('markaspot_nuxt'),
       $container->get('database'),
+      $container->get('language_manager'),
     );
   }
 
@@ -153,6 +160,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
 
     $built = $this->buildRevisionItems($entity);
 
+    $cacheability->setCacheMaxAge(0);
     $data = new ResourceObjectData($built['items']);
 
     $meta = ['count' => count($built['items'])];
@@ -228,6 +236,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
 
     $resource_type = $this->buildResourceType();
     $items = [];
+    $reference_labels = $this->referenceLabels($rows);
     foreach ($rows as $row) {
       $vid = (int) $row->vid;
       $author_uid = (int) $row->revision_uid;
@@ -239,13 +248,27 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
         : NULL;
 
       $log_message = (string) ($row->revision_log ?? '');
+      $entry = RevisionLog::decode($log_message);
+      if ($entry !== NULL) {
+        foreach ($entry['changes'] as &$change) {
+          foreach (['before', 'after'] as $side) {
+            foreach ($change[$side] as &$reference) {
+              $reference['label'] = $reference_labels[$change['field']][$reference['id']] ?? '#' . $reference['id'];
+            }
+            unset($reference);
+          }
+        }
+        unset($change);
+      }
 
       $fields = [
         'vid' => $vid,
         'author' => $author,
         'author_uid' => $author_uid,
         'timestamp' => $timestamp,
-        'log_message' => $log_message,
+        'log_message' => $entry['message'] ?? $log_message,
+        'action' => $entry['action'] ?? NULL,
+        'changes' => $entry['changes'] ?? [],
         'is_current' => $vid === $current_vid,
       ];
 
@@ -277,6 +300,8 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       'author_uid' => new ResourceTypeAttribute('author_uid'),
       'timestamp' => new ResourceTypeAttribute('timestamp'),
       'log_message' => new ResourceTypeAttribute('log_message'),
+      'action' => new ResourceTypeAttribute('action'),
+      'changes' => new ResourceTypeAttribute('changes'),
       'is_current' => new ResourceTypeAttribute('is_current'),
     ];
 
@@ -303,6 +328,40 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
    */
   public function getRouteResourceTypes(Route $route, string $route_name): array {
     return [$this->buildResourceType()];
+  }
+
+  /**
+   * Resolves accessible current labels in batches, never stores them in logs.
+   */
+  private function referenceLabels(array $rows): array {
+    $types = ['responsibility' => 'group', 'person' => 'user', 'team' => 'group', 'status' => 'taxonomy_term'];
+    $ids = [];
+    foreach ($rows as $row) {
+      $entry = RevisionLog::decode((string) ($row->revision_log ?? ''));
+      foreach ($entry['changes'] ?? [] as $change) {
+        foreach (array_merge($change['before'], $change['after']) as $reference) {
+          $ids[$types[$change['field']]][$reference['id']] = $reference['id'];
+        }
+      }
+    }
+    $labels = [];
+    foreach ($ids as $type => $type_ids) {
+      foreach ($this->entityTypeManager->getStorage($type)->loadMultiple(array_values($type_ids)) as $reference) {
+        if (!$reference->access('view', $this->currentUser)) {
+          continue;
+        }
+        $langcode = $this->languageManager->getCurrentLanguage()->getId();
+        if ($reference instanceof TranslatableInterface && $reference->hasTranslation($langcode)) {
+          $reference = $reference->getTranslation($langcode);
+        }
+        foreach ($types as $concept => $entity_type) {
+          if ($entity_type === $type) {
+            $labels[$concept][(string) $reference->id()] = (string) $reference->label();
+          }
+        }
+      }
+    }
+    return $labels;
   }
 
 }

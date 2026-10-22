@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_archive\Drush\Commands;
 
+use Drupal\service_request\RevisionLog;
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
@@ -517,7 +518,9 @@ final class ArchiveCommands extends DrushCommands {
     $transaction = $this->database->startTransaction();
     try {
       $node->setNewRevision(TRUE);
-      $node->setRevisionLogMessage(self::AUDIT_REVISION_LOG);
+      $node->setRevisionUserId(0);
+      $node->setRevisionCreationTime(\time());
+      RevisionLog::setMessage($node, self::AUDIT_REVISION_LOG);
 
       $anonymized_values = $this->archiveService->anonymize($node, $fields);
       $node->save();

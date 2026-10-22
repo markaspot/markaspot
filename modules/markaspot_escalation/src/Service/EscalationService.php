@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_escalation\Service;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -229,7 +230,7 @@ class EscalationService implements EscalationServiceInterface {
 
     // Create a new revision with a descriptive log message.
     $node->setNewRevision(TRUE);
-    $node->setRevisionLogMessage(
+    RevisionLog::setMessage($node,
       trim($note) === ''
         ? (string) $this->t('Escalated to @jurisdiction', ['@jurisdiction' => $jurGroup->label()])
         : (string) $this->t('Escalated to @jurisdiction: @note', [
@@ -679,7 +680,7 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     $node->setNewRevision(TRUE);
-    $node->setRevisionLogMessage(
+    RevisionLog::setMessage($node,
       trim($note) === ''
         ? (string) $this->t('Delegated to @organisation', ['@organisation' => $orgGroup->label()])
         : (string) $this->t('Delegated to @organisation: @note', [

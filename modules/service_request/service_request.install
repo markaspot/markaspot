@@ -6,6 +6,7 @@
  */
 
 use Drupal\locale\Gettext;
+use Drupal\node\Entity\NodeType;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\language\ConfigurableLanguageManagerInterface;
@@ -26,6 +27,17 @@ function service_request_install() {
   $locked = Drupal::state()->get('node.type.locked');
   $locked['locked_content_type'] = 'locked_content_type';
   Drupal::state()->set('node.type.locked', $locked);
+}
+
+/**
+ * Enables mandatory revision defaults for existing report types.
+ */
+function service_request_update_11023(): string {
+  $type = NodeType::load('service_request');
+  if ($type) {
+    $type->setNewRevision(TRUE)->save();
+  }
+  return 'Service request changes always create attributed revisions.';
 }
 
 /**

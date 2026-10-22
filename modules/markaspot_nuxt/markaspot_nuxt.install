@@ -274,6 +274,7 @@ function markaspot_nuxt_update_11900(): string {
     // not the recurring revision bloat that setNewRevision(FALSE) guards
     // against on per-request saves.
     $group->setNewRevision(TRUE);
+    $group->setRevisionUserId(0);
     $group->setRevisionLogMessage('Auto-migrated field_gdpr.required from features.privacyNotice.enabled (markaspot_nuxt update 11900).');
     $group->setRevisionCreationTime(\time());
     $group->save();

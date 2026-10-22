@@ -32,6 +32,13 @@ class ServiceRequestAssigneeMembershipConstraintValidator extends ConstraintVali
       return;
     }
 
+    if (!\_markaspot_group_personal_assignment_enabled($node)
+      && !\_markaspot_group_personal_assignment_is_unchanged($node)) {
+      $this->context->buildViolation('Personal assignment is disabled for this tenant.')
+        ->addViolation();
+      return;
+    }
+
     $assignees = $value->referencedEntities();
     $assignee = reset($assignees);
     if (!$assignee instanceof UserInterface) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_dashboard\Migration;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\ContentEntityInterface;
@@ -199,7 +200,7 @@ final class LegacyNotesMigration {
       $node->isDefaultRevision(TRUE);
       $node->setRevisionUserId(0);
       $node->setRevisionCreationTime($now);
-      $node->setRevisionLogMessage('Legacy field_notes migrated to an internal remark. Original content retained.');
+      RevisionLog::setMessage($node, 'Legacy field_notes migrated to an internal remark. Original content retained.');
       $this->writer('node')->writeSnapshot($node);
       $storage->resetCache([$nid]);
       $fresh = $storage->loadUnchanged($nid);

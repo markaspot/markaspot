@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_moderation\Service;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
@@ -320,7 +321,7 @@ class ModerationService implements ModerationServiceInterface {
     // Unpublish the node.
     $node->setUnpublished();
     $node->setNewRevision(TRUE);
-    $node->setRevisionLogMessage(
+    RevisionLog::setMessage($node,
       (string) $this->t('Hidden by moderator due to content flags.')
     );
     $node->setRevisionCreationTime($this->time->getRequestTime());
@@ -475,7 +476,7 @@ class ModerationService implements ModerationServiceInterface {
       // Auto-hide: unpublish the node.
       $node->setUnpublished();
       $node->setNewRevision(TRUE);
-      $node->setRevisionLogMessage(
+      RevisionLog::setMessage($node,
         (string) $this->t('Automatically hidden: flag threshold (@count) reached.', [
           '@count' => $threshold,
         ])

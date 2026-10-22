@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_nuxt\Unit;
 
+use Drupal\Core\Language\Language;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Access\AccessResult;
@@ -100,12 +102,15 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
    * Builds the resource under test with the mocked collaborators.
    */
   protected function resource(?AccountInterface $account = NULL): TestableServiceRequestVersionHistory {
+    $language_manager = $this->createMock(LanguageManagerInterface::class);
+    $language_manager->method('getCurrentLanguage')->willReturn(new Language(['id' => 'en']));
     return new TestableServiceRequestVersionHistory(
       $this->entityTypeManager,
       $account ?? $this->createMock(AccountInterface::class),
       $this->dateFormatter,
       $this->logger,
-      $this->database
+      $this->database,
+      $language_manager
     );
   }
 
@@ -181,6 +186,31 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
    */
   protected function attr(ResourceObject $object, string $name) {
     return $object->getField($name);
+  }
+
+  /**
+   * JSON:API actions preserve reasons and resolve accessible current names.
+   */
+  public function testStructuredActionsResolveCurrentLabelsAndFallback(): void {
+    $visible = $this->user('Current accessible name');
+    $visible->method('id')->willReturn(99);
+    $visible->method('access')->willReturn(TRUE);
+    $hidden = $this->user('Hidden name must not escape');
+    $hidden->method('id')->willReturn(100);
+    $hidden->method('access')->willReturn(FALSE);
+    $this->stubUsers([99 => $visible, 100 => $hidden]);
+    $entry = [
+      'schema' => 'civic.revision.v1', 'action' => 'updated',
+      'changes' => [['field' => 'person', 'before' => [['id' => '100']], 'after' => [['id' => '99']]]],
+      'message' => 'Fachliche Begründung. Original reason.',
+    ];
+    $this->stubRevisionRows([$this->row(7, 0, 3000, json_encode($entry, JSON_THROW_ON_ERROR))]);
+    $items = $this->resource()->callBuildRevisionItems($this->node(1, 7))['items'];
+    $this->assertSame('updated', $this->attr($items[0], 'action'));
+    $this->assertSame($entry['message'], $this->attr($items[0], 'log_message'));
+    $changes = $this->attr($items[0], 'changes');
+    $this->assertSame('#100', $changes[0]['before'][0]['label']);
+    $this->assertSame('Current accessible name', $changes[0]['after'][0]['label']);
   }
 
   /**
