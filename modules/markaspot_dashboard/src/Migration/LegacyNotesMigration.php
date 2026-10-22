@@ -201,6 +201,8 @@ final class LegacyNotesMigration {
       $node->setRevisionUserId(0);
       $node->setRevisionCreationTime($now);
       RevisionLog::setEvent($node, 'legacy_notes_migrated');
+      // writeSnapshot intentionally bypasses all presave hooks.
+      $node->setRevisionLogMessage(RevisionLog::build($node, RevisionLog::REFERENCE_FIELDS));
       $this->writer('node')->writeSnapshot($node);
       $storage->resetCache([$nid]);
       $fresh = $storage->loadUnchanged($nid);

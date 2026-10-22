@@ -54,7 +54,7 @@ final class VersionHistoryAccessCheck implements AccessInterface {
   /**
    * Applies the history contract to core JSON:API historical snapshots too.
    */
-  public function accessNode(NodeInterface $revision, AccountInterface $account): AccessResultInterface {
+  public function accessNode(NodeInterface $revision, AccountInterface $account, bool $check_current_view = TRUE): AccessResultInterface {
     $result = AccessResult::allowedIf($account->isAuthenticated()
       && ($account->hasPermission('view all revisions')
         || $account->hasPermission('view service_request revisions')
@@ -65,8 +65,11 @@ final class VersionHistoryAccessCheck implements AccessInterface {
       || !$current->hasField('field_assignee') || !$revision->hasField('field_assignee')) {
       return AccessResult::forbidden()->setCacheMaxAge(0);
     }
-    $access = $result->andIf($this->check($account))
-      ->andIf($current->access('view', $account, TRUE))
+    $access = $result->andIf($this->check($account));
+    if ($check_current_view) {
+      $access = $access->andIf($current->access('view', $account, TRUE));
+    }
+    $access = $access
       ->andIf($current->get('field_assignee')->access('view', $account, TRUE))
       ->andIf($revision->get('field_assignee')->access('view', $account, TRUE));
     return $access->isAllowed() ? $access

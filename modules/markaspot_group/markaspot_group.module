@@ -20,6 +20,7 @@ use Drupal\service_request\OrganisationNotificationPolicy;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Url;
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Database\Query\ConditionInterface;
 use Drupal\Core\Database\Query\SelectInterface;
@@ -2156,6 +2157,35 @@ function markaspot_group_entity_field_access(string $operation, FieldDefinitionI
 }
 
 /**
+ * Implements hook_entity_field_access_alter().
+ */
+function markaspot_group_entity_field_access_alter(array &$grants, array $context): void {
+  $field = $context['field_definition'];
+  $assignment_field = in_array($field->getName(), ['field_assignee', 'field_assigned_team', 'assignee_label'], TRUE);
+  if ($context['operation'] !== 'view'
+    || $field->getTargetEntityTypeId() !== 'node'
+    || $field->getTargetBundle() !== 'service_request'
+    || (!$assignment_field && !_markaspot_group_is_private_service_request_field($field))) {
+    return;
+  }
+  $scope = $grants['markaspot_group'] ?? NULL;
+  if (!$scope instanceof AccessResultInterface) {
+    return;
+  }
+  // Core ORs field grants with a permanently allowed default. That default
+  // must carry the same scope metadata, even when it makes the positive
+  // scoped grant redundant. Access decisions and unrelated vetoes stay intact.
+  foreach ($grants as $key => $grant) {
+    if ($grant instanceof AccessResultInterface) {
+      $copy = $grant instanceof AccessResult ? clone $grant
+        : ($grant->isAllowed() ? AccessResult::allowed()
+          : ($grant->isForbidden() ? AccessResult::forbidden() : AccessResult::neutral()));
+      $grants[$key] = $copy->addCacheableDependency($grant)->addCacheableDependency($scope);
+    }
+  }
+}
+
+/**
  * Scopes private service request fields to the report's jurisdictions.
  *
  * Field permissions such as 'view field_e_mail' are global role permissions,
@@ -2178,6 +2208,13 @@ function _markaspot_group_service_request_private_field_view_access(FieldDefinit
     ->addCacheContexts(['user'])
     ->addCacheTags(['group_list', 'config:user.role.anonymous'])
     ->addCacheableDependency($node);
+
+  if (!$account->isAnonymous() && (int) $node->getOwnerId() !== (int) $account->id()) {
+    $organisation_access = _markaspot_group_service_request_organisation_view_access($node, $account);
+    if ($organisation_access->isForbidden()) {
+      return $organisation_access->addCacheableDependency($result);
+    }
+  }
 
   if ($account->isAnonymous()
     || _markaspot_group_account_bypasses_private_field_scope($account)
@@ -2225,7 +2262,8 @@ function _markaspot_group_account_bypasses_private_field_scope(AccountInterface 
   return (int) $account->id() === 1
     || array_intersect(['administrator', 'editorial_board'], $account->getRoles()) !== []
     || $account->hasPermission('bypass node access')
-    || _markaspot_group_jurisdiction_group_count() <= 1;
+    || (_markaspot_group_jurisdiction_group_count() <= 1
+      && _markaspot_group_service_request_organisation_scope($account)['legacy_unscoped']);
 }
 
 /**
@@ -2455,6 +2493,88 @@ function _markaspot_group_jurisdiction_group_count(): int {
 }
 
 /**
+ * Keeps organisation-scoped staff inside their assigned report organisations.
+ *
+ * The derived jurisdiction membership is navigation scope, not a grant to
+ * sibling organisations. Explicit jurisdiction administration/moderation and
+ * global operators retain their existing jurisdiction-wide read scope.
+ * Classic installations with no organisation-scoped membership keep their
+ * existing field/assignment permissions and jurisdiction checks.
+ */
+function _markaspot_group_service_request_organisation_view_access(NodeInterface $node, AccountInterface $account): AccessResult {
+  $access = AccessResult::allowed()->cachePerUser()->cachePerPermissions()
+    ->addCacheableDependency($node)->addCacheTags(['group_list'])->setCacheMaxAge(0);
+  $scope = _markaspot_group_service_request_organisation_scope($account);
+  if ($scope['legacy_unscoped']) {
+    return $access;
+  }
+  $jurisdictions = _markaspot_group_field_target_ids($node, 'field_jurisdiction');
+  if (array_intersect($jurisdictions, $scope['elevated_jurisdiction_ids'])) {
+    return $access;
+  }
+  $organisations = _markaspot_group_field_target_ids($node, 'field_organisation');
+  foreach ($scope['organisation_scopes'] as $pair) {
+    if (array_intersect($jurisdictions, $pair['jurisdiction_ids'])
+      && array_intersect($organisations, $pair['organisation_ids'])) {
+      return $access;
+    }
+  }
+  return AccessResult::forbidden('Private report data requires membership in a responsible organisation.')
+    ->addCacheableDependency($access);
+}
+
+/**
+ * Derives paired read scopes once for entity, history and query enforcement.
+ *
+ * @return array{elevated_jurisdiction_ids: int[], organisation_scopes: array, legacy_unscoped: bool}
+ *   Explicit jurisdiction readers, actual organisations, and legacy fallback.
+ */
+function _markaspot_group_service_request_organisation_scope(AccountInterface $account): array {
+  $scope = ['elevated_jurisdiction_ids' => [], 'organisation_scopes' => [], 'legacy_unscoped' => TRUE];
+  if ((int) $account->id() === 1
+    || array_intersect(['administrator', 'editorial_board'], $account->getRoles()) !== []
+    || $account->hasPermission('bypass node access')) {
+    return $scope;
+  }
+  $user = User::load($account->id());
+  if (!$user instanceof UserInterface) {
+    return $scope;
+  }
+  $hierarchy = \Drupal::service('markaspot_group.hierarchy_resolver');
+  foreach (GroupMembershipEntity::loadByUser($user) as $membership) {
+    $group = $membership->getGroup();
+    if ($group instanceof GroupInterface && $group->bundle() === _markaspot_group_get_org_group_type()) {
+      $scope['legacy_unscoped'] = FALSE;
+      $jurisdiction_id = _markaspot_group_group_jurisdiction_id($group);
+      $root_id = $jurisdiction_id !== NULL ? $hierarchy->getRootJurisdictionId($jurisdiction_id) : NULL;
+      if ($root_id !== NULL) {
+        $scope['organisation_scopes'][] = [
+          'jurisdiction_ids' => array_map('intval', $hierarchy->getDescendantIds((int) $root_id)),
+          'organisation_ids' => [(int) $group->id()],
+        ];
+      }
+    }
+    elseif (_markaspot_group_is_jurisdiction_group($group)) {
+      $role_ids = array_keys($membership->getRoles(FALSE));
+      if (array_intersect($role_ids, _markaspot_group_derived_jurisdiction_role_ids($group))) {
+        $scope['legacy_unscoped'] = FALSE;
+      }
+      $elevated_roles = [];
+      foreach (array_unique([$group->bundle(), 'jur']) as $prefix) {
+        foreach (['admin', 'editorial', 'moderator', 'tenant_admin'] as $role) {
+          $elevated_roles[] = $prefix . '-' . $role;
+        }
+      }
+      if (array_intersect($role_ids, $elevated_roles)) {
+        $scope['elevated_jurisdiction_ids'] = array_merge($scope['elevated_jurisdiction_ids'], $hierarchy->getDescendantIds((int) $group->id()));
+      }
+    }
+  }
+  $scope['elevated_jurisdiction_ids'] = array_values(array_unique(array_map('intval', $scope['elevated_jurisdiction_ids'])));
+  return $scope;
+}
+
+/**
  * Builds the shared view access result for service request assignee fields.
  */
 function _markaspot_group_service_request_assignee_view_access(NodeInterface $node, AccountInterface $account, string $field_name): AccessResult {
@@ -2467,6 +2587,7 @@ function _markaspot_group_service_request_assignee_view_access(NodeInterface $no
   $result = $allowed
     ? AccessResult::allowed()
     : AccessResult::forbidden(sprintf('Only request assignees managers or jurisdiction members may view %s.', $field_name));
+  $result = $result->andIf(_markaspot_group_service_request_organisation_view_access($node, $account));
 
   $cache_group_ids = array_values(array_unique(array_merge($jurisdiction_ids, $scope_ids)));
   $result = _markaspot_group_add_membership_cacheability($result, $account, $cache_group_ids)
@@ -2518,9 +2639,10 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
   if ($field_definition->getTargetEntityTypeId() === 'node'
     && $field_definition->getTargetBundle() === 'service_request'
     && $field_definition->getName() === 'field_assignee') {
-    if ($account->hasPermission('assign service requests')) {
-      return AccessResult::allowed()
-        ->cachePerPermissions();
+    if ($account->hasPermission('assign service requests')
+      && (_markaspot_group_account_bypasses_private_field_scope($account)
+        || _markaspot_group_enable_private_service_request_filter_scope($account, 'field_assignee'))) {
+      return AccessResult::allowed()->cachePerUser()->cachePerPermissions()->setCacheMaxAge(0);
     }
 
     return AccessResult::forbidden(sprintf('Only assignment managers may use %s as a JSON:API filter.', $field_definition->getName()))
@@ -2544,23 +2666,7 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
     && $account->isAuthenticated()
     && !_markaspot_group_account_bypasses_private_field_scope($account)
     && \Drupal::moduleHandler()->moduleExists('markaspot_nuxt')) {
-    $request = \Drupal::requestStack()->getCurrentRequest();
-    $route = $request?->attributes->get('_route_object');
-    $scope_ids = _markaspot_group_private_field_scope_jurisdiction_ids($account);
-    $sort = $request?->query->all()['sort'] ?? '';
-    $resource_type = \Drupal::service('jsonapi.resource_type.repository')->get('node', 'service_request');
-    $organisation_name = $resource_type?->getPublicName('field_organisation') ?? 'field_organisation';
-    if (!is_string($sort) || str_contains($sort, $organisation_name)) {
-      return AccessResult::forbidden('Private organisation fields cannot be used as JSON:API sort paths.')
-        ->cachePerUser()->setCacheMaxAge(0);
-    }
-    if ($route instanceof Route
-      && $route->getDefault('_is_jsonapi') === TRUE
-      && $route->getDefault('resource_type') === 'node--service_request'
-      && $route->getDefault('_controller') === 'jsonapi.entity_resource:getCollection'
-      && \Drupal::service('jsonapi.entity_resource') instanceof CachedCountEntityResource
-      && $scope_ids !== []) {
-      $request->attributes->set('_markaspot_private_organisation_filter_scope', $scope_ids);
+    if (_markaspot_group_enable_private_service_request_filter_scope($account, 'field_organisation')) {
       return AccessResult::neutral()->cachePerUser()->setCacheMaxAge(0);
     }
   }
@@ -2578,6 +2684,37 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Installs the independent paired scope for a private collection filter.
+ */
+function _markaspot_group_enable_private_service_request_filter_scope(AccountInterface $account, string $field_name): bool {
+  if (!$account->isAuthenticated() || !\Drupal::moduleHandler()->moduleExists('markaspot_nuxt')) {
+    return FALSE;
+  }
+  $request = \Drupal::requestStack()->getCurrentRequest();
+  $route = $request?->attributes->get('_route_object');
+  $scope = _markaspot_group_service_request_organisation_scope($account);
+  if ($scope['legacy_unscoped']) {
+    $scope['elevated_jurisdiction_ids'] = _markaspot_group_private_field_scope_jurisdiction_ids($account);
+  }
+  $sort = $request?->query->all()['sort'] ?? '';
+  $resource_type = \Drupal::service('jsonapi.resource_type.repository')->get('node', 'service_request');
+  $public_name = $resource_type?->getPublicName($field_name) ?? $field_name;
+  if (!is_string($sort) || str_contains($sort, $public_name)) {
+    return FALSE;
+  }
+  if ($route instanceof Route
+    && $route->getDefault('_is_jsonapi') === TRUE
+    && $route->getDefault('resource_type') === 'node--service_request'
+    && $route->getDefault('_controller') === 'jsonapi.entity_resource:getCollection'
+    && \Drupal::service('jsonapi.entity_resource') instanceof CachedCountEntityResource
+    && ($scope['elevated_jurisdiction_ids'] !== [] || $scope['organisation_scopes'] !== [])) {
+    $request->attributes->set('_markaspot_private_organisation_filter_scope', $scope);
+    return TRUE;
+  }
+  return FALSE;
 }
 
 /**
@@ -4251,6 +4388,7 @@ function _markaspot_group_prepare_scope_revision(NodeInterface $node): void {
   $node->setNewRevision(TRUE);
   $node->setRevisionUserId(0);
   $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
+  RevisionLog::setMessage($node, '');
   RevisionLog::setEvent($node, 'scope_sync');
 }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Kernel;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -209,7 +210,22 @@ final class DemoRequestPublicationKernelTest extends KernelTestBase {
         ->condition('nid', $demo->id())
         ->count()
         ->execute();
-      $this->assertSame(1, (int) $revisions, 'The status move adds no revision.');
+      // Post-insert scope normalisation may itself save a technical revision.
+      // A later status mutation must retain the initial state as well.
+      $this->assertGreaterThanOrEqual($mapping === 'initial' ? 1 : 2, (int) $revisions);
+      $revision_ids = $this->container->get('entity_type.manager')->getStorage('node')->getQuery()
+        ->accessCheck(FALSE)->allRevisions()->condition('nid', $demo->id())->sort('vid')->execute();
+      $creation = $this->container->get('entity_type.manager')->getStorage('node')->loadRevision(array_key_first($revision_ids));
+      $creation_status = (int) $creation->get('field_status')->target_id;
+      $this->assertSame('initial', $statuses[$creation_status]->get('field_open311_mapping')->value);
+      if ($mapping !== 'initial') {
+        $this->assertNotSame($creation_status, $statusId);
+      }
+      foreach (array_slice(array_keys($revision_ids), 1) as $vid) {
+        $revision = $this->container->get('entity_type.manager')->getStorage('node')->loadRevision($vid);
+        $this->assertSame(0, (int) $revision->getRevisionUserId());
+        $this->assertSame('', RevisionLog::message((string) $revision->getRevisionLogMessage()));
+      }
     }
     $this->assertSame(['initial', 'initial', 'initial', 'open', 'open', 'closed', 'closed', 'initial'], $mappings);
     $this->assertSame([], $this->container->get('state')->get('system.test_mail_collector', []), 'Provisioning the demo requests sends no mail.');

@@ -52,6 +52,9 @@ final class JsonApiFieldFilterAccessTest extends UnitTestCase {
       ->willReturn('field_assignee');
 
     $assigner = $this->createMock(AccountInterface::class);
+    // Non-global staff additionally require the real scoped collection guard,
+    // exercised by the HTTP kernel tests. This unit covers global permissions.
+    $assigner->method('getRoles')->willReturn(['administrator']);
     $assigner->expects($this->once())
       ->method('hasPermission')
       ->with('assign service requests')

@@ -242,7 +242,10 @@ final class JurisdictionUnpublishedQueryKernelTest extends KernelTestBase {
     $own_public = $this->createRequest($this->jurisdiction, TRUE);
     $request = Request::create('/jsonapi/node/service_request');
     $request->setSession($this->container->get('request_stack')->getCurrentRequest()->getSession());
-    $request->attributes->set('_markaspot_private_organisation_filter_scope', [(int) $this->jurisdiction->id()]);
+    $request->attributes->set('_markaspot_private_organisation_filter_scope', [
+      'elevated_jurisdiction_ids' => [(int) $this->jurisdiction->id()],
+      'organisation_scopes' => [],
+    ]);
     $this->container->get('request_stack')->push($request);
     try {
       $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
@@ -418,6 +421,97 @@ final class JurisdictionUnpublishedQueryKernelTest extends KernelTestBase {
   }
 
   /**
+   * Private organisation filters bind rows, counts and referenced aliases.
+   */
+  public function testSiblingOrganisationFilterCannotProbeRowsCountsOrReferences(): void {
+    $this->container->get('current_user')->setAccount(User::load(1));
+    GroupType::create(['id' => 'org', 'label' => 'Organisation'])->save();
+    FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction', 'entity_type' => 'group',
+      'type' => 'entity_reference', 'settings' => ['target_type' => 'group'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_jurisdiction', 'entity_type' => 'group', 'bundle' => 'org',
+    ])->save();
+    $relationships = $this->container->get('entity_type.manager')->getStorage('group_relationship_type');
+    foreach (['group_membership', 'group_node:service_request'] as $plugin) {
+      $type = $relationships->createFromPlugin(GroupType::load('org'), $plugin);
+      if (!$relationships->load($type->id())) {
+        $type->save();
+      }
+    }
+    foreach (['insider', 'outsider'] as $scope) {
+      GroupRole::create([
+        'id' => 'org-query-' . $scope, 'label' => 'Published report reader',
+        'group_type' => 'org', 'scope' => $scope, 'global_role' => 'authenticated',
+        'permissions' => ['view group_node:service_request entity'],
+      ])->save();
+    }
+    Role::load('anonymous')->grantPermission('access content')->save();
+    foreach (['jur', 'org'] as $bundle) {
+      GroupRole::create([
+        'id' => $bundle . '-query-public', 'label' => 'Public report reader',
+        'group_type' => $bundle, 'scope' => 'outsider', 'global_role' => 'anonymous',
+        'permissions' => ['view group_node:service_request entity'],
+      ])->save();
+    }
+    $a = Group::create(['type' => 'org', 'label' => 'A', 'field_jurisdiction' => $this->jurisdiction->id()]);
+    $a->save();
+    $b = Group::create(['type' => 'org', 'label' => 'B', 'field_jurisdiction' => $this->jurisdiction->id()]);
+    $b->save();
+    $this->container->get('current_user')->setAccount(User::load(1));
+    $own = $this->createRequest($this->jurisdiction, TRUE);
+    $own->set('field_organisation', $a->id())->save();
+    $this->assertSame((int) $a->id(), (int) Node::load($own->id())->get('field_organisation')->target_id);
+    $sibling = $this->createRequest($this->jurisdiction, TRUE);
+    $sibling->set('field_organisation', $b->id())->save();
+    FieldStorageConfig::create([
+      'field_name' => 'field_public_reference', 'entity_type' => 'node',
+      'type' => 'entity_reference', 'settings' => ['target_type' => 'node'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_public_reference', 'entity_type' => 'node',
+      'bundle' => 'service_request',
+    ])->save();
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    $storage->resetCache();
+    $own = $storage->load($own->id());
+    $own->set('field_public_reference', $sibling->id())->save();
+    $this->container->get('current_user')->setAccount($this->manager);
+    $this->assertTrue($own->access('view', $this->manager), 'own public entity access');
+    $this->assertContains((int) $own->id(), array_map('intval', array_values($storage->getQuery()->accessCheck(TRUE)->condition('nid', $own->id())->execute())), 'own base query access');
+    $this->container->get('request_stack')->getCurrentRequest()->attributes->set('_markaspot_private_organisation_filter_scope', [
+      'elevated_jurisdiction_ids' => [],
+      'organisation_scopes' => [[
+        'jurisdiction_ids' => [(int) $this->jurisdiction->id()],
+        'organisation_ids' => [(int) $a->id()],
+      ]],
+    ]);
+    $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
+    TemporaryQueryGuard::setModuleHandler($this->container->get('module_handler'));
+    $reflection = new \ReflectionClass(CachedCountEntityResource::class);
+    $resource = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('entityTypeManager')->setValue($resource, $this->container->get('entity_type.manager'));
+    $reflection->getProperty('fieldManager')->setValue($resource, $this->container->get('entity_field.manager'));
+    $type = new ResourceType('node', 'service_request', Node::class);
+    $params = [Filter::KEY_NAME => new Filter(new EntityConditionGroup('OR', [
+      new EntityCondition('nid', (int) $own->id()), new EntityCondition('nid', (int) $sibling->id()),
+    ]))];
+    $query = $reflection->getMethod('getCollectionQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+    $this->assertSame([(int) $own->id()], array_map('intval', array_values($query->execute())));
+    $count = $reflection->getMethod('getCollectionCountQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+    $this->assertSame(1, (int) $count->execute());
+    $params = [Filter::KEY_NAME => new Filter(new EntityConditionGroup('AND', [
+      new EntityCondition('nid', (int) $own->id()),
+      new EntityCondition('field_public_reference.entity.nid', (int) $sibling->id()),
+    ]))];
+    $query = $reflection->getMethod('getCollectionQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+    $this->assertSame([], $query->execute());
+    $count = $reflection->getMethod('getCollectionCountQuery')->invoke($resource, $type, $params, new CacheableMetadata());
+    $this->assertSame(0, (int) $count->execute());
+  }
+
+  /**
    * Scoped private predicates cannot probe a foreign published reference.
    */
   public function testScopedOrganisationFilterKeepsForeignPublicReferenceHidden(): void {
@@ -440,7 +534,10 @@ final class JurisdictionUnpublishedQueryKernelTest extends KernelTestBase {
     $draft = Node::load($this->draft->id());
     $draft->set('field_test_reference', $this->foreignDraft->id())->save();
     $this->container->get('current_user')->setAccount($this->manager);
-    $this->container->get('request_stack')->getCurrentRequest()->attributes->set('_markaspot_private_organisation_filter_scope', [(int) $this->jurisdiction->id()]);
+    $this->container->get('request_stack')->getCurrentRequest()->attributes->set('_markaspot_private_organisation_filter_scope', [
+      'elevated_jurisdiction_ids' => [(int) $this->jurisdiction->id()],
+      'organisation_scopes' => [],
+    ]);
     $this->assertSame([(int) $draft->id()], $this->draftIds());
     $this->container->get('entity_type.manager')->getDefinition('node')->setHandlerClass('query_access', NULL);
     TemporaryQueryGuard::setModuleHandler($this->container->get('module_handler'));

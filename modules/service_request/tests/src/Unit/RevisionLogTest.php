@@ -70,6 +70,11 @@ final class RevisionLogTest extends UnitTestCase {
     $this->assertSame('Bitte prüfen. Please review.', $entry['message']);
     $this->assertSame([], RevisionLog::decode(RevisionLog::build($entity, []))['events']);
     $entry['events'] = ['translated prose'];
+    $decoded = RevisionLog::decode(json_encode($entry, JSON_THROW_ON_ERROR));
+    $this->assertSame([], $decoded['events']);
+    $this->assertSame($entry['message'], $decoded['message']);
+    $this->assertSame($entry['changes'], $decoded['changes']);
+    $entry['events'] = 'invalid shape';
     $this->assertNull(RevisionLog::decode(json_encode($entry, JSON_THROW_ON_ERROR)));
     $this->expectException(\InvalidArgumentException::class);
     RevisionLog::setEvent($entity, 'unknown');

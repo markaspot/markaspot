@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_archive\Kernel;
 
+use Drupal\service_request\RevisionLog;
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Database\DatabaseExceptionWrapper;
 use Drupal\Core\Logger\LoggerChannel;
@@ -44,6 +45,8 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
     'taxonomy',
     'telephone',
     'markaspot_archive',
+    'filter',
+    'service_request',
   ];
 
   /**
@@ -87,6 +90,8 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
     $this->installEntitySchema('node');
     $this->installEntitySchema('taxonomy_term');
     $this->installSchema('node', ['node_access']);
+
+    $this->container->get('config.storage')->write('markaspot_open311.settings', ['status_note_auto_create' => FALSE]);
 
     // The module ships optional field config targeting the service_category
     // vocabulary, so the bundle entities must exist before config install.
@@ -399,10 +404,9 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
     self::assertCount(3, $revision_ids);
     $latest_revision = $storage->loadRevision(max($revision_ids));
     self::assertInstanceOf(Node::class, $latest_revision);
-    self::assertSame(
-      'Reporter contact data anonymized (GDPR request via drush).',
-      $latest_revision->getRevisionLogMessage()
-    );
+    $audit = RevisionLog::decode((string) $latest_revision->getRevisionLogMessage());
+    self::assertSame(['anonymized'], $audit['events']);
+    self::assertSame('', $audit['message']);
   }
 
   /**

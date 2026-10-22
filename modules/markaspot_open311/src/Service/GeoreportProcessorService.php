@@ -58,17 +58,66 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   use StringTranslationTrait;
 
   /**
+   * Revision metadata primed for one collection, keyed by node and revision.
+   *
+   * @var array<string, array{user: ?\Drupal\user\UserInterface, timestamp: int}>
+   */
+  protected array $lastHumanRevisionMetadata = [];
+
+  /**
+   * Batches technical-revision fallbacks before formatting a manager page.
+   */
+  protected function preloadLastHumanEditors(array $nodes): void {
+    $technical = [];
+    foreach ($nodes as $node) {
+      if ($node instanceof NodeInterface && (int) $node->getRevisionUserId() === 0 && $node->id()) {
+        $technical[(int) $node->id()] = $node;
+      }
+    }
+    if ($technical === []) {
+      return;
+    }
+    $latest = $this->database->select('node_revision', 'history')
+      ->fields('history', ['nid'])
+      ->condition('nid', array_keys($technical), 'IN')
+      ->condition('revision_uid', 0, '>')
+      ->groupBy('nid');
+    $latest->addExpression('MAX(vid)', 'vid');
+    $query = $this->database->select('node_revision', 'revision');
+    $query->innerJoin($latest, 'last_human', 'revision.vid = last_human.vid');
+    $rows = $query->fields('revision', ['nid', 'revision_uid', 'revision_timestamp'])
+      ->execute()->fetchAllAssoc('nid');
+    $user_ids = array_values(array_unique(array_map(static fn($row): int => (int) $row->revision_uid, $rows)));
+    $users = $user_ids !== [] ? $this->entityTypeManager->getStorage('user')->loadMultiple($user_ids) : [];
+    foreach ($technical as $nid => $node) {
+      $row = $rows[$nid] ?? NULL;
+      $user = $row !== NULL ? ($users[(int) $row->revision_uid] ?? NULL) : NULL;
+      $this->lastHumanRevisionMetadata[$nid . ':' . $node->getRevisionId()] = [
+        'user' => $user instanceof UserInterface ? $user : NULL,
+        'timestamp' => $row !== NULL ? (int) $row->revision_timestamp : (int) $node->getCreatedTime(),
+      ];
+    }
+  }
+
+  /**
    * Returns the last human revision author, skipping system revisions.
    *
    * @return array{name: ?string, timestamp: ?int}
    *   The last staff edit metadata; no value when no human edit exists.
    */
   protected function lastHumanEditor(NodeInterface $node): array {
-    $user = $node->getRevisionUser();
     if ((int) $node->getRevisionUserId() > 0) {
+      $user = $node->getRevisionUser();
       return [
         'name' => $user?->access('view label', $this->currentUser) ? $user->label() : NULL,
         'timestamp' => $node->getRevisionCreationTime(),
+      ];
+    }
+    $primed = $this->lastHumanRevisionMetadata[$node->id() . ':' . $node->getRevisionId()] ?? NULL;
+    if ($primed !== NULL) {
+      return [
+        'name' => $primed['user']?->access('view label', $this->currentUser) ? $primed['user']->label() : NULL,
+        'timestamp' => $primed['timestamp'],
       ];
     }
     $row = $this->database->select('node_revision', 'revision')
@@ -77,7 +126,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       ->condition('revision_uid', 0, '>')
       ->orderBy('vid', 'DESC')->range(0, 1)->execute()->fetchAssoc();
     if (!$row) {
-      return ['name' => NULL, 'timestamp' => NULL];
+      return ['name' => NULL, 'timestamp' => (int) $node->getCreatedTime()];
     }
     $editor = $this->entityTypeManager->getStorage('user')->load($row['revision_uid']);
     return [
@@ -1213,6 +1262,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // decides whether this caller gets the extended or the public shape.
     $unclaimedManagerScope = $extendedRole === 'manager'
       && empty($readScope);
+
+    if ($extendedRole === 'manager') {
+      $this->preloadLastHumanEditors($nodes);
+    }
 
     // Preload all taxonomy terms needed by these nodes.
     $this->preloadTaxonomyTerms($nodes);

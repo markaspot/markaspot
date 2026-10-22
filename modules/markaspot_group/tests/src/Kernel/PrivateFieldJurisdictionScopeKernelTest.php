@@ -137,6 +137,12 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
       'label' => 'Jurisdiction',
       'settings' => ['handler' => 'default:group', 'handler_settings' => []],
     ])->save();
+    FieldStorageConfig::create([
+      'field_name' => 'field_organisation', 'entity_type' => 'node',
+      'type' => 'entity_reference', 'settings' => ['target_type' => 'group'],
+      'cardinality' => -1,
+    ])->save();
+    FieldConfig::create(['field_name' => 'field_organisation', 'entity_type' => 'node', 'bundle' => 'service_request'])->save();
     $this->createCustomPermissionField('field_e_mail', 'email');
     $this->createCustomPermissionField('field_status_notes', 'string');
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
@@ -206,8 +212,31 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
     $organisation->save();
     $orgModerator = $this->account('org-moderator', ['moderator']);
     $organisation->addMember($orgModerator);
+    $this->reportA->set('field_organisation', $organisation->id());
     $this->assertTrue($this->reportA->get('field_e_mail')->access('view', $orgModerator));
     $this->assertFalse($this->reportB->get('field_e_mail')->access('view', $orgModerator));
+  }
+
+  /**
+   * Derived jurisdiction membership never opens sibling-org private fields.
+   */
+  public function testSiblingOrganisationIsDeniedEvenOnSingleJurisdictionInstalls(): void {
+    $a = Group::create(['type' => 'org', 'label' => 'A', 'field_jurisdiction' => $this->tenantA->id()]);
+    $a->save();
+    $b = Group::create(['type' => 'org', 'label' => 'B', 'field_jurisdiction' => $this->tenantA->id()]);
+    $b->save();
+    $staff = $this->account('org-only-staff', ['moderator']);
+    $b->addMember($staff);
+    $own = $this->report($this->tenantA)->set('field_organisation', $b->id());
+    $sibling = $this->report($this->tenantA)->set('field_organisation', $a->id());
+    $this->assertTrue($own->get('field_e_mail')->access('view', $staff));
+    $this->assertFalse($sibling->get('field_e_mail')->access('view', $staff));
+    // Exercise the legacy single-jurisdiction shortcut explicitly. It must
+    // not remove the organisation boundary established above.
+    $count = &drupal_static('_markaspot_group_jurisdiction_group_count');
+    $count = 1;
+    $this->assertFalse($sibling->get('field_e_mail')->access('view', $staff));
+    $this->assertFalse(_markaspot_group_service_request_organisation_view_access($sibling, $staff)->isAllowed());
   }
 
   /**

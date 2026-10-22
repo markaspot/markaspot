@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Service;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
@@ -2873,7 +2874,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
 
     $node->set('field_status', ['target_id' => $statusTid]);
-    $node->setNewRevision(FALSE);
+    $node->setNewRevision(TRUE);
+    $node->setRevisionUserId(0);
+    $node->setRevisionCreationTime($this->time->getCurrentTime());
+    RevisionLog::setMessage($node, '');
     $node->save();
   }
 

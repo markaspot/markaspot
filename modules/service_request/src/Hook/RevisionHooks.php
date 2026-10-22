@@ -23,10 +23,7 @@ final class RevisionHooks {
     if (!$entity instanceof NodeInterface || $entity->bundle() !== 'service_request') {
       return;
     }
-    $entity->setRevisionLogMessage(RevisionLog::build($entity, [
-      'field_organisation' => 'responsibility', 'field_assignee' => 'person',
-      'field_assigned_team' => 'team', 'field_status' => 'status',
-    ]));
+    $entity->setRevisionLogMessage(RevisionLog::build($entity, RevisionLog::REFERENCE_FIELDS));
   }
 
 }

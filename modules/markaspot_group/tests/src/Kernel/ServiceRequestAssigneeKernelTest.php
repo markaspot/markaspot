@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_group\Kernel;
 
+use Symfony\Component\HttpFoundation\Response;
 use Drupal\service_request\RevisionLog;
 use Symfony\Component\Routing\Route;
 use Drupal\Core\Entity\EntityStorageException;
@@ -63,6 +64,12 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     'markaspot_validation',
     'markaspot_group',
     'service_request',
+    'serialization',
+    'jsonapi',
+    'jsonapi_extras',
+    'jsonapi_resources',
+    'basic_auth',
+    'markaspot_nuxt',
   ];
 
   /**
@@ -264,6 +271,105 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Real JSON:API history enforces current and historical organisation scope.
+   */
+  public function testJsonApiSnapshotsCannotCrossSiblingOrganisations(): void {
+    $this->createField('node', 'service_request', 'field_e_mail', 'email');
+    $email = FieldStorageConfig::loadByName('node', 'field_e_mail');
+    $email->setThirdPartySetting('field_permissions', 'permission_type', 'custom')->save();
+    FieldStorageConfig::loadByName('node', 'field_organisation')->setThirdPartySetting('field_permissions', 'permission_type', 'custom')->save();
+    $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
+    $this->request = $this->reloadNode($this->request);
+    foreach (['jur', 'org'] as $bundle) {
+      foreach (['insider', 'outsider'] as $scope) {
+        GroupRole::create([
+          'id' => $bundle . '-http-' . $scope, 'label' => 'Published report reader',
+          'group_type' => $bundle, 'scope' => $scope, 'global_role' => 'authenticated',
+          'permissions' => ['view group_node:service_request entity'],
+        ])->save();
+      }
+    }
+    $permissions = [
+      'access content', 'edit any service_request content',
+      'assign service requests', 'view field_e_mail', 'view field_organisation',
+    ];
+    $a = $this->createUser($permissions, 'http-org-a');
+    $b = $this->createUser($permissions, 'http-org-b');
+    $both = $this->createUser($permissions, 'http-both-orgs');
+    $elevated = $this->createUser($permissions, 'http-jur-moderator');
+    $this->organisation->addMember($a);
+    $this->parksOrganisation->addMember($b);
+    $this->organisation->addMember($both);
+    $this->parksOrganisation->addMember($both);
+    GroupRole::create(['id' => 'jur-moderator', 'label' => 'Moderator', 'group_type' => 'jur', 'scope' => 'individual'])->save();
+    $this->jurisdiction->addMember($elevated, ['group_roles' => ['jur-moderator']]);
+    foreach ([$a, $b, $both, $elevated] as $staff) {
+      $staff->setPassword('synthetic-org-scope-password')->save();
+    }
+    $this->container->get('current_user')->setAccount($this->superUser);
+    $this->request->set('field_e_mail', 'org-a-citizen@example.invalid');
+    RevisionLog::setMessage($this->request, 'ORG-A-PRIVATE-REASON');
+    $this->request->save();
+    $old_vid = (int) $this->request->getRevisionId();
+    $this->request->setTitle('Later A state')->save();
+    $current_vid = (int) $this->request->getRevisionId();
+    $this->container->get('router.builder')->rebuild();
+    $base = '/jsonapi/node/service_request/' . $this->request->uuid();
+    $fetch = function (UserInterface $staff, string $path): Response {
+      $this->container->get('entity_type.manager')->getAccessControlHandler('node')->resetCache();
+      return $this->container->get('http_kernel')->handle(Request::create($path, 'GET', server: [
+        'HTTP_ACCEPT' => 'application/vnd.api+json',
+        'HTTP_AUTHORIZATION' => 'Basic ' . base64_encode($staff->getAccountName() . ':synthetic-org-scope-password'),
+        'PHP_AUTH_USER' => $staff->getAccountName(), 'PHP_AUTH_PW' => 'synthetic-org-scope-password',
+      ]));
+    };
+    foreach ([$old_vid, $current_vid] as $vid) {
+      $denied = $fetch($b, $base . '?resourceVersion=id:' . $vid);
+      $this->assertSame(403, $denied->getStatusCode(), (string) $denied->getContent());
+      $this->assertStringNotContainsString('org-a-citizen@example.invalid', (string) $denied->getContent());
+      foreach ([$a, $elevated] as $reader) {
+        $snapshot = $this->container->get('entity_type.manager')->getStorage('node')->loadRevision($vid);
+        $this->assertTrue($snapshot->get('field_assignee')->access('view', $reader), $reader->getAccountName() . ' assignment scope');
+        $access = $this->container->get('markaspot_nuxt.version_history_access_check')->accessNode($snapshot, $reader);
+        $this->assertTrue($access->isAllowed(), $reader->getAccountName() . ' history scope: ' . json_encode([
+          'permission' => $reader->hasPermission('edit any service_request content'),
+          'enterprise' => $this->container->get('markaspot_nuxt.feature_scope_resolver')->allowsEnterpriseFeatures(),
+          'current_view' => $this->reloadNode($this->request)->access('view', $reader),
+          'current_assignee' => $this->reloadNode($this->request)->get('field_assignee')->access('view', $reader),
+        ]));
+        $allowed = $fetch($reader, $base . '?resourceVersion=id:' . $vid);
+        $this->assertSame(200, $allowed->getStatusCode(), $reader->getAccountName() . ' VID ' . $vid . ': ' . $allowed->getContent());
+      }
+    }
+    $this->assertSame(403, $fetch($b, $base . '/version-history')->getStatusCode());
+    $probe = $fetch($b, '/jsonapi/node/service_request?fields[node--service_request]=title&filter[field_organisation.meta.drupal_internal__target_id]=' . $this->organisation->id());
+    $this->assertSame(200, $probe->getStatusCode(), (string) $probe->getContent());
+    $this->assertSame([], json_decode((string) $probe->getContent(), TRUE)['data']);
+    $assignee_probe = $fetch($b, '/jsonapi/node/service_request?fields[node--service_request]=title&filter[field_assignee.meta.drupal_internal__target_id]=' . $this->orgMember->id());
+    $this->assertSame(200, $assignee_probe->getStatusCode(), (string) $assignee_probe->getContent());
+    $this->assertSame([], json_decode((string) $assignee_probe->getContent(), TRUE)['data']);
+    $public = $fetch($b, $base . '?fields[node--service_request]=title');
+    $this->assertSame(200, $public->getStatusCode(), (string) $public->getContent());
+    $this->assertStringNotContainsString('org-a-citizen@example.invalid', (string) $public->getContent());
+    $private = $fetch($b, $base . '?fields[node--service_request]=field_e_mail');
+    $this->assertStringNotContainsString('org-a-citizen@example.invalid', (string) $private->getContent());
+    $this->container->get('current_user')->setAccount($this->superUser);
+    $this->request->set('field_organisation', $this->parksOrganisation->id())->save();
+    foreach ([$a, $b] as $reader) {
+      $this->assertSame(403, $fetch($reader, $base . '?resourceVersion=id:' . $old_vid)->getStatusCode());
+    }
+    foreach ([$both, $elevated] as $reader) {
+      $response = $fetch($reader, $base . '?resourceVersion=id:' . $old_vid);
+      $this->assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+    }
+    $history = $fetch($b, $base . '/version-history');
+    $this->assertSame(200, $history->getStatusCode(), (string) $history->getContent());
+    $this->assertStringNotContainsString('ORG-A-PRIVATE-REASON', (string) $history->getContent());
+    $items = json_decode((string) $history->getContent(), TRUE)['data'];
+    $this->assertNotContains($old_vid, array_column(array_column($items, 'attributes'), 'vid'));
+  }
+
+  /**
    * Anonymous and foreign accounts cannot view field_assignee.
    */
   public function testAssigneeViewAccessIsDeniedForAnonymousAndForeignAccounts(): void {
@@ -427,6 +533,8 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   public function testAssigneeLabelViewAccessMirrorsAssigneeViewAccess(): void {
     $allowed_access = $this->request->get('assignee_label')->access('view', $this->jurMember, TRUE);
     $this->assertTrue($allowed_access->isAllowed());
+    $this->assertSame((int) $this->orgMember->id(), (int) $this->request->get('field_assignee')->target_id);
+    $this->assertSame(0, $allowed_access->getCacheMaxAge());
     $this->assertContains('user:' . $this->orgMember->id(), $allowed_access->getCacheTags());
 
     $forbidden_access = $this->request->get('assignee_label')->access('view', $this->foreignUser, TRUE);
@@ -578,6 +686,11 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
    * JSON:API field_assignee filters require assignment permission.
    */
   public function testAssigneeJsonApiFilterAccessRequiresAssignPermission(): void {
+    $request = $this->container->get('request_stack')->getCurrentRequest();
+    $request->attributes->set('_route_object', new Route('/jsonapi/node/service_request', [
+      '_is_jsonapi' => TRUE, 'resource_type' => 'node--service_request',
+      '_controller' => 'jsonapi.entity_resource:getCollection',
+    ]));
     $field_definition = $this->request->get('field_assignee')->getFieldDefinition();
 
     $allowed_access = markaspot_group_jsonapi_entity_field_filter_access(

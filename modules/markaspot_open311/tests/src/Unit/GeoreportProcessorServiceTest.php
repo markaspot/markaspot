@@ -3044,6 +3044,51 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * A manager page resolves prior editors in one grouped query and user batch.
+   */
+  public function testLastHumanEditorsAreBatchedForThePage(): void {
+    $nodes = [];
+    foreach ([7, 8, 9] as $nid) {
+      $node = $this->createMock(NodeInterface::class);
+      $node->method('id')->willReturn($nid);
+      $node->method('getRevisionId')->willReturn($nid + 100);
+      $node->method('getRevisionUserId')->willReturn(0);
+      $node->method('getCreatedTime')->willReturn(1600000000);
+      $nodes[] = $node;
+    }
+    $latest = $this->createMock(SelectInterface::class);
+    foreach (['fields', 'condition', 'groupBy'] as $method) {
+      $latest->method($method)->willReturnSelf();
+    }
+    $latest->expects($this->once())->method('addExpression')->with('MAX(vid)', 'vid')->willReturn('vid');
+    $query = $this->createMock(SelectInterface::class);
+    $query->expects($this->once())->method('innerJoin')->with($latest, 'last_human', 'revision.vid = last_human.vid')->willReturn('last_human');
+    $query->method('fields')->willReturnSelf();
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAllAssoc')->with('nid')->willReturn([
+      7 => (object) ['nid' => 7, 'revision_uid' => 12, 'revision_timestamp' => 1717500000],
+      8 => (object) ['nid' => 8, 'revision_uid' => 12, 'revision_timestamp' => 1717500010],
+    ]);
+    $query->method('execute')->willReturn($statement);
+    $database = $this->createMock(Connection::class);
+    $database->expects($this->exactly(2))->method('select')->willReturnOnConsecutiveCalls($latest, $query);
+    $manager = $this->createMock(EntityTypeManagerInterface::class);
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $editor = $this->createMock(UserInterface::class);
+    $editor->method('access')->with('view label', $this->currentUser)->willReturn(TRUE);
+    $editor->method('label')->willReturn('Last human');
+    $storage->expects($this->once())->method('loadMultiple')->with([12])->willReturn([12 => $editor]);
+    $manager->method('getStorage')->with('user')->willReturn($storage);
+    (new \ReflectionProperty($this->processor, 'database'))->setValue($this->processor, $database);
+    (new \ReflectionProperty($this->processor, 'entityTypeManager'))->setValue($this->processor, $manager);
+    (new \ReflectionMethod($this->processor, 'preloadLastHumanEditors'))->invoke($this->processor, $nodes);
+    $read = new \ReflectionMethod($this->processor, 'lastHumanEditor');
+    $this->assertSame(['name' => 'Last human', 'timestamp' => 1717500000], $read->invoke($this->processor, $nodes[0]));
+    $this->assertSame(['name' => 'Last human', 'timestamp' => 1717500010], $read->invoke($this->processor, $nodes[1]));
+    $this->assertSame(['name' => NULL, 'timestamp' => 1600000000], $read->invoke($this->processor, $nodes[2]));
+  }
+
+  /**
    * A technical revision keeps the last human edit without exposing labels.
    */
   public function testSystemRevisionPreservesLastHumanEdit(): void {

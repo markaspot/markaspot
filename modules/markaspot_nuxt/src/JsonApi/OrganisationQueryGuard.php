@@ -37,10 +37,28 @@ final class OrganisationQueryGuard extends TemporaryQueryGuard {
     else {
       parent::applyAccessConditions($query, $entity_type_id, $field_prefix, $cacheability);
     }
-    $scope_ids = \Drupal::requestStack()->getCurrentRequest()?->attributes->get('_markaspot_private_organisation_filter_scope', []);
-    if ($entity_type_id === 'node' && $scope_ids !== []) {
-      $field = $field_prefix === NULL ? 'field_jurisdiction.target_id' : $field_prefix . '.field_jurisdiction.target_id';
-      $query->condition($field, $scope_ids, 'IN');
+    $scope = \Drupal::requestStack()->getCurrentRequest()?->attributes->get('_markaspot_private_organisation_filter_scope');
+    if ($entity_type_id === 'node' && is_array($scope)) {
+      $prefix = $field_prefix === NULL ? '' : $field_prefix . '.';
+      $jurisdiction_field = $prefix . 'field_jurisdiction.target_id';
+      $organisation_field = $prefix . 'field_organisation.target_id';
+      $allowed = $query->orConditionGroup();
+      $has_scope = FALSE;
+      if (!empty($scope['elevated_jurisdiction_ids'])) {
+        $allowed->condition($jurisdiction_field, $scope['elevated_jurisdiction_ids'], 'IN');
+        $has_scope = TRUE;
+      }
+      foreach ($scope['organisation_scopes'] ?? [] as $pair) {
+        if (!empty($pair['jurisdiction_ids']) && !empty($pair['organisation_ids'])) {
+          $allowed->condition($query->andConditionGroup()
+            ->condition($jurisdiction_field, $pair['jurisdiction_ids'], 'IN')
+            ->condition($organisation_field, $pair['organisation_ids'], 'IN'));
+          $has_scope = TRUE;
+        }
+      }
+      // Intersect the root and every referenced node alias independently of
+      // client conjunctions. The same guard runs for result rows and COUNT.
+      $query->condition($has_scope ? $allowed : $query->andConditionGroup()->condition($prefix . 'nid', 0));
       $cacheability->addCacheContexts(['user', 'user.permissions', 'user.node_grants:view']);
       $cacheability->addCacheTags(['group_list']);
       $cacheability->setCacheMaxAge(0);

@@ -30,6 +30,17 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
  * Implements hook_node_access().
  */
 function markaspot_nuxt_node_access(NodeInterface $node, string $operation, AccountInterface $account): AccessResultInterface {
+  if ($node->bundle() === 'service_request' && $operation === 'view'
+    && \Drupal::hasService('request_stack')
+    && \Drupal::requestStack()->getCurrentRequest()?->query->has('resourceVersion')
+    && \Drupal::routeMatch()->getRouteObject()?->getDefault('_is_jsonapi') === TRUE) {
+    // JSON:API skips revision access for the default VID. Apply the same
+    // snapshot gate here, without recursively checking current entity view.
+    $access = \Drupal::service('markaspot_nuxt.version_history_access_check')->accessNode($node, $account, FALSE);
+    return $access->isAllowed()
+      ? AccessResult::neutral()->addCacheableDependency($access)
+      : AccessResult::forbidden()->addCacheableDependency($access);
+  }
   if ($node->bundle() === 'service_request' && in_array($operation, ['view all revisions', 'view revision'], TRUE)) {
     return \Drupal::service('markaspot_nuxt.version_history_access_check')->accessNode($node, $account);
   }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_dashboard\Kernel;
 
+use Drupal\service_request\RevisionLog;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\Core\KeyValueStore\DatabaseStorage;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
@@ -101,7 +102,11 @@ final class LegacyNotesMigrationKernelTest extends KernelTestBase {
     ]);
     $node->save();
     $node->setNewRevision(TRUE);
-    $node->setRevisionLogMessage('Existing historical revision');
+    $node->setRevisionLogMessage(json_encode([
+      'schema' => 'civic.revision.v1', 'action' => 'updated',
+      'changes' => [['field' => 'person', 'before' => [['id' => '1']], 'after' => [['id' => '2']]]],
+      'events' => ['assignment_sync'], 'message' => 'Existing private assignment reason',
+    ], JSON_THROW_ON_ERROR));
     $node->save();
     return $node;
   }
@@ -146,6 +151,10 @@ final class LegacyNotesMigrationKernelTest extends KernelTestBase {
     $this->assertSame('migrated', $result['status']);
     $fresh = $storage->loadUnchanged($nid);
     $this->assertGreaterThan($old_vid, (int) $fresh->getRevisionId());
+    $audit = RevisionLog::decode((string) $fresh->getRevisionLogMessage());
+    $this->assertSame(['legacy_notes_migrated'], $audit['events']);
+    $this->assertSame([], $audit['changes']);
+    $this->assertSame('', $audit['message']);
     $this->assertSame($old_revision, $storage->loadRevision($old_vid)->toArray());
     $refs = $fresh->get('field_internal_remark')->getValue();
     $this->assertCount(2, $refs);

@@ -16,6 +16,14 @@ use Drupal\Core\Entity\RevisionLogInterface;
 final class RevisionLog {
 
   /**
+   * Reference changes shared by hook-based and intentional snapshot writers.
+   */
+  public const REFERENCE_FIELDS = [
+    'field_organisation' => 'responsibility', 'field_assignee' => 'person',
+    'field_assigned_team' => 'team', 'field_status' => 'status',
+  ];
+
+  /**
    * Stable automatic causes. Human explanations are kept separately.
    */
   public const EVENTS = [
@@ -143,9 +151,14 @@ final class RevisionLog {
         }
       }
     }
-    if (isset($data['events']) && (!is_array($data['events']) || !array_is_list($data['events'])
-      || array_filter($data['events'], static fn($event): bool => !is_string($event) || !in_array($event, self::EVENTS, TRUE)))) {
-      return NULL;
+    if (array_key_exists('events', $data)) {
+      if (!is_array($data['events']) || !array_is_list($data['events'])) {
+        return NULL;
+      }
+      // A rollback must retain the reason and changes written by a newer
+      // version. Unsupported automatic causes can safely be omitted on read.
+      $data['events'] = array_values(array_unique(array_filter($data['events'],
+        static fn($event): bool => is_string($event) && in_array($event, self::EVENTS, TRUE))));
     }
     return $data;
   }
