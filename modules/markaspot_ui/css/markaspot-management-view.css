@@ -1,0 +1,210 @@
+/**
+ * @file
+ * Management view inside Gin: a compact, readable report table and a filter
+ * grid. Claro hyphenates all text and the admin theme pads every cell
+ * generously, which on an eleven-column table turns headers into syllables
+ * and rows into towers.
+ */
+
+/* Table: whole words, tight cells, one-line metadata. */
+.view-management table th,
+.view-management table td {
+  padding-inline: 0.5rem;
+  hyphens: manual;
+  overflow-wrap: normal;
+}
+
+.view-management thead th {
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.view-management tbody td {
+  padding-block: 0.5rem;
+  vertical-align: middle;
+}
+
+/* The title already starts with the request number. */
+.view-management .views-field-request-id {
+  display: none;
+}
+
+.view-management td.views-field-title {
+  min-width: 10rem;
+  font-weight: 500;
+}
+
+.view-management td.views-field-field-address {
+  max-width: 15rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--gin-color-text-light);
+}
+
+.view-management td.views-field-created {
+  /* Date over time, the two halves of "13.10.2026 - 18:59". */
+  max-width: 6rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.view-management td.views-field-field-status,
+.view-management td.views-field-search-api-operations {
+  white-space: nowrap;
+}
+
+.view-management td.views-field-field-organisation,
+.view-management td.views-field-field-jurisdiction {
+  min-width: 7rem;
+  max-width: 10rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.view-management td.views-field-field-status-hex {
+  width: 1rem;
+  padding-inline: 0.25rem;
+}
+
+.view-management .views-field-thumbnail img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+/* Only on wide screens does the address keep a minimum width; below that it
+   wraps so the operations column stays in view. */
+@media (min-width: 100rem) {
+  .view-management td.views-field-field-address {
+    min-width: 10rem;
+  }
+}
+
+/* The caption repeats the page title and pushes the real header out from
+   under Gin's sticky header clone; keep it for assistive technology only. */
+.view-management table > caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Filters: two columns on medium screens; search plus four selects in one
+   row on wide screens (80rem leaves room for Gin's open sidebar), with the
+   secondary filters folded below. */
+@media (min-width: 40rem) {
+  .view-management form.views-exposed-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: start;
+  }
+
+  .view-management form.views-exposed-form > .form-item {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .view-management form.views-exposed-form > .form-item :is(select, input) {
+    width: 100%;
+    max-width: none;
+  }
+
+  .view-management form.views-exposed-form > .form-item:first-child,
+  .view-management form.views-exposed-form > details.bef--secondary {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .view-management form.views-exposed-form > .form-actions {
+    grid-column: -2 / -1;
+    justify-self: end;
+    margin: 0;
+  }
+
+  .view-management details.bef--secondary .claro-details__wrapper {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: end;
+  }
+
+  /* BEF wraps a fieldset in a form wrapper; that wrapper is the grid item. */
+  .view-management details.bef--secondary .claro-details__wrapper > :has(> fieldset),
+  .view-management details.bef--secondary .claro-details__wrapper > fieldset {
+    grid-column: span 2;
+    min-width: 0;
+  }
+
+  .view-management details.bef--secondary fieldset {
+    min-width: 0;
+    margin: 0;
+  }
+
+  /* Min and max of a date range share their two columns instead of keeping
+     the fixed width of a date input and running into the next filter. */
+  .view-management details.bef--secondary fieldset > .fieldset__wrapper {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .view-management details.bef--secondary :is(select, input) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .view-management details.bef--secondary .form-item {
+    min-width: 0;
+    margin: 0;
+  }
+}
+
+@media (min-width: 80rem) {
+  .view-management form.views-exposed-form {
+    grid-template-columns: minmax(14rem, 2fr) repeat(4, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .view-management form.views-exposed-form > .form-item:first-child {
+    grid-column: auto;
+  }
+
+  .view-management form.views-exposed-form > details.bef--secondary {
+    grid-column: 1 / -2;
+  }
+
+  /* Opened, the secondary filters take the full width and Apply moves below
+     them, so a date range has room for both of its inputs. */
+  .view-management form.views-exposed-form > details.bef--secondary[open] {
+    grid-column: 1 / -1;
+  }
+
+  /* A hint below a select spans two columns under the row instead of
+     stretching its own narrow column; the next row leaves room for it. */
+  .view-management form.views-exposed-form > .form-item {
+    position: relative;
+  }
+
+  .view-management form.views-exposed-form > .form-item .form-item__description {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline-start: 0;
+    width: calc(200% + 1rem);
+  }
+
+  /* Under the last select of the row the hint grows towards the start. */
+  .view-management form.views-exposed-form > .form-item:has(+ details.bef--secondary) .form-item__description {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+  }
+
+  .view-management form.views-exposed-form:has(> .form-item .form-item__description) > :is(details.bef--secondary, .form-actions) {
+    margin-top: 2.25rem;
+  }
+}

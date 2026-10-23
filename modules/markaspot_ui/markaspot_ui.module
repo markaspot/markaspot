@@ -109,6 +109,18 @@ function markaspot_ui_views_pre_view(ViewExecutable $view, string $display_id, a
 }
 
 /**
+ * Implements hook_views_pre_render().
+ *
+ * The management View gets its own compact table and filter layout; Gin's
+ * defaults are made for short entity lists, not an eleven-column report table.
+ */
+function markaspot_ui_views_pre_render(ViewExecutable $view): void {
+  if ($view->id() === 'management') {
+    $view->element['#attached']['library'][] = 'markaspot_ui/management_view';
+  }
+}
+
+/**
  * Implements hook_modules_installed().
  */
 function markaspot_ui_modules_installed($modules) {

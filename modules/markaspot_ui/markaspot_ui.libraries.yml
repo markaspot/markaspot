@@ -23,3 +23,9 @@ node_view:
       css/markaspot-node-view.css: {}
   dependencies:
     - core/drupal
+
+management_view:
+  version: VERSION
+  css:
+    theme:
+      css/markaspot-management-view.css: {}
