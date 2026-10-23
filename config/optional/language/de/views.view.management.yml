@@ -52,7 +52,7 @@ display:
           text_input_required: 'Wählen Sie einen Filter und klicken Sie auf Anwenden, um Ergebnisse anzuzeigen.'
           bef:
             general:
-              secondary_label: 'Erweiterte Optionen'
+              secondary_label: 'Weitere Filter'
       sorts:
         created:
           expose:
@@ -83,6 +83,7 @@ display:
         field_organisation:
           expose:
             label: 'Organisation / Fachbereich'
+            description: 'Wählen Sie eine Ihrer Gruppen aus. Sie können sich die gefilterten Listen als Favoriten anlegen.'
         field_jurisdiction:
           expose:
             label: Zuständigkeitsbereich

@@ -301,8 +301,14 @@ final class ManagementViewOverridePruningTest extends UnitTestCase {
   public function testUpdateSyncsViewBeforeLabels(): void {
     $install = file_get_contents(dirname(__DIR__, 3) . '/markaspot.install');
     $this->assertIsString($install);
+    foreach (['11942', '11943'] as $update) {
+      $this->assertMatchesRegularExpression(
+        '/function markaspot_update_' . $update . '\(\): string \{\s*return _markaspot_resync_management_view\(\);\s*^\}/ms',
+        $install,
+      );
+    }
     $matched = preg_match(
-      '/function markaspot_update_11942\(\): string \{(?<body>.*?)^\}/ms',
+      '/function _markaspot_resync_management_view\(\): string \{(?<body>.*?)^\}/ms',
       $install,
       $matches,
     );

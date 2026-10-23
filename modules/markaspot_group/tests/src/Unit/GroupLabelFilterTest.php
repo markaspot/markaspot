@@ -51,14 +51,40 @@ final class GroupLabelFilterTest extends UnitTestCase {
   }
 
   /**
+   * Tests organisations without a jurisdiction on single-jurisdiction sites.
+   *
+   * Organisations of migrated classic installs often carry no jurisdiction
+   * reference; they must stay selectable when there is no second tenant.
+   *
+   * @covers ::isGroupInScope
+   */
+  public function testOrganisationWithoutJurisdiction(): void {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn(TRUE);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $group->method('get')->with('field_jurisdiction')->willReturn($field);
+
+    $this->assertTrue($this->isGroupInScope($group, 'org', [], [], TRUE));
+    $this->assertFalse($this->isGroupInScope($group, 'org', [12], [10], FALSE));
+
+    $fieldless = $this->createMock(GroupInterface::class);
+    $fieldless->method('hasField')->with('field_jurisdiction')->willReturn(FALSE);
+
+    $this->assertTrue($this->isGroupInScope($fieldless, 'org', [], [], TRUE));
+    $this->assertFalse($this->isGroupInScope($fieldless, 'org', [12], [10], FALSE));
+  }
+
+  /**
    * Invokes the private tenant scope predicate.
    */
-  private function isGroupInScope(GroupInterface $group, string $groupType, array $allowedJurisdictions, array $allowedRoots): bool {
+  private function isGroupInScope(GroupInterface $group, string $groupType, array $allowedJurisdictions, array $allowedRoots, bool $singleJurisdiction = FALSE): bool {
     $reflection = new \ReflectionClass(GroupLabelFilter::class);
     $filter = $reflection->newInstanceWithoutConstructor();
     $method = $reflection->getMethod('isGroupInScope');
 
-    return $method->invoke($filter, $group, $groupType, $allowedJurisdictions, $allowedRoots);
+    return $method->invoke($filter, $group, $groupType, $allowedJurisdictions, $allowedRoots, $singleJurisdiction);
   }
 
 }

@@ -5153,6 +5153,28 @@ function markaspot_update_11941(): string {
  * handler and takes the whole management page down.
  */
 function markaspot_update_11942(): string {
+  return _markaspot_resync_management_view();
+}
+
+/**
+ * Re-syncs the management View with single-select staff filters.
+ *
+ * Category and status become plain selects, the secondary filters move into
+ * a collapsible "More filters" section and the organisation filter explains
+ * its scope. The Select2 widget the View used before needs a browser library
+ * no install ships, so staff saw raw multi-select list boxes.
+ */
+function markaspot_update_11943(): string {
+  return _markaspot_resync_management_view();
+}
+
+/**
+ * Re-syncs the management View, its German labels and orphan overrides.
+ *
+ * @return string
+ *   The update message.
+ */
+function _markaspot_resync_management_view(): string {
   $view_name = 'views.view.management';
   if (\Drupal::configFactory()->get($view_name)->isNew()) {
     return 'The management View is not installed.';

@@ -9,6 +9,7 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
 use Drupal\search_api\Plugin\views\filter\SearchApiNumeric;
@@ -18,13 +19,16 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /**
  * Provides a Search API numeric filter with labelled Group options.
  *
- * The option list is scoped to the Groups the account may view, but this is a
- * usability aid, not an access boundary: the underlying management view is not
- * tenant-isolated (node access is flat), so a hand-crafted request with a
- * foreign Group id still filters. Tenant isolation on SaaS is enforced by
- * keeping the Drupal management surface admin-only (ManagementAccessGate),
- * while tenant staff use the Nuxt dashboard. Do not treat these options as a
- * security boundary.
+ * The option list is scoped to the Groups the account may view. Organisation
+ * staff see the organisations they belong to, like the per-site filters of
+ * the classic installations did; jurisdiction-wide staff see the
+ * organisations of their jurisdictions, and on a single-jurisdiction install
+ * every organisation. This is a usability aid, not an access boundary: the
+ * underlying management view is not tenant-isolated (node access is flat), so
+ * a hand-crafted request with a foreign Group id still filters. Tenant
+ * isolation on SaaS is enforced by keeping the Drupal management surface
+ * admin-only (ManagementAccessGate), while tenant staff use the Nuxt
+ * dashboard. Do not treat these options as a security boundary.
  */
 #[ViewsFilter('markaspot_group_label')]
 final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactoryPluginInterface {
@@ -156,22 +160,68 @@ final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactor
       ->getStorage('group')
       ->loadByProperties(['type' => $groupType]);
     $hasGlobalScope = $this->currentUser->hasPermission('bypass node access');
-    [$allowedJurisdictions, $allowedRoots] = $hasGlobalScope
+    $singleJurisdiction = _markaspot_group_jurisdiction_group_count() <= 1;
+    $memberOrganisationIds = [];
+    if (!$hasGlobalScope && $groupType === _markaspot_group_get_org_group_type()) {
+      $memberOrganisationIds = $this->hasJurisdictionWideScope() ? [] : $this->memberOrganisationIds();
+      // A single jurisdiction has no second tenant to keep apart, so staff
+      // without an organisation of their own keep the whole list.
+      $hasGlobalScope = $memberOrganisationIds === [] && $singleJurisdiction;
+    }
+    [$allowedJurisdictions, $allowedRoots] = $hasGlobalScope || $memberOrganisationIds !== []
       ? [[], []]
       : $this->allowedJurisdictionScope();
 
     $options = [];
     foreach ($groups as $group) {
-      if (!$group instanceof GroupInterface
-        || !$group->access('view', $this->currentUser)
-        || (!$hasGlobalScope && !$this->isGroupInScope($group, $groupType, $allowedJurisdictions, $allowedRoots))) {
+      if (!$group instanceof GroupInterface || !$group->access('view', $this->currentUser)) {
         continue;
       }
-      $options[$group->id()] = (string) $group->label();
+      $inScope = match (TRUE) {
+        $hasGlobalScope => TRUE,
+        $memberOrganisationIds !== [] => in_array((int) $group->id(), $memberOrganisationIds, TRUE),
+        default => $this->isGroupInScope($group, $groupType, $allowedJurisdictions, $allowedRoots, $singleJurisdiction),
+      };
+      if ($inScope) {
+        $options[$group->id()] = (string) $group->label();
+      }
     }
     uasort($options, 'strnatcasecmp');
 
     return $options;
+  }
+
+  /**
+   * Checks whether the account reads whole jurisdictions.
+   *
+   * Operators and explicit jurisdiction administration or moderation keep the
+   * jurisdiction-wide list even when they also belong to an organisation.
+   */
+  private function hasJurisdictionWideScope(): bool {
+    if ((int) $this->currentUser->id() === 1
+      || array_intersect(['administrator', 'editorial_board'], $this->currentUser->getRoles()) !== []) {
+      return TRUE;
+    }
+
+    return _markaspot_group_service_request_organisation_scope($this->currentUser)['elevated_jurisdiction_ids'] !== [];
+  }
+
+  /**
+   * Lists the organisations the account is a member of.
+   *
+   * @return int[]
+   *   Organisation Group IDs.
+   */
+  private function memberOrganisationIds(): array {
+    $ids = [];
+    foreach (GroupMembership::loadByUser($this->currentUser) as $membership) {
+      $group = $membership->getGroup();
+      if ($group instanceof GroupInterface && $group->bundle() === _markaspot_group_get_org_group_type()) {
+        $ids[] = (int) $group->id();
+      }
+    }
+
+    return array_values(array_unique($ids));
   }
 
   /**
@@ -211,18 +261,21 @@ final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactor
    *   Directly managed jurisdiction IDs and their descendants.
    * @param int[] $allowedRoots
    *   Root IDs for the directly managed jurisdictions.
+   * @param bool $singleJurisdiction
+   *   Whether the install has at most one jurisdiction. Organisations of
+   *   migrated classic installs often carry no jurisdiction reference.
    */
-  private function isGroupInScope(GroupInterface $group, string $groupType, array $allowedJurisdictions, array $allowedRoots): bool {
+  private function isGroupInScope(GroupInterface $group, string $groupType, array $allowedJurisdictions, array $allowedRoots, bool $singleJurisdiction = FALSE): bool {
     if ($groupType === 'jur') {
       return in_array((int) $group->id(), $allowedJurisdictions, TRUE);
     }
 
     if (!$group->hasField('field_jurisdiction')) {
-      return FALSE;
+      return $singleJurisdiction;
     }
     $jurisdictionField = $group->get('field_jurisdiction');
     if ($jurisdictionField->isEmpty()) {
-      return FALSE;
+      return $singleJurisdiction;
     }
     $values = $jurisdictionField->getValue();
 

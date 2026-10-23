@@ -1160,8 +1160,8 @@ display:
               autosubmit_textfield_minimum_length: 3
               autosubmit_hide: false
               input_required: false
-              allow_secondary: false
-              secondary_label: 'Advanced options'
+              allow_secondary: true
+              secondary_label: 'More filters'
               secondary_open: false
               reset_button_always_show: false
             sort:
@@ -1174,11 +1174,11 @@ display:
                 reset_label: ''
                 collapsible: false
                 collapsible_label: ''
-                is_secondary: false
+                is_secondary: true
             pager:
               plugin_id: default
               advanced:
-                is_secondary: false
+                is_secondary: true
             filter:
               search_api_fulltext:
                 plugin_id: default
@@ -1191,7 +1191,7 @@ display:
                   hide_label: false
                   field_classes: ''
               field_category:
-                plugin_id: bef_select2
+                plugin_id: default
                 advanced:
                   sort_options: false
                   rewrite:
@@ -1204,7 +1204,7 @@ display:
                   hide_label: false
                   field_classes: ''
               field_status:
-                plugin_id: bef_select2
+                plugin_id: default
                 advanced:
                   sort_options: false
                   rewrite:
@@ -1242,6 +1242,19 @@ display:
                   is_secondary: false
                   hide_label: false
                   field_classes: ''
+              status:
+                plugin_id: default
+                advanced:
+                  sort_options: false
+                  rewrite:
+                    filter_rewrite_values: ''
+                    filter_rewrite_values_key: false
+                  collapsible: false
+                  collapsible_disable_automatic_open: false
+                  open_by_default: false
+                  is_secondary: true
+                  hide_label: false
+                  field_classes: ''
               created:
                 plugin_id: bef_datepicker
                 advanced:
@@ -1249,7 +1262,7 @@ display:
                   collapsible: false
                   collapsible_disable_automatic_open: false
                   open_by_default: false
-                  is_secondary: false
+                  is_secondary: true
                   hide_label: false
                   field_classes: ''
       access:
@@ -1313,7 +1326,7 @@ display:
           exposed: true
           expose:
             operator_id: search_api_fulltext_op
-            label: Suche
+            label: Search
             description: ''
             use_operator: false
             operator: search_api_fulltext_op
@@ -1362,7 +1375,7 @@ display:
             identifier: field_category
             required: false
             remember: false
-            multiple: true
+            multiple: false
             remember_roles:
               authenticated: authenticated
             reduce: false
@@ -1448,7 +1461,7 @@ display:
             identifier: field_status
             required: false
             remember: false
-            multiple: true
+            multiple: false
             remember_roles:
               authenticated: authenticated
             reduce: false
@@ -1534,7 +1547,7 @@ display:
           expose:
             operator_id: field_organisation_op
             label: Organisation
-            description: ''
+            description: 'Select one of your groups. You can bookmark each filtered list as a favourite.'
             use_operator: false
             operator: field_organisation_op
             operator_limit_selection: false

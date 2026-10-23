@@ -53,6 +53,7 @@ use Drupal\taxonomy\TermInterface;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
+use Drupal\views\ViewExecutable;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
@@ -7735,4 +7736,20 @@ function markaspot_group_views_data_alter(array &$data): void {
       $data[$table][$field]['filter']['id'] = 'markaspot_group_label';
     }
   }
+}
+
+/**
+ * Implements hook_views_pre_view().
+ *
+ * A jurisdiction filter and column carry no information on an install with a
+ * single jurisdiction, which is every migrated classic installation. They are
+ * only dropped from the in-memory display, nothing is written to
+ * configuration.
+ */
+function markaspot_group_views_pre_view(ViewExecutable $view, string $display_id, array &$args): void {
+  if ($view->id() !== 'management' || _markaspot_group_jurisdiction_group_count() > 1) {
+    return;
+  }
+  $view->removeHandler($display_id, 'filter', 'field_jurisdiction');
+  $view->removeHandler($display_id, 'field', 'field_jurisdiction');
 }
