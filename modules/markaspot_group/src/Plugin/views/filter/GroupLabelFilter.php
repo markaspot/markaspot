@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Plugin\views\filter;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -25,13 +26,29 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  * organisations of their jurisdictions, and on a single-jurisdiction install
  * every organisation. This is a usability aid, not an access boundary: the
  * underlying management view is not tenant-isolated (node access is flat), so
- * a hand-crafted request with a foreign Group id still filters. Tenant
- * isolation on SaaS is enforced by keeping the Drupal management surface
- * admin-only (ManagementAccessGate), while tenant staff use the Nuxt
- * dashboard. Do not treat these options as a security boundary.
+ * a hand-crafted request with a foreign Group id still filters. On SaaS the
+ * ManagementAccessGate only strips bulk operations and the management edit
+ * form; the listing stays reachable for every account with "access open311
+ * advanced properties", so this option scoping is what hides foreign
+ * organisation labels there. Do not loosen it, and do not treat it as a
+ * security boundary for report data.
  */
 #[ViewsFilter('markaspot_group_label')]
 final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactoryPluginInterface {
+
+  /**
+   * Organisation IDs the account is a member of, once resolved.
+   *
+   * The exposed form can build the value element more than once per request.
+   *
+   * @var int[]|null
+   */
+  private ?array $resolvedMemberOrganisationIds = NULL;
+
+  /**
+   * Whether the account reads whole jurisdictions, once resolved.
+   */
+  private ?bool $resolvedJurisdictionWideScope = NULL;
 
   /**
    * Constructs a Group label filter.
@@ -98,6 +115,19 @@ final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactor
     $contexts = parent::getCacheContexts();
     $contexts[] = 'user';
     return $contexts;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getCacheTags() {
+    // The management View disables result caching today; these tags keep the
+    // options correct if a caching plugin is configured later.
+    return Cache::mergeTags(parent::getCacheTags(), [
+      'group_list',
+      'group_relationship_list:plugin:group_membership:entity:' . $this->currentUser->id(),
+      'user:' . $this->currentUser->id(),
+    ]);
   }
 
   /**
@@ -198,12 +228,13 @@ final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactor
    * jurisdiction-wide list even when they also belong to an organisation.
    */
   private function hasJurisdictionWideScope(): bool {
-    if ((int) $this->currentUser->id() === 1
-      || array_intersect(['administrator', 'editorial_board'], $this->currentUser->getRoles()) !== []) {
-      return TRUE;
+    if ($this->resolvedJurisdictionWideScope === NULL) {
+      $this->resolvedJurisdictionWideScope = (int) $this->currentUser->id() === 1
+        || array_intersect(['administrator', 'editorial_board'], $this->currentUser->getRoles()) !== []
+        || _markaspot_group_service_request_organisation_scope($this->currentUser)['elevated_jurisdiction_ids'] !== [];
     }
 
-    return _markaspot_group_service_request_organisation_scope($this->currentUser)['elevated_jurisdiction_ids'] !== [];
+    return $this->resolvedJurisdictionWideScope;
   }
 
   /**
@@ -213,15 +244,18 @@ final class GroupLabelFilter extends SearchApiNumeric implements ContainerFactor
    *   Organisation Group IDs.
    */
   private function memberOrganisationIds(): array {
-    $ids = [];
-    foreach (GroupMembership::loadByUser($this->currentUser) as $membership) {
-      $group = $membership->getGroup();
-      if ($group instanceof GroupInterface && $group->bundle() === _markaspot_group_get_org_group_type()) {
-        $ids[] = (int) $group->id();
+    if ($this->resolvedMemberOrganisationIds === NULL) {
+      $ids = [];
+      foreach (GroupMembership::loadByUser($this->currentUser) as $membership) {
+        $group = $membership->getGroup();
+        if ($group instanceof GroupInterface && $group->bundle() === _markaspot_group_get_org_group_type()) {
+          $ids[] = (int) $group->id();
+        }
       }
+      $this->resolvedMemberOrganisationIds = array_values(array_unique($ids));
     }
 
-    return array_values(array_unique($ids));
+    return $this->resolvedMemberOrganisationIds;
   }
 
   /**

@@ -5181,13 +5181,16 @@ function _markaspot_resync_management_view(): string {
   }
 
   $changes = [];
-  if (Settings::get('markaspot_manage_management_view', TRUE)
-    && _markaspot_sync_management_package_config([$view_name]) !== []) {
-    \Drupal::service('router.builder')->rebuild();
-    $changes[] = 're-synced the management View with the profile definition';
-  }
-  if (_markaspot_ensure_management_view_translations()) {
-    $changes[] = 'updated the shared German management labels';
+  // Sites that maintain their own management View also own its labels; only
+  // the orphan repair below applies to them.
+  if (Settings::get('markaspot_manage_management_view', TRUE)) {
+    if (_markaspot_sync_management_package_config([$view_name]) !== []) {
+      \Drupal::service('router.builder')->rebuild();
+      $changes[] = 're-synced the management View with the profile definition';
+    }
+    if (_markaspot_ensure_management_view_translations()) {
+      $changes[] = 'updated the shared German management labels';
+    }
   }
   $pruned = _markaspot_prune_management_view_override_orphans();
   if ($pruned > 0) {

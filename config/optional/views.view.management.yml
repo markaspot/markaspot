@@ -1732,6 +1732,8 @@ display:
         - 'config:field.storage.node.field_status'
         - 'config:field.storage.taxonomy_term.field_status_hex'
         - 'config:search_api.index.service_requests'
+        - group_list
+        - group_relationship_list
   page_1:
     id: page_1
     display_title: Seite
@@ -1894,3 +1896,5 @@ display:
         - 'config:field.storage.node.field_status'
         - 'config:field.storage.taxonomy_term.field_status_hex'
         - 'config:search_api.index.service_requests'
+        - group_list
+        - group_relationship_list
