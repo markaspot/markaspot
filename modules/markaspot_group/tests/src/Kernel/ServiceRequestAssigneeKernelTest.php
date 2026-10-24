@@ -25,6 +25,7 @@ use Drupal\node\Entity\NodeType;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\paragraphs\Entity\ParagraphsType;
 use Drupal\Tests\user\Traits\UserCreationTrait;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -904,6 +905,41 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       'label' => 'Parks',
       'code' => '',
     ], $data['current_team']);
+  }
+
+  /**
+   * API accounts are no candidates but stay visible as current assignee.
+   */
+  public function testRequestAssigneesControllerExcludesApiAccounts(): void {
+    Role::create(['id' => 'api_user', 'label' => 'API User'])->save();
+    Role::create(['id' => 'api_editor', 'label' => 'API Editor'])->save();
+    $apiUser = $this->createUser([], 'api-account', FALSE, [
+      'mail' => 'api@example.test',
+      'roles' => ['api_user'],
+    ]);
+    $apiEditor = $this->createUser([], 'api-editor', FALSE, [
+      'mail' => 'api-editor@example.test',
+      'roles' => ['api_editor'],
+    ]);
+    $this->organisation->addMember($apiUser);
+    $this->organisation->addMember($apiEditor);
+
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $controller = RequestAssigneesController::create($this->container);
+    $data = json_decode($controller->assignees($this->request)->getContent(), TRUE);
+    $candidate_uids = array_map(static fn(array $c): int => (int) $c['uid'], $data['candidates']);
+    $this->assertNotContains((int) $apiUser->id(), $candidate_uids);
+    $this->assertNotContains((int) $apiEditor->id(), $candidate_uids);
+    $this->assertContains((int) $this->orgMember->id(), $candidate_uids);
+
+    // Existing data may hold an API assignee: it must not vanish silently.
+    $this->request->set('field_assignee', $apiUser->id());
+    $this->request->save();
+    $this->request = $this->reloadNode($this->request);
+    $data = json_decode($controller->assignees($this->request)->getContent(), TRUE);
+    $this->assertSame((int) $apiUser->id(), $data['current']['uid']);
+    $candidate_uids = array_map(static fn(array $c): int => (int) $c['uid'], $data['candidates']);
+    $this->assertNotContains((int) $apiUser->id(), $candidate_uids);
   }
 
   /**
