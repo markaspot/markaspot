@@ -110,8 +110,33 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
   public function testExistingImportDoesNotApplyPublicVisibility(): void {
     $tenant = ['features' => ['publicReports' => FALSE]];
     $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
-    $this->assertSame([], TenantRuntimeConfiguration::merge([], $tenant));
+    $this->assertSame(['features' => ['personalAssignment' => FALSE]], TenantRuntimeConfiguration::merge([], $tenant));
     $this->assertStringContainsString('not applied', TenantRuntimeConfiguration::warnings($tenant)[0]);
+  }
+
+  /**
+   * Seeds write personal assignment off explicitly unless decided elsewhere.
+   */
+  public function testPersonalAssignmentIsWrittenExplicitly(): void {
+    $this->assertSame([], TenantRuntimeConfiguration::validate(['features' => ['personalAssignment' => TRUE]]));
+    $this->assertNotEmpty(TenantRuntimeConfiguration::validate(['features' => ['personalAssignment' => 'true']]));
+    $this->assertNotEmpty(TenantRuntimeConfiguration::validate(['features' => ['personalAssignment' => ['enabled' => TRUE]]]));
+
+    // Missing input on a new root: explicit off, next to the other flags.
+    $merged = TenantRuntimeConfiguration::merge([], ['features' => ['feedback' => TRUE]]);
+    $this->assertSame(['feedback' => TRUE, 'personalAssignment' => FALSE], $merged['features']);
+    $this->assertSame($merged, TenantRuntimeConfiguration::merge($merged, ['features' => ['feedback' => TRUE]]));
+
+    // Explicit input survives in both directions.
+    $this->assertTrue(TenantRuntimeConfiguration::merge([], ['features' => ['personalAssignment' => TRUE]])['features']['personalAssignment']);
+    $stored = ['features' => ['personalAssignment' => TRUE, 'feedback' => TRUE]];
+    $merged = TenantRuntimeConfiguration::merge($stored, ['features' => ['personalAssignment' => FALSE]]);
+    $this->assertSame(['personalAssignment' => FALSE, 'feedback' => TRUE], $merged['features']);
+
+    // A re-import without the key keeps a stored decision.
+    $this->assertSame($stored, TenantRuntimeConfiguration::merge($stored, []));
+    $object = ['features' => ['personalAssignment' => ['enabled' => TRUE]]];
+    $this->assertSame($object, TenantRuntimeConfiguration::merge($object, []));
   }
 
   /**

@@ -41,7 +41,12 @@ Referenz-IDs aus einer früheren Installation sind nicht vorgesehen.
 persönliche Zuweisung für den Workspace eingeschaltet ist
 (`features.personalAssignment: true` in der Laufzeitkonfiguration der
 Wurzel-Jurisdiktion). Sie ist standardmäßig aus; ohne sie lehnen Probelauf und
-Anwendung die Fixture ab, bevor etwas geschrieben wird.
+Anwendung die Fixture ab, bevor etwas geschrieben wird. Seeds schreiben den
+Schalter ausdrücklich: `mas:tenant:import` und `mas:tenant:bootstrap` speichern
+`false`, wenn weder die Mandantenkonfiguration noch die gespeicherte
+Laufzeitkonfiguration ihn setzt. Ein Seed, der Personen zuweist, setzt
+`features.personalAssignment: true` deshalb selbst in seiner
+Mandantenkonfiguration.
 
 Dateieinträge enthalten `field`, einen lokalen `basename` und den exakten
 `sha256`. Fotos verwenden das moderne `field_request_media` und benötigen

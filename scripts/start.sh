@@ -1080,7 +1080,8 @@ EOF
         'dashboard' => \$is_fastmap,
         'passwordless' => \$is_fastmap,
         'voting' => false,
-        'feedback' => true
+        'feedback' => true,
+        'personalAssignment' => false
       ],
       'languages' => [
         'default' => '$NUXT_DEFAULT_LANG',

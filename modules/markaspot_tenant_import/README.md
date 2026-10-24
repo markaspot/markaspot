@@ -262,7 +262,11 @@ Runtime input supported by both bootstrap and subsequent imports:
 - `languages`: supported UI locale codes, first entry is default; lists replace.
 - `features`: boolean `aiAnalysis`, `aiProcessing`, `operationsDashboard`,
   `statistics`, `photoReporting`, `classicReporting`, `dashboard`, `feedback`,
-  `aiDuplicates`, `piiRedaction`, `privacyBlockOnFlag`, `moderation`.
+  `aiDuplicates`, `piiRedaction`, `privacyBlockOnFlag`, `moderation`,
+  `personalAssignment`. Personal assignment is opt-in: when the input has no
+  `personalAssignment` and the stored configuration has none either, the import
+  writes `false` explicitly, so the state is visible in the data. An explicit
+  value from the input and a stored decision are kept.
   `unifiedReporting` is an object with `enabled`, `aiMode` and `photoPolicy`.
   Platform flags such as `passwordless` are configured by stack orchestration.
 - `boilerplates`: owned plain-text templates, applied by dedicated bootstrap.

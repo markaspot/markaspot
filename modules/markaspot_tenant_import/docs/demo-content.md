@@ -38,6 +38,10 @@ previous installation are accepted for these references.
 switched on for the workspace (`features.personalAssignment: true` in the root
 jurisdiction's runtime configuration). It is off by default; without it both
 the dry run and the apply run reject the fixture before anything is written.
+Seeds write the flag explicitly: `mas:tenant:import` and `mas:tenant:bootstrap`
+store `false` when neither the tenant configuration nor the stored runtime
+configuration sets it. A seed that assigns people therefore sets
+`features.personalAssignment: true` in its tenant configuration itself.
 
 A file entry supplies `field`, a local `basename`, and its exact `sha256`.
 Request images use modern `field_request_media` and require plain `alt` text.

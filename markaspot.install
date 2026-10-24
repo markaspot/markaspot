@@ -366,6 +366,10 @@ function _markaspot_create_default_jurisdiction($group_type, $group_storage) {
     ];
   }
 
+  // Personal assignment is opt-in. Written explicitly so the off state is
+  // visible in the data.
+  $nuxt_json['features']['personalAssignment'] = FALSE;
+
   // Create the group entity.
   $group_data = [
     'type' => $group_type,

@@ -908,6 +908,7 @@ final class TenantImporterTest extends KernelTestBase {
     $runtime = json_decode($group->get('field_nuxt_config')->getString(), TRUE);
     $this->assertSame([11, 50], $runtime['map']['center']);
     $this->assertSame('#1F3E5D', $runtime['theme']['primary']);
+    $this->assertFalse($runtime['features']['personalAssignment']);
   }
 
   /**
