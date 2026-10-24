@@ -6497,3 +6497,55 @@ function _markaspot_group_account_name_scope(UserInterface $user, string $jur_ty
   }
   return ['workspace', FALSE];
 }
+
+/**
+ * Removes features.personalAssignment values stored under the old default.
+ *
+ * Personal assignment used to default on, and the dashboard features form
+ * sent every flag on save, so a workspace that saved any feature setting
+ * stored personalAssignment TRUE without deciding anything about it. Under
+ * the old default TRUE could not express an opt-in; only FALSE (opt-out)
+ * was a decision. The key is removed where it reads TRUE, so the new
+ * default (off) applies and the tenant can switch it on again in the
+ * dashboard. FALSE stays as it is. Every jurisdiction is cleared, not only
+ * tenant roots: only the root value is read, and a sub-jurisdiction keeps
+ * no stale TRUE that would read as a decision later. Idempotent; runs in
+ * batches of 50 and logs counts only.
+ */
+function markaspot_group_update_11957(array &$sandbox): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+
+  if (!isset($sandbox['gids'])) {
+    $sandbox['gids'] = array_values($storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', _markaspot_group_jurisdiction_group_type())
+      ->sort('id')
+      ->execute());
+    $sandbox['total'] = count($sandbox['gids']);
+    $sandbox['cleared'] = 0;
+  }
+
+  foreach ($storage->loadMultiple(array_splice($sandbox['gids'], 0, 50)) as $group) {
+    if (!$group->hasField('field_nuxt_config') || $group->get('field_nuxt_config')->isEmpty()) {
+      continue;
+    }
+    $config = json_decode((string) $group->get('field_nuxt_config')->value, TRUE);
+    if (!is_array($config) || !is_array($config['features'] ?? NULL)
+      || !_markaspot_group_read_boolean_feature_flag($config['features']['personalAssignment'] ?? NULL, FALSE)) {
+      continue;
+    }
+    unset($config['features']['personalAssignment']);
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $group->save();
+    $sandbox['cleared']++;
+  }
+
+  $sandbox['#finished'] = $sandbox['total'] > 0 ? 1 - count($sandbox['gids']) / $sandbox['total'] : 1;
+  if ($sandbox['#finished'] < 1) {
+    return '';
+  }
+  \Drupal::logger('markaspot_group')->notice('Removed personalAssignment TRUE stored under the old default on @count jurisdiction(s).', [
+    '@count' => $sandbox['cleared'],
+  ]);
+  return sprintf('Personal assignment is off by default: removed a stored TRUE on %d of %d jurisdiction(s); tenants can switch it on again in the dashboard.', $sandbox['cleared'], $sandbox['total']);
+}

@@ -450,6 +450,55 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Update 11957 removes a stored TRUE and keeps an explicit opt-out.
+   */
+  public function testUpdate11957RemovesPersonalAssignmentStoredUnderOldDefault(): void {
+    $this->jurisdiction->set('field_nuxt_config', json_encode([
+      'features' => [
+        'personalAssignment' => TRUE,
+        'assignmentSyncsOrganisation' => TRUE,
+      ],
+      'name' => 'Gemeinde Müllheim',
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))->save();
+    $object_shape = Group::create([
+      'type' => 'jur',
+      'label' => 'Object shape',
+      'field_nuxt_config' => json_encode(['features' => ['personalAssignment' => ['enabled' => TRUE]]]),
+    ]);
+    $object_shape->save();
+    $opt_out = Group::create([
+      'type' => 'jur',
+      'label' => 'Opt-out',
+      'field_nuxt_config' => json_encode(['features' => ['personalAssignment' => FALSE]]),
+    ]);
+    $opt_out->save();
+
+    \Drupal::moduleHandler()->loadInclude('markaspot_group', 'install');
+    $sandbox = [];
+    $message = \markaspot_group_update_11957($sandbox);
+    $this->assertSame(1, $sandbox['#finished']);
+    $this->assertStringContainsString('on 2 of 3', $message);
+
+    $storage = $this->container->get('entity_type.manager')->getStorage('group');
+    $storage->resetCache();
+    $config = json_decode((string) $storage->load($this->jurisdiction->id())->get('field_nuxt_config')->value, TRUE);
+    $this->assertArrayNotHasKey('personalAssignment', $config['features']);
+    $this->assertTrue($config['features']['assignmentSyncsOrganisation']);
+    $this->assertSame('Gemeinde Müllheim', $config['name']);
+    $config = json_decode((string) $storage->load($object_shape->id())->get('field_nuxt_config')->value, TRUE);
+    $this->assertArrayNotHasKey('personalAssignment', $config['features']);
+    $config = json_decode((string) $storage->load($opt_out->id())->get('field_nuxt_config')->value, TRUE);
+    $this->assertFalse($config['features']['personalAssignment']);
+
+    $this->request = $this->reloadNode($this->request);
+    $this->assertFalse(\_markaspot_group_personal_assignment_enabled($this->request));
+
+    // A second run finds nothing left to remove.
+    $sandbox = [];
+    $this->assertStringContainsString('on 0 of 3', \markaspot_group_update_11957($sandbox));
+  }
+
+  /**
    * An existing assignee is not grandfathered across tenant roots.
    */
   public function testPersonalAssignmentExistingPersonCannotCrossTenantRoot(): void {
