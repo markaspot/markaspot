@@ -37,6 +37,12 @@ Optional sind `organisations` mit exakten Bezeichnungen, `assignee_email`,
 `internal_remarks` mit `text` und `author_email` sowie `files`. Numerische
 Referenz-IDs aus einer früheren Installation sind nicht vorgesehen.
 
+`assignee_email` weist eine Person zu und setzt deshalb voraus, dass die
+persönliche Zuweisung für den Workspace eingeschaltet ist
+(`features.personalAssignment: true` in der Laufzeitkonfiguration der
+Wurzel-Jurisdiktion). Sie ist standardmäßig aus; ohne sie lehnen Probelauf und
+Anwendung die Fixture ab, bevor etwas geschrieben wird.
+
 Dateieinträge enthalten `field`, einen lokalen `basename` und den exakten
 `sha256`. Fotos verwenden das moderne `field_request_media` und benötigen
 Klartext unter `alt`. Anhänge werden für `field_attachment`,

@@ -201,6 +201,8 @@ final class ContractorAccessKernelTest extends KernelTestBase {
     $this->jurisdiction = Group::create([
       'type' => 'jur',
       'label' => 'Jurisdiction',
+      // Personal assignment is opt-in; the notification tests assign people.
+      'field_nuxt_config' => json_encode(['features' => ['personalAssignment' => TRUE]]),
     ]);
     $this->jurisdiction->save();
     $this->organisationA = Group::create([
@@ -1094,6 +1096,18 @@ final class ContractorAccessKernelTest extends KernelTestBase {
       'entity_type' => 'group',
       'bundle' => 'jur',
       'label' => 'Parent jurisdiction',
+    ])->save();
+
+    FieldStorageConfig::create([
+      'field_name' => 'field_nuxt_config',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_nuxt_config',
+      'entity_type' => 'group',
+      'bundle' => 'jur',
+      'label' => 'Nuxt config',
     ])->save();
 
     FieldStorageConfig::create([

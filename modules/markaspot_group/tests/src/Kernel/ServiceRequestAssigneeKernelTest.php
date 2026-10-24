@@ -223,6 +223,8 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       'type' => 'jur',
       'label' => 'Demo Jurisdiction',
       'field_tier' => 'pro',
+      // Personal assignment is opt-in; the fixture assigns a person below.
+      'field_nuxt_config' => json_encode(['features' => ['personalAssignment' => TRUE]]),
     ]);
     $this->jurisdiction->save();
     $this->organisation = Group::create([
@@ -407,6 +409,44 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->assertStringContainsString('Personal assignment is disabled', (string) $this->request->validate());
     $this->expectException(EntityStorageException::class);
     $this->request->save();
+  }
+
+  /**
+   * A missing flag keeps personal assignment and its organisation sync off.
+   */
+  public function testPersonalAssignmentIsOffWithoutExplicitOptIn(): void {
+    $this->container->get('current_user')->setAccount($this->assigner);
+    $this->jurisdiction->set('field_nuxt_config', json_encode([
+      'features' => ['assignmentSyncsOrganisation' => TRUE],
+    ]))->save();
+    $this->container->get('entity_type.manager')->getStorage('group')->resetCache();
+    $this->request = $this->reloadNode($this->request);
+    $this->assertFalse(\_markaspot_group_personal_assignment_enabled($this->request));
+    $this->assertFalse(\_markaspot_group_assignment_syncs_organisation($this->request));
+
+    $response = RequestAssigneesController::create($this->container)->assignees($this->request);
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertFalse($data['personal_assignment_enabled']);
+    $this->assertSame([], $data['candidates']);
+    $this->assertNotEmpty($data['units']);
+    $this->assertSame($this->orgMember->uuid(), $data['current']['id']);
+
+    // The existing assignee stays readable and survives unrelated edits.
+    $this->request->setTitle('Unrelated edit without opt-in');
+    $this->request->save();
+    $this->assertSame((int) $this->orgMember->id(), (int) $this->reloadNode($this->request)->get('field_assignee')->target_id);
+
+    $node = Node::create([
+      'type' => 'service_request',
+      'title' => 'Personal create without opt-in',
+      'field_jurisdiction' => $this->jurisdiction->id(),
+      'field_organisation' => $this->organisation->id(),
+      'field_assignee' => $this->orgMember->id(),
+    ]);
+    $this->assertStringContainsString('Personal assignment is disabled', (string) $node->validate());
+    $this->expectException(EntityStorageException::class);
+    $node->save();
   }
 
   /**
@@ -1507,6 +1547,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   private function setAssignmentSyncsOrganisation(bool $enabled): void {
     $this->jurisdiction->set('field_nuxt_config', json_encode([
       'features' => [
+        'personalAssignment' => TRUE,
         'assignmentSyncsOrganisation' => $enabled,
       ],
     ]));

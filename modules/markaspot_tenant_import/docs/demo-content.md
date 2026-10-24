@@ -34,6 +34,11 @@ Optional entries are `organisations` (exact labels), `assignee_email`,
 (each with plain `text` and `author_email`), and `files`. No numeric IDs from a
 previous installation are accepted for these references.
 
+`assignee_email` assigns a person and therefore needs personal assignment
+switched on for the workspace (`features.personalAssignment: true` in the root
+jurisdiction's runtime configuration). It is off by default; without it both
+the dry run and the apply run reject the fixture before anything is written.
+
 A file entry supplies `field`, a local `basename`, and its exact `sha256`.
 Request images use modern `field_request_media` and require plain `alt` text.
 Supported attachment fields are `field_attachment`,
