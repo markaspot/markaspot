@@ -46,7 +46,8 @@ Schalter ausdrücklich: `mas:tenant:import` und `mas:tenant:bootstrap` speichern
 `false`, wenn weder die Mandantenkonfiguration noch die gespeicherte
 Laufzeitkonfiguration ihn setzt. Ein Seed, der Personen zuweist, setzt
 `features.personalAssignment: true` deshalb selbst in seiner
-Mandantenkonfiguration.
+Mandantenkonfiguration. Der Schalter wirkt nur, wo die Edition die
+Fallzuweisung (`caseAssignment`) anbietet; allein schaltet er sie nicht frei.
 
 Dateieinträge enthalten `field`, einen lokalen `basename` und den exakten
 `sha256`. Fotos verwenden das moderne `field_request_media` und benötigen

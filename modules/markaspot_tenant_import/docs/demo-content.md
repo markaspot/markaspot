@@ -41,7 +41,9 @@ the dry run and the apply run reject the fixture before anything is written.
 Seeds write the flag explicitly: `mas:tenant:import` and `mas:tenant:bootstrap`
 store `false` when neither the tenant configuration nor the stored runtime
 configuration sets it. A seed that assigns people therefore sets
-`features.personalAssignment: true` in its tenant configuration itself.
+`features.personalAssignment: true` in its tenant configuration itself. The
+flag only takes effect where the edition offers case assignment
+(`caseAssignment`); it cannot enable assignment on its own.
 
 A file entry supplies `field`, a local `basename`, and its exact `sha256`.
 Request images use modern `field_request_media` and require plain `alt` text.
