@@ -134,6 +134,7 @@ final class TenantSettingsController extends ControllerBase {
     'group',
     'district',
     'sublocality',
+    'facility',
     'location',
     'created',
     'updated',

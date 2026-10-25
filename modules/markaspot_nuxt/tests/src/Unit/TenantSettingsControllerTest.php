@@ -969,6 +969,88 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests the column settings form can save its optional facility column.
+   *
+   * @covers ::updateDashboardSettings
+   */
+  public function testUpdateDashboardSettingsAcceptsFacilityColumn(): void {
+    $original = [
+      'features' => ['aiAnalysis' => TRUE],
+      'facilities' => ['enabled' => TRUE],
+      'dashboard' => ['createDefaultPublished' => FALSE],
+    ];
+    $stored = json_encode($original);
+    $group = $this->createMutableNuxtConfigGroup($stored, TRUE);
+    $this->groupStorage->method('load')->willReturn($group);
+    $columns = array_fill_keys([
+      'category', 'status', 'visibility', 'hazard_level', 'hazard_category',
+      'sentiment', 'group', 'district', 'sublocality', 'facility', 'location',
+      'lat', 'lon', 'created', 'updated', 'nid', 'status_notes',
+    ], TRUE);
+    $columns['hazard_level'] = FALSE;
+    $columns['facility'] = FALSE;
+    $request = Request::create(
+      '/api/tenant/14/dashboard',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['columns' => $columns]),
+    );
+
+    $response = $this->controller->updateDashboardSettings($request, '14');
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($columns, json_decode($response->getContent(), TRUE)['dashboard']['columns']);
+    $expected = $original;
+    $expected['dashboard']['columns'] = $columns;
+    $this->assertSame($expected, json_decode($stored, TRUE));
+  }
+
+  /**
+   * Tests invalid column settings cannot modify the stored configuration.
+   *
+   * @covers ::updateDashboardSettings
+   */
+  #[\PHPUnit\Framework\Attributes\DataProvider('invalidDashboardColumns')]
+  public function testUpdateDashboardSettingsRejectsInvalidColumns(array $columns): void {
+    $stored = '{"features":{"aiAnalysis":true}}';
+    $original = $stored;
+    $group = $this->createMutableNuxtConfigGroup($stored);
+    $group->expects($this->never())->method('save');
+    $group->expects($this->never())->method('set');
+    $this->groupStorage->method('load')->willReturn($group);
+    $request = Request::create(
+      '/api/tenant/14/dashboard',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['columns' => $columns]),
+    );
+
+    $response = $this->controller->updateDashboardSettings($request, '14');
+
+    $this->assertSame(422, $response->getStatusCode());
+    $this->assertSame($original, $stored);
+  }
+
+  /**
+   * Provides unsupported columns and invalid values for supported columns.
+   *
+   * @return array<string, array{array<string, mixed>}>
+   *   Invalid dashboard column maps.
+   */
+  public static function invalidDashboardColumns(): array {
+    return [
+      'unknown column' => [['unsupported_column' => TRUE]],
+      'facility must be boolean' => [['facility' => 'false']],
+    ];
+  }
+
+  /**
    * Tests accessCheck() returns forbidden for nonexistent jurisdiction.
    *
    * @covers ::accessCheck
