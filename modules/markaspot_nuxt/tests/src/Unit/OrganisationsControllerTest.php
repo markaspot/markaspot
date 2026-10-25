@@ -35,6 +35,7 @@ require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/StatusTermScope
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
 require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
+require_once dirname(__DIR__, 4) . '/service_request/src/OrganisationNotificationPolicy.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
 
 /**
@@ -259,6 +260,8 @@ class OrganisationsControllerTest extends UnitTestCase {
    *   Whether the parent organisation field exists.
    * @param bool $hasOrgCodeField
    *   Whether the organisation code field exists.
+   * @param array{value: mixed, access: bool}|null $assignmentNotifications
+   *   The assignment notifications field stub, or NULL when it is missing.
    *
    * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked group entity.
@@ -272,6 +275,7 @@ class OrganisationsControllerTest extends UnitTestCase {
     ?string $orgCode = NULL,
     bool $hasParentOrgField = TRUE,
     bool $hasOrgCodeField = TRUE,
+    ?array $assignmentNotifications = NULL,
   ): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
@@ -347,6 +351,41 @@ class OrganisationsControllerTest extends UnitTestCase {
          */
         public function isEmpty(): bool {
           return $this->value === NULL || $this->value === '';
+        }
+
+        /**
+         * Returns field item properties.
+         */
+        public function __get(string $name): mixed {
+          return $name === 'value' ? $this->value : NULL;
+        }
+
+      };
+    }
+
+    if ($assignmentNotifications !== NULL) {
+      $fields['field_assignment_notifications'] = new class($assignmentNotifications['value'], $assignmentNotifications['access']) {
+
+        /**
+         * Constructs an assignment notifications field stub.
+         */
+        public function __construct(
+          private mixed $value,
+          private bool $viewAccess,
+        ) {}
+
+        /**
+         * Checks whether the field is empty.
+         */
+        public function isEmpty(): bool {
+          return $this->value === NULL;
+        }
+
+        /**
+         * Checks field access for the given operation.
+         */
+        public function access(string $operation, ?AccountInterface $account = NULL): bool {
+          return $operation === 'view' && $this->viewAccess;
         }
 
         /**
@@ -450,6 +489,104 @@ class OrganisationsControllerTest extends UnitTestCase {
     $this->assertEquals('Org Alpha', $data['organisations'][0]['label']);
     $this->assertEquals(100, $data['organisations'][0]['gid']);
     $this->assertEquals(100, $data['organisations'][0]['numericId']);
+  }
+
+  /**
+   * Tests the assignment notification flag mirrors the sender policy.
+   *
+   * @param mixed $value
+   *   The stored field value, NULL for an empty field.
+   * @param bool $expected
+   *   The expected flag.
+   *
+   * @covers ::getOrganisations
+   * @covers ::getOrganisationAssignmentNotifications
+   * @dataProvider assignmentNotificationValueProvider
+   */
+  public function testAssignmentNotificationsMirrorSenderPolicy(mixed $value, bool $expected): void {
+    $account = $this->createMockUser(['authenticated', 'administrator'], 1);
+    $controller = $this->createController($account);
+
+    $org = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha', NULL, NULL, 'A1', TRUE, TRUE, [
+      'value' => $value,
+      'access' => TRUE,
+    ]);
+
+    $this->groupStorage->method('getQuery')->willReturn($this->createMockQuery([100]));
+    $this->groupStorage->method('loadMultiple')->willReturn([100 => $org]);
+
+    $response = $controller->getOrganisations(Request::create('/api/organisations', 'GET'));
+    $row = json_decode($response->getContent(), TRUE)['organisations'][0];
+
+    $this->assertSame($expected, $row['assignment_notifications']);
+    // The flag is additive: the existing keys keep their values.
+    $this->assertSame('uuid-alpha', $row['id']);
+    $this->assertSame(100, $row['gid']);
+    $this->assertSame(100, $row['numericId']);
+    $this->assertSame('Org Alpha', $row['label']);
+    $this->assertSame('A1', $row['orgCode']);
+  }
+
+  /**
+   * Provides stored values and the flag the mail sender derives from them.
+   *
+   * @return array<string, array{mixed, bool}>
+   *   Stored value and expected flag.
+   */
+  public static function assignmentNotificationValueProvider(): array {
+    return [
+      'empty field defaults to on' => [NULL, TRUE],
+      'integer one' => [1, TRUE],
+      'string one' => ['1', TRUE],
+      'boolean true' => [TRUE, TRUE],
+      'integer zero' => [0, FALSE],
+      'string zero' => ['0', FALSE],
+      'boolean false' => [FALSE, FALSE],
+    ];
+  }
+
+  /**
+   * Tests the flag is omitted when the account may not view the field.
+   *
+   * @covers ::getOrganisationAssignmentNotifications
+   */
+  public function testAssignmentNotificationsOmittedWithoutFieldViewAccess(): void {
+    $account = $this->createMockUser(['authenticated', 'moderator'], 3);
+    $controller = $this->createController($account);
+
+    $org = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha', NULL, NULL, NULL, TRUE, TRUE, [
+      'value' => '0',
+      'access' => FALSE,
+    ]);
+
+    $this->groupStorage->method('getQuery')->willReturn($this->createMockQuery([100]));
+    $this->groupStorage->method('loadMultiple')->willReturn([100 => $org]);
+
+    $response = $controller->getOrganisations(Request::create('/api/organisations', 'GET'));
+    $row = json_decode($response->getContent(), TRUE)['organisations'][0];
+
+    $this->assertArrayNotHasKey('assignment_notifications', $row);
+    $this->assertSame('uuid-alpha', $row['id']);
+  }
+
+  /**
+   * Tests the flag is omitted when the bundle lacks the field.
+   *
+   * @covers ::getOrganisationAssignmentNotifications
+   */
+  public function testAssignmentNotificationsOmittedWithoutField(): void {
+    $account = $this->createMockUser(['authenticated', 'administrator'], 1);
+    $controller = $this->createController($account);
+
+    $org = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha');
+
+    $this->groupStorage->method('getQuery')->willReturn($this->createMockQuery([100]));
+    $this->groupStorage->method('loadMultiple')->willReturn([100 => $org]);
+
+    $response = $controller->getOrganisations(Request::create('/api/organisations', 'GET'));
+    $row = json_decode($response->getContent(), TRUE)['organisations'][0];
+
+    $this->assertArrayNotHasKey('assignment_notifications', $row);
   }
 
   /**

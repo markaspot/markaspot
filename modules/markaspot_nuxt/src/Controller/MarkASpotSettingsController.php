@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_nuxt\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManager;
@@ -18,6 +19,7 @@ use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\service_request\Access\InternalServiceRequestCreatePolicy;
+use Drupal\service_request\OrganisationNotificationPolicy;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -1688,6 +1690,11 @@ class MarkASpotSettingsController extends ControllerBase {
         $organisation['orphan'] = $jurisdictionId === NULL;
       }
 
+      $assignment_notifications = $this->getOrganisationAssignmentNotifications($group, $account);
+      if ($assignment_notifications !== NULL) {
+        $organisation['assignment_notifications'] = $assignment_notifications;
+      }
+
       $organisations[] = $organisation;
 
       $cache_metadata->addCacheableDependency($group);
@@ -1701,6 +1708,43 @@ class MarkASpotSettingsController extends ControllerBase {
     $response->addCacheableDependency($cache_metadata);
 
     return $response;
+  }
+
+  /**
+   * Gets the assignment email setting when the account may view it.
+   *
+   * Mirrors the sender policy exactly by delegating to
+   * OrganisationNotificationPolicy::isEnabled(): a missing or empty field
+   * counts as enabled, only an explicit FALSE/0/'0' disables the mails.
+   * Visibility follows the field's own view access
+   * (markaspot_group_entity_field_access(): administrators and managers of
+   * the organisation's jurisdiction). Other accounts get no key at all, so an
+   * absent key means "not visible", never "enabled".
+   *
+   * The field access result has max-age 0. It is not bubbled into the
+   * response: like the membership filter above, the per-account variation is
+   * covered by the 'user' cache context, the 'group_list' tag and the
+   * response max-age.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The organisation group.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The requesting account.
+   *
+   * @return bool|null
+   *   Whether assignment emails are sent, or NULL when the field is missing
+   *   or the account may not view it.
+   *
+   * @see \Drupal\service_request\OrganisationNotificationPolicy::isEnabled()
+   */
+  protected function getOrganisationAssignmentNotifications(GroupInterface $group, AccountInterface $account): ?bool {
+    $field = 'field_assignment_notifications';
+    if (!$group->hasField($field)
+      || !$group->get($field)->access('view', $account)) {
+      return NULL;
+    }
+
+    return OrganisationNotificationPolicy::isEnabled($group);
   }
 
   /**
