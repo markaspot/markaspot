@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_mail_inbound\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileSystemInterface;
@@ -29,10 +30,12 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * Covers the decisions that do not need a saved entity:
  * - the jurisdiction check (child, then root, fail-open without validator),
  * - geocoded points outside the jurisdiction are dropped (hint and regex),
+ *   and a hint that resolved outside ends geocoding (no regex fallback),
  * - the location modes (confirmed is boundary-checked and never geocoded,
  *   none never geocodes, auto uses the suggested address only on request),
  * - PromoteOptions defaults and validation,
- * - a held lock rejects the promotion before any storage access.
+ * - a held lock rejects the promotion before any storage access, and a lock
+ *   lost during geocoding rejects it before anything is created.
  *
  * @group markaspot_mail_inbound
  * @coversDefaultClass \Drupal\markaspot_mail_inbound\Service\InboundMailPromoter
@@ -180,20 +183,38 @@ class InboundMailPromoterLocationTest extends UnitTestCase {
   }
 
   /**
-   * A hint outside the jurisdiction is dropped and the regex match is used.
+   * A hint resolving outside ends geocoding: the regex match is not tried.
+   *
+   * Decision E: the stronger signal (this address is elsewhere) must not be
+   * overridden by a bare regex street that also exists inside.
    *
    * @covers ::tryGeocode
    */
-  public function testGeocodedHintOutsideIsDroppedForRegex(): void {
+  public function testGeocodedHintOutsideEndsGeocoding(): void {
     $geocoder = $this->geocoder([
       'Elsewhere 1' => ['lat' => 50.0, 'lng' => 5.0],
       'Hauptstrasse 5' => ['lat' => 5.0, 'lng' => 5.0],
     ]);
     $promoter = $this->promoter($geocoder, $this->validator());
 
-    $result = $promoter->exposeTryGeocode($this->mail(11, 'Lamp at Hauptstrasse 5 is out.'), 'Elsewhere 1');
+    $this->assertNull($promoter->exposeTryGeocode($this->mail(11, 'Lamp at Hauptstrasse 5 is out.'), 'Elsewhere 1'));
+    $this->assertSame(['Elsewhere 1'], $geocoder->queried, 'The regex match is not geocoded after an outside hint.');
+  }
+
+  /**
+   * A hint that does not resolve falls back to the regex match.
+   *
+   * @covers ::tryGeocode
+   */
+  public function testUnresolvedHintFallsBackToRegex(): void {
+    $geocoder = $this->geocoder([
+      'Hauptstrasse 5' => ['lat' => 5.0, 'lng' => 5.0],
+    ]);
+    $promoter = $this->promoter($geocoder, $this->validator());
+
+    $result = $promoter->exposeTryGeocode($this->mail(11, 'Lamp at Hauptstrasse 5 is out.'), 'Nowhere 1');
     $this->assertSame(['lat' => 5.0, 'lng' => 5.0, 'source' => PromotionResult::LOCATION_REGEX], $result);
-    $this->assertSame(['Elsewhere 1', 'Hauptstrasse 5'], $geocoder->queried);
+    $this->assertSame(['Nowhere 1', 'Hauptstrasse 5'], $geocoder->queried);
   }
 
   /**
@@ -208,7 +229,9 @@ class InboundMailPromoterLocationTest extends UnitTestCase {
     ]);
     $promoter = $this->promoter($geocoder, $this->validator());
 
-    $this->assertNull($promoter->exposeTryGeocode($this->mail(11, 'Lamp at Hauptstrasse 5 is out.'), 'Elsewhere 1'));
+    // Without a hint, a regex match outside is dropped as well.
+    $this->assertNull($promoter->exposeTryGeocode($this->mail(11, 'Lamp at Hauptstrasse 5 is out.'), NULL));
+    $this->assertSame(['Hauptstrasse 5'], $geocoder->queried);
 
     // Inside: the hint wins and is reported as the suggested source.
     $inside = $this->promoter($this->geocoder(['Marktplatz 1' => ['lat' => 1.0, 'lng' => 2.0]]), $this->validator());
@@ -298,6 +321,89 @@ class InboundMailPromoterLocationTest extends UnitTestCase {
     catch (PromotionConflictException $e) {
       $this->assertSame(PromotionConflictException::IN_PROGRESS, $e->reason);
     }
+  }
+
+  /**
+   * A lock lost while geocoding rejects the promotion before any write.
+   *
+   * The first acquire succeeds; the re-check after geocoding finds the lock
+   * taken over by another request (expired during a hung geocoder).
+   *
+   * @covers ::promote
+   * @covers ::doPromote
+   */
+  public function testLockLostDuringGeocodingRejectsBeforeWrite(): void {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->exactly(2))
+      ->method('acquire')
+      ->with('markaspot_mail_inbound.promote.5')
+      ->willReturnOnConsecutiveCalls(TRUE, FALSE);
+    $lock->expects($this->once())->method('release')->with('markaspot_mail_inbound.promote.5');
+
+    $stored = $this->createMock(InboundMail::class);
+    $stored->method('id')->willReturn(5);
+    $stored->method('getState')->willReturn(InboundMail::STATE_STAGED);
+    $stored->method('getJurisdictionId')->willReturn(11);
+    $stored->method('getBody')->willReturn('Lamp at Hauptstrasse 5 is out.');
+    $stored->expects($this->never())->method('save');
+
+    $mailStorage = $this->createMock(EntityStorageInterface::class);
+    $mailStorage->method('loadUnchanged')->with(5)->willReturn($stored);
+    $termStorage = $this->createMock(EntityStorageInterface::class);
+    $termStorage->method('load')->willReturn(NULL);
+    $nodeStorage = $this->createMock(EntityStorageInterface::class);
+    $nodeStorage->expects($this->never())->method('create');
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')->willReturnMap([
+      ['inbound_mail', $mailStorage],
+      ['taxonomy_term', $termStorage],
+      ['node', $nodeStorage],
+    ]);
+
+    $processor = new class() {
+
+      /**
+       * Counts processor calls; the loser must not reach node creation.
+       */
+      public int $calls = 0;
+
+      /**
+       * Mirrors GeoreportProcessorService::prepareNodeProperties().
+       */
+      public function prepareNodeProperties(array $requestData, string $operation): array {
+        $this->calls++;
+        return [];
+      }
+
+    };
+
+    $promoter = new TestableLocationPromoter(
+      $entityTypeManager,
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(EventDispatcherInterface::class),
+      $this->createMock(LoggerChannelInterface::class),
+      $this->createMock(EntityFieldManagerInterface::class),
+      $this->createMock(ConfigFactoryInterface::class),
+      $this->createMock(FileSystemInterface::class),
+      $this->createMock(Token::class),
+      $this->createMock(InternalRemarkWriter::class),
+      $lock,
+      $processor,
+      $this->geocoder(['Hauptstrasse 5' => ['lat' => 5.0, 'lng' => 5.0]]),
+      $this->createMock(LanguageManagerInterface::class),
+      $this->validator(),
+      NULL,
+    );
+
+    try {
+      $promoter->promote($this->mail(), 7);
+      $this->fail('A lock lost during geocoding must reject the promotion.');
+    }
+    catch (PromotionConflictException $e) {
+      $this->assertSame(PromotionConflictException::IN_PROGRESS, $e->reason);
+    }
+    $this->assertSame(0, $processor->calls, 'Nothing is prepared or created after the lock was lost.');
   }
 
 }

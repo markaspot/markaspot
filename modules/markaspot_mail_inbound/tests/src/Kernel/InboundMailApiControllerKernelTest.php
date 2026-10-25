@@ -706,6 +706,7 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $geocoder = $this->geocoder([
       'Marktplatz 1, City A' => ['lat' => 50.4, 'lng' => 6.4],
       'Marktplatz 1, Elsewhere' => ['lat' => 48.1, 'lng' => 11.5],
+      'Marktplatz 1' => ['lat' => 50.5, 'lng' => 6.5],
     ]);
     $this->actAs(['triage'], [$this->gidA]);
     $controller = $this->controllerWithWorkingPromoter($geocoder);
@@ -742,6 +743,20 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertNull($dropped['location_source']);
     $this->assertTrue($dropped['address_text_applied']);
 
+    // Decision E: a hint resolving outside ends geocoding, even when the body
+    // carries a street the regex would place inside the jurisdiction.
+    $regexMail = $this->mailWithSuggestions('Marktplatz 1, Elsewhere');
+    $regexMail->set('body', ['value' => 'The lamp at Marktplatz 1 is out.', 'format' => 'plain_text']);
+    $regexMail->save();
+    $queriedBefore = count($geocoder->queried);
+    $noRegex = $this->json($controller->promote($regexMail, $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_address' => TRUE,
+    ])));
+    $this->assertTrue($noRegex['ungeolocated'], 'The regex street does not override an outside suggestion.');
+    $this->assertNull($noRegex['location_source']);
+    $this->assertSame(['Marktplatz 1, Elsewhere'], array_slice($geocoder->queried, $queriedBefore));
+
     // Unticked: neither hint nor text, even though a suggestion exists.
     $unticked = $this->json($controller->promote($this->mailWithSuggestions('Marktplatz 1, City A'), $this->postRequest([
       'category_tid' => $this->categoryTid,
@@ -751,7 +766,7 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertTrue($unticked['ungeolocated']);
     $this->assertFalse($unticked['address_text_applied']);
     $this->assertTrue($this->loadNode($unticked['nid'])->get('field_address')->isEmpty());
-    $this->assertCount(2, $geocoder->queried, 'Only the two auto-mode promotions geocoded.');
+    $this->assertCount(3, $geocoder->queried, 'Only the three auto-mode promotions geocoded, once each.');
   }
 
   /**
@@ -784,6 +799,29 @@ A streetlight is broken near the church.", $this->loadNode($original['nid'])->ge
   public function testPromoteWhileLockedIsConflict(): void {
     $lock = $this->createMock(LockBackendInterface::class);
     $lock->method('acquire')->willReturn(FALSE);
+    $this->container->set('lock', $lock);
+
+    $this->actAs(['triage'], [$this->gidA]);
+    $mail = $this->mail($this->gidA);
+    $response = $this->controllerWithWorkingPromoter()->promote($mail, $this->postRequest(['category_tid' => $this->categoryTid]));
+
+    $this->assertSame(409, $response->getStatusCode());
+    $this->assertSame('promotion_in_progress', $this->json($response)['code']);
+    $this->assertSame(0, $this->countNodes());
+    $this->assertSame(InboundMail::STATE_STAGED, $this->reloadMail($mail)->getState());
+  }
+
+  /**
+   * Promote: a lock lost during geocoding answers 409 and creates nothing.
+   *
+   * The lock expired while the geocoder hung and another request took it:
+   * the re-check before the first write rejects the late request.
+   */
+  public function testPromoteLockLostDuringGeocodingIsConflict(): void {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->exactly(2))
+      ->method('acquire')
+      ->willReturnOnConsecutiveCalls(TRUE, FALSE);
     $this->container->set('lock', $lock);
 
     $this->actAs(['triage'], [$this->gidA]);

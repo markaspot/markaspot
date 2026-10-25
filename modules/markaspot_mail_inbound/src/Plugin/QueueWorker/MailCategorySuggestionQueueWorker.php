@@ -16,6 +16,7 @@ use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
+use Drupal\markaspot_mail_inbound\Service\PromoteOptions;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -201,11 +202,14 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
       return;
     }
 
-    // Pass suggested address as an address hint for geocoding.
+    // Pass suggested address as an address hint for geocoding. When the
+    // report ends up without coordinates (hint unresolved or outside the
+    // jurisdiction), the suggestion is kept as field_address text so staff
+    // can place it on the edit page, like the dashboard dialog does.
     $suggestedAddress = $mail->getSuggestedAddress();
 
     try {
-      $node = $this->promoter->promoteToServiceRequest($mail, $tid, $suggestedAddress);
+      $node = $this->promoter->promoteToServiceRequest($mail, $tid, $suggestedAddress, new PromoteOptions(useSuggestedAddress: TRUE));
       $this->logger->notice('Auto-promoted mail @id to service request @nid (tid @tid, confidence @conf).', [
         '@id' => $mail->id(),
         '@nid' => $node->id(),

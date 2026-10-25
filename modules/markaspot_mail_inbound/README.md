@@ -119,8 +119,11 @@ queue worker, so a large mailbox cannot stall cron.
     (codeless). Defaults reproduce the plain `{"category_tid":N}` call:
     AI summary as description, server-side geocoding (regex) without the
     suggested address. `location` absent: the server geocodes the
-    suggested address (when `use_suggested_address`) and then the regex
-    match; a point outside the jurisdiction is dropped. `location: null`:
+    suggested address (when `use_suggested_address`); only when it does
+    not resolve, the regex match is tried. A point outside the
+    jurisdiction is dropped, and a suggested address that resolves outside
+    ends geocoding (no regex fallback): the report stays ungeolocated. The
+    auto-promote worker uses the same path. `location: null`:
     no coordinates and no geocoding. `{lat, lng}`: a staff-confirmed point,
     never geocoded, checked against the mail's jurisdiction boundary (the
     child's own geometry, else its root's). Without coordinates and with
@@ -133,7 +136,8 @@ queue worker, so a large mailbox cannot stall cron.
     / `invalid_location` / `location_outside_jurisdiction`; 503
     `unavailable`; 500 `failed`. Every promotion path (API, admin form,
     auto-promote worker) holds one lock per mail and re-reads the stored
-    state inside it, so concurrent attempts create exactly one report.
+    state inside it, so concurrent attempts create exactly one report; the
+    lock is re-checked after geocoding, before anything is written.
     Tenants without `field_boundary` get no real boundary check (fail-open,
     like the Open311 submission path), and a root boundary accepts a point
     inside a sibling child.

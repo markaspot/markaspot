@@ -58,9 +58,15 @@ class InboundMailPromoter {
   use StringTranslationTrait;
 
   /**
-   * Lock timeout in seconds; a promotion normally takes well under a second.
+   * Lock timeout in seconds.
+   *
+   * A promotion normally takes well under a second, but forward geocoding
+   * (suggested address or regex match) and the reverse geocode in the node
+   * presave each run on the HTTP client's default 30 s timeout. The lock is
+   * re-acquired (extended) once geocoding is done and before the first
+   * write, so this budget covers the save path of a hung geocoder.
    */
-  protected const LOCK_TIMEOUT = 30.0;
+  protected const LOCK_TIMEOUT = 120.0;
 
   /**
    * Constructs an InboundMailPromoter.
@@ -145,7 +151,7 @@ class InboundMailPromoter {
       if (!$stored instanceof InboundMail || $stored->getState() !== InboundMail::STATE_STAGED) {
         throw new PromotionConflictException(PromotionConflictException::NOT_STAGED, sprintf('Cannot promote inbound mail %s: it is no longer staged.', $mail->id()));
       }
-      return $this->doPromote($stored, $categoryTid, $addressHint, $options ?? new PromoteOptions());
+      return $this->doPromote($stored, $categoryTid, $addressHint, $options ?? new PromoteOptions(), $lockName);
     }
     finally {
       $this->lock->release($lockName);
@@ -184,8 +190,11 @@ class InboundMailPromoter {
    * Creates the service request for a mail that is staged in storage.
    *
    * Runs inside the promotion lock, on the freshly loaded mail.
+   *
+   * @throws \Drupal\markaspot_mail_inbound\Exception\PromotionConflictException
+   *   When the lock expired during geocoding and another request took it.
    */
-  protected function doPromote(InboundMail $mail, int $categoryTid, ?string $addressHint, PromoteOptions $options): PromotionResult {
+  protected function doPromote(InboundMail $mail, int $categoryTid, ?string $addressHint, PromoteOptions $options, string $lockName): PromotionResult {
     $jurisdictionGid = $mail->getJurisdictionId();
 
     // Resolve the service code for the chosen category (may be NULL for
@@ -234,8 +243,19 @@ class InboundMailPromoter {
     //   from the AI text-classification path (NER-extracted); it is more
     //   reliable than the regex but equally optional — a miss still leaves
     //   the report ungeolocated, as always. A geocoded point outside the
-    //   jurisdiction is dropped.
+    //   jurisdiction is dropped; a hint that resolved outside also ends
+    //   geocoding (no regex attempt), so the report stays ungeolocated.
     $coordinates = $this->resolveLocation($mail, $addressHint, $options);
+
+    // Geocoding may have outlived the lock (hung geocoder). Re-acquiring a
+    // lock this request still owns extends it; FALSE means it expired and
+    // another request (colleague, auto-promote worker) took it over. Checked
+    // here, before the first write (status note paragraph, attachment media,
+    // node), so the loser leaves nothing behind.
+    if (!$this->lock->acquire($lockName, self::LOCK_TIMEOUT)) {
+      throw new PromotionConflictException(PromotionConflictException::IN_PROGRESS, sprintf('Inbound mail %s is being promoted by another request.', $mail->id()));
+    }
+
     if ($coordinates !== NULL) {
       $requestData['lat'] = $coordinates['lat'];
       $requestData['long'] = $coordinates['lng'];
@@ -507,11 +527,15 @@ class InboundMailPromoter {
    *      More precise than a regex scan; tried first when provided.
    *   2. extractTrivialAddress() on the body — the existing simple German
    *      street regex (unchanged, still the common path for manual promotion).
+   *      Only reached when there is no hint or the hint did not resolve.
    *
    * Returns coordinates only when the geocoder is available AND a candidate
    * address resolves inside the mail's jurisdiction. A point outside it is
-   * dropped like a miss (logged with its source only, never the address or
-   * the coordinates). A miss leaves the report ungeolocated (the common case).
+   * dropped (logged with its source only, never the address or the
+   * coordinates). A hint that resolved outside ends geocoding: the stronger
+   * signal "this address is elsewhere" is not overridden by a bare regex
+   * street that may also exist inside the jurisdiction (decision E,
+   * 2026-10-25). A miss leaves the report ungeolocated (the common case).
    *
    * @param \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail
    *   The mail being promoted.
@@ -529,12 +553,12 @@ class InboundMailPromoter {
 
     // Try the AI hint first (additive; default path is unchanged when NULL).
     if ($addressHint !== NULL && $addressHint !== '') {
-      $result = $this->geocodeInsideJurisdiction($mail, $addressHint, PromotionResult::LOCATION_SUGGESTED);
-      if ($result !== NULL) {
-        return $result;
+      $point = $this->geocodeCandidate($addressHint);
+      if ($point !== NULL) {
+        // Resolved: inside wins, outside ends geocoding (no regex fallback).
+        return $this->keepInsideJurisdiction($mail, $point, PromotionResult::LOCATION_SUGGESTED);
       }
-      // Hint did not resolve inside the jurisdiction; fall through to the
-      // regex scan.
+      // The hint did not resolve; fall through to the regex scan.
     }
 
     // Deliberately the FULL conversation log, not just the original message:
@@ -544,20 +568,24 @@ class InboundMailPromoter {
     if ($candidate === NULL) {
       return NULL;
     }
-    return $this->geocodeInsideJurisdiction($mail, $candidate, PromotionResult::LOCATION_REGEX);
+    $point = $this->geocodeCandidate($candidate);
+    return $point !== NULL ? $this->keepInsideJurisdiction($mail, $point, PromotionResult::LOCATION_REGEX) : NULL;
   }
 
   /**
-   * Geocodes a candidate and keeps the point only inside the jurisdiction.
+   * Keeps a geocoded point only when it lies inside the jurisdiction.
+   *
+   * @param \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail
+   *   The mail being promoted.
+   * @param array{lat: float, lng: float} $result
+   *   The geocoded point.
+   * @param string $source
+   *   The PromotionResult::LOCATION_* source of the point.
    *
    * @return array{lat: float, lng: float, source: string}|null
-   *   Coordinates with the given source, or NULL.
+   *   Coordinates with the given source, or NULL when outside.
    */
-  protected function geocodeInsideJurisdiction(InboundMail $mail, string $candidate, string $source): ?array {
-    $result = $this->geocodeCandidate($candidate);
-    if ($result === NULL) {
-      return NULL;
-    }
+  protected function keepInsideJurisdiction(InboundMail $mail, array $result, string $source): ?array {
     if (!$this->isInsideJurisdiction($mail->getJurisdictionId(), $result['lat'], $result['lng'])) {
       $this->logger->info('Dropped a geocoded @source location for inbound mail @mail: it lies outside the jurisdiction.', [
         '@source' => $source,
