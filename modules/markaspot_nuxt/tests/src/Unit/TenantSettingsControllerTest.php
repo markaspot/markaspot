@@ -28,6 +28,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -3509,6 +3510,36 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['aiProcessing']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
     $this->assertFalse($data['capabilities']['aiProcessing']);
+  }
+
+  /**
+   * Tests the AI analysis capability follows the vision module.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsAiAnalysisCapabilityFollowsVisionModule(): void {
+    $group = $this->createMockGroup(['field_nuxt_config' => json_encode(['features' => ['aiAnalysis' => TRUE]])]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $container = \Drupal::getContainer();
+
+    foreach ([TRUE, FALSE] as $vision_installed) {
+      $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+      $moduleHandler->method('moduleExists')->willReturnCallback(
+        static fn(string $module): bool => $module === 'markaspot_vision' && $vision_installed,
+      );
+      $container->set('markaspot_nuxt.feature_scope_resolver', new FeatureScopeResolver(
+        $this->entityTypeManager,
+        $container->get('config.factory'),
+        $this->hierarchyResolver,
+        $moduleHandler,
+      ));
+      $controller = TenantSettingsController::create($container);
+
+      $response = $controller->getFeatureSettings(Request::create('/api/tenant/14/features', 'GET'), '14');
+      $data = json_decode($response->getContent(), TRUE);
+      $this->assertSame($vision_installed, $data['capabilities']['aiAnalysis']);
+      $this->assertArrayHasKey('aiAnalysis', $data['features']);
+    }
   }
 
   /**
