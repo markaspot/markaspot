@@ -7,8 +7,9 @@ no form display, field value, visibility rule or access grant.
 The account comes exclusively from the authenticated Drupal cookie session.
 The jurisdiction must resolve to a published jurisdiction group readable by
 that account. PATCH additionally requires the standard `X-CSRF-Token` header.
-Responses use `Cache-Control: private, no-store`. Shared demo accounts get the
-default layout and cannot save a preference.
+Responses use `Cache-Control: private, no-store`. CivicSpot workspace demo
+accounts (`DemoStaffAccount`) get the default layout and cannot save a
+preference. Other shared logins share one layout per account.
 
 GET returns `{ "layout": null, "writable": true }` when no override exists.
 PATCH accepts exactly one `layout` property:
