@@ -116,7 +116,23 @@ final class TenantSettingsController extends ControllerBase {
    */
   const FORM_FEATURE_FLAGS = [
     'allowParentCategorySelection',
+    'lockPhotoLocation',
   ];
+
+  /**
+   * Allowed values of features.unifiedReporting.aiMode.
+   */
+  const UNIFIED_AI_MODES = ['disabled', 'opt_in', 'opt_out'];
+
+  /**
+   * Allowed values of features.unifiedReporting.photoPolicy.
+   */
+  const UNIFIED_PHOTO_POLICIES = ['optional', 'required', 'required_by_category'];
+
+  /**
+   * Upper bound for features.photoRequiredCategories (category term IDs).
+   */
+  const MAX_PHOTO_REQUIRED_CATEGORIES = 1000;
 
   /**
    * Allowed dashboard column IDs.
@@ -645,6 +661,54 @@ final class TenantSettingsController extends ControllerBase {
    */
   private function textOverrideHtmlIsSafe(string $value): bool {
     return !str_contains($value, '<') && !str_contains($value, '>');
+  }
+
+  /**
+   * Normalises the stored unified report form configuration.
+   *
+   * @param mixed $value
+   *   The stored value: a boolean (legacy) or an object.
+   *
+   * @return array
+   *   The editable keys enabled, aiMode and photoPolicy with their defaults.
+   */
+  private function normalizeUnifiedReporting(mixed $value): array {
+    $config = is_array($value) ? $value : ['enabled' => $value === TRUE];
+    return [
+      'enabled' => ($config['enabled'] ?? FALSE) === TRUE,
+      'aiMode' => in_array($config['aiMode'] ?? NULL, self::UNIFIED_AI_MODES, TRUE)
+        ? $config['aiMode'] : 'disabled',
+      'photoPolicy' => in_array($config['photoPolicy'] ?? NULL, self::UNIFIED_PHOTO_POLICIES, TRUE)
+        ? $config['photoPolicy'] : 'optional',
+    ];
+  }
+
+  /**
+   * Normalises a list of category term IDs.
+   *
+   * @param mixed $value
+   *   The submitted or stored value.
+   *
+   * @return int[]|null
+   *   Unique positive IDs in ascending order, or NULL when the value is not a
+   *   list of positive integers (integer strings from older configs count).
+   */
+  private function normalizeCategoryIds(mixed $value): ?array {
+    if (!is_array($value) || !array_is_list($value)) {
+      return NULL;
+    }
+    $ids = [];
+    foreach ($value as $id) {
+      if (is_string($id) && preg_match('/^[1-9][0-9]*$/', $id)) {
+        $id = (int) $id;
+      }
+      if (!is_int($id) || $id < 1) {
+        return NULL;
+      }
+      $ids[$id] = $id;
+    }
+    sort($ids);
+    return array_values($ids);
   }
 
   /**
@@ -2369,7 +2433,10 @@ final class TenantSettingsController extends ControllerBase {
         'privacyNotice' => ['enabled' => $features['privacyNotice']['enabled'] ?? FALSE],
         'forms' => [
           'allowParentCategorySelection' => $this->getBooleanFeatureValue($forms, 'allowParentCategorySelection', FALSE),
+          'lockPhotoLocation' => $this->getBooleanFeatureValue($forms, 'lockPhotoLocation', FALSE),
         ],
+        'unifiedReporting' => $this->normalizeUnifiedReporting($features['unifiedReporting'] ?? NULL),
+        'photoRequiredCategories' => $this->normalizeCategoryIds($features['photoRequiredCategories'] ?? NULL) ?? [],
       ],
       'capabilities' => [
         'caseAssignment' => $this->canUseCaseAssignment($group),
@@ -2493,6 +2560,38 @@ final class TenantSettingsController extends ControllerBase {
       }
     }
 
+    // Validate the report form configuration. Only the three editable keys
+    // of unifiedReporting are accepted here; stored extras (cta texts) are
+    // kept by the merge below.
+    if (array_key_exists('unifiedReporting', $data)) {
+      $unified = $data['unifiedReporting'];
+      if (!is_array($unified) || ($unified !== [] && array_is_list($unified))) {
+        return new JsonResponse(['error' => 'unifiedReporting must be an object.'], 422);
+      }
+      if (array_diff(array_keys($unified), ['enabled', 'aiMode', 'photoPolicy']) !== []) {
+        return new JsonResponse(['error' => 'unifiedReporting accepts only enabled, aiMode and photoPolicy.'], 422);
+      }
+      if (array_key_exists('enabled', $unified) && !is_bool($unified['enabled'])) {
+        return new JsonResponse(['error' => 'unifiedReporting.enabled must be a boolean.'], 422);
+      }
+      if (array_key_exists('aiMode', $unified) && !in_array($unified['aiMode'], self::UNIFIED_AI_MODES, TRUE)) {
+        return new JsonResponse(['error' => 'unifiedReporting.aiMode must be one of: ' . implode(', ', self::UNIFIED_AI_MODES) . '.'], 422);
+      }
+      if (array_key_exists('photoPolicy', $unified) && !in_array($unified['photoPolicy'], self::UNIFIED_PHOTO_POLICIES, TRUE)) {
+        return new JsonResponse(['error' => 'unifiedReporting.photoPolicy must be one of: ' . implode(', ', self::UNIFIED_PHOTO_POLICIES) . '.'], 422);
+      }
+    }
+    if (array_key_exists('photoRequiredCategories', $data)) {
+      $category_ids = $this->normalizeCategoryIds($data['photoRequiredCategories']);
+      if ($category_ids === NULL) {
+        return new JsonResponse(['error' => 'photoRequiredCategories must be a list of category IDs.'], 422);
+      }
+      if (count($category_ids) > self::MAX_PHOTO_REQUIRED_CATEGORIES) {
+        return new JsonResponse(['error' => 'photoRequiredCategories lists too many categories.'], 422);
+      }
+      $data['photoRequiredCategories'] = $category_ids;
+    }
+
     // Read-modify-write: load existing config, update only the features key.
     $config = [];
     if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
@@ -2536,6 +2635,20 @@ final class TenantSettingsController extends ControllerBase {
           $config['features']['forms'][$flag] = $data['forms'][$flag];
         }
       }
+    }
+
+    if (array_key_exists('unifiedReporting', $data)) {
+      $existing = $config['features']['unifiedReporting'] ?? [];
+      if (is_bool($existing)) {
+        $existing = ['enabled' => $existing];
+      }
+      $config['features']['unifiedReporting'] = array_replace(
+        is_array($existing) ? $existing : [],
+        $data['unifiedReporting'],
+      );
+    }
+    if (array_key_exists('photoRequiredCategories', $data)) {
+      $config['features']['photoRequiredCategories'] = $data['photoRequiredCategories'];
     }
 
     // Write back the full config JSON.

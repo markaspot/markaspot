@@ -76,6 +76,20 @@ final class TenantRuntimeConfiguration {
             }
             continue;
           }
+          if ($name === 'photoRequiredCategories') {
+            if (!is_array($value) || !array_is_list($value)
+              || array_filter($value, static fn($id): bool => !is_int($id) || $id < 1) !== []) {
+              $errors[] = 'tenant.features.photoRequiredCategories must be a list of category term IDs.';
+            }
+            continue;
+          }
+          if ($name === 'forms') {
+            if (!is_array($value) || array_diff(array_keys($value), ['lockPhotoLocation']) !== []
+              || !is_bool($value['lockPhotoLocation'] ?? NULL)) {
+              $errors[] = 'tenant.features.forms supports only the boolean lockPhotoLocation.';
+            }
+            continue;
+          }
           if (!in_array($name, [...self::FEATURES, 'publicReports'], TRUE) || !is_bool($value)) {
             $errors[] = "tenant.features.$name is unsupported or is not boolean.";
           }
@@ -182,6 +196,13 @@ final class TenantRuntimeConfiguration {
     }
     if (isset($tenant['features']['unifiedReporting'])) {
       $patch['features']['unifiedReporting'] = $tenant['features']['unifiedReporting'];
+    }
+    // The category list replaces the stored one; a merge keeps removed IDs.
+    if (isset($tenant['features']['photoRequiredCategories'])) {
+      $existing['features']['photoRequiredCategories'] = array_values(array_unique($tenant['features']['photoRequiredCategories']));
+    }
+    if (isset($tenant['features']['forms']['lockPhotoLocation'])) {
+      $patch['features']['forms']['lockPhotoLocation'] = $tenant['features']['forms']['lockPhotoLocation'];
     }
     // Personal assignment is opt-in. Seeds write the off state explicitly so
     // it is visible in the data; explicit input and a stored decision win.

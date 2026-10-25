@@ -507,6 +507,27 @@
           "description": "Enable party selection field on forms (deprecated: use conditionalFields instead)",
           "default": false
         },
+        "unifiedReporting": {
+          "type": "object",
+          "title": "Unified Report Form",
+          "description": "One report form with optional AI analysis and a photo policy",
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Enabled", "default": false },
+            "aiMode": {
+              "type": "string",
+              "title": "AI analysis",
+              "enum": ["disabled", "opt_in", "opt_out"],
+              "default": "disabled"
+            },
+            "photoPolicy": {
+              "type": "string",
+              "title": "Photo policy",
+              "description": "required_by_category uses photoRequiredCategories",
+              "enum": ["optional", "required", "required_by_category"],
+              "default": "optional"
+            }
+          }
+        },
         "photoRequiredCategories": {
           "type": "array",
           "title": "Photo Required Categories",
@@ -562,6 +583,12 @@
               "type": "boolean",
               "title": "Allow Parent Category Selection",
               "description": "Let users select parent categories in forms",
+              "default": false
+            },
+            "lockPhotoLocation": {
+              "type": "boolean",
+              "title": "Lock Photo Location",
+              "description": "A photo's EXIF location replaces the detected position and locks it",
               "default": false
             }
           }

@@ -3216,6 +3216,122 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests getFeatureSettings() defaults the report form settings.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsDefaultsReportFormSettings(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $data = json_decode($this->controller->getFeatureSettings(Request::create('/api/tenant/14/features', 'GET'), '14')->getContent(), TRUE);
+
+    $this->assertSame(['enabled' => FALSE, 'aiMode' => 'disabled', 'photoPolicy' => 'optional'], $data['features']['unifiedReporting']);
+    $this->assertSame([], $data['features']['photoRequiredCategories']);
+    $this->assertFalse($data['features']['forms']['lockPhotoLocation']);
+  }
+
+  /**
+   * Tests getFeatureSettings() normalises stored report form settings.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsNormalisesReportFormSettings(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => [
+        'unifiedReporting' => [
+          'enabled' => TRUE,
+          'aiMode' => 'bogus',
+          'photoPolicy' => 'required_by_category',
+          'cta' => ['heading' => 'x'],
+        ],
+        'photoRequiredCategories' => ['12', 7, 12],
+        'forms' => ['lockPhotoLocation' => TRUE],
+      ]]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $data = json_decode($this->controller->getFeatureSettings(Request::create('/api/tenant/14/features', 'GET'), '14')->getContent(), TRUE);
+
+    $this->assertSame(['enabled' => TRUE, 'aiMode' => 'disabled', 'photoPolicy' => 'required_by_category'], $data['features']['unifiedReporting']);
+    $this->assertSame([7, 12], $data['features']['photoRequiredCategories']);
+    $this->assertTrue($data['features']['forms']['lockPhotoLocation']);
+  }
+
+  /**
+   * Tests a save merges report form settings and keeps stored extras.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsStoresReportFormSettings(): void {
+    $storedNuxtConfig = json_encode(['features' => [
+      'unifiedReporting' => ['enabled' => FALSE, 'aiMode' => 'opt_out', 'cta' => ['heading' => 'Melden']],
+      'photoRequiredCategories' => [99],
+      'forms' => ['allowParentCategorySelection' => TRUE],
+      'search' => ['enabled' => TRUE, 'mode' => 'fuzzy'],
+    ]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'unifiedReporting' => ['enabled' => TRUE, 'photoPolicy' => 'required_by_category'],
+      'photoRequiredCategories' => [43, '2', 43],
+      'forms' => ['lockPhotoLocation' => TRUE],
+    ]), '14');
+    $updated = json_decode($storedNuxtConfig, TRUE)['features'];
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame(
+      [
+        'enabled' => TRUE,
+        'aiMode' => 'opt_out',
+        'cta' => ['heading' => 'Melden'],
+        'photoPolicy' => 'required_by_category',
+      ],
+      $updated['unifiedReporting']
+    );
+    $this->assertSame([2, 43], $updated['photoRequiredCategories']);
+    $this->assertSame(['allowParentCategorySelection' => TRUE, 'lockPhotoLocation' => TRUE], $updated['forms']);
+    $this->assertSame(['enabled' => TRUE, 'mode' => 'fuzzy'], $updated['search']);
+  }
+
+  /**
+   * Tests invalid report form settings are rejected without a write.
+   *
+   * @covers ::updateFeatureSettings
+   * @dataProvider invalidReportFormSettingsProvider
+   */
+  public function testUpdateFeatureSettingsRejectsInvalidReportFormSettings(array $payload): void {
+    $storedNuxtConfig = json_encode(['features' => ['photoRequiredCategories' => [5]]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest($payload), '14');
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertSame([5], json_decode($storedNuxtConfig, TRUE)['features']['photoRequiredCategories']);
+  }
+
+  /**
+   * Provides invalid report form payloads.
+   */
+  public static function invalidReportFormSettingsProvider(): array {
+    return [
+      'ai mode' => [['unifiedReporting' => ['aiMode' => 'always']]],
+      'photo policy' => [['unifiedReporting' => ['photoPolicy' => 'sometimes']]],
+      'enabled string' => [['unifiedReporting' => ['enabled' => 'true']]],
+      'cta not editable here' => [['unifiedReporting' => ['cta' => ['heading' => 'x']]]],
+      'list instead of object' => [['unifiedReporting' => [TRUE]]],
+      'category zero' => [['photoRequiredCategories' => [0]]],
+      'category text' => [['photoRequiredCategories' => ['abc']]],
+      'categories object' => [['photoRequiredCategories' => ['a' => 1]]],
+      'lock string' => [['forms' => ['lockPhotoLocation' => 'yes']]],
+    ];
+  }
+
+  /**
    * Tests getFeatureSettings() reads legacy top-level form flags.
    *
    * @covers ::getFeatureSettings

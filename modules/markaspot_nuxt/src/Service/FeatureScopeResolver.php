@@ -55,6 +55,11 @@ class FeatureScopeResolver {
     'search' => 'jurisdiction',
     'boundaries' => 'jurisdiction',
     'forms.allowParentCategorySelection' => 'jurisdiction',
+    'forms.lockPhotoLocation' => 'jurisdiction',
+    // Report form configuration objects. Not booleans: they only take part in
+    // the editability check, the citizen settings pass them through as stored.
+    'unifiedReporting' => 'jurisdiction',
+    'photoRequiredCategories' => 'jurisdiction',
   ];
 
   /**
@@ -105,6 +110,7 @@ class FeatureScopeResolver {
     'search' => TRUE,
     'boundaries' => FALSE,
     'forms.allowParentCategorySelection' => FALSE,
+    'forms.lockPhotoLocation' => FALSE,
   ];
 
   /**
@@ -601,9 +607,11 @@ class FeatureScopeResolver {
         return $default;
       }
     }
-    if ($key === 'forms.allowParentCategorySelection') {
-      $legacy = $this->readDotPath($config, 'forms.allowParentCategorySelection');
-      $stored = $this->readDotPath($config, 'features.forms.allowParentCategorySelection');
+    if (str_starts_with($key, 'forms.')) {
+      // Form flags live below features.forms; older configs kept them in a
+      // top-level forms object, which still counts without a feature value.
+      $legacy = $this->readDotPath($config, $key);
+      $stored = $this->readDotPath($config, 'features.' . $key);
       return is_bool($stored) ? $stored : (is_bool($legacy) ? $legacy : $default);
     }
     $stored = $this->readDotPath($config, 'features.' . $key);
@@ -629,9 +637,9 @@ class FeatureScopeResolver {
       $features[$key] = ['enabled' => $value] + $existing;
       return;
     }
-    if ($key === 'forms.allowParentCategorySelection') {
+    if (str_starts_with($key, 'forms.')) {
       $features['forms'] = is_array($features['forms'] ?? NULL) ? $features['forms'] : [];
-      $features['forms']['allowParentCategorySelection'] = $value;
+      $features['forms'][substr($key, strlen('forms.'))] = $value;
       return;
     }
     if (is_array($features[$key] ?? NULL)) {

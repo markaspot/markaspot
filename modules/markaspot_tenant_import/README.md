@@ -268,6 +268,8 @@ Runtime input supported by both bootstrap and subsequent imports:
   writes `false` explicitly, so the state is visible in the data. An explicit
   value from the input and a stored decision are kept.
   `unifiedReporting` is an object with `enabled`, `aiMode` and `photoPolicy`.
+  `photoRequiredCategories` is a list of category term IDs and replaces the
+  stored list; `forms` accepts only the boolean `lockPhotoLocation`.
   Platform flags such as `passwordless` are configured by stack orchestration.
 - `boilerplates`: owned plain-text templates, applied by dedicated bootstrap.
 - Existing platform name, email, address, client name and short name.
