@@ -139,6 +139,11 @@ final class RequestAssigneesController extends ControllerBase {
       if (!$user instanceof UserInterface) {
         continue;
       }
+      // API accounts are integration credentials, not case workers. An
+      // existing API assignee still shows as the current assignee.
+      if (array_intersect($user->getRoles(), ['api_user', 'api_editor']) !== []) {
+        continue;
+      }
       $uid = (int) $user->id();
       if (isset($candidates[$uid]) && $candidates[$uid]['scope'] === 'org') {
         continue;

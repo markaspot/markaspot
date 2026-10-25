@@ -3130,7 +3130,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Personal assignment defaults on and can be disabled independently.
+   * Personal assignment defaults off and can be switched on independently.
    */
   public function testPersonalAssignmentFeatureRoundTrip(): void {
     $storedNuxtConfig = json_encode(['features' => []]);
@@ -3142,7 +3142,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $getData = json_decode($getResponse->getContent(), TRUE);
 
     $this->assertEquals(200, $getResponse->getStatusCode());
-    $this->assertTrue($getData['features']['personalAssignment']);
+    $this->assertFalse($getData['features']['personalAssignment']);
 
     $patchRequest = Request::create(
       '/api/tenant/14/features',
@@ -3151,15 +3151,15 @@ class TenantSettingsControllerTest extends UnitTestCase {
       [],
       [],
       ['CONTENT_TYPE' => 'application/json'],
-      json_encode(['personalAssignment' => FALSE])
+      json_encode(['personalAssignment' => TRUE])
     );
     $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
     $patchData = json_decode($patchResponse->getContent(), TRUE);
     $updatedConfig = json_decode($storedNuxtConfig, TRUE);
 
     $this->assertEquals(200, $patchResponse->getStatusCode());
-    $this->assertFalse($patchData['features']['personalAssignment']);
-    $this->assertFalse($updatedConfig['features']['personalAssignment']);
+    $this->assertTrue($patchData['features']['personalAssignment']);
+    $this->assertTrue($updatedConfig['features']['personalAssignment']);
   }
 
   /**

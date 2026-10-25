@@ -82,7 +82,9 @@ class FeatureScopeResolver {
     'aiProcessing' => FALSE,
     'operationsDashboard' => FALSE,
     'assignmentSyncsOrganisation' => FALSE,
-    'personalAssignment' => TRUE,
+    // Opt-in per tenant: person assignment is off until a tenant switches it
+    // on in the dashboard features settings.
+    'personalAssignment' => FALSE,
     'delegationNoteRequired' => FALSE,
     'dashboard' => TRUE,
     // Conservative constant; the effective default is operating-mode aware

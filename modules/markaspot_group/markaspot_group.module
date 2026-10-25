@@ -3602,7 +3602,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   // invariant for programmatic and internal saves that skip validation.
   _markaspot_group_enforce_single_organisation_assignment($node);
 
-  // The tenant opt-out also applies to internal writers that skip validation.
+  // The tenant opt-in also applies to internal writers that skip validation.
   // Existing assignments remain readable and can be cleared or replaced by a
   // team without enabling new personal assignments.
   if ($node->hasField('field_assignee')
@@ -4285,6 +4285,12 @@ function _markaspot_group_prepare_assigned_team_notification(NodeInterface $node
 function _markaspot_group_assignment_syncs_organisation(NodeInterface $node): bool {
   $jurisdiction = _markaspot_group_case_assignment_jurisdiction_group($node);
   if (!$jurisdiction instanceof GroupInterface) {
+    return FALSE;
+  }
+
+  // The sync follows a person assignment, so it has no effect while the
+  // tenant has not switched personal assignment on.
+  if (!_markaspot_group_personal_assignment_enabled_for_jurisdiction($jurisdiction)) {
     return FALSE;
   }
 
@@ -6399,7 +6405,7 @@ function _markaspot_group_case_assignment_enabled_for_node(NodeInterface $node):
 }
 
 /**
- * Checks the tenant-root personal assignment opt-out and edition capability.
+ * Checks the tenant-root personal assignment opt-in and edition capability.
  */
 function _markaspot_group_personal_assignment_enabled(NodeInterface $node): bool {
   return _markaspot_group_personal_assignment_enabled_for_jurisdiction(
@@ -6446,9 +6452,10 @@ function _markaspot_group_personal_assignment_enabled_for_jurisdiction(?GroupInt
   }
   $config = $root->hasField('field_nuxt_config') && !$root->get('field_nuxt_config')->isEmpty()
     ? json_decode((string) $root->get('field_nuxt_config')->value, TRUE) : [];
+  // Opt-in: only an explicit TRUE enables personal assignment.
   return _markaspot_group_read_boolean_feature_flag(
     $config['features']['personalAssignment'] ?? NULL,
-    TRUE,
+    FALSE,
   );
 }
 

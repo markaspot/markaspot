@@ -12,7 +12,7 @@ final class TenantRuntimeConfiguration {
   public const FEATURES = [
     'aiAnalysis', 'aiProcessing', 'operationsDashboard', 'statistics', 'photoReporting',
     'classicReporting', 'dashboard', 'feedback', 'aiDuplicates',
-    'piiRedaction', 'privacyBlockOnFlag', 'moderation',
+    'piiRedaction', 'privacyBlockOnFlag', 'moderation', 'personalAssignment',
   ];
 
   public const LANGUAGES = [
@@ -182,6 +182,11 @@ final class TenantRuntimeConfiguration {
     }
     if (isset($tenant['features']['unifiedReporting'])) {
       $patch['features']['unifiedReporting'] = $tenant['features']['unifiedReporting'];
+    }
+    // Personal assignment is opt-in. Seeds write the off state explicitly so
+    // it is visible in the data; explicit input and a stored decision win.
+    if (!isset($patch['features']['personalAssignment']) && !isset($existing['features']['personalAssignment'])) {
+      $patch['features']['personalAssignment'] = FALSE;
     }
     foreach (['label' => 'name', 'short_name' => 'shortName'] as $key => $target) {
       if (!empty($tenant[$key])) {

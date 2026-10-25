@@ -925,6 +925,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->assertArrayNotHasKey('enabled', $features['formFirst']);
     $this->assertTrue($features['photoReporting']);
     $this->assertFalse($features['classicReporting']);
+    // Opt-in feature, written explicitly so the off state is in the data.
+    $this->assertArrayHasKey('personalAssignment', $features);
+    $this->assertFalse($features['personalAssignment']);
 
     if ($wording === 'report') {
       $this->assertArrayNotHasKey('i18n', $nuxtConfig);

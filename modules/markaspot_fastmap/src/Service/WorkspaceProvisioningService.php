@@ -1874,6 +1874,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         // Required for /auth/login: TenantSettingsController reads strict
         // `$features['passwordless'] ?? FALSE`, missing key → 302 to /.
         'passwordless' => TRUE,
+        // Opt-in: written explicitly so the off state is visible in the data.
+        'personalAssignment' => FALSE,
       ],
       // Per-field overrides. Keep field_gdpr.required OFF for self-service
       // tenants: enabling it would force every citizen report to carry a

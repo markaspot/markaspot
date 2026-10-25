@@ -288,6 +288,11 @@ final class TenantDemoContent {
       $values['field_organisation'][] = ['target_id' => reset($matches)->id()];
     }
     if (!empty($row['assignee_email'])) {
+      // Fail during planning: the save guard would otherwise abort the apply
+      // run after the started marker is set.
+      if (!_markaspot_group_personal_assignment_enabled_for_jurisdiction($jur)) {
+        throw new \RuntimeException('assignee_email requires personal assignment to be enabled for the workspace.');
+      }
       $values['field_assignee'] = $this->account($row['assignee_email'], $jur)->id();
     }
     if (!empty($row['internal_status'])) {

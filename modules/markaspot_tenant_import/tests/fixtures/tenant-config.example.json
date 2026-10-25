@@ -26,7 +26,8 @@
     "features": {
       "aiAnalysis": true,
       "publicReports": true,
-      "statistics": true
+      "statistics": true,
+      "personalAssignment": false
     }
   },
   "organisations": [
