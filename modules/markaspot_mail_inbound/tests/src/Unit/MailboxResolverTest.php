@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail_inbound\Unit;
 
+use Drupal\Core\Config\Config;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\StorageInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
+use Drupal\Core\Site\Settings;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Drupal\markaspot_mail_inbound\Dto\InboundMessage;
 use Drupal\markaspot_mail_inbound\Service\MailboxResolver;
 use Drupal\Tests\UnitTestCase;
@@ -17,6 +23,14 @@ use Drupal\Tests\UnitTestCase;
 class MailboxResolverTest extends UnitTestCase {
 
   /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    new Settings([]);
+  }
+
+  /**
    * Builds a resolver backed by the given settings array.
    */
   protected function createResolver(array $settings): MailboxResolver {
@@ -24,6 +38,60 @@ class MailboxResolverTest extends UnitTestCase {
       MailboxResolver::CONFIG_NAME => $settings,
     ]);
     return new MailboxResolver($configFactory);
+  }
+
+  /**
+   * @covers ::getMailboxes
+   * @covers ::getMailbox
+   * @covers ::resolveForMessage
+   */
+  public function testRuntimeMailboxesExcludeClonedProductionConfiguration(): void {
+    $saved = Settings::getAll();
+    try {
+      $config = new Config(self::class,
+        $this->createMock(StorageInterface::class),
+        $this->createMock(EventDispatcherInterface::class),
+        $this->createMock(TypedConfigManagerInterface::class),
+      );
+      $production = [
+        ['id' => 'production_one', 'enabled' => TRUE, 'imap' => ['host' => 'real.example', 'password' => 'old-secret']],
+        ['id' => 'production_two', 'enabled' => TRUE,
+          'imap' => ['host' => 'other.example', 'password' => 'other-secret'],
+        ],
+      ];
+      $config->initWithData(['mailboxes' => $production]);
+      // Real Drupal merging preserves extra numeric keys for an array override.
+      $config->setSettingsOverride(['mailboxes' => [['id' => 'cp2_test']]]);
+      $this->assertCount(2, $config->get('mailboxes'));
+      // A scalar mask is also fail-closed for older resolver versions.
+      $config->setSettingsOverride(['mailboxes' => FALSE]);
+      $this->assertFalse($config->get('mailboxes'));
+      $factory = $this->createMock(ConfigFactoryInterface::class);
+      $factory->method('get')->willReturn($config);
+      $resolver = new MailboxResolver($factory);
+      $test = ['id' => 'cp2_test', 'enabled' => TRUE,
+        'imap' => ['host' => 'mail-inbound', 'password' => 'test-secret'],
+        'recipient_addresses' => ['town@test.mark-a-spot.com'],
+        'sender_allowlist' => ['tester@example.org'],
+        'jurisdiction_gid' => 7,
+      ];
+      new Settings(array_replace($saved, ['markaspot_mail_inbound_mailboxes' => [$test]]));
+      $mailboxes = $resolver->getMailboxes();
+      $this->assertCount(1, $mailboxes);
+      $this->assertSame('mail-inbound', $mailboxes[0]['imap']['host']);
+      $this->assertSame(['tester@example.org'], $mailboxes[0]['sender_allowlist']);
+      $this->assertNull($resolver->getMailbox('production_two'));
+      $this->assertNull($resolver->resolveForMessage($this->createMessage(['real@example.org'])));
+      $this->assertSame('cp2_test', $resolver->resolveForMessage($this->createMessage(['town@test.mark-a-spot.com']))['id']);
+      foreach ([[], FALSE, 'malformed'] as $disabled) {
+        new Settings(array_replace($saved, ['markaspot_mail_inbound_mailboxes' => $disabled]));
+        $this->assertSame([], $resolver->getMailboxes());
+      }
+      $this->assertSame($production, $config->getRawData()['mailboxes']);
+    }
+    finally {
+      new Settings($saved);
+    }
   }
 
   /**
