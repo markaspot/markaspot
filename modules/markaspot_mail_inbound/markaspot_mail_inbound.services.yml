@@ -147,6 +147,7 @@ services:
       - '@markaspot_mail_inbound.category_repository'
       - '@logger.channel.markaspot_mail_inbound'
       - '@language_manager'
+      - '@lock'
       - '@?markaspot_vision.image_processing'
       - '@?markaspot_ai.client'
       - '@?markaspot_ai.token_tracking'

@@ -69,6 +69,11 @@ class InboundMailPromoter {
   protected const LOCK_TIMEOUT = 120.0;
 
   /**
+   * Prefix of the per-mail promotion lock name.
+   */
+  public const LOCK_NAME_PREFIX = 'markaspot_mail_inbound.promote.';
+
+  /**
    * Constructs an InboundMailPromoter.
    */
   public function __construct(
@@ -138,7 +143,7 @@ class InboundMailPromoter {
       throw new \RuntimeException('Cannot promote inbound mail: the markaspot_open311 processor is not available.');
     }
 
-    $lockName = 'markaspot_mail_inbound.promote.' . $mail->id();
+    $lockName = self::lockName((int) $mail->id());
     if (!$this->lock->acquire($lockName, self::LOCK_TIMEOUT)) {
       throw new PromotionConflictException(PromotionConflictException::IN_PROGRESS, sprintf('Inbound mail %s is being promoted by another request.', $mail->id()));
     }
@@ -156,6 +161,16 @@ class InboundMailPromoter {
     finally {
       $this->lock->release($lockName);
     }
+  }
+
+  /**
+   * The promotion lock name of one mail.
+   *
+   * Every writer that must not race a promotion (the promoter itself, the AI
+   * suggestion service) takes this lock before it saves the mail.
+   */
+  public static function lockName(int $mailId): string {
+    return self::LOCK_NAME_PREFIX . $mailId;
   }
 
   /**

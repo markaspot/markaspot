@@ -129,8 +129,9 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
       return;
     }
 
-    // Run the suggestion. This updates suggestion_status and the related fields
-    // directly on the entity and saves it.
+    // Run the suggestion. It writes suggestion_status and the related fields
+    // onto the stored mail under the promotion lock, never this copy; a mail
+    // promoted meanwhile keeps its state and gets no suggestion.
     try {
       $this->suggestionService->suggest($mail);
     }
@@ -142,7 +143,7 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
       throw $e;
     }
 
-    // Re-load to pick up the saved state (suggest() may have saved internally).
+    // Re-load to pick up the stored suggestion.
     /** @var \Drupal\markaspot_mail_inbound\Entity\InboundMail|null $mail */
     $mail = $this->entityTypeManager->getStorage('inbound_mail')->load($mailId);
     if ($mail === NULL || $mail->getSuggestionStatus() !== InboundMail::SUGGESTION_DONE) {

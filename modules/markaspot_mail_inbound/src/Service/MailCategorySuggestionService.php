@@ -7,6 +7,7 @@ namespace Drupal\markaspot_mail_inbound\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
@@ -34,6 +35,13 @@ use Drupal\markaspot_mail_inbound\Entity\InboundMail;
  * install, text classification is skipped (suggestion_status = skipped) with a
  * log notice. This is a supported degradation path; a text-only install that
  * wants AI category suggestions must install markaspot_vision.
+ *
+ * Persistence: the AI call is slow, and staff (or another worker) may promote
+ * the mail meanwhile. The mail object the caller loaded before the call is
+ * therefore never saved. Results are written under the promotion lock onto
+ * a freshly loaded copy, and only the suggestion fields are set, so a save
+ * here can never restore state=staged or clear nid/attachments after a
+ * promotion. A mail that is no longer staged gets no suggestion.
  *
  * PII policy: only metadata (mail id, jurisdiction id, suggestion status) is
  * written to logs. Mail subject, body and sender are never logged by this
@@ -68,6 +76,16 @@ class MailCategorySuggestionService {
   private const MAX_DESCRIPTION_LENGTH = 2000;
 
   /**
+   * Lock timeout in seconds for persisting a suggestion (a load and a save).
+   */
+  private const PERSIST_LOCK_TIMEOUT = 10.0;
+
+  /**
+   * Seconds to wait once for a promotion that holds the lock.
+   */
+  private const PERSIST_LOCK_WAIT = 3;
+
+  /**
    * Constructs the suggestion service.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -82,6 +100,8 @@ class MailCategorySuggestionService {
    *   Logger channel.
    * @param \Drupal\Core\Language\LanguageManagerInterface $languageManager
    *   Language manager for resolving the site default langcode.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   Lock backend; suggestions are persisted under the promotion lock.
    * @param object|null $imageProcessingService
    *   Optional markaspot_vision.image_processing service (@?). Also used as
    *   the category provider for text classification (duck-typed via
@@ -100,6 +120,7 @@ class MailCategorySuggestionService {
     protected PromotableCategoryRepository $categoryRepository,
     protected LoggerChannelInterface $logger,
     protected LanguageManagerInterface $languageManager,
+    protected LockBackendInterface $lock,
     protected ?object $imageProcessingService = NULL,
     protected ?object $aiClient = NULL,
     protected ?object $tokenTracking = NULL,
@@ -125,9 +146,9 @@ class MailCategorySuggestionService {
    * Attempts to suggest a category for the given staged mail.
    *
    * Stores the result (suggested_category, suggestion_confidence,
-   * suggestion_status, suggested_address, suggested_description) on the mail
-   * entity and saves it. Callers must not rely on any return value; the state
-   * lives on the entity.
+   * suggestion_status, suggested_address, suggested_description) on the
+   * stored mail; see persistSuggestion(). Callers must not rely on any return
+   * value; the state lives in storage. The passed object is only read.
    *
    * @param \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail
    *   The staged inbound mail.
@@ -254,13 +275,17 @@ class MailCategorySuggestionService {
         : NULL;
 
       // Vision path: no numeric confidence available; store NULL.
-      $mail->setSuggestedCategoryTid($tid);
-      $mail->setSuggestionConfidence(NULL);
-      if ($suggestedDescription !== NULL) {
-        $mail->setSuggestedDescription($suggestedDescription);
+      $stored = $this->persistSuggestion($mail, static function (InboundMail $fresh) use ($tid, $suggestedDescription): void {
+        $fresh->setSuggestedCategoryTid($tid);
+        $fresh->setSuggestionConfidence(NULL);
+        if ($suggestedDescription !== NULL) {
+          $fresh->setSuggestedDescription($suggestedDescription);
+        }
+        $fresh->setSuggestionStatus(InboundMail::SUGGESTION_DONE);
+      });
+      if (!$stored) {
+        return;
       }
-      $mail->setSuggestionStatus(InboundMail::SUGGESTION_DONE);
-      $mail->save();
 
       $this->logger->info('Vision suggestion done for mail @id: tid @tid.', [
         '@id' => $mailId,
@@ -402,14 +427,18 @@ class MailCategorySuggestionService {
         ? $this->sanitizeDescription($verdict->summary)
         : NULL;
 
-      $mail->setSuggestedCategoryTid($tid);
-      $mail->setSuggestionConfidence($confidence);
-      $mail->setSuggestedAddress($address);
-      if ($suggestedDescription !== NULL) {
-        $mail->setSuggestedDescription($suggestedDescription);
+      $stored = $this->persistSuggestion($mail, static function (InboundMail $fresh) use ($tid, $confidence, $address, $suggestedDescription): void {
+        $fresh->setSuggestedCategoryTid($tid);
+        $fresh->setSuggestionConfidence($confidence);
+        $fresh->setSuggestedAddress($address);
+        if ($suggestedDescription !== NULL) {
+          $fresh->setSuggestedDescription($suggestedDescription);
+        }
+        $fresh->setSuggestionStatus(InboundMail::SUGGESTION_DONE);
+      });
+      if (!$stored) {
+        return;
       }
-      $mail->setSuggestionStatus(InboundMail::SUGGESTION_DONE);
-      $mail->save();
 
       $this->logger->info('Text suggestion done for mail @id: tid @tid, confidence @conf.', [
         '@id' => $mailId,
@@ -749,13 +778,70 @@ class MailCategorySuggestionService {
   }
 
   /**
-   * Sets only the suggestion_status and saves the entity.
+   * Stores only the suggestion_status.
    *
    * Used for gate-miss paths (skipped/failed) without setting other fields.
    */
   protected function setStatus(InboundMail $mail, string $status): void {
-    $mail->setSuggestionStatus($status);
-    $mail->save();
+    $this->persistSuggestion($mail, static function (InboundMail $fresh) use ($status): void {
+      $fresh->setSuggestionStatus($status);
+    });
+  }
+
+  /**
+   * Writes suggestion fields onto the stored mail under the promotion lock.
+   *
+   * The caller's object was loaded before the slow AI call; saving it would
+   * write back every field, so a promotion that finished meanwhile would be
+   * undone (state=staged again, nid and attachments restored) and the
+   * auto-promote worker would create a second report. Instead the mail is
+   * reloaded inside the promoter's lock and $apply sets the suggestion fields
+   * (suggested_category, suggestion_confidence, suggestion_status,
+   * suggested_address, suggested_description) on that copy; state, nid and
+   * attachments are never touched here.
+   *
+   * When a promotion holds the lock, this waits once for a few seconds and
+   * then gives up without saving: the mail is almost certainly promoted by
+   * then. A mail that is no longer staged is not written either.
+   *
+   * @param \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail
+   *   The mail the suggestion was computed for; only its id is used.
+   * @param callable(\Drupal\markaspot_mail_inbound\Entity\InboundMail): void $apply
+   *   Sets the suggestion fields on the freshly loaded mail.
+   *
+   * @return bool
+   *   TRUE when the suggestion was saved.
+   */
+  protected function persistSuggestion(InboundMail $mail, callable $apply): bool {
+    $mailId = (int) $mail->id();
+    $lockName = InboundMailPromoter::lockName($mailId);
+    if (!$this->lock->acquire($lockName, self::PERSIST_LOCK_TIMEOUT)) {
+      $this->lock->wait($lockName, self::PERSIST_LOCK_WAIT);
+      if (!$this->lock->acquire($lockName, self::PERSIST_LOCK_TIMEOUT)) {
+        $this->logger->warning('AI suggestion for mail @id not stored: the mail is locked by a promotion.', ['@id' => $mailId]);
+        return FALSE;
+      }
+    }
+    try {
+      $fresh = $this->entityTypeManager->getStorage('inbound_mail')->loadUnchanged($mailId);
+      if (!$fresh instanceof InboundMail) {
+        $this->logger->info('AI suggestion for mail @id not stored: the mail no longer exists.', ['@id' => $mailId]);
+        return FALSE;
+      }
+      if ($fresh->getState() !== InboundMail::STATE_STAGED) {
+        $this->logger->info('AI suggestion for mail @id not stored: the mail is @state, not staged.', [
+          '@id' => $mailId,
+          '@state' => $fresh->getState(),
+        ]);
+        return FALSE;
+      }
+      $apply($fresh);
+      $fresh->save();
+      return TRUE;
+    }
+    finally {
+      $this->lock->release($lockName);
+    }
   }
 
 }
