@@ -31,7 +31,10 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * Gated by the markaspot_mail_inbound.settings:auto_reply_missing_location
  * flag (default TRUE) and degrades silently when outbound mail is
  * unavailable (the reply service records the text on the conversation log
- * either way). The reply goes only to the mail's verified sender; the text
+ * either way). Only automatic promotions send it: when staff promotes by
+ * hand, staff completes the location in moderation and the citizen is not
+ * asked (product decision, 2026-10-25). The reply goes only to the mail's
+ * verified sender; the text
  * is a fixed translatable template — the boilerplate/ECA-configurable
  * variant is a later phase.
  */
@@ -65,6 +68,9 @@ class MissingLocationAutoReplySubscriber implements EventSubscriberInterface {
    */
   public function onRequestCreated(InboundRequestCreatedEvent $event): void {
     try {
+      if ($event->isStaffInitiated()) {
+        return;
+      }
       if (!$this->configFactory->get(MailboxResolver::CONFIG_NAME)->get('auto_reply_missing_location')) {
         return;
       }

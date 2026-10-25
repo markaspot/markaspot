@@ -481,12 +481,18 @@ class InboundMailReturnChannelKernelTest extends KernelTestBase {
     $this->assertSame('All', $mails[0]['headers']['X-Auto-Response-Suppress']);
     $this->assertSame('bulk', $mails[0]['headers']['Precedence']);
 
-    // 2. A geolocated promotion never triggers the auto-reply.
+    // 2. A staff promotion never triggers it: staff completes the location
+    // in moderation. The default (worker, legacy callers) sends, see 1.
+    [, $staffNode] = $this->promotedPair();
+    $dispatcher->dispatch($this->event($staffNode, TRUE), InboundRequestCreatedEvent::EVENT_NAME);
+    $this->assertCount(1, $this->collectedMails(), 'No auto-reply for a staff-initiated promotion.');
+
+    // 3. A geolocated promotion never triggers the auto-reply.
     [, $locatedNode] = $this->promotedPair('51.5,7.4');
     $dispatcher->dispatch($this->event($locatedNode), InboundRequestCreatedEvent::EVENT_NAME);
     $this->assertCount(1, $this->collectedMails(), 'No additional mail for a located report.');
 
-    // 3. The settings flag turns the auto-reply off entirely.
+    // 4. The settings flag turns the auto-reply off entirely.
     $this->config('markaspot_mail_inbound.settings')->set('auto_reply_missing_location', FALSE)->save();
     [, $gatedNode] = $this->promotedPair();
     $dispatcher->dispatch($this->event($gatedNode), InboundRequestCreatedEvent::EVENT_NAME);
@@ -511,7 +517,7 @@ class InboundMailReturnChannelKernelTest extends KernelTestBase {
   /**
    * Builds the request-created event for a node.
    */
-  protected function event(NodeInterface $node): InboundRequestCreatedEvent {
+  protected function event(NodeInterface $node, bool $staffInitiated = FALSE): InboundRequestCreatedEvent {
     $message = new InboundMessage(
       fromAddress: 'citizen@example.org',
       fromName: 'Citizen',
@@ -525,7 +531,7 @@ class InboundMailReturnChannelKernelTest extends KernelTestBase {
       date: NULL,
       attachments: [],
     );
-    return new InboundRequestCreatedEvent($node, $message);
+    return new InboundRequestCreatedEvent($node, $message, $staffInitiated);
   }
 
   /**

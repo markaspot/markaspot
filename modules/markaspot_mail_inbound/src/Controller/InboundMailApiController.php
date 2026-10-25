@@ -387,7 +387,8 @@ class InboundMailApiController extends ControllerBase {
    *
    * The two flags only count when they are JSON booleans; anything else
    * keeps the default. Coordinates must be JSON numbers (no strings), finite
-   * and in range.
+   * and in range. Every promotion through this endpoint is staff-initiated,
+   * so the citizen gets no missing-location auto-reply.
    *
    * @param array<string, mixed> $payload
    *   The decoded request body.
@@ -401,11 +402,11 @@ class InboundMailApiController extends ControllerBase {
 
     // array_key_exists, not isset: an explicit null is its own mode.
     if (!array_key_exists('location', $payload)) {
-      return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress);
+      return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, staffInitiated: TRUE);
     }
     $location = $payload['location'];
     if ($location === NULL) {
-      return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, PromoteOptions::LOCATION_NONE);
+      return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, PromoteOptions::LOCATION_NONE, staffInitiated: TRUE);
     }
     if (!is_array($location)) {
       return NULL;
@@ -418,7 +419,7 @@ class InboundMailApiController extends ControllerBase {
     if (!PromoteOptions::isValidCoordinate((float) $lat, (float) $lng)) {
       return NULL;
     }
-    return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, PromoteOptions::LOCATION_CONFIRMED, (float) $lat, (float) $lng);
+    return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, PromoteOptions::LOCATION_CONFIRMED, (float) $lat, (float) $lng, staffInitiated: TRUE);
   }
 
   /**

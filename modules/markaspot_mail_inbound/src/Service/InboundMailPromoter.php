@@ -382,7 +382,7 @@ class InboundMailPromoter {
 
     // Dispatch the existing created event (auto-reply, staff notify, etc.).
     $this->eventDispatcher->dispatch(
-      new InboundRequestCreatedEvent($node, $this->mailToMessage($mail)),
+      new InboundRequestCreatedEvent($node, $this->mailToMessage($mail), $options->staffInitiated),
       InboundRequestCreatedEvent::EVENT_NAME
     );
 

@@ -15,6 +15,7 @@ use Drupal\markaspot_mail_inbound\Controller\InboundMailApiController;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\InboundMailReplyService;
+use Drupal\markaspot_mail_inbound\Service\PromoteOptions;
 use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
@@ -263,6 +264,27 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
    *   A hierarchy resolver double (markaspot_group is not installed here).
    */
   protected function controllerWithWorkingPromoter(?object $geocoder = NULL, ?object $hierarchyResolver = NULL): InboundMailApiController {
+    return new InboundMailApiController(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('current_user'),
+      $this->workingPromoter($geocoder, $hierarchyResolver),
+      $this->container->get('markaspot_mail_inbound.reply'),
+      $this->container->get('markaspot_mail_inbound.category_repository'),
+      $this->container->get('markaspot_mail_inbound.fidelity'),
+      $this->container->get('logger.factory')->get('markaspot_mail_inbound'),
+      $this->container->get('markaspot_group.jurisdiction_scope_validator'),
+    );
+  }
+
+  /**
+   * Builds a promoter wired to a processor double.
+   *
+   * @param object|null $geocoder
+   *   A geocoder double, or NULL for none.
+   * @param object|null $hierarchyResolver
+   *   A hierarchy resolver double (markaspot_group is not installed here).
+   */
+  protected function workingPromoter(?object $geocoder = NULL, ?object $hierarchyResolver = NULL): InboundMailPromoter {
     $statusTerm = Term::create(['vid' => 'service_category', 'name' => 'Open']);
     $statusTerm->save();
     $entityTypeManager = $this->container->get('entity_type.manager');
@@ -320,7 +342,7 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
 
     };
 
-    $promoter = new InboundMailPromoter(
+    return new InboundMailPromoter(
       $entityTypeManager,
       $this->container->get('module_handler'),
       $this->container->get('event_dispatcher'),
@@ -336,17 +358,6 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
       $this->container->get('language_manager'),
       $this->container->get('markaspot_validation.boundary_validator'),
       $hierarchyResolver,
-    );
-
-    return new InboundMailApiController(
-      $entityTypeManager,
-      $this->container->get('current_user'),
-      $promoter,
-      $this->container->get('markaspot_mail_inbound.reply'),
-      $this->container->get('markaspot_mail_inbound.category_repository'),
-      $this->container->get('markaspot_mail_inbound.fidelity'),
-      $this->container->get('logger.factory')->get('markaspot_mail_inbound'),
-      $this->container->get('markaspot_group.jurisdiction_scope_validator'),
     );
   }
 
@@ -722,7 +733,7 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertTrue($textOnly['address_text_applied']);
     $this->assertSame('Marktplatz 1, City A', $this->loadNode($textOnly['nid'])->get('field_address')->value);
     $this->assertSame([], $geocoder->queried);
-    $this->assertCount(1, $this->missingLocationReplies(), 'An ungeolocated report still asks the citizen for the location.');
+    $this->assertSame([], $this->missingLocationReplies(), 'A staff promotion never sends the missing-location auto-reply, even ungeolocated.');
 
     // Location key absent: the suggestion is the geocoding hint.
     $hinted = $this->json($controller->promote($this->mailWithSuggestions('Marktplatz 1, City A'), $this->postRequest([
@@ -767,6 +778,27 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertFalse($unticked['address_text_applied']);
     $this->assertTrue($this->loadNode($unticked['nid'])->get('field_address')->isEmpty());
     $this->assertCount(3, $geocoder->queried, 'Only the three auto-mode promotions geocoded, once each.');
+    $this->assertSame([], $this->missingLocationReplies(), 'No staff promotion asked the citizen for the location.');
+  }
+
+  /**
+   * The auto-promote worker's promotion still asks for a missing location.
+   *
+   * Same options as MailCategorySuggestionQueueWorker::maybeAutoPromote():
+   * the suggested address is used, the promotion is not staff-initiated.
+   */
+  public function testAutoPromotionStillSendsMissingLocationReply(): void {
+    $this->setBoundary($this->gidA);
+    $promoter = $this->workingPromoter($this->geocoder([
+      'Marktplatz 1, Elsewhere' => ['lat' => 48.1, 'lng' => 11.5],
+    ]));
+    $mail = $this->mailWithSuggestions('Marktplatz 1, Elsewhere');
+
+    $result = $promoter->promote($mail, $this->categoryTid, $mail->getSuggestedAddress(), new PromoteOptions(useSuggestedAddress: TRUE));
+
+    $this->assertTrue($result->node->get('field_geolocation')->isEmpty());
+    $this->assertSame('Marktplatz 1, Elsewhere', $result->node->get('field_address')->value);
+    $this->assertCount(1, $this->missingLocationReplies(), 'An automatic promotion without location asks the citizen for it.');
   }
 
   /**

@@ -12,6 +12,7 @@ use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
+use Drupal\markaspot_mail_inbound\Service\PromoteOptions;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -132,7 +133,9 @@ class InboundMailPromoteForm extends FormBase {
 
     $categoryTid = (int) $form_state->getValue('category_tid');
     try {
-      $node = $this->promoter->promoteToServiceRequest($mail, $categoryTid);
+      // A manual promotion: staff completes a missing location in
+      // moderation, the citizen gets no missing-location auto-reply.
+      $node = $this->promoter->promoteToServiceRequest($mail, $categoryTid, NULL, new PromoteOptions(staffInitiated: TRUE));
       $this->messenger()->addStatus($this->t('Promoted to service request @nid (unpublished, awaiting moderation).', ['@nid' => $node->id()]));
     }
     catch (PromotionConflictException) {

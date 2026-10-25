@@ -11,7 +11,8 @@ namespace Drupal\markaspot_mail_inbound\Service;
  * admin promote form and the auto-promote worker are unaffected:
  * - the AI summary becomes the description when one is stored,
  * - the suggested address is not used (the worker passes it as a hint),
- * - the location is geocoded server side (hint, then the regex scan).
+ * - the location is geocoded server side (hint, then the regex scan),
+ * - the promotion counts as automatic (missing-location auto-reply is sent).
  *
  * Location modes:
  * - auto: server-side geocoding as described above, boundary-checked.
@@ -50,6 +51,10 @@ final class PromoteOptions {
    *   Latitude, required in confirmed mode.
    * @param float|null $lng
    *   Longitude, required in confirmed mode.
+   * @param bool $staffInitiated
+   *   TRUE when staff promoted by hand (dashboard API, admin form). Staff
+   *   completes the location in moderation, so the citizen gets no
+   *   missing-location auto-reply; the auto-promote worker leaves it FALSE.
    *
    * @throws \InvalidArgumentException
    *   On an unknown mode, or confirmed mode without valid coordinates.
@@ -60,6 +65,7 @@ final class PromoteOptions {
     public readonly string $locationMode = self::LOCATION_AUTO,
     public readonly ?float $lat = NULL,
     public readonly ?float $lng = NULL,
+    public readonly bool $staffInitiated = FALSE,
   ) {
     if (!in_array($locationMode, [self::LOCATION_AUTO, self::LOCATION_CONFIRMED, self::LOCATION_NONE], TRUE)) {
       throw new \InvalidArgumentException(sprintf('Unknown location mode "%s".', $locationMode));
