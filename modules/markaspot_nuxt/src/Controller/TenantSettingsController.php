@@ -2438,7 +2438,9 @@ final class TenantSettingsController extends ControllerBase {
           'lockPhotoLocation' => $this->getBooleanFeatureValue($forms, 'lockPhotoLocation', FALSE),
         ],
         'unifiedReporting' => $this->normalizeUnifiedReporting($features['unifiedReporting'] ?? NULL),
-        'photoRequiredCategories' => $this->normalizeCategoryIds($features['photoRequiredCategories'] ?? NULL) ?? [],
+        // Lenient on read: a single malformed stored entry must not empty the
+        // picker, or the next save would drop every valid category.
+        'photoRequiredCategories' => FeatureScopeResolver::readCategoryIdList($features['photoRequiredCategories'] ?? NULL),
       ],
       'capabilities' => [
         'caseAssignment' => $this->canUseCaseAssignment($group),

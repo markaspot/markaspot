@@ -147,7 +147,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $stored = $this->createGroup(1, [
       'field_nuxt_config' => json_encode(['features' => [
         'unifiedReporting' => $unified,
-        'photoRequiredCategories' => [12, 7],
+        'photoRequiredCategories' => [12, '7', 'x', 0],
         'forms' => ['lockPhotoLocation' => TRUE],
       ]]),
     ]);
@@ -159,7 +159,7 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $resolver = $this->createResolver($stored);
     $features = $resolver->resolveEffectiveFeatures($stored);
     $this->assertSame($unified, $features['unifiedReporting']);
-    $this->assertSame([12, 7], $features['photoRequiredCategories']);
+    $this->assertSame([7, 12], $features['photoRequiredCategories']);
     $this->assertTrue($features['forms']['lockPhotoLocation']);
     $this->assertFalse($features['forms']['allowParentCategorySelection']);
     foreach (['unifiedReporting', 'photoRequiredCategories', 'forms.lockPhotoLocation'] as $key) {

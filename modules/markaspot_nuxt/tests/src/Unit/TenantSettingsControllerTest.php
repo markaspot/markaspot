@@ -3247,7 +3247,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
           'photoPolicy' => 'required_by_category',
           'cta' => ['heading' => 'x'],
         ],
-        'photoRequiredCategories' => ['12', 7, 12],
+        'photoRequiredCategories' => ['12', 7, 12, 'abc', 0, -3, 2.5],
         'forms' => ['lockPhotoLocation' => TRUE],
       ]]),
     ]);

@@ -220,6 +220,12 @@ class FeatureScopeResolver {
       }
     }
 
+    // Citizen forms compare category IDs strictly as numbers; stored lists may
+    // carry integer strings from hand-edited configs.
+    if (array_key_exists('photoRequiredCategories', $features)) {
+      $features['photoRequiredCategories'] = self::readCategoryIdList($features['photoRequiredCategories']);
+    }
+
     // Hard platform gate, applied last so no stored root or child opt-in can
     // resurrect an enterprise-only feature on the shared platform.
     if ($this->excludesEnterpriseFeatures()) {
@@ -647,6 +653,36 @@ class FeatureScopeResolver {
       return;
     }
     $features[$key] = $value;
+  }
+
+  /**
+   * Reads a stored category ID list leniently.
+   *
+   * Keeps positive integers and integer strings of up to 18 digits, drops
+   * everything else, and returns unique IDs in ascending order. Reading never
+   * fails: a single malformed entry must not hide the valid ones.
+   *
+   * @param mixed $value
+   *   The stored value.
+   *
+   * @return int[]
+   *   The valid category IDs.
+   */
+  public static function readCategoryIdList(mixed $value): array {
+    if (!is_array($value)) {
+      return [];
+    }
+    $ids = [];
+    foreach ($value as $id) {
+      if (is_string($id) && preg_match('/^[1-9][0-9]{0,17}$/', $id)) {
+        $id = (int) $id;
+      }
+      if (is_int($id) && $id > 0) {
+        $ids[$id] = $id;
+      }
+    }
+    sort($ids);
+    return array_values($ids);
   }
 
   /**
