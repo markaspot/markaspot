@@ -1,3 +1,29 @@
+markaspot_stats.annual:
+  path: '/stats/annual'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\AnnualStatsController::getStats'
+    _format: 'json'
+  methods: [GET]
+  requirements:
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
+  options:
+    _feature_flag: 'features.statistics'
+    _feature_flag_default: false
+    no_cache: TRUE
+
+markaspot_stats.api_annual:
+  path: '/api/stats/annual'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\AnnualStatsController::getStats'
+    _format: 'json'
+  methods: [GET]
+  requirements:
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
+  options:
+    _feature_flag: 'features.statistics'
+    _feature_flag_default: false
+    no_cache: TRUE
+
 markaspot_stats.status:
   path: '/stats/status'
   defaults:
