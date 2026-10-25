@@ -40,6 +40,13 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
 
   /**
+   * Publication calls on created media, in order.
+   *
+   * @var string[]
+   */
+  protected array $publicationCalls = [];
+
+  /**
    * Builds a promoter whose media storage throws on selected file ids.
    *
    * @param array<int, \Drupal\file\FileInterface|null> $files
@@ -63,7 +70,14 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
         $media = $this->createMock(MediaInterface::class);
         $media->method('uuid')->willReturn('uuid-' . $fid);
         $media->method('setName')->willReturnSelf();
-        $media->method('setPublished')->willReturnSelf();
+        $media->method('setPublished')->willReturnCallback(function () use ($media) {
+          $this->publicationCalls[] = 'published';
+          return $media;
+        });
+        $media->method('setUnpublished')->willReturnCallback(function () use ($media) {
+          $this->publicationCalls[] = 'unpublished';
+          return $media;
+        });
         $media->method('id')->willReturn(1000 + $fid);
         if (in_array($fid, $throwOnFids, TRUE)) {
           $media->method('save')->willThrowException(new \RuntimeException('media save failed'));
@@ -170,6 +184,24 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
     $this->assertCount(1, $result['items']);
     $this->assertSame(1008, $result['items'][0]['target_id']);
     $this->assertSame(2, $mediaCreations, 'Both files were attempted.');
+  }
+
+  /**
+   * Attachment media stay unpublished until vision screening has run.
+   *
+   * @covers ::buildAttachmentMedia
+   */
+  public function testAttachmentMediaAreCreatedUnpublished(): void {
+    $mediaCreations = 0;
+    $promoter = $this->promoter(
+      [7 => $this->file(7), 8 => $this->file(8)],
+      throwOnFids: [],
+      mediaCreations: $mediaCreations,
+    );
+
+    $promoter->exposeBuildAttachmentMedia($this->mail([7, 8]), $this->node(TRUE));
+
+    $this->assertSame(['unpublished', 'unpublished'], $this->publicationCalls);
   }
 
   /**

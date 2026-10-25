@@ -792,8 +792,12 @@ class InboundMailPromoter {
               'uri' => $file->getFileUri(),
             ],
           ]);
+          // Unpublished until vision screening and blur have run: mail
+          // attachments skip the upload pipeline, and publishing the report
+          // must not expose an unscreened photo (blur is mandatory wherever
+          // we host). markaspot_vision publishes screened media.
           $media->setName('media:request_image:' . $media->uuid())
-            ->setPublished(TRUE)
+            ->setUnpublished()
             ->save();
           $values[] = [
             'target_id' => $media->id(),
