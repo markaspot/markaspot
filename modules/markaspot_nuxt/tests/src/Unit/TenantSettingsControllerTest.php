@@ -3367,6 +3367,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
       'categories object' => [['photoRequiredCategories' => ['a' => 1]]],
       'lock string' => [['forms' => ['lockPhotoLocation' => 'yes']]],
       'oversized category id' => [['photoRequiredCategories' => ['999999999999999999999999999999']]],
+      'id beyond the JS safe integer' => [['photoRequiredCategories' => ['9007199254740993']]],
+      'int beyond the JS safe integer' => [['photoRequiredCategories' => [9007199254740992]]],
     ];
   }
 

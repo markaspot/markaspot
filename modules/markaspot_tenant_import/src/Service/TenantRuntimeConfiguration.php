@@ -15,6 +15,16 @@ final class TenantRuntimeConfiguration {
     'piiRedaction', 'privacyBlockOnFlag', 'moderation', 'personalAssignment',
   ];
 
+  /**
+   * Mirrors TenantSettingsController::MAX_PHOTO_REQUIRED_CATEGORIES.
+   */
+  public const MAX_PHOTO_REQUIRED_CATEGORIES = 1000;
+
+  /**
+   * Mirrors FeatureScopeResolver::MAX_CATEGORY_ID (JS safe integer).
+   */
+  public const MAX_CATEGORY_ID = 9007199254740991;
+
   public const LANGUAGES = [
     'de', 'en', 'cs', 'de-ls', 'es', 'fr', 'hu', 'it', 'pt',
     'tr', 'pl', 'nl', 'da', 'sv', 'nb', 'fi', 'uk', 'ar',
@@ -77,9 +87,14 @@ final class TenantRuntimeConfiguration {
             continue;
           }
           if ($name === 'photoRequiredCategories') {
+            // Same bounds as the dashboard API, so an import never stores a
+            // list the dashboard cannot save again.
             if (!is_array($value) || !array_is_list($value)
-              || array_filter($value, static fn($id): bool => !is_int($id) || $id < 1) !== []) {
+              || array_filter($value, static fn($id): bool => !is_int($id) || $id < 1 || $id > self::MAX_CATEGORY_ID) !== []) {
               $errors[] = 'tenant.features.photoRequiredCategories must be a list of category term IDs.';
+            }
+            elseif (count(array_unique($value)) > self::MAX_PHOTO_REQUIRED_CATEGORIES) {
+              $errors[] = 'tenant.features.photoRequiredCategories lists more than ' . self::MAX_PHOTO_REQUIRED_CATEGORIES . ' categories.';
             }
             continue;
           }

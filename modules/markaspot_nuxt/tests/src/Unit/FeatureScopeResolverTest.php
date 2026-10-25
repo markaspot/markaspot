@@ -173,6 +173,37 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
+   * Category IDs stay within the range the dashboard can hold exactly.
+   */
+  public function testCategoryIdBounds(): void {
+    $this->assertSame(9007199254740991, FeatureScopeResolver::parseCategoryId('9007199254740991'));
+    $this->assertSame(9007199254740991, FeatureScopeResolver::parseCategoryId(9007199254740991));
+    $invalid_ids = ['9007199254740992', 9007199254740992, '0', 0, -1, '012', 'x', 1.0, NULL];
+    foreach ($invalid_ids as $invalid) {
+      $this->assertNull(FeatureScopeResolver::parseCategoryId($invalid), var_export($invalid, TRUE));
+    }
+    $this->assertSame(
+      [3, 9007199254740991],
+      FeatureScopeResolver::readCategoryIdList([9007199254740991, '9007199254740993', 3, '3']),
+    );
+  }
+
+  /**
+   * AI analysis is only offered where the vision module is installed.
+   */
+  public function testVisionModuleGate(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->willReturnCallback(static fn(string $module): bool => $module !== 'markaspot_vision');
+    $resolver = new FeatureScopeResolver(
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(ConfigFactoryInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $moduleHandler,
+    );
+    $this->assertFalse($resolver->hasVisionModule());
+  }
+
+  /**
    * Tests tenant object options come from the root, not stale child data.
    *
    * @covers ::resolveEffectiveFeatures

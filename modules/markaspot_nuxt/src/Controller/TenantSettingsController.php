@@ -699,12 +699,8 @@ final class TenantSettingsController extends ControllerBase {
     }
     $ids = [];
     foreach ($value as $id) {
-      // Up to 18 digits always fits a 64-bit integer; longer strings would
-      // saturate to PHP_INT_MAX and store a different ID.
-      if (is_string($id) && preg_match('/^[1-9][0-9]{0,17}$/', $id)) {
-        $id = (int) $id;
-      }
-      if (!is_int($id) || $id < 1) {
+      $id = FeatureScopeResolver::parseCategoryId($id);
+      if ($id === NULL) {
         return NULL;
       }
       $ids[$id] = $id;
@@ -2448,10 +2444,10 @@ final class TenantSettingsController extends ControllerBase {
         // re-deriving tier rules, so the settings switches can never diverge
         // from the backend enforcement (updateFeatureSettings scrubs the
         // flags to FALSE when not permitted). aiAnalysis is available in
-        // every tier (budget-capped, not gated); the key stays in the
-        // response for contract stability.
+        // every tier (budget-capped, not gated) but needs the vision module,
+        // which the public settings enforce the same way.
         'operationsDashboard' => $tier_capabilities['operationsDashboard'],
-        'aiAnalysis' => TRUE,
+        'aiAnalysis' => $this->featureScopeResolver->hasVisionModule(),
         'aiProcessing' => $tier_capabilities['aiProcessing'],
         // Edition gate: org-coupled toggles are hidden entirely where no
         // organisation groups exist (SaaS has no org management).

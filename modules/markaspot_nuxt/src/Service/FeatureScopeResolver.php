@@ -153,6 +153,11 @@ class FeatureScopeResolver {
   ];
 
   /**
+   * Largest category ID the dashboard can round-trip (JS safe integer).
+   */
+  public const MAX_CATEGORY_ID = 9007199254740991;
+
+  /**
    * Constructs a feature scope resolver.
    */
   public function __construct(
@@ -674,15 +679,40 @@ class FeatureScopeResolver {
     }
     $ids = [];
     foreach ($value as $id) {
-      if (is_string($id) && preg_match('/^[1-9][0-9]{0,17}$/', $id)) {
-        $id = (int) $id;
-      }
-      if (is_int($id) && $id > 0) {
+      $id = self::parseCategoryId($id);
+      if ($id !== NULL) {
         $ids[$id] = $id;
       }
     }
     sort($ids);
     return array_values($ids);
+  }
+
+  /**
+   * Parses one category ID.
+   *
+   * Accepts positive integers and integer strings up to MAX_CATEGORY_ID, the
+   * largest value the dashboard can hold without rounding.
+   *
+   * @param mixed $id
+   *   The raw value.
+   *
+   * @return int|null
+   *   The ID, or NULL when the value is not a valid category ID.
+   */
+  public static function parseCategoryId(mixed $id): ?int {
+    if (is_string($id) && preg_match('/^[1-9][0-9]{0,15}$/', $id)) {
+      $id = (int) $id;
+    }
+    return is_int($id) && $id > 0 && $id <= self::MAX_CATEGORY_ID ? $id : NULL;
+  }
+
+  /**
+   * Whether the vision module that powers AI photo analysis is installed.
+   */
+  public function hasVisionModule(): bool {
+    return $this->moduleHandler === NULL
+      || $this->moduleHandler->moduleExists('markaspot_vision');
   }
 
   /**

@@ -46,6 +46,9 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
     ]];
     $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
     $this->assertSame([], TenantRuntimeConfiguration::validate(['features' => ['forms' => ['allowParentCategorySelection' => FALSE]]]));
+    // The cap counts distinct IDs, like the dashboard API after normalising.
+    $at_cap = [...range(1, 999), 1, 9007199254740991];
+    $this->assertSame([], TenantRuntimeConfiguration::validate(['features' => ['photoRequiredCategories' => $at_cap]]));
     $merged = TenantRuntimeConfiguration::merge($existing, $tenant)['features'];
     $this->assertSame([43, 2], $merged['photoRequiredCategories']);
     $this->assertSame(['allowParentCategorySelection' => TRUE, 'lockPhotoLocation' => TRUE], $merged['forms']);
@@ -56,6 +59,8 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
       ['forms' => ['lockPhotoLocation' => 'yes']],
       ['forms' => ['allowParentCategorySelection' => 'yes']],
       ['forms' => ['unknownFlag' => TRUE]],
+      ['photoRequiredCategories' => [9007199254740992]],
+      ['photoRequiredCategories' => range(1, 1001)],
     ] as $invalid) {
       $this->assertNotEmpty(TenantRuntimeConfiguration::validate(['features' => $invalid]), json_encode($invalid));
     }
