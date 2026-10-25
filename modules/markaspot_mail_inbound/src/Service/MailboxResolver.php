@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_mail_inbound\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\markaspot_mail_inbound\Dto\InboundMessage;
 
 /**
@@ -49,7 +50,14 @@ class MailboxResolver {
    *   Normalized mailbox definitions.
    */
   public function getMailboxes(bool $enabledOnly = TRUE): array {
-    $raw = $this->configFactory->get(self::CONFIG_NAME)->get('mailboxes');
+    // A runtime-owned list is exclusive, unlike deep-merged config overrides.
+    // An empty or malformed non-NULL value disables intake, never falling back
+    // to mailboxes inherited from a production database clone.
+    $absent = new \stdClass();
+    $runtime = Settings::get('markaspot_mail_inbound_mailboxes', $absent);
+    $raw = $runtime === $absent
+      ? $this->configFactory->get(self::CONFIG_NAME)->get('mailboxes')
+      : $runtime;
     if (!is_array($raw)) {
       return [];
     }
