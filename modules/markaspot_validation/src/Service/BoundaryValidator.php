@@ -35,26 +35,83 @@ class BoundaryValidator {
   }
 
   /**
+   * Checks a point against the first usable boundary of ordered jurisdictions.
+   *
+   * Callers pass the jurisdictions from most to least specific (typically a
+   * child, then its root). The first jurisdiction with usable geometry
+   * decides, mirroring ValidLatLonConstraintValidator: a child without its
+   * own boundary falls back to its root instead of accepting everything.
+   * When no jurisdiction has usable geometry the point is accepted and the
+   * condition is logged once for the most specific jurisdiction.
+   *
+   * @param int[] $jurisdictionIds
+   *   Jurisdiction group ids, most specific first.
+   * @param float $lat
+   *   Latitude.
+   * @param float $lng
+   *   Longitude.
+   *
+   * @return bool
+   *   TRUE when inside the deciding boundary or when none is usable.
+   */
+  public function isWithinFirstUsableBoundary(array $jurisdictionIds, float $lat, float $lng): bool {
+    $firstFailure = NULL;
+    foreach (array_values(array_unique(array_map('intval', $jurisdictionIds))) as $jurisdictionId) {
+      if ($jurisdictionId <= 0) {
+        continue;
+      }
+      $reason = NULL;
+      $boundary = $this->resolveJurisdictionBoundary($jurisdictionId, $reason);
+      if ($boundary) {
+        return $boundary->contains($lng, $lat);
+      }
+      $firstFailure ??= [$jurisdictionId, (string) $reason];
+    }
+
+    if ($firstFailure !== NULL) {
+      $this->logMissingBoundary($firstFailure[0], $firstFailure[1]);
+    }
+    return TRUE;
+  }
+
+  /**
    * Loads the GeoJSON boundary from a jurisdiction group entity.
    */
   protected function loadJurisdictionBoundary(int $jurisdictionId): ?GeoJsonBoundary {
+    $reason = NULL;
+    $boundary = $this->resolveJurisdictionBoundary($jurisdictionId, $reason);
+    if (!$boundary && $reason !== NULL) {
+      $this->logMissingBoundary($jurisdictionId, $reason);
+    }
+    return $boundary;
+  }
+
+  /**
+   * Resolves the GeoJSON boundary of a jurisdiction without logging.
+   *
+   * @param int $jurisdictionId
+   *   The jurisdiction group id.
+   * @param string|null $reason
+   *   Set to the reason when no usable boundary exists.
+   */
+  protected function resolveJurisdictionBoundary(int $jurisdictionId, ?string &$reason): ?GeoJsonBoundary {
     $group = $this->entityTypeManager
       ->getStorage('group')
       ->load($jurisdictionId);
 
     if (!$group) {
-      $this->logMissingBoundary($jurisdictionId, 'missing_jurisdiction');
+      $reason = 'missing_jurisdiction';
       return NULL;
     }
 
     if (!$group->hasField('field_boundary') || $group->get('field_boundary')->isEmpty()) {
-      $this->logMissingBoundary($jurisdictionId, 'missing_boundary');
+      $reason = 'missing_boundary';
       return NULL;
     }
 
     $boundary = GeoJsonBoundary::fromJson((string) $group->get('field_boundary')->getString());
     if (!$boundary) {
-      $this->logMissingBoundary($jurisdictionId, 'invalid_boundary');
+      $reason = 'invalid_boundary';
     }
 
     return $boundary;
