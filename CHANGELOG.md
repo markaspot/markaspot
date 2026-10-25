@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.229](https://github.com/markaspot/markaspot/compare/11.9.228...11.9.229) (2026-10-25)
+
+### Bug Fixes
+
+* accept facility column in dashboard settings ([98874db](https://github.com/markaspot/markaspot/commit/98874db946da0c27ae2697290e028597847b324e))
+
 ## [11.9.228](https://github.com/markaspot/markaspot/compare/11.9.227...11.9.228) (2026-10-25)
 
 ### Features
