@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_mail_inbound\Kernel;
 
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
@@ -13,6 +14,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_mail_inbound\Controller\InboundMailApiController;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
+use Drupal\markaspot_mail_inbound\Service\InboundMailReplyService;
 use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
@@ -29,9 +31,11 @@ use Symfony\Component\HttpFoundation\Request;
  * - list: items shape, jurisdiction QUERY scoping (member vs global), state
  *   filter, pagination total, the fidelity block,
  * - detail: full payload incl. 403 for an outsider,
- * - promote: success payload (nid/request_id/uuid/ungeolocated), 409 on a
- *   non-staged mail, 422 on a non-promotable category, 503 when the Open311
- *   processor is unavailable,
+ * - promote: success payload (nid/request_id/uuid/ungeolocated plus the
+ *   location/description sources), 409 on a non-staged mail or a held
+ *   promotion lock, 422 on a non-promotable category, a malformed location
+ *   or a confirmed location outside the jurisdiction (child, then root
+ *   boundary), 503 when the Open311 processor is unavailable,
  * - discard: success + 409,
  * - reply: success (sent=true via the test mail collector), 422 on empty
  *   body, 409 on a promoted mail.
@@ -69,6 +73,8 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     'jsonapi',
     'jsonapi_extras',
     'markaspot_mail_inbound',
+    // Provides the boundary validator the promoter checks locations with.
+    'markaspot_validation',
   ];
 
   /**
@@ -137,10 +143,15 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     // Stands in for the geolocation field; the processor double seeds a
     // default coordinate like the production processor does.
     $this->createNodeField('field_geolocation', 'string');
+    // Stands in for the address field; the processor double copies the
+    // address_string request key into it.
+    $this->createNodeField('field_address', 'string');
     // field_source / field_email_message_id ship as module config.
     $this->installConfig(['markaspot_mail_inbound']);
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
+    // GeoJSON boundary, read by markaspot_validation's BoundaryValidator.
+    $this->createField('group', 'jur', 'field_boundary', 'string_long', [], 1);
     $a = Group::create(['type' => 'jur', 'label' => 'City A']);
     $a->save();
     $this->gidA = (int) $a->id();
@@ -245,8 +256,13 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
 
   /**
    * Builds a controller whose promoter is wired to a processor double.
+   *
+   * @param object|null $geocoder
+   *   A geocoder double, or NULL for none.
+   * @param object|null $hierarchyResolver
+   *   A hierarchy resolver double (markaspot_group is not installed here).
    */
-  protected function controllerWithWorkingPromoter(): InboundMailApiController {
+  protected function controllerWithWorkingPromoter(?object $geocoder = NULL, ?object $hierarchyResolver = NULL): InboundMailApiController {
     $statusTerm = Term::create(['vid' => 'service_category', 'name' => 'Open']);
     $statusTerm->save();
     $entityTypeManager = $this->container->get('entity_type.manager');
@@ -282,6 +298,9 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
         if (isset($requestData['description'])) {
           $values['body'] = ['value' => $requestData['description'], 'format' => 'plain_text'];
         }
+        if (isset($requestData['address_string'])) {
+          $values['field_address'] = $requestData['address_string'];
+        }
         // Mirror the production processor: when the request carries no
         // coordinates a jurisdiction DEFAULT is seeded. The promoter must
         // clear it again so an email report without a location stays
@@ -311,9 +330,12 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
       $this->container->get('file_system'),
       $this->container->get('token'),
       $this->container->get('markaspot_mail_inbound.internal_remark_writer'),
+      $this->container->get('lock'),
       $processor,
-      NULL,
+      $geocoder,
       $this->container->get('language_manager'),
+      $this->container->get('markaspot_validation.boundary_validator'),
+      $hierarchyResolver,
     );
 
     return new InboundMailApiController(
@@ -553,14 +575,17 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     // 422: missing category_tid.
     $missing = $this->controllerWithWorkingPromoter()->promote($mail, $this->postRequest([]));
     $this->assertSame(422, $missing->getStatusCode());
+    $this->assertSame('category_required', $this->json($missing)['code']);
 
     // 422: a completely unknown tid is not valid for any jurisdiction.
     $unknown = $this->controllerWithWorkingPromoter()->promote($mail, $this->postRequest(['category_tid' => 99999]));
     $this->assertSame(422, $unknown->getStatusCode());
+    $this->assertSame('invalid_category', $this->json($unknown)['code']);
 
     // 503: the container promoter has no Open311 processor in this test.
     $unavailable = $this->controller()->promote($mail, $this->postRequest(['category_tid' => $this->categoryTid]));
     $this->assertSame(503, $unavailable->getStatusCode());
+    $this->assertSame('unavailable', $this->json($unavailable)['code']);
     $this->assertSame(InboundMail::STATE_STAGED, $mail->getState(), 'A failed promotion leaves the mail staged.');
 
     // Success via the processor double (coded category).
@@ -571,10 +596,18 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertTrue($ok['ungeolocated'], 'The processor-seeded default coordinate was cleared: no location in the mail means an explicitly ungeolocated report.');
     $promotedNode = $this->container->get('entity_type.manager')->getStorage('node')->load($ok['nid']);
     $this->assertTrue($promotedNode->get('field_geolocation')->isEmpty(), 'The default coordinate is gone from the node itself.');
+    // The legacy {category_tid} payload keeps today's behavior.
+    $this->assertNull($ok['location_source']);
+    $this->assertSame('original', $ok['description_source'], 'No AI summary stored: the original message is the description.');
+    $this->assertFalse($ok['address_text_applied']);
 
     // 409: the mail is promoted now.
+    // The passed entity is still staged in memory (the promoter worked on a
+    // reloaded copy), so this exercises the in-lock state re-check.
     $again = $this->controllerWithWorkingPromoter()->promote($mail, $this->postRequest(['category_tid' => $this->categoryTid]));
     $this->assertSame(409, $again->getStatusCode());
+    $this->assertSame('not_staged', $this->json($again)['code']);
+    $this->assertSame(1, $this->countNodes(), 'The second promotion of the same mail created nothing.');
 
     // A codeless category is now promotable: it should succeed (when staged).
     $mailForCodeless = $this->mail($this->gidA);
@@ -585,6 +618,182 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->actAs(['triage'], [$this->gidB]);
     $foreign = $this->controllerWithWorkingPromoter()->promote($this->mail($this->gidA), $this->postRequest(['category_tid' => $this->categoryTid]));
     $this->assertSame(403, $foreign->getStatusCode());
+    $this->assertSame('access_denied', $this->json($foreign)['code']);
+  }
+
+  /**
+   * Promote: malformed locations are rejected before anything is created.
+   */
+  public function testPromoteRejectsInvalidLocation(): void {
+    $this->actAs(['triage'], [$this->gidA]);
+    $mail = $this->mail($this->gidA);
+    $controller = $this->controllerWithWorkingPromoter();
+
+    $invalid = [
+      'lat only' => ['lat' => 50.5],
+      'string lat' => ['lat' => '50.5', 'lng' => 6.5],
+      'lat out of range' => ['lat' => 91, 'lng' => 6.5],
+      'lng out of range' => ['lat' => 50.5, 'lng' => 181],
+      'list instead of object' => [50.5, 6.5],
+      'scalar' => 'Marktplatz 1',
+    ];
+    foreach ($invalid as $label => $location) {
+      $response = $controller->promote($mail, $this->postRequest([
+        'category_tid' => $this->categoryTid,
+        'location' => $location,
+      ]));
+      $this->assertSame(422, $response->getStatusCode(), $label);
+      $this->assertSame('invalid_location', $this->json($response)['code'], $label);
+    }
+    // JSON has no Infinity literal; an overflowing number decodes to INF.
+    $infinite = $controller->promote($mail, $this->rawPostRequest('{"category_tid": ' . $this->categoryTid . ', "location": {"lat": 1e999, "lng": 6.5}}'));
+    $this->assertSame(422, $infinite->getStatusCode());
+    $this->assertSame('invalid_location', $this->json($infinite)['code']);
+
+    $this->assertSame(0, $this->countNodes());
+    $this->assertSame(InboundMail::STATE_STAGED, $this->reloadMail($mail)->getState());
+  }
+
+  /**
+   * Promote: a confirmed point is boundary-checked (child, then root).
+   */
+  public function testPromoteConfirmedLocationAgainstBoundary(): void {
+    $this->setBoundary($this->gidA);
+    // A child jurisdiction without geometry of its own below City A.
+    $child = Group::create(['type' => 'jur', 'label' => 'District of A']);
+    $child->save();
+    $gidChild = (int) $child->id();
+    $resolver = $this->rootResolver([$gidChild => $this->gidA]);
+    $geocoder = $this->geocoder([]);
+
+    $this->actAs(['triage'], [$this->gidA, $gidChild]);
+    $controller = $this->controllerWithWorkingPromoter($geocoder, $resolver);
+
+    // Outside the boundary: 422, nothing created, the mail stays staged.
+    $outsideMail = $this->mail($this->gidA);
+    $outside = $controller->promote($outsideMail, $this->confirmedLocationRequest(48.1, 11.5));
+    $this->assertSame(422, $outside->getStatusCode());
+    $this->assertSame('location_outside_jurisdiction', $this->json($outside)['code']);
+    $this->assertSame(0, $this->countNodes());
+    $this->assertSame(InboundMail::STATE_STAGED, $this->reloadMail($outsideMail)->getState());
+
+    // The child has no boundary: its root's boundary decides.
+    $childOutside = $controller->promote($this->mail($gidChild), $this->confirmedLocationRequest(48.1, 11.5));
+    $this->assertSame(422, $childOutside->getStatusCode(), 'A child without geometry falls back to the root boundary.');
+
+    // Inside: geolocated at exactly the confirmed point, never geocoded.
+    $ok = $this->json($controller->promote($outsideMail, $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_address' => TRUE,
+      'location' => ['lat' => 50.5, 'lng' => 6.5],
+    ])));
+    $this->assertFalse($ok['ungeolocated']);
+    $this->assertSame('confirmed', $ok['location_source']);
+    $this->assertFalse($ok['address_text_applied'], 'With coordinates the address text is left to the reverse geocoder.');
+    $this->assertSame('50.5,6.5', $this->loadNode($ok['nid'])->get('field_geolocation')->value);
+    $this->assertSame([], $geocoder->queried, 'A confirmed point is never geocoded on the server.');
+    $this->assertSame([], $this->missingLocationReplies(), 'A geolocated report triggers no missing-location auto-reply.');
+
+    $childOk = $controller->promote($this->mail($gidChild), $this->confirmedLocationRequest(50.2, 6.2));
+    $this->assertSame(200, $childOk->getStatusCode());
+  }
+
+  /**
+   * Promote: suggested address as geocoding hint or as plain address text.
+   */
+  public function testPromoteSuggestedAddressModes(): void {
+    $this->setBoundary($this->gidA);
+    $geocoder = $this->geocoder([
+      'Marktplatz 1, City A' => ['lat' => 50.4, 'lng' => 6.4],
+      'Marktplatz 1, Elsewhere' => ['lat' => 48.1, 'lng' => 11.5],
+    ]);
+    $this->actAs(['triage'], [$this->gidA]);
+    $controller = $this->controllerWithWorkingPromoter($geocoder);
+
+    // Location null: no coordinates, no geocoding, the text is kept.
+    $textOnly = $this->json($controller->promote($this->mailWithSuggestions('Marktplatz 1, City A'), $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_address' => TRUE,
+      'location' => NULL,
+    ])));
+    $this->assertTrue($textOnly['ungeolocated']);
+    $this->assertNull($textOnly['location_source']);
+    $this->assertTrue($textOnly['address_text_applied']);
+    $this->assertSame('Marktplatz 1, City A', $this->loadNode($textOnly['nid'])->get('field_address')->value);
+    $this->assertSame([], $geocoder->queried);
+    $this->assertCount(1, $this->missingLocationReplies(), 'An ungeolocated report still asks the citizen for the location.');
+
+    // Location key absent: the suggestion is the geocoding hint.
+    $hinted = $this->json($controller->promote($this->mailWithSuggestions('Marktplatz 1, City A'), $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_address' => TRUE,
+    ])));
+    $this->assertFalse($hinted['ungeolocated']);
+    $this->assertSame('suggested', $hinted['location_source']);
+    $this->assertFalse($hinted['address_text_applied']);
+    $this->assertSame(['Marktplatz 1, City A'], $geocoder->queried);
+
+    // A hint resolving outside the jurisdiction is dropped; the text stays.
+    $dropped = $this->json($controller->promote($this->mailWithSuggestions('Marktplatz 1, Elsewhere'), $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_address' => TRUE,
+    ])));
+    $this->assertTrue($dropped['ungeolocated'], 'A geocoded point outside the jurisdiction is dropped.');
+    $this->assertNull($dropped['location_source']);
+    $this->assertTrue($dropped['address_text_applied']);
+
+    // Unticked: neither hint nor text, even though a suggestion exists.
+    $unticked = $this->json($controller->promote($this->mailWithSuggestions('Marktplatz 1, City A'), $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_address' => FALSE,
+      'location' => NULL,
+    ])));
+    $this->assertTrue($unticked['ungeolocated']);
+    $this->assertFalse($unticked['address_text_applied']);
+    $this->assertTrue($this->loadNode($unticked['nid'])->get('field_address')->isEmpty());
+    $this->assertCount(2, $geocoder->queried, 'Only the two auto-mode promotions geocoded.');
+  }
+
+  /**
+   * Promote: staff can opt out of the AI summary as description.
+   */
+  public function testPromoteDescriptionChoice(): void {
+    $this->actAs(['triage'], [$this->gidA]);
+    $controller = $this->controllerWithWorkingPromoter();
+
+    // Default (and the legacy payload): the AI summary is the description.
+    $suggested = $this->json($controller->promote($this->mailWithSuggestions(NULL), $this->postRequest(['category_tid' => $this->categoryTid])));
+    $this->assertSame('suggested', $suggested['description_source']);
+    $this->assertSame("Broken light
+
+A streetlight next to the church is out.", $this->loadNode($suggested['nid'])->get('body')->value);
+
+    $original = $this->json($controller->promote($this->mailWithSuggestions(NULL), $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'use_suggested_description' => FALSE,
+    ])));
+    $this->assertSame('original', $original['description_source']);
+    $this->assertSame("Broken light
+
+A streetlight is broken near the church.", $this->loadNode($original['nid'])->get('body')->value);
+  }
+
+  /**
+   * Promote: a held promotion lock answers 409 and creates nothing.
+   */
+  public function testPromoteWhileLockedIsConflict(): void {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->method('acquire')->willReturn(FALSE);
+    $this->container->set('lock', $lock);
+
+    $this->actAs(['triage'], [$this->gidA]);
+    $mail = $this->mail($this->gidA);
+    $response = $this->controllerWithWorkingPromoter()->promote($mail, $this->postRequest(['category_tid' => $this->categoryTid]));
+
+    $this->assertSame(409, $response->getStatusCode());
+    $this->assertSame('promotion_in_progress', $this->json($response)['code']);
+    $this->assertSame(0, $this->countNodes());
+    $this->assertSame(InboundMail::STATE_STAGED, $this->reloadMail($mail)->getState());
   }
 
   /**
@@ -706,6 +915,20 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertSame('Streetlight', $detailData['suggested_category_label']);
     $this->assertEqualsWithDelta(0.92, (float) $detailData['suggestion_confidence'], 0.001);
     $this->assertSame(InboundMail::SUGGESTION_DONE, $detailData['suggestion_status']);
+    // Address and summary are detail-only and NULL when absent.
+    $this->assertArrayHasKey('suggested_address', $detailData);
+    $this->assertArrayHasKey('suggested_description', $detailData);
+    $this->assertNull($detailData['suggested_address']);
+    $this->assertNull($detailData['suggested_description']);
+    $this->assertArrayNotHasKey('suggested_address', $suggestedRow, 'Data minimization: no address in list rows.');
+    $this->assertArrayNotHasKey('suggested_description', $suggestedRow);
+
+    $suggestedMail->setSuggestedAddress('Marktplatz 1');
+    $suggestedMail->setSuggestedDescription('A streetlight is out.');
+    $suggestedMail->save();
+    $detailWithText = $this->json($this->controller()->detail($suggestedMail));
+    $this->assertSame('Marktplatz 1', $detailWithText['suggested_address']);
+    $this->assertSame('A streetlight is out.', $detailWithText['suggested_description']);
 
     // Fidelity ai_available is present and boolean in the list response.
     // (The detail endpoint does not embed fidelity, only the list does.)
@@ -717,7 +940,135 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
    * Builds a JSON POST request.
    */
   protected function postRequest(array $payload): Request {
-    return Request::create('/api/inbound-mail/x', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], (string) json_encode($payload));
+    return $this->rawPostRequest((string) json_encode($payload));
+  }
+
+  /**
+   * Builds a promote request with a staff-confirmed location.
+   */
+  protected function confirmedLocationRequest(float $lat, float $lng): Request {
+    return $this->postRequest([
+      'category_tid' => $this->categoryTid,
+      'location' => ['lat' => $lat, 'lng' => $lng],
+    ]);
+  }
+
+  /**
+   * Builds a POST request with a raw JSON body.
+   */
+  protected function rawPostRequest(string $body): Request {
+    return Request::create('/api/inbound-mail/x', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $body);
+  }
+
+  /**
+   * Creates a staged City A mail with an AI address and summary.
+   */
+  protected function mailWithSuggestions(?string $address): InboundMail {
+    $mail = $this->mail($this->gidA);
+    $mail->setSuggestedAddress($address);
+    $mail->setSuggestedDescription('A streetlight next to the church is out.');
+    $mail->setSuggestionStatus(InboundMail::SUGGESTION_DONE);
+    $mail->save();
+    return $mail;
+  }
+
+  /**
+   * Gives a jurisdiction a GeoJSON square (lat 50..51, lng 6..7).
+   */
+  protected function setBoundary(int $gid): void {
+    $group = Group::load($gid);
+    $group->set('field_boundary', (string) json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [[[6, 50], [7, 50], [7, 51], [6, 51], [6, 50]]],
+    ]));
+    $group->save();
+  }
+
+  /**
+   * A geocoder double resolving addresses from a map and recording queries.
+   *
+   * @param array<string, array{lat: float, lng: float}> $map
+   *   Coordinates keyed by address.
+   */
+  protected function geocoder(array $map): object {
+    return new class($map) {
+
+      /**
+       * Addresses the double was asked for.
+       *
+       * @var string[]
+       */
+      public array $queried = [];
+
+      public function __construct(protected array $map) {}
+
+      /**
+       * Mirrors MarkaspotGeocoderService::getCoordinatesFromAddress().
+       */
+      public function getCoordinatesFromAddress(string $address): ?array {
+        $this->queried[] = $address;
+        return $this->map[$address] ?? NULL;
+      }
+
+    };
+  }
+
+  /**
+   * A hierarchy resolver double (child gid => root gid, roots map to self).
+   *
+   * @param array<int, int> $roots
+   *   Root gids keyed by child gid.
+   */
+  protected function rootResolver(array $roots): object {
+    return new class($roots) {
+
+      public function __construct(protected array $roots) {}
+
+      /**
+       * Mirrors JurisdictionHierarchyResolver::getRootJurisdictionId().
+       */
+      public function getRootJurisdictionId(int $groupId): ?int {
+        return $this->roots[$groupId] ?? $groupId;
+      }
+
+    };
+  }
+
+  /**
+   * Counts service request nodes.
+   */
+  protected function countNodes(): int {
+    return (int) $this->container->get('entity_type.manager')->getStorage('node')
+      ->getQuery()->accessCheck(FALSE)->count()->execute();
+  }
+
+  /**
+   * Loads a node fresh from storage.
+   */
+  protected function loadNode(int $nid): Node {
+    $node = $this->container->get('entity_type.manager')->getStorage('node')->loadUnchanged($nid);
+    $this->assertInstanceOf(Node::class, $node);
+    return $node;
+  }
+
+  /**
+   * Reloads a mail fresh from storage.
+   */
+  protected function reloadMail(InboundMail $mail): InboundMail {
+    $reloaded = $this->container->get('entity_type.manager')->getStorage('inbound_mail')->loadUnchanged($mail->id());
+    $this->assertInstanceOf(InboundMail::class, $reloaded);
+    return $reloaded;
+  }
+
+  /**
+   * Missing-location auto-replies captured by the test mail collector.
+   *
+   * @return array<int, array<string, mixed>>
+   *   The captured messages.
+   */
+  protected function missingLocationReplies(): array {
+    $captured = $this->container->get('state')->get('system.test_mail_collector') ?? [];
+    return array_values(array_filter($captured, static fn(array $message): bool => ($message['key'] ?? '') === InboundMailReplyService::KEY_AUTO_REPLY_MISSING_LOCATION));
   }
 
 }

@@ -12,6 +12,7 @@ use Drupal\Core\Queue\Attribute\QueueWorker;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
@@ -210,6 +211,14 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
         '@nid' => $node->id(),
         '@tid' => $tid,
         '@conf' => round($confidence, 3),
+      ]);
+    }
+    catch (PromotionConflictException $e) {
+      // Staff promoted the mail first (or is doing so right now): exactly one
+      // report exists, nothing to retry. Logged so the race stays visible.
+      $this->logger->info('Auto-promote of mail @id skipped: @reason.', [
+        '@id' => $mail->id(),
+        '@reason' => $e->reason,
       ]);
     }
     catch (\RuntimeException $e) {

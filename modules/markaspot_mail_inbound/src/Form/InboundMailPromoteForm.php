@@ -9,6 +9,7 @@ use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -133,6 +134,11 @@ class InboundMailPromoteForm extends FormBase {
     try {
       $node = $this->promoter->promoteToServiceRequest($mail, $categoryTid);
       $this->messenger()->addStatus($this->t('Promoted to service request @nid (unpublished, awaiting moderation).', ['@nid' => $node->id()]));
+    }
+    catch (PromotionConflictException) {
+      // Someone else (staff or the auto-promote worker) was faster: not an
+      // error, the mail already has its report.
+      $this->messenger()->addWarning($this->t('This mail is already being promoted or has been promoted in the meantime.'));
     }
     catch (\Throwable $e) {
       // The exception message can carry internal entity ids and module names

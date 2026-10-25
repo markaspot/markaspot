@@ -13,6 +13,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageDefault;
 use Drupal\Core\Language\LanguageManager;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
@@ -20,6 +21,8 @@ use Drupal\file\FileInterface;
 use Drupal\markaspot_mail_inbound\Dto\InboundMessage;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Event\InboundRequestCreatedEvent;
+use Drupal\markaspot_mail_inbound\Exception\LocationOutsideJurisdictionException;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Util\MailTextUtils;
 use Drupal\node\NodeInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -41,12 +44,23 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * in both cases.
  *
  * Additive and non-breaking: this only CALLS the processor; it never modifies
- * it or the shared presave hooks. The processor and geocoder are injected as
- * OPTIONAL services and their use is guarded.
+ * it or the shared presave hooks. The processor, geocoder, boundary validator
+ * and hierarchy resolver are injected as OPTIONAL services and their use is
+ * guarded.
+ *
+ * Every caller (dashboard API, admin form, auto-promote worker) goes through
+ * one lock per mail and re-reads the stored state inside it, so a double
+ * click, two staff members or staff racing the worker create exactly one
+ * report; the loser gets a PromotionConflictException.
  */
 class InboundMailPromoter {
 
   use StringTranslationTrait;
+
+  /**
+   * Lock timeout in seconds; a promotion normally takes well under a second.
+   */
+  protected const LOCK_TIMEOUT = 30.0;
 
   /**
    * Constructs an InboundMailPromoter.
@@ -61,9 +75,12 @@ class InboundMailPromoter {
     protected FileSystemInterface $fileSystem,
     protected Token $token,
     protected InternalRemarkWriter $remarkWriter,
+    protected LockBackendInterface $lock,
     protected ?object $georeportProcessor = NULL,
     protected ?object $geocoder = NULL,
     protected ?LanguageManagerInterface $languageManager = NULL,
+    protected ?object $boundaryValidator = NULL,
+    protected ?object $hierarchyResolver = NULL,
   ) {
   }
 
@@ -83,21 +100,92 @@ class InboundMailPromoter {
    *   Optional NER-extracted address from the AI suggestion path. When
    *   provided, this address is tried for geocoding BEFORE the trivial-regex
    *   scan of the body. Default behavior (regex scan) is unchanged when NULL.
+   * @param \Drupal\markaspot_mail_inbound\Service\PromoteOptions|null $options
+   *   Staff choices from the dashboard dialog; NULL keeps the defaults.
    *
    * @return \Drupal\node\NodeInterface
    *   The created, saved service request node.
    *
+   * @throws \Drupal\markaspot_mail_inbound\Exception\PromotionConflictException
+   *   When another request promotes the mail or it is no longer staged.
+   * @throws \Drupal\markaspot_mail_inbound\Exception\LocationOutsideJurisdictionException
+   *   When a confirmed location lies outside the mail's jurisdiction.
    * @throws \RuntimeException
-   *   When the Open311 processor is unavailable or the mail is not staged.
+   *   When the Open311 processor is unavailable.
    */
-  public function promoteToServiceRequest(InboundMail $mail, int $categoryTid, ?string $addressHint = NULL): NodeInterface {
+  public function promoteToServiceRequest(InboundMail $mail, int $categoryTid, ?string $addressHint = NULL, ?PromoteOptions $options = NULL): NodeInterface {
+    return $this->promote($mail, $categoryTid, $addressHint, $options)->node;
+  }
+
+  /**
+   * Promotes a staged inbound mail and reports where the content came from.
+   *
+   * Same contract as promoteToServiceRequest(); the result additionally
+   * carries the location and description sources for the dashboard API.
+   *
+   * The passed entity is only used for its id: the stored mail is reloaded
+   * inside the lock and everything downstream (body, attachments, state,
+   * save) works on that copy, so the caller's object stays as it was.
+   */
+  public function promote(InboundMail $mail, int $categoryTid, ?string $addressHint = NULL, ?PromoteOptions $options = NULL): PromotionResult {
     if ($this->georeportProcessor === NULL) {
       throw new \RuntimeException('Cannot promote inbound mail: the markaspot_open311 processor is not available.');
     }
-    if ($mail->getState() !== InboundMail::STATE_STAGED) {
-      throw new \RuntimeException(sprintf('Cannot promote inbound mail %s: it is %s, not staged.', $mail->id(), $mail->getState()));
-    }
 
+    $lockName = 'markaspot_mail_inbound.promote.' . $mail->id();
+    if (!$this->lock->acquire($lockName, self::LOCK_TIMEOUT)) {
+      throw new PromotionConflictException(PromotionConflictException::IN_PROGRESS, sprintf('Inbound mail %s is being promoted by another request.', $mail->id()));
+    }
+    try {
+      // Re-read the stored state: the caller's entity may predate a
+      // promotion that finished in the meantime (a lock expiry, a colleague,
+      // the auto-promote worker). Only a mail that is staged in storage is
+      // promoted, so a mail is turned into exactly one report.
+      $stored = $this->entityTypeManager->getStorage('inbound_mail')->loadUnchanged($mail->id());
+      if (!$stored instanceof InboundMail || $stored->getState() !== InboundMail::STATE_STAGED) {
+        throw new PromotionConflictException(PromotionConflictException::NOT_STAGED, sprintf('Cannot promote inbound mail %s: it is no longer staged.', $mail->id()));
+      }
+      return $this->doPromote($stored, $categoryTid, $addressHint, $options ?? new PromoteOptions());
+    }
+    finally {
+      $this->lock->release($lockName);
+    }
+  }
+
+  /**
+   * Whether a point lies inside the jurisdiction (child, then root).
+   *
+   * The first level with usable geometry decides: a child jurisdiction
+   * without its own boundary falls back to its root. Fails open (TRUE) when
+   * the mail has no jurisdiction, the validation module is absent or no level
+   * has a usable boundary, like the Open311 submission path.
+   */
+  public function isInsideJurisdiction(int $jurisdictionGid, float $lat, float $lng): bool {
+    if ($jurisdictionGid <= 0 || $this->boundaryValidator === NULL || !method_exists($this->boundaryValidator, 'isWithinFirstUsableBoundary')) {
+      return TRUE;
+    }
+    $jurisdictionIds = [$jurisdictionGid];
+    if ($this->hierarchyResolver !== NULL && method_exists($this->hierarchyResolver, 'getRootJurisdictionId')) {
+      try {
+        $rootId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionGid);
+        if ($rootId !== NULL && (int) $rootId > 0 && (int) $rootId !== $jurisdictionGid) {
+          $jurisdictionIds[] = (int) $rootId;
+        }
+      }
+      catch (\Throwable $e) {
+        // Unresolvable hierarchy: the child's own boundary still applies.
+        $this->logger->warning('Resolving the root jurisdiction for a promotion boundary check failed (@type).', ['@type' => get_class($e)]);
+      }
+    }
+    return (bool) $this->boundaryValidator->isWithinFirstUsableBoundary($jurisdictionIds, $lat, $lng);
+  }
+
+  /**
+   * Creates the service request for a mail that is staged in storage.
+   *
+   * Runs inside the promotion lock, on the freshly loaded mail.
+   */
+  protected function doPromote(InboundMail $mail, int $categoryTid, ?string $addressHint, PromoteOptions $options): PromotionResult {
     $jurisdictionGid = $mail->getJurisdictionId();
 
     // Resolve the service code for the chosen category (may be NULL for
@@ -113,10 +201,13 @@ class InboundMailPromoter {
     // summary), it is used as the public report body. Otherwise the fallback
     // is the original citizen mail text (subject + first log segment, before
     // any appended conversation entries). The subject is prepended in both
-    // cases via buildDescription(). The title is system-generated by
-    // markaspot_request_id, so we never set it. field_gdpr is TRUE: emailing
-    // the published intake address is the consent act.
-    $suggestedDescription = $mail->getSuggestedDescription();
+    // cases via buildDescription(). Staff can opt out of the summary in the
+    // dashboard dialog (useSuggestedDescription FALSE). The title is
+    // system-generated by markaspot_request_id, so we never set it.
+    // field_gdpr is TRUE: emailing the published intake address is the
+    // consent act.
+    $suggestedDescription = $options->useSuggestedDescription ? $mail->getSuggestedDescription() : NULL;
+    $descriptionSource = $suggestedDescription !== NULL ? PromotionResult::DESCRIPTION_SUGGESTED : PromotionResult::DESCRIPTION_ORIGINAL;
     $descriptionBody = $suggestedDescription ?? MailTextUtils::extractOriginalMessage($mail->getBody());
     $requestData = [
       'email' => $mail->getFromAddress(),
@@ -134,15 +225,34 @@ class InboundMailPromoter {
       $requestData['jurisdiction_id'] = $jurisdictionGid;
     }
 
-    // GEOCODING: try the AI-suggested address first (when provided), then fall
-    // back to the trivial regex scan of the body. The address hint comes from
-    // the AI text-classification path (NER-extracted); it is more reliable than
-    // the regex but equally optional — a miss still leaves the report
-    // ungeolocated, as always.
-    $coordinates = $this->tryGeocode($mail, $addressHint);
+    // LOCATION, by mode:
+    // - confirmed: staff confirmed the point in the dashboard; it is only
+    //   boundary-checked, never geocoded again.
+    // - none: staff saw the geocoding result and wants no coordinates.
+    // - auto: try the AI-suggested address first (when provided), then fall
+    //   back to the trivial regex scan of the body. The address hint comes
+    //   from the AI text-classification path (NER-extracted); it is more
+    //   reliable than the regex but equally optional — a miss still leaves
+    //   the report ungeolocated, as always. A geocoded point outside the
+    //   jurisdiction is dropped.
+    $coordinates = $this->resolveLocation($mail, $addressHint, $options);
     if ($coordinates !== NULL) {
       $requestData['lat'] = $coordinates['lat'];
       $requestData['long'] = $coordinates['lng'];
+    }
+
+    // Without coordinates, staff may keep the suggested address as text: the
+    // processor parses it into field_address, and the edit page prefills its
+    // location search from it. The text is stored server-side data (the AI
+    // suggestion), never client input. It is not passed together with
+    // coordinates: the geocoder presave hook reverse-geocodes field_address
+    // for new nodes with coordinates anyway.
+    $addressText = NULL;
+    if ($coordinates === NULL && $options->useSuggestedAddress) {
+      $addressText = trim((string) $mail->getSuggestedAddress());
+      if ($addressText !== '') {
+        $requestData['address_string'] = $addressText;
+      }
     }
 
     // Mirror the Open311 createNode() path: prepareNodeProperties -> create ->
@@ -246,7 +356,10 @@ class InboundMailPromoter {
       '@nid' => $node->id(),
     ]);
 
-    return $node;
+    $addressTextApplied = $addressText !== NULL && $addressText !== ''
+      && $node->hasField('field_address') && !$node->get('field_address')->isEmpty();
+
+    return new PromotionResult($node, $coordinates['source'] ?? NULL, $descriptionSource, $addressTextApplied);
   }
 
   /**
@@ -352,6 +465,41 @@ class InboundMailPromoter {
   }
 
   /**
+   * Resolves the report location for the chosen location mode.
+   *
+   * @param \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail
+   *   The mail being promoted.
+   * @param string|null $addressHint
+   *   An explicit geocoding hint (auto-promote worker), or NULL.
+   * @param \Drupal\markaspot_mail_inbound\Service\PromoteOptions $options
+   *   The staff choices.
+   *
+   * @return array{lat: float, lng: float, source: string}|null
+   *   Coordinates with their PromotionResult::LOCATION_* source, or NULL.
+   *
+   * @throws \Drupal\markaspot_mail_inbound\Exception\LocationOutsideJurisdictionException
+   *   When a confirmed point lies outside the jurisdiction.
+   */
+  protected function resolveLocation(InboundMail $mail, ?string $addressHint, PromoteOptions $options): ?array {
+    if ($options->locationMode === PromoteOptions::LOCATION_NONE) {
+      return NULL;
+    }
+    if ($options->locationMode === PromoteOptions::LOCATION_CONFIRMED) {
+      $lat = (float) $options->lat;
+      $lng = (float) $options->lng;
+      if (!$this->isInsideJurisdiction($mail->getJurisdictionId(), $lat, $lng)) {
+        // Nothing about the point is logged or put into the message.
+        throw new LocationOutsideJurisdictionException(sprintf('The confirmed location for inbound mail %s lies outside its jurisdiction.', $mail->id()));
+      }
+      return ['lat' => $lat, 'lng' => $lng, 'source' => PromotionResult::LOCATION_CONFIRMED];
+    }
+    if ($addressHint === NULL && $options->useSuggestedAddress) {
+      $addressHint = $mail->getSuggestedAddress();
+    }
+    return $this->tryGeocode($mail, $addressHint);
+  }
+
+  /**
    * Attempts to geocode an address for the mail.
    *
    * Resolution order:
@@ -361,15 +509,18 @@ class InboundMailPromoter {
    *      street regex (unchanged, still the common path for manual promotion).
    *
    * Returns coordinates only when the geocoder is available AND a candidate
-   * address resolves. A miss leaves the report ungeolocated (the common case).
+   * address resolves inside the mail's jurisdiction. A point outside it is
+   * dropped like a miss (logged with its source only, never the address or
+   * the coordinates). A miss leaves the report ungeolocated (the common case).
    *
    * @param \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail
    *   The mail being promoted.
    * @param string|null $addressHint
    *   Optional AI-extracted address to try before the regex scan.
    *
-   * @return array{lat: float, lng: float}|null
-   *   Coordinates, or NULL when ungeolocated.
+   * @return array{lat: float, lng: float, source: string}|null
+   *   Coordinates with their PromotionResult::LOCATION_* source, or NULL when
+   *   ungeolocated.
    */
   protected function tryGeocode(InboundMail $mail, ?string $addressHint = NULL): ?array {
     if ($this->geocoder === NULL) {
@@ -378,11 +529,12 @@ class InboundMailPromoter {
 
     // Try the AI hint first (additive; default path is unchanged when NULL).
     if ($addressHint !== NULL && $addressHint !== '') {
-      $result = $this->geocodeCandidate($addressHint);
+      $result = $this->geocodeInsideJurisdiction($mail, $addressHint, PromotionResult::LOCATION_SUGGESTED);
       if ($result !== NULL) {
         return $result;
       }
-      // Hint did not resolve; fall through to the regex scan.
+      // Hint did not resolve inside the jurisdiction; fall through to the
+      // regex scan.
     }
 
     // Deliberately the FULL conversation log, not just the original message:
@@ -392,7 +544,28 @@ class InboundMailPromoter {
     if ($candidate === NULL) {
       return NULL;
     }
-    return $this->geocodeCandidate($candidate);
+    return $this->geocodeInsideJurisdiction($mail, $candidate, PromotionResult::LOCATION_REGEX);
+  }
+
+  /**
+   * Geocodes a candidate and keeps the point only inside the jurisdiction.
+   *
+   * @return array{lat: float, lng: float, source: string}|null
+   *   Coordinates with the given source, or NULL.
+   */
+  protected function geocodeInsideJurisdiction(InboundMail $mail, string $candidate, string $source): ?array {
+    $result = $this->geocodeCandidate($candidate);
+    if ($result === NULL) {
+      return NULL;
+    }
+    if (!$this->isInsideJurisdiction($mail->getJurisdictionId(), $result['lat'], $result['lng'])) {
+      $this->logger->info('Dropped a geocoded @source location for inbound mail @mail: it lies outside the jurisdiction.', [
+        '@source' => $source,
+        '@mail' => $mail->id(),
+      ]);
+      return NULL;
+    }
+    return $result + ['source' => $source];
   }
 
   /**

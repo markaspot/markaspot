@@ -10,6 +10,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\IngestResult;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\node\Entity\NodeType;
@@ -690,6 +691,39 @@ class InboundMailStagingKernelTest extends KernelTestBase {
   }
 
   /**
+   * The promoter re-reads the stored state and refuses a stale entity.
+   *
+   * The race guard: a caller holding a staged copy (a second staff member,
+   * the auto-promote worker) must not create a second report once another
+   * request promoted the mail.
+   */
+  public function testPromotionReloadsMailAndRejectsChangedState(): void {
+    $staged = $this->ingest($this->makeRaw('race-001@example.org'));
+    $stale = $this->loadMail((int) $staged->entityId);
+    $this->assertSame(InboundMail::STATE_STAGED, $stale->getState());
+
+    // Another request promoted the mail meanwhile (storage changes, the
+    // caller's copy does not).
+    $other = $this->container->get('entity_type.manager')->getStorage('inbound_mail')->loadUnchanged($stale->id());
+    $other->setState(InboundMail::STATE_PROMOTED);
+    $other->save();
+
+    try {
+      $this->makePromoter()->promoteToServiceRequest($stale, $this->categoryTid);
+      $this->fail('A mail that is no longer staged in storage must not be promoted.');
+    }
+    catch (PromotionConflictException $e) {
+      $this->assertSame(PromotionConflictException::NOT_STAGED, $e->reason);
+    }
+    $this->assertSame(0, $this->countNodes());
+
+    // A mail that is staged in storage still promotes normally.
+    $next = $this->ingest($this->makeRaw('race-002@example.org'));
+    $this->makePromoter()->promoteToServiceRequest($this->loadMail((int) $next->entityId), $this->categoryTid);
+    $this->assertSame(1, $this->countNodes());
+  }
+
+  /**
    * Discard flips the mail to discarded and creates no node.
    */
   public function testDiscardMarksMailDiscarded(): void {
@@ -806,6 +840,7 @@ class InboundMailStagingKernelTest extends KernelTestBase {
       $this->container->get('file_system'),
       $this->container->get('token'),
       $this->container->get('markaspot_mail_inbound.internal_remark_writer'),
+      $this->container->get('lock'),
       $processor,
       NULL,
       $this->container->get('language_manager'),
