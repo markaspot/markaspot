@@ -1,5 +1,28 @@
 # Changelog
 
+## [11.9.228](https://github.com/markaspot/markaspot/compare/11.9.227...11.9.228) (2026-10-25)
+
+### Features
+
+* let tenant seeds switch personal assignment off explicitly ([d61d313](https://github.com/markaspot/markaspot/commit/d61d3130485f296ff7ca4eef71f71ed53fd5d8a8))
+* **nuxt:** expose assignment notification flag in organisation catalogue ([923dcaf](https://github.com/markaspot/markaspot/commit/923dcafc7d4617f6ce3bd55bb7cde4b3344e77c0))
+* persist personal form layouts per workspace ([d746ee5](https://github.com/markaspot/markaspot/commit/d746ee552128012dce43e1a87173b0a3a02f55ec))
+* switch personal assignment off by default ([e9b21f4](https://github.com/markaspot/markaspot/commit/e9b21f412933d42a22f385e58b8455543e1356f1))
+
+### Bug Fixes
+
+* exclude API accounts from assignee candidates ([1659a16](https://github.com/markaspot/markaspot/commit/1659a1638b85d01a3bc275d1643c716fcf8e8b34))
+* isolate runtime mailboxes from cloned configuration ([2dd2d1e](https://github.com/markaspot/markaspot/commit/2dd2d1e77802b2b978099fbdf2b36e6a4a3f75b4))
+* **management:** cache organisation options per membership and test their scope ([4ace1c9](https://github.com/markaspot/markaspot/commit/4ace1c9c4c54c3fcd791ad2a22d0aa91039cb0b0))
+* **management:** compact table and filter grid for the management view in Gin ([d3e7555](https://github.com/markaspot/markaspot/commit/d3e7555b78d9bcdfd732c75a0fa16c5ae25e7518))
+* **management:** use single-select staff filters and scope organisations to memberships ([779e426](https://github.com/markaspot/markaspot/commit/779e426966cdec85c9afca02fc0c8b6f826844f6))
+* remove personalAssignment stored under the old default ([5c63575](https://github.com/markaspot/markaspot/commit/5c63575170b399b3c6a8cf51545c2bcde2983331))
+
+### Documentation
+
+* note that personal assignment needs the case assignment edition ([7843b7a](https://github.com/markaspot/markaspot/commit/7843b7af93ffef329ff0d6e6950f50f6fca6ef31))
+* scope the demo account note for personal form layouts to CivicSpot demo accounts ([cbe3abf](https://github.com/markaspot/markaspot/commit/cbe3abf0dc1ce273cb61a0288c6e72641fd95abf))
+
 ## [11.9.227](https://github.com/markaspot/markaspot/compare/11.9.226...11.9.227) (2026-10-22)
 
 ### Bug Fixes
