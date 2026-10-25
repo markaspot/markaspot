@@ -663,9 +663,9 @@ class FeatureScopeResolver {
   /**
    * Reads a stored category ID list leniently.
    *
-   * Keeps positive integers and integer strings of up to 18 digits, drops
-   * everything else, and returns unique IDs in ascending order. Reading never
-   * fails: a single malformed entry must not hide the valid ones.
+   * Keeps IDs that parseCategoryId() accepts, drops everything else, and
+   * returns unique IDs in ascending order. Reading never fails: a single
+   * malformed entry must not hide the valid ones.
    *
    * @param mixed $value
    *   The stored value.
