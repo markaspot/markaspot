@@ -45,6 +45,7 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
       'forms' => ['allowParentCategorySelection' => TRUE],
     ]];
     $this->assertSame([], TenantRuntimeConfiguration::validate($tenant));
+    $this->assertSame([], TenantRuntimeConfiguration::validate(['features' => ['forms' => ['allowParentCategorySelection' => FALSE]]]));
     $merged = TenantRuntimeConfiguration::merge($existing, $tenant)['features'];
     $this->assertSame([43, 2], $merged['photoRequiredCategories']);
     $this->assertSame(['allowParentCategorySelection' => TRUE, 'lockPhotoLocation' => TRUE], $merged['forms']);
@@ -53,7 +54,8 @@ final class TenantRuntimeConfigurationTest extends UnitTestCase {
       ['photoRequiredCategories' => ['12']],
       ['photoRequiredCategories' => ['a' => 1]],
       ['forms' => ['lockPhotoLocation' => 'yes']],
-      ['forms' => ['allowParentCategorySelection' => TRUE]],
+      ['forms' => ['allowParentCategorySelection' => 'yes']],
+      ['forms' => ['unknownFlag' => TRUE]],
     ] as $invalid) {
       $this->assertNotEmpty(TenantRuntimeConfiguration::validate(['features' => $invalid]), json_encode($invalid));
     }

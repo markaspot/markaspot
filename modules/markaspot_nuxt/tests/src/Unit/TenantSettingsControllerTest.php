@@ -3298,6 +3298,44 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests a partial save heals a stored boolean unifiedReporting.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsHealsBooleanUnifiedReporting(): void {
+    $storedNuxtConfig = json_encode(['features' => ['unifiedReporting' => TRUE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'unifiedReporting' => ['aiMode' => 'opt_out'],
+    ]), '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame(
+      ['enabled' => TRUE, 'aiMode' => 'opt_out'],
+      json_decode($storedNuxtConfig, TRUE)['features']['unifiedReporting']
+    );
+  }
+
+  /**
+   * Tests empty JSON objects and lists keep their meaning.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsDistinguishesJsonObjectsAndLists(): void {
+    $storedNuxtConfig = json_encode(['features' => ['photoRequiredCategories' => [5]]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    foreach (['{"photoRequiredCategories":{}}', '{"unifiedReporting":[]}', '{"photoRequiredCategories":{"0":12}}'] as $body) {
+      $request = Request::create('/api/tenant/14/features', 'PATCH', [], [], [], ['CONTENT_TYPE' => 'application/json'], $body);
+      $this->assertEquals(422, $this->controller->updateFeatureSettings($request, '14')->getStatusCode(), $body);
+    }
+    $this->assertSame([5], json_decode($storedNuxtConfig, TRUE)['features']['photoRequiredCategories']);
+  }
+
+  /**
    * Tests invalid report form settings are rejected without a write.
    *
    * @covers ::updateFeatureSettings
@@ -3328,6 +3366,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
       'category text' => [['photoRequiredCategories' => ['abc']]],
       'categories object' => [['photoRequiredCategories' => ['a' => 1]]],
       'lock string' => [['forms' => ['lockPhotoLocation' => 'yes']]],
+      'oversized category id' => [['photoRequiredCategories' => ['999999999999999999999999999999']]],
     ];
   }
 

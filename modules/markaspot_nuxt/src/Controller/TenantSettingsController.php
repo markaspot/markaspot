@@ -699,7 +699,9 @@ final class TenantSettingsController extends ControllerBase {
     }
     $ids = [];
     foreach ($value as $id) {
-      if (is_string($id) && preg_match('/^[1-9][0-9]*$/', $id)) {
+      // Up to 18 digits always fits a 64-bit integer; longer strings would
+      // saturate to PHP_INT_MAX and store a different ID.
+      if (is_string($id) && preg_match('/^[1-9][0-9]{0,17}$/', $id)) {
         $id = (int) $id;
       }
       if (!is_int($id) || $id < 1) {
@@ -2563,6 +2565,15 @@ final class TenantSettingsController extends ControllerBase {
     // Validate the report form configuration. Only the three editable keys
     // of unifiedReporting are accepted here; stored extras (cta texts) are
     // kept by the merge below.
+    // Associative decoding maps {} and [] to the same array, so check the
+    // JSON node types of the two structured keys on an object decode.
+    $raw = json_decode($body);
+    if (array_key_exists('unifiedReporting', $data) && !($raw->unifiedReporting instanceof \stdClass)) {
+      return new JsonResponse(['error' => 'unifiedReporting must be an object.'], 422);
+    }
+    if (array_key_exists('photoRequiredCategories', $data) && !is_array($raw->photoRequiredCategories)) {
+      return new JsonResponse(['error' => 'photoRequiredCategories must be a list of category IDs.'], 422);
+    }
     if (array_key_exists('unifiedReporting', $data)) {
       $unified = $data['unifiedReporting'];
       if (!is_array($unified) || ($unified !== [] && array_is_list($unified))) {

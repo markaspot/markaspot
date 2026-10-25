@@ -84,9 +84,10 @@ final class TenantRuntimeConfiguration {
             continue;
           }
           if ($name === 'forms') {
-            if (!is_array($value) || array_diff(array_keys($value), ['lockPhotoLocation']) !== []
-              || !is_bool($value['lockPhotoLocation'] ?? NULL)) {
-              $errors[] = 'tenant.features.forms supports only the boolean lockPhotoLocation.';
+            $form_flags = ['allowParentCategorySelection', 'lockPhotoLocation'];
+            if (!is_array($value) || $value === [] || array_diff(array_keys($value), $form_flags) !== []
+              || array_filter($value, static fn($flag): bool => !is_bool($flag)) !== []) {
+              $errors[] = 'tenant.features.forms supports only the booleans allowParentCategorySelection and lockPhotoLocation.';
             }
             continue;
           }
@@ -201,8 +202,10 @@ final class TenantRuntimeConfiguration {
     if (isset($tenant['features']['photoRequiredCategories'])) {
       $existing['features']['photoRequiredCategories'] = array_values(array_unique($tenant['features']['photoRequiredCategories']));
     }
-    if (isset($tenant['features']['forms']['lockPhotoLocation'])) {
-      $patch['features']['forms']['lockPhotoLocation'] = $tenant['features']['forms']['lockPhotoLocation'];
+    foreach (['allowParentCategorySelection', 'lockPhotoLocation'] as $form_flag) {
+      if (isset($tenant['features']['forms'][$form_flag])) {
+        $patch['features']['forms'][$form_flag] = $tenant['features']['forms'][$form_flag];
+      }
     }
     // Personal assignment is opt-in. Seeds write the off state explicitly so
     // it is visible in the data; explicit input and a stored decision win.
