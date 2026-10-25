@@ -17,7 +17,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Counts incoming reports by calendar year, independently of archive state.
@@ -25,6 +24,11 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class AnnualStatsController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
+
+  /**
+   * Earliest calendar year shown; older timestamps count into this year.
+   */
+  private const MIN_YEAR = 1970;
 
   final public function __construct(
     private readonly Connection $database,
@@ -57,13 +61,11 @@ class AnnualStatsController extends ControllerBase {
     }
     $jurisdictionId = $this->resolveJurisdictionId($raw);
     $jurisdictionIds = $jurisdictionId ? $this->hierarchy->getScopeJurisdictionIds($jurisdictionId) : [];
-    if ($jurisdictionIds === []) {
-      throw new NotFoundHttpException('Jurisdiction not found.');
-    }
-
     $viewer = $this->visibility->requestUsesPublicApiKey($request) ? new AnonymousUserSession() : $this->currentUser();
-    if (!$this->visibility->allowsReadFor($viewer, $jurisdictionId)) {
-      throw new AccessDeniedHttpException('Workspace reports are not readable.');
+    // One reason-less answer for unknown, unpublished and restricted
+    // jurisdictions, so the response is no oracle for hidden workspaces.
+    if ($jurisdictionIds === [] || !$this->visibility->allowsReadFor($viewer, $jurisdictionId)) {
+      throw new AccessDeniedHttpException();
     }
 
     $timezone = new \DateTimeZone($this->dateConfigFactory->get('system.date')->get('timezone.default') ?: 'UTC');
@@ -97,11 +99,12 @@ class AnnualStatsController extends ControllerBase {
       return $this->response([], $timezone);
     }
 
-    $firstYear = (int) (new \DateTimeImmutable('@' . $bounds['first_created']))->setTimezone($timezone)->format('Y');
-    $lastYear = (int) (new \DateTimeImmutable('@' . $bounds['last_created']))->setTimezone($timezone)->format('Y');
-    if ($firstYear < 1 || $lastYear > 9999 || $lastYear - $firstYear > 1000) {
-      throw new \UnexpectedValueException('Report timestamps exceed the supported calendar range.');
-    }
+    // A migrated or hand-edited timestamp far outside the plausible range must
+    // not break the whole aggregate: clamp the window and count outliers in
+    // its first and last year.
+    $maxYear = (int) (new \DateTimeImmutable('now', $timezone))->format('Y') + 1;
+    $firstYear = min(max(self::MIN_YEAR, (int) (new \DateTimeImmutable('@' . $bounds['first_created']))->setTimezone($timezone)->format('Y')), $maxYear);
+    $lastYear = max(min($maxYear, (int) (new \DateTimeImmutable('@' . $bounds['last_created']))->setTimezone($timezone)->format('Y')), $firstYear);
 
     // Calculate exact timezone boundaries in PHP. This also works when the
     // database has no timezone tables, including historical timezone changes.
@@ -109,9 +112,16 @@ class AnnualStatsController extends ControllerBase {
     $years = [];
     for ($year = $firstYear; $year <= $lastYear; $year++) {
       $start = new \DateTimeImmutable(sprintf('%04d-01-01 00:00:00', $year), $timezone);
-      $params[":start_$year"] = $start->getTimestamp();
-      $params[":end_$year"] = $start->modify('+1 year')->getTimestamp();
-      $expression .= " WHEN n.created >= :start_$year AND n.created < :end_$year THEN $year";
+      $conditions = [];
+      if ($year > $firstYear) {
+        $params[":start_$year"] = $start->getTimestamp();
+        $conditions[] = "n.created >= :start_$year";
+      }
+      if ($year < $lastYear) {
+        $params[":end_$year"] = $start->modify('+1 year')->getTimestamp();
+        $conditions[] = "n.created < :end_$year";
+      }
+      $expression .= ' WHEN ' . ($conditions ? implode(' AND ', $conditions) : '1 = 1') . " THEN $year";
       $years[$year] = ['year' => $year, 'count' => 0];
     }
     $expression .= ' END';

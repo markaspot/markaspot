@@ -21,7 +21,6 @@ use Drupal\taxonomy\Entity\Vocabulary;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Proves annual counts survive real entity changes and revision anonymization.
@@ -158,6 +157,23 @@ final class AnnualStatsKernelTest extends KernelTestBase {
   }
 
   /**
+   * Counts an implausible future timestamp into next year instead of failing.
+   *
+   * The created column is unsigned, so the lower clamp to 1970 cannot be
+   * exercised with stored data.
+   */
+  public function testFutureTimestampIsClampedIntoNextYear(): void {
+    $this->createReport('2037-06-01T12:00:00Z', [1]);
+    $nextYear = (int) (new \DateTimeImmutable('now', new \DateTimeZone('Europe/Berlin')))->format('Y') + 1;
+    $statistics = $this->statistics();
+    $years = $statistics['years'];
+    $this->assertCount($nextYear - 2023 + 1, $years);
+    $this->assertSame(['year' => $nextYear, 'count' => 1], $years[0]);
+    $this->assertSame(['year' => 2023, 'count' => 1], end($years));
+    $this->assertSame(5, $statistics['total']);
+  }
+
+  /**
    * Excludes restricted children even when linked to a public parent.
    */
   public function testRestrictedChildDoesNotLeakThroughItsParentRelationship(): void {
@@ -188,7 +204,7 @@ final class AnnualStatsKernelTest extends KernelTestBase {
    * Rejects unknown jurisdictions instead of returning global totals.
    */
   public function testUnknownJurisdictionDoesNotReturnTheGlobalTotal(): void {
-    $this->expectException(NotFoundHttpException::class);
+    $this->expectException(AccessDeniedHttpException::class);
     $this->statistics(999);
   }
 
