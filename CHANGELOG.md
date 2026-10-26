@@ -1,5 +1,29 @@
 # Changelog
 
+## [11.9.230](https://github.com/markaspot/markaspot/compare/11.9.229...11.9.230) (2026-10-26)
+
+### Features
+
+* check a point against the first usable jurisdiction boundary ([ac1c3fd](https://github.com/markaspot/markaspot/commit/ac1c3fd1b7983def4c6b51c9ced8d3e9be79cef1))
+* count annual incoming reports independently of archive state ([437a2ef](https://github.com/markaspot/markaspot/commit/437a2ef16472e49a89aa02492ba75fa74feff0d4))
+* edit the unified report form, photo categories and photo lock through the tenant settings API ([6d075a3](https://github.com/markaspot/markaspot/commit/6d075a38c3fa4a79ae5e34e9e83f5daa5521b9a1))
+* let staff choose description and location when promoting inbound mail, one promotion per mail ([1de4ce9](https://github.com/markaspot/markaspot/commit/1de4ce9d310cac863fdff7201e510f6cf20be8e4))
+* skip the missing-location auto-reply when staff promotes an inbound mail by hand ([120dfe3](https://github.com/markaspot/markaspot/commit/120dfe351d1431759b8ce7080c69188f95c8d064))
+
+### Bug Fixes
+
+* cap imported photo categories like the dashboard, bound category IDs to the JS safe range and offer AI only with the vision module ([f0725f9](https://github.com/markaspot/markaspot/commit/f0725f99b4aa9bb7c805f3332fd06d1d59fc917f))
+* create inbound mail attachment media unpublished until vision screening has run ([6ee418f](https://github.com/markaspot/markaspot/commit/6ee418f582eb57007e7981a9d1162af2f74c50b1))
+* keep compact feature booleans editable in the schema editor and tighten report form validation ([1741232](https://github.com/markaspot/markaspot/commit/17412327bf5ca780683f1fb1406d19139eceddb6))
+* keep the inbound mail promotion lock until the report is saved and stop geocoding when the suggested address lies outside ([f3c9e70](https://github.com/markaspot/markaspot/commit/f3c9e70a397a044e7d930d6413e6f34aeb7b90a8))
+* persist inbound mail AI suggestions under the promotion lock onto the stored mail instead of saving the stale copy ([1ab50bb](https://github.com/markaspot/markaspot/commit/1ab50bb6bd85e2a5d887fc9d403a6ddf7f6324ea))
+* read stored photo category lists leniently so one bad entry never empties them ([e82fdeb](https://github.com/markaspot/markaspot/commit/e82fdeb5bf413ce31d001de8644800a42aaad6a6))
+* **stats:** answer hidden jurisdictions with one reason-less 403 and clamp implausible years ([0b60a25](https://github.com/markaspot/markaspot/commit/0b60a25fcc974ddfd7da5fbbfc9dc184fe76621d))
+
+### Documentation
+
+* describe the category ID bound in readCategoryIdList ([fb872de](https://github.com/markaspot/markaspot/commit/fb872de662528363782a7406e17790bd5749a6bc))
+
 ## [11.9.229](https://github.com/markaspot/markaspot/compare/11.9.228...11.9.229) (2026-10-25)
 
 ### Bug Fixes
