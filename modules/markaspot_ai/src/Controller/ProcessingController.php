@@ -11,6 +11,8 @@ use Drupal\Core\Queue\QueueWorkerManagerInterface;
 use Drupal\markaspot_ai\Service\EmbeddingService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -33,6 +35,7 @@ class ProcessingController extends ControllerBase {
     protected EmbeddingService $embeddingService,
     protected RequestStack $requestStackService,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    protected ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {}
 
   /**
@@ -47,7 +50,8 @@ class ProcessingController extends ControllerBase {
       $container->get('request_stack'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
-        : NULL
+        : NULL,
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -118,7 +122,7 @@ class ProcessingController extends ControllerBase {
     // Queue status.
     $embeddingQueue = $this->queueFactory->get('markaspot_ai_embedding');
     $duplicateQueue = $this->queueFactory->get('markaspot_ai_duplicate_scan');
-    $eligibleMissingEmbeddings = count($this->collectAiEnabledNodeIds(
+    $eligibleMissingEmbeddings = $this->countEligibleMissing(
       fn(int $batch_limit, int $offset): array => $this->embeddingService
         ->findMissingEmbeddings(
           $batch_limit,
@@ -128,16 +132,18 @@ class ProcessingController extends ControllerBase {
           $node_ids,
           $offset
         ),
-      max(1, $total)
-    ));
-    $eligibleMissingSentiment = count($this->collectAiEnabledNodeIds(
+      $jurisdiction_id,
+      $total
+    );
+    $eligibleMissingSentiment = $this->countEligibleMissing(
       fn(int $batch_limit, int $offset): array => $this->findMissingSentiment(
         $batch_limit,
         $node_ids,
         $offset
       ),
-      max(1, $total)
-    ));
+      $jurisdiction_id,
+      $total
+    );
 
     return new JsonResponse([
       'total_requests' => $total,
@@ -481,6 +487,43 @@ class ProcessingController extends ControllerBase {
     }
 
     return $enabled;
+  }
+
+  /**
+   * Counts missing items that AI processing may still handle.
+   *
+   * AI processing is a tenant-scoped switch, so every report of a
+   * jurisdiction shares one decision: for a scoped status it is checked once
+   * and the missing IDs are only counted, never loaded. Loading every missing
+   * report to check it one by one exhausted the PHP memory limit on tenants
+   * with tens of thousands of reports.
+   *
+   * @param callable $candidate_loader
+   *   Callable with signature fn(int $limit, int $offset): array of node IDs.
+   * @param int|null $jurisdiction_id
+   *   The jurisdiction the status is scoped to, NULL for platform-wide.
+   * @param int $total
+   *   Total number of reports in scope.
+   *
+   * @return int
+   *   Number of eligible missing items.
+   */
+  protected function countEligibleMissing(callable $candidate_loader, ?int $jurisdiction_id, int $total): int {
+    if ($jurisdiction_id === NULL) {
+      return count($this->collectAiEnabledNodeIds($candidate_loader, max(1, $total)));
+    }
+
+    $group = $this->entityTypeManager()->getStorage('group')->load($jurisdiction_id);
+    if (!$group instanceof GroupInterface
+      || $this->featureScopeResolver === NULL
+      || !$this->featureScopeResolver->isEnabledEffective('aiProcessing', $group, FALSE)) {
+      return 0;
+    }
+
+    // One query for all missing IDs: they are only counted, and paging with
+    // OFFSET over an IN() list of the whole tenant cost minutes on large
+    // tenants. The ID list itself stays small (integers only).
+    return count($candidate_loader(max(1, $total) + 1, 0));
   }
 
   /**
