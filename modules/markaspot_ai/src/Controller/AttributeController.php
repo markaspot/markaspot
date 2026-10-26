@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Controller;
 
+use Drupal\Core\Cache\MemoryCache\MemoryCacheInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Queue\QueueFactory;
@@ -23,6 +24,15 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  */
 final class AttributeController extends ControllerBase {
 
+  /**
+   * Number of nodes loaded at once by the status counters.
+   *
+   * The counters walk every report of a jurisdiction; large tenants hold tens
+   * of thousands, which one loadMultiple() cannot fit into the PHP memory
+   * limit.
+   */
+  private const NODE_BATCH_SIZE = 200;
+
   use JurisdictionIdResolverTrait;
 
   /**
@@ -34,6 +44,7 @@ final class AttributeController extends ControllerBase {
     protected AttributeFillingService $attributeFillingService,
     protected RequestStack $requestStackService,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    protected ?MemoryCacheInterface $entityMemoryCache = NULL,
   ) {}
 
   /**
@@ -47,7 +58,8 @@ final class AttributeController extends ControllerBase {
       $container->get('request_stack'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
-        : NULL
+        : NULL,
+      $container->get('entity.memory_cache'),
     );
   }
 
@@ -71,18 +83,21 @@ final class AttributeController extends ControllerBase {
 
     $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction($jurisdiction_id) : NULL;
     if ($node_ids !== NULL) {
-      $node_ids = $this->filterAiEnabledNodeIds($node_ids);
+      // Only reports in a category with a stored definition can count. That
+      // SQL prefilter runs first so the per-report AI opt-in check, which
+      // loads each node, no longer walks every report of a large tenant.
+      $node_ids = $this->filterAiEnabledNodeIds($this->getCandidateNodeIdsWithServiceDefinition($node_ids));
     }
 
     if ($node_ids !== NULL && empty($node_ids)) {
       return new JsonResponse($this->buildEmptyStatus());
     }
 
-    // Count nodes that have a category with service definitions.
-    $totalWithDefs = $this->countNodesWithDefinitions($node_ids);
-
-    // Count nodes that already have filled attributes.
-    $filled = $this->countFilledAttributes($node_ids);
+    // Nodes whose category has fillable attributes, resolved once and reused
+    // for both counts.
+    $eligible_node_ids = $this->getNodeIdsWithVariableDefinitions($node_ids);
+    $totalWithDefs = count($eligible_node_ids);
+    $filled = $this->countNodesWithFilledAttributes($eligible_node_ids);
 
     $missing = max(0, $totalWithDefs - $filled);
     $percentage = $totalWithDefs > 0 ? round(($filled / $totalWithDefs) * 100) : 0;
@@ -471,45 +486,48 @@ final class AttributeController extends ControllerBase {
   }
 
   /**
-   * Counts nodes that have a category with service definitions.
+   * Counts the given nodes that already have filled attributes.
    *
-   * @param array|null $node_ids
-   *   Optional array of node IDs to filter.
-   *
-   * @return int
-   *   Count of matching nodes.
-   */
-  protected function countNodesWithDefinitions(?array $node_ids): int {
-    return count($this->getNodeIdsWithVariableDefinitions($node_ids));
-  }
-
-  /**
-   * Counts nodes that already have filled attributes.
-   *
-   * @param array|null $node_ids
-   *   Optional array of node IDs to filter.
+   * @param array<int> $eligible_node_ids
+   *   Node IDs whose category has fillable attributes.
    *
    * @return int
    *   Count of nodes with filled attributes.
    */
-  protected function countFilledAttributes(?array $node_ids): int {
-    $eligible_node_ids = $this->getNodeIdsWithVariableDefinitions($node_ids);
-    if (empty($eligible_node_ids)) {
-      return 0;
-    }
-
-    $nodes = $this->entityTypeManager()
-      ->getStorage('node')
-      ->loadMultiple($eligible_node_ids);
-
+  protected function countNodesWithFilledAttributes(array $eligible_node_ids): int {
     $filled = 0;
-    foreach ($nodes as $node) {
+    foreach ($this->iterateNodes($eligible_node_ids) as $node) {
       if ($node instanceof NodeInterface && $this->nodeHasFilledAttributes($node)) {
         $filled++;
       }
     }
 
     return $filled;
+  }
+
+  /**
+   * Yields nodes batch by batch and releases each batch from the entity cache.
+   *
+   * @param array<int> $node_ids
+   *   Node IDs to load.
+   *
+   * @return \Generator<\Drupal\Core\Entity\EntityInterface>
+   *   The loaded nodes.
+   */
+  protected function iterateNodes(array $node_ids): \Generator {
+    $storage = $this->entityTypeManager()->getStorage('node');
+    foreach (array_chunk(array_values($node_ids), self::NODE_BATCH_SIZE) as $chunk) {
+      foreach ($storage->loadMultiple($chunk) as $node) {
+        yield $node;
+      }
+      // Release the batch from the static entity cache only. resetCache()
+      // would also evict the persistent entity cache and invalidate cache
+      // tags for every report on each dashboard poll.
+      $this->entityMemoryCache?->deleteMultiple(array_map(
+        static fn($id): string => 'values:node:' . $id,
+        $chunk,
+      ));
+    }
   }
 
   /**
@@ -527,12 +545,8 @@ final class AttributeController extends ControllerBase {
       return [];
     }
 
-    $nodes = $this->entityTypeManager()
-      ->getStorage('node')
-      ->loadMultiple($candidate_ids);
-
     $eligible = [];
-    foreach ($nodes as $node) {
+    foreach ($this->iterateNodes($candidate_ids) as $node) {
       if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
         continue;
       }
@@ -819,9 +833,8 @@ final class AttributeController extends ControllerBase {
       return [];
     }
 
-    $nodes = $this->entityTypeManager()->getStorage('node')->loadMultiple($node_ids);
     $enabled = [];
-    foreach ($nodes as $node) {
+    foreach ($this->iterateNodes($node_ids) as $node) {
       if ($node->bundle() !== 'service_request') {
         continue;
       }

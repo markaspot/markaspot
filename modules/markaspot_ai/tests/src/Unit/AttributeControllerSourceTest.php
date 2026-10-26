@@ -19,7 +19,7 @@ final class AttributeControllerSourceTest extends UnitTestCase {
   public function testQueueBatchRequiresJurisdictionAccess(): void {
     $source = $this->loadControllerSource();
 
-    $queueBatch = $this->methodSource($source, 'queueBatch', 'countNodesWithDefinitions');
+    $queueBatch = $this->methodSource($source, 'queueBatch', 'countNodesWithFilledAttributes');
 
     $this->assertStringContainsString('currentUserCanAccessJurisdiction($jurisdiction_id)', $queueBatch);
     $this->assertStringContainsString("'Access denied for the requested jurisdiction.'", $queueBatch);
@@ -65,6 +65,28 @@ final class AttributeControllerSourceTest extends UnitTestCase {
     $this->assertStringContainsString('!$this->currentUserCanSeeAllJurisdictions()', $status);
     $this->assertStringContainsString('? 0', $status);
     $this->assertStringContainsString("'queue' => \$queue_count", $status);
+  }
+
+  /**
+   * The status counters must not load every report of a jurisdiction at once.
+   */
+  public function testStatusCountersLoadNodesInBatches(): void {
+    $source = $this->loadControllerSource();
+
+    $iterate = $this->methodSource($source, 'iterateNodes', 'getNodeIdsWithVariableDefinitions');
+    $this->assertStringContainsString('array_chunk(', $iterate);
+    $this->assertStringContainsString('entityMemoryCache?->deleteMultiple(', $iterate);
+    $this->assertStringNotContainsString('->resetCache(', $iterate);
+
+    foreach ([
+      ['countNodesWithFilledAttributes', 'iterateNodes'],
+      ['getNodeIdsWithVariableDefinitions', 'getCandidateNodeIdsWithServiceDefinition'],
+      ['filterAiEnabledNodeIds', 'collectAiEnabledNodeIds'],
+    ] as [$method, $next]) {
+      $body = $this->methodSource($source, $method, $next);
+      $this->assertStringContainsString('$this->iterateNodes(', $body, $method);
+      $this->assertStringNotContainsString('loadMultiple(', $body, $method);
+    }
   }
 
   /**
