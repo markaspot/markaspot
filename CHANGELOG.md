@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.231](https://github.com/markaspot/markaspot/compare/11.9.230...11.9.231) (2026-10-26)
+
+### Bug Fixes
+
+* **ai:** count attribute status on large tenants without loading every report at once ([ed74624](https://github.com/markaspot/markaspot/commit/ed74624d6858f5e1a2d051fe96a7fade3d74ed47))
+
+### Documentation
+
+* add GPL-2.0 LICENSE.txt ([1ae127d](https://github.com/markaspot/markaspot/commit/1ae127d9a6db968addadad7b2d444d36d213c825))
+
 ## [11.9.230](https://github.com/markaspot/markaspot/compare/11.9.229...11.9.230) (2026-10-26)
 
 ### Features
