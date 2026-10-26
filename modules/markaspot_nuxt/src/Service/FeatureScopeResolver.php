@@ -55,6 +55,11 @@ class FeatureScopeResolver {
     'search' => 'jurisdiction',
     'boundaries' => 'jurisdiction',
     'forms.allowParentCategorySelection' => 'jurisdiction',
+    'forms.lockPhotoLocation' => 'jurisdiction',
+    // Report form configuration objects. Not booleans: they only take part in
+    // the editability check, the citizen settings pass them through as stored.
+    'unifiedReporting' => 'jurisdiction',
+    'photoRequiredCategories' => 'jurisdiction',
   ];
 
   /**
@@ -105,6 +110,7 @@ class FeatureScopeResolver {
     'search' => TRUE,
     'boundaries' => FALSE,
     'forms.allowParentCategorySelection' => FALSE,
+    'forms.lockPhotoLocation' => FALSE,
   ];
 
   /**
@@ -145,6 +151,11 @@ class FeatureScopeResolver {
     'onboardingTour',
     'passwordless',
   ];
+
+  /**
+   * Largest category ID the dashboard can round-trip (JS safe integer).
+   */
+  public const MAX_CATEGORY_ID = 9007199254740991;
 
   /**
    * Constructs a feature scope resolver.
@@ -212,6 +223,12 @@ class FeatureScopeResolver {
       if (!$this->isTierFeatureAllowed($key, $jur)) {
         $this->writeFeatureValue($features, $key, FALSE);
       }
+    }
+
+    // Citizen forms compare category IDs strictly as numbers; stored lists may
+    // carry integer strings from hand-edited configs.
+    if (array_key_exists('photoRequiredCategories', $features)) {
+      $features['photoRequiredCategories'] = self::readCategoryIdList($features['photoRequiredCategories']);
     }
 
     // Hard platform gate, applied last so no stored root or child opt-in can
@@ -601,9 +618,11 @@ class FeatureScopeResolver {
         return $default;
       }
     }
-    if ($key === 'forms.allowParentCategorySelection') {
-      $legacy = $this->readDotPath($config, 'forms.allowParentCategorySelection');
-      $stored = $this->readDotPath($config, 'features.forms.allowParentCategorySelection');
+    if (str_starts_with($key, 'forms.')) {
+      // Form flags live below features.forms; older configs kept them in a
+      // top-level forms object, which still counts without a feature value.
+      $legacy = $this->readDotPath($config, $key);
+      $stored = $this->readDotPath($config, 'features.' . $key);
       return is_bool($stored) ? $stored : (is_bool($legacy) ? $legacy : $default);
     }
     $stored = $this->readDotPath($config, 'features.' . $key);
@@ -629,9 +648,9 @@ class FeatureScopeResolver {
       $features[$key] = ['enabled' => $value] + $existing;
       return;
     }
-    if ($key === 'forms.allowParentCategorySelection') {
+    if (str_starts_with($key, 'forms.')) {
       $features['forms'] = is_array($features['forms'] ?? NULL) ? $features['forms'] : [];
-      $features['forms']['allowParentCategorySelection'] = $value;
+      $features['forms'][substr($key, strlen('forms.'))] = $value;
       return;
     }
     if (is_array($features[$key] ?? NULL)) {
@@ -639,6 +658,61 @@ class FeatureScopeResolver {
       return;
     }
     $features[$key] = $value;
+  }
+
+  /**
+   * Reads a stored category ID list leniently.
+   *
+   * Keeps IDs that parseCategoryId() accepts, drops everything else, and
+   * returns unique IDs in ascending order. Reading never fails: a single
+   * malformed entry must not hide the valid ones.
+   *
+   * @param mixed $value
+   *   The stored value.
+   *
+   * @return int[]
+   *   The valid category IDs.
+   */
+  public static function readCategoryIdList(mixed $value): array {
+    if (!is_array($value)) {
+      return [];
+    }
+    $ids = [];
+    foreach ($value as $id) {
+      $id = self::parseCategoryId($id);
+      if ($id !== NULL) {
+        $ids[$id] = $id;
+      }
+    }
+    sort($ids);
+    return array_values($ids);
+  }
+
+  /**
+   * Parses one category ID.
+   *
+   * Accepts positive integers and integer strings up to MAX_CATEGORY_ID, the
+   * largest value the dashboard can hold without rounding.
+   *
+   * @param mixed $id
+   *   The raw value.
+   *
+   * @return int|null
+   *   The ID, or NULL when the value is not a valid category ID.
+   */
+  public static function parseCategoryId(mixed $id): ?int {
+    if (is_string($id) && preg_match('/^[1-9][0-9]{0,15}$/', $id)) {
+      $id = (int) $id;
+    }
+    return is_int($id) && $id > 0 && $id <= self::MAX_CATEGORY_ID ? $id : NULL;
+  }
+
+  /**
+   * Whether the vision module that powers AI photo analysis is installed.
+   */
+  public function hasVisionModule(): bool {
+    return $this->moduleHandler === NULL
+      || $this->moduleHandler->moduleExists('markaspot_vision');
   }
 
   /**

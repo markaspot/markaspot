@@ -160,6 +160,11 @@
           "description": "Enable party selection field on forms"
         }
       },
+      "unifiedReporting": {
+        "ui:options": {
+          "description": "Unified report form: enabled, AI mode and photo policy"
+        }
+      },
       "photoRequiredCategories": {
         "ui:options": {
           "description": "Category IDs that require photo upload"

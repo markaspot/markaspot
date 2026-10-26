@@ -187,10 +187,19 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       $type = $property_schema->type ?? NULL;
 
       if ($type === 'object' && is_array($value)) {
-        $existing_value = isset($existing[$property]) && is_array($existing[$property])
-          ? $existing[$property]
-          : [];
+        $stored = $existing[$property] ?? NULL;
+        // A feature stored in its compact boolean form (unifiedReporting:
+        // true) is the enabled value of an object schema. Expand it so an
+        // unchecked 'enabled' counts as a change of an existing key instead of
+        // an untouched default, then fold it back if nothing else was set.
+        $expands_scalar = is_bool($stored) && isset($property_schema->properties->enabled);
+        $existing_value = is_array($stored) ? $stored : ($expands_scalar ? ['enabled' => $stored] : []);
         $object_value = self::mergePreservingUnknownKeys($existing_value, $value, $property_schema);
+
+        if ($expands_scalar && array_keys($object_value) === ['enabled']) {
+          $merged[$property] = (bool) $object_value['enabled'];
+          continue;
+        }
 
         if ($object_value === []) {
           // An empty submitted object means "nothing set here": preserve a

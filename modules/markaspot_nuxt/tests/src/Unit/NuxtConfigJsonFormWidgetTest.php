@@ -226,6 +226,47 @@ final class NuxtConfigJsonFormWidgetTest extends UnitTestCase {
   }
 
   /**
+   * Tests a compact boolean feature can be switched off and extended.
+   */
+  public function testCompactBooleanFeatureObjectIsEditable(): void {
+    $schema = (object) [
+      'type' => 'object',
+      'properties' => (object) [
+        'unifiedReporting' => (object) [
+          'type' => 'object',
+          'properties' => (object) [
+            'enabled' => (object) ['type' => 'boolean', 'default' => FALSE],
+            'aiMode' => (object) ['type' => 'string', 'default' => 'disabled'],
+            'photoPolicy' => (object) ['type' => 'string', 'default' => 'optional'],
+          ],
+        ],
+      ],
+    ];
+    $defaults = ['aiMode' => 'disabled', 'photoPolicy' => 'optional'];
+
+    $off = NuxtConfigJsonFormWidget::mergePreservingUnknownKeys(
+      ['unifiedReporting' => TRUE],
+      ['unifiedReporting' => ['enabled' => FALSE] + $defaults],
+      $schema,
+    );
+    $this->assertFalse($off['unifiedReporting']);
+
+    $unchanged = NuxtConfigJsonFormWidget::mergePreservingUnknownKeys(
+      ['unifiedReporting' => TRUE],
+      ['unifiedReporting' => ['enabled' => TRUE] + $defaults],
+      $schema,
+    );
+    $this->assertTrue($unchanged['unifiedReporting']);
+
+    $extended = NuxtConfigJsonFormWidget::mergePreservingUnknownKeys(
+      ['unifiedReporting' => TRUE],
+      ['unifiedReporting' => ['enabled' => TRUE, 'aiMode' => 'opt_in', 'photoPolicy' => 'optional']],
+      $schema,
+    );
+    $this->assertSame(['enabled' => TRUE, 'aiMode' => 'opt_in'], $extended['unifiedReporting']);
+  }
+
+  /**
    * Tests that oneOf-only nodes are pinned to their object branch.
    */
   public function testFlattenOneOfNodesPinsObjectBranch(): void {

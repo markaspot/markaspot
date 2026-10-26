@@ -131,6 +131,79 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
+   * Tests the report form settings pass through and lockPhotoLocation resolves.
+   *
+   * @covers ::resolveEffectiveFeatures
+   * @covers ::isEditable
+   */
+  public function testReportFormSettingsResolve(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $unified = [
+      'enabled' => TRUE,
+      'aiMode' => 'opt_in',
+      'photoPolicy' => 'required_by_category',
+      'cta' => ['heading' => 'Melden'],
+    ];
+    $stored = $this->createGroup(1, [
+      'field_nuxt_config' => json_encode(['features' => [
+        'unifiedReporting' => $unified,
+        'photoRequiredCategories' => [12, '7', 'x', 0],
+        'forms' => ['lockPhotoLocation' => TRUE],
+      ]]),
+    ]);
+    $legacy = $this->createGroup(1, [
+      'field_nuxt_config' => json_encode(['features' => [], 'forms' => ['lockPhotoLocation' => TRUE]]),
+    ]);
+    $empty = $this->createGroup(1, ['field_nuxt_config' => '{}']);
+
+    $resolver = $this->createResolver($stored);
+    $features = $resolver->resolveEffectiveFeatures($stored);
+    $this->assertSame($unified, $features['unifiedReporting']);
+    $this->assertSame([7, 12], $features['photoRequiredCategories']);
+    $this->assertTrue($features['forms']['lockPhotoLocation']);
+    $this->assertFalse($features['forms']['allowParentCategorySelection']);
+    foreach (['unifiedReporting', 'photoRequiredCategories', 'forms.lockPhotoLocation'] as $key) {
+      $this->assertTrue($resolver->isEditable($key, $stored), $key);
+    }
+
+    $this->assertTrue($this->createResolver($legacy)->resolveEffectiveFeatures($legacy)['forms']['lockPhotoLocation']);
+    $defaults = $this->createResolver($empty)->resolveEffectiveFeatures($empty);
+    $this->assertFalse($defaults['forms']['lockPhotoLocation']);
+    $this->assertArrayNotHasKey('unifiedReporting', $defaults);
+  }
+
+  /**
+   * Category IDs stay within the range the dashboard can hold exactly.
+   */
+  public function testCategoryIdBounds(): void {
+    $this->assertSame(9007199254740991, FeatureScopeResolver::parseCategoryId('9007199254740991'));
+    $this->assertSame(9007199254740991, FeatureScopeResolver::parseCategoryId(9007199254740991));
+    $invalid_ids = ['9007199254740992', 9007199254740992, '0', 0, -1, '012', 'x', 1.0, NULL];
+    foreach ($invalid_ids as $invalid) {
+      $this->assertNull(FeatureScopeResolver::parseCategoryId($invalid), var_export($invalid, TRUE));
+    }
+    $this->assertSame(
+      [3, 9007199254740991],
+      FeatureScopeResolver::readCategoryIdList([9007199254740991, '9007199254740993', 3, '3']),
+    );
+  }
+
+  /**
+   * AI analysis is only offered where the vision module is installed.
+   */
+  public function testVisionModuleGate(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->willReturnCallback(static fn(string $module): bool => $module !== 'markaspot_vision');
+    $resolver = new FeatureScopeResolver(
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(ConfigFactoryInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $moduleHandler,
+    );
+    $this->assertFalse($resolver->hasVisionModule());
+  }
+
+  /**
    * Tests tenant object options come from the root, not stale child data.
    *
    * @covers ::resolveEffectiveFeatures

@@ -15,6 +15,16 @@ final class TenantRuntimeConfiguration {
     'piiRedaction', 'privacyBlockOnFlag', 'moderation', 'personalAssignment',
   ];
 
+  /**
+   * Mirrors TenantSettingsController::MAX_PHOTO_REQUIRED_CATEGORIES.
+   */
+  public const MAX_PHOTO_REQUIRED_CATEGORIES = 1000;
+
+  /**
+   * Mirrors FeatureScopeResolver::MAX_CATEGORY_ID (JS safe integer).
+   */
+  public const MAX_CATEGORY_ID = 9007199254740991;
+
   public const LANGUAGES = [
     'de', 'en', 'cs', 'de-ls', 'es', 'fr', 'hu', 'it', 'pt',
     'tr', 'pl', 'nl', 'da', 'sv', 'nb', 'fi', 'uk', 'ar',
@@ -73,6 +83,26 @@ final class TenantRuntimeConfiguration {
               || !in_array($value['aiMode'] ?? NULL, ['disabled', 'opt_in', 'opt_out'], TRUE)
               || !in_array($value['photoPolicy'] ?? NULL, ['optional', 'required', 'required_by_category'], TRUE)) {
               $errors[] = 'tenant.features.unifiedReporting requires enabled, aiMode and photoPolicy.';
+            }
+            continue;
+          }
+          if ($name === 'photoRequiredCategories') {
+            // Same bounds as the dashboard API, so an import never stores a
+            // list the dashboard cannot save again.
+            if (!is_array($value) || !array_is_list($value)
+              || array_filter($value, static fn($id): bool => !is_int($id) || $id < 1 || $id > self::MAX_CATEGORY_ID) !== []) {
+              $errors[] = 'tenant.features.photoRequiredCategories must be a list of category term IDs.';
+            }
+            elseif (count(array_unique($value)) > self::MAX_PHOTO_REQUIRED_CATEGORIES) {
+              $errors[] = 'tenant.features.photoRequiredCategories lists more than ' . self::MAX_PHOTO_REQUIRED_CATEGORIES . ' categories.';
+            }
+            continue;
+          }
+          if ($name === 'forms') {
+            $form_flags = ['allowParentCategorySelection', 'lockPhotoLocation'];
+            if (!is_array($value) || $value === [] || array_diff(array_keys($value), $form_flags) !== []
+              || array_filter($value, static fn($flag): bool => !is_bool($flag)) !== []) {
+              $errors[] = 'tenant.features.forms supports only the booleans allowParentCategorySelection and lockPhotoLocation.';
             }
             continue;
           }
@@ -182,6 +212,15 @@ final class TenantRuntimeConfiguration {
     }
     if (isset($tenant['features']['unifiedReporting'])) {
       $patch['features']['unifiedReporting'] = $tenant['features']['unifiedReporting'];
+    }
+    // The category list replaces the stored one; a merge keeps removed IDs.
+    if (isset($tenant['features']['photoRequiredCategories'])) {
+      $existing['features']['photoRequiredCategories'] = array_values(array_unique($tenant['features']['photoRequiredCategories']));
+    }
+    foreach (['allowParentCategorySelection', 'lockPhotoLocation'] as $form_flag) {
+      if (isset($tenant['features']['forms'][$form_flag])) {
+        $patch['features']['forms'][$form_flag] = $tenant['features']['forms'][$form_flag];
+      }
     }
     // Personal assignment is opt-in. Seeds write the off state explicitly so
     // it is visible in the data; explicit input and a stored decision win.

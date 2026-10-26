@@ -28,6 +28,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -3298,6 +3299,163 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests getFeatureSettings() defaults the report form settings.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsDefaultsReportFormSettings(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $data = json_decode($this->controller->getFeatureSettings(Request::create('/api/tenant/14/features', 'GET'), '14')->getContent(), TRUE);
+
+    $this->assertSame(['enabled' => FALSE, 'aiMode' => 'disabled', 'photoPolicy' => 'optional'], $data['features']['unifiedReporting']);
+    $this->assertSame([], $data['features']['photoRequiredCategories']);
+    $this->assertFalse($data['features']['forms']['lockPhotoLocation']);
+  }
+
+  /**
+   * Tests getFeatureSettings() normalises stored report form settings.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsNormalisesReportFormSettings(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => [
+        'unifiedReporting' => [
+          'enabled' => TRUE,
+          'aiMode' => 'bogus',
+          'photoPolicy' => 'required_by_category',
+          'cta' => ['heading' => 'x'],
+        ],
+        'photoRequiredCategories' => ['12', 7, 12, 'abc', 0, -3, 2.5],
+        'forms' => ['lockPhotoLocation' => TRUE],
+      ]]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $data = json_decode($this->controller->getFeatureSettings(Request::create('/api/tenant/14/features', 'GET'), '14')->getContent(), TRUE);
+
+    $this->assertSame(['enabled' => TRUE, 'aiMode' => 'disabled', 'photoPolicy' => 'required_by_category'], $data['features']['unifiedReporting']);
+    $this->assertSame([7, 12], $data['features']['photoRequiredCategories']);
+    $this->assertTrue($data['features']['forms']['lockPhotoLocation']);
+  }
+
+  /**
+   * Tests a save merges report form settings and keeps stored extras.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsStoresReportFormSettings(): void {
+    $storedNuxtConfig = json_encode(['features' => [
+      'unifiedReporting' => ['enabled' => FALSE, 'aiMode' => 'opt_out', 'cta' => ['heading' => 'Melden']],
+      'photoRequiredCategories' => [99],
+      'forms' => ['allowParentCategorySelection' => TRUE],
+      'search' => ['enabled' => TRUE, 'mode' => 'fuzzy'],
+    ]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'unifiedReporting' => ['enabled' => TRUE, 'photoPolicy' => 'required_by_category'],
+      'photoRequiredCategories' => [43, '2', 43],
+      'forms' => ['lockPhotoLocation' => TRUE],
+    ]), '14');
+    $updated = json_decode($storedNuxtConfig, TRUE)['features'];
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame(
+      [
+        'enabled' => TRUE,
+        'aiMode' => 'opt_out',
+        'cta' => ['heading' => 'Melden'],
+        'photoPolicy' => 'required_by_category',
+      ],
+      $updated['unifiedReporting']
+    );
+    $this->assertSame([2, 43], $updated['photoRequiredCategories']);
+    $this->assertSame(['allowParentCategorySelection' => TRUE, 'lockPhotoLocation' => TRUE], $updated['forms']);
+    $this->assertSame(['enabled' => TRUE, 'mode' => 'fuzzy'], $updated['search']);
+  }
+
+  /**
+   * Tests a partial save heals a stored boolean unifiedReporting.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsHealsBooleanUnifiedReporting(): void {
+    $storedNuxtConfig = json_encode(['features' => ['unifiedReporting' => TRUE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest([
+      'unifiedReporting' => ['aiMode' => 'opt_out'],
+    ]), '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame(
+      ['enabled' => TRUE, 'aiMode' => 'opt_out'],
+      json_decode($storedNuxtConfig, TRUE)['features']['unifiedReporting']
+    );
+  }
+
+  /**
+   * Tests empty JSON objects and lists keep their meaning.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsDistinguishesJsonObjectsAndLists(): void {
+    $storedNuxtConfig = json_encode(['features' => ['photoRequiredCategories' => [5]]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    foreach (['{"photoRequiredCategories":{}}', '{"unifiedReporting":[]}', '{"photoRequiredCategories":{"0":12}}'] as $body) {
+      $request = Request::create('/api/tenant/14/features', 'PATCH', [], [], [], ['CONTENT_TYPE' => 'application/json'], $body);
+      $this->assertEquals(422, $this->controller->updateFeatureSettings($request, '14')->getStatusCode(), $body);
+    }
+    $this->assertSame([5], json_decode($storedNuxtConfig, TRUE)['features']['photoRequiredCategories']);
+  }
+
+  /**
+   * Tests invalid report form settings are rejected without a write.
+   *
+   * @covers ::updateFeatureSettings
+   * @dataProvider invalidReportFormSettingsProvider
+   */
+  public function testUpdateFeatureSettingsRejectsInvalidReportFormSettings(array $payload): void {
+    $storedNuxtConfig = json_encode(['features' => ['photoRequiredCategories' => [5]]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->updateFeatureSettings($this->createFeaturePatchRequest($payload), '14');
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertSame([5], json_decode($storedNuxtConfig, TRUE)['features']['photoRequiredCategories']);
+  }
+
+  /**
+   * Provides invalid report form payloads.
+   */
+  public static function invalidReportFormSettingsProvider(): array {
+    return [
+      'ai mode' => [['unifiedReporting' => ['aiMode' => 'always']]],
+      'photo policy' => [['unifiedReporting' => ['photoPolicy' => 'sometimes']]],
+      'enabled string' => [['unifiedReporting' => ['enabled' => 'true']]],
+      'cta not editable here' => [['unifiedReporting' => ['cta' => ['heading' => 'x']]]],
+      'list instead of object' => [['unifiedReporting' => [TRUE]]],
+      'category zero' => [['photoRequiredCategories' => [0]]],
+      'category text' => [['photoRequiredCategories' => ['abc']]],
+      'categories object' => [['photoRequiredCategories' => ['a' => 1]]],
+      'lock string' => [['forms' => ['lockPhotoLocation' => 'yes']]],
+      'oversized category id' => [['photoRequiredCategories' => ['999999999999999999999999999999']]],
+      'id beyond the JS safe integer' => [['photoRequiredCategories' => ['9007199254740993']]],
+      'int beyond the JS safe integer' => [['photoRequiredCategories' => [9007199254740992]]],
+    ];
+  }
+
+  /**
    * Tests getFeatureSettings() reads legacy top-level form flags.
    *
    * @covers ::getFeatureSettings
@@ -3434,6 +3592,36 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['aiProcessing']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
     $this->assertFalse($data['capabilities']['aiProcessing']);
+  }
+
+  /**
+   * Tests the AI analysis capability follows the vision module.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsAiAnalysisCapabilityFollowsVisionModule(): void {
+    $group = $this->createMockGroup(['field_nuxt_config' => json_encode(['features' => ['aiAnalysis' => TRUE]])]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $container = \Drupal::getContainer();
+
+    foreach ([TRUE, FALSE] as $vision_installed) {
+      $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+      $moduleHandler->method('moduleExists')->willReturnCallback(
+        static fn(string $module): bool => $module === 'markaspot_vision' && $vision_installed,
+      );
+      $container->set('markaspot_nuxt.feature_scope_resolver', new FeatureScopeResolver(
+        $this->entityTypeManager,
+        $container->get('config.factory'),
+        $this->hierarchyResolver,
+        $moduleHandler,
+      ));
+      $controller = TenantSettingsController::create($container);
+
+      $response = $controller->getFeatureSettings(Request::create('/api/tenant/14/features', 'GET'), '14');
+      $data = json_decode($response->getContent(), TRUE);
+      $this->assertSame($vision_installed, $data['capabilities']['aiAnalysis']);
+      $this->assertArrayHasKey('aiAnalysis', $data['features']);
+    }
   }
 
   /**
