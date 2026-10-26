@@ -10,8 +10,11 @@ use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\file\FileInterface;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Exception\LocationOutsideJurisdictionException;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\InboundMailAccessControlHandler;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
+use Drupal\markaspot_mail_inbound\Service\PromoteOptions;
 use Drupal\markaspot_mail_inbound\Service\InboundMailReplyService;
 use Drupal\markaspot_mail_inbound\Service\MailIntakeFidelity;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
@@ -206,6 +209,11 @@ class InboundMailApiController extends ControllerBase {
       'suggested_category_label' => $this->categoryLabel($suggestedTid),
       'suggestion_confidence' => $inbound_mail->getSuggestionConfidence(),
       'suggestion_status' => $inbound_mail->getSuggestionStatus(),
+      // Detail-only (data minimization, see listItem()): the promote dialog
+      // shows them so staff can accept or reject each one. Both are NULL
+      // when absent; the vision path stores a description without address.
+      'suggested_address' => $inbound_mail->getSuggestedAddress(),
+      'suggested_description' => $inbound_mail->getSuggestedDescription(),
     ]);
   }
 
@@ -292,30 +300,56 @@ class InboundMailApiController extends ControllerBase {
 
   /**
    * POST /api/inbound-mail/{inbound_mail}/promote — categorize & promote.
+   *
+   * Body: {category_tid, use_suggested_description?, use_suggested_address?,
+   * location?}. Only category_tid is required; the defaults reproduce the
+   * behavior before the confirmation dialog (AI summary as description,
+   * server-side geocoding without the suggested address).
+   *
+   * The location key distinguishes three cases: absent (server geocodes the
+   * hint and the regex match, boundary-checked), null (no coordinates, no
+   * server geocoding) and {lat, lng} (staff-confirmed point, checked against
+   * the jurisdiction boundary, 422 when outside). There is deliberately no
+   * free-text description input: staff edits the report on the edit page.
    */
   public function promote(InboundMail $inbound_mail, Request $request): JsonResponse {
     if (!$inbound_mail->access('update')) {
-      return $this->errorResponse('Access denied.', 403);
+      return $this->errorResponse('Access denied.', 403, 'access_denied');
     }
     if ($inbound_mail->getState() !== InboundMail::STATE_STAGED) {
-      return $this->errorResponse('Only a staged mail can be promoted.', 409);
+      return $this->errorResponse('Only a staged mail can be promoted.', 409, PromotionConflictException::NOT_STAGED);
     }
 
     $payload = json_decode((string) $request->getContent(), TRUE);
-    $categoryTid = (int) (is_array($payload) ? ($payload['category_tid'] ?? 0) : 0);
+    $payload = is_array($payload) ? $payload : [];
+    $categoryTid = (int) ($payload['category_tid'] ?? 0);
     if ($categoryTid <= 0) {
-      return $this->errorResponse('category_tid is required.', 422);
+      return $this->errorResponse('category_tid is required.', 422, 'category_required');
     }
     // Shared promotability rule (the promote form uses the same repository):
     // the category must belong to the mail's jurisdiction scope. Both coded
     // and codeless categories are promotable; unknown or foreign-jurisdiction
     // category tids are rejected here.
     if (!$this->categoryRepository->isPromotable($categoryTid, $inbound_mail->getJurisdictionId())) {
-      return $this->errorResponse('The category is not valid for this jurisdiction.', 422);
+      return $this->errorResponse('The category is not valid for this jurisdiction.', 422, 'invalid_category');
+    }
+
+    $options = $this->promoteOptions($payload);
+    if ($options === NULL) {
+      return $this->errorResponse('location must be null or an object with numeric lat (-90 to 90) and lng (-180 to 180).', 422, 'invalid_location');
     }
 
     try {
-      $node = $this->promoter->promoteToServiceRequest($inbound_mail, $categoryTid);
+      $result = $this->promoter->promote($inbound_mail, $categoryTid, NULL, $options);
+    }
+    catch (PromotionConflictException $e) {
+      // A double click, a colleague or the auto-promote worker won the race.
+      return $e->reason === PromotionConflictException::IN_PROGRESS
+        ? $this->errorResponse('The mail is being promoted by another request.', 409, PromotionConflictException::IN_PROGRESS)
+        : $this->errorResponse('Only a staged mail can be promoted.', 409, PromotionConflictException::NOT_STAGED);
+    }
+    catch (LocationOutsideJurisdictionException) {
+      return $this->errorResponse('The location lies outside the jurisdiction.', 422, 'location_outside_jurisdiction');
     }
     catch (\RuntimeException $e) {
       // The promoter throws RuntimeException for the processor-unavailable
@@ -326,22 +360,66 @@ class InboundMailApiController extends ControllerBase {
         '@id' => $inbound_mail->id(),
         '@type' => get_class($e),
       ]);
-      return $this->errorResponse('Promotion is unavailable on this install.', 503);
+      return $this->errorResponse('Promotion is unavailable on this install.', 503, 'unavailable');
     }
     catch (\Throwable $e) {
       $this->logger->error('API promotion of inbound mail @id failed (@type).', [
         '@id' => $inbound_mail->id(),
         '@type' => get_class($e),
       ]);
-      return $this->errorResponse('Promotion failed. The error has been logged.', 500);
+      return $this->errorResponse('Promotion failed. The error has been logged.', 500, 'failed');
     }
 
+    $node = $result->node;
     return new JsonResponse([
       'nid' => (int) $node->id(),
       'request_id' => $this->nodeRequestId($node),
       'uuid' => (string) $node->uuid(),
       'ungeolocated' => !$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty(),
+      'location_source' => $result->locationSource,
+      'description_source' => $result->descriptionSource,
+      'address_text_applied' => $result->addressTextApplied,
     ]);
+  }
+
+  /**
+   * Builds the promotion options from the request payload.
+   *
+   * The two flags only count when they are JSON booleans; anything else
+   * keeps the default. Coordinates must be JSON numbers (no strings), finite
+   * and in range. Every promotion through this endpoint is staff-initiated,
+   * so the citizen gets no missing-location auto-reply.
+   *
+   * @param array<string, mixed> $payload
+   *   The decoded request body.
+   *
+   * @return \Drupal\markaspot_mail_inbound\Service\PromoteOptions|null
+   *   The options, or NULL when the location is malformed.
+   */
+  protected function promoteOptions(array $payload): ?PromoteOptions {
+    $useSuggestedDescription = ($payload['use_suggested_description'] ?? TRUE) !== FALSE;
+    $useSuggestedAddress = ($payload['use_suggested_address'] ?? FALSE) === TRUE;
+
+    // array_key_exists, not isset: an explicit null is its own mode.
+    if (!array_key_exists('location', $payload)) {
+      return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, staffInitiated: TRUE);
+    }
+    $location = $payload['location'];
+    if ($location === NULL) {
+      return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, PromoteOptions::LOCATION_NONE, staffInitiated: TRUE);
+    }
+    if (!is_array($location)) {
+      return NULL;
+    }
+    $lat = $location['lat'] ?? NULL;
+    $lng = $location['lng'] ?? NULL;
+    if (!(is_int($lat) || is_float($lat)) || !(is_int($lng) || is_float($lng))) {
+      return NULL;
+    }
+    if (!PromoteOptions::isValidCoordinate((float) $lat, (float) $lng)) {
+      return NULL;
+    }
+    return new PromoteOptions($useSuggestedDescription, $useSuggestedAddress, PromoteOptions::LOCATION_CONFIRMED, (float) $lat, (float) $lng, staffInitiated: TRUE);
   }
 
   /**
@@ -557,9 +635,21 @@ class InboundMailApiController extends ControllerBase {
 
   /**
    * Builds a JSON error response (no internal detail).
+   *
+   * @param string $message
+   *   The human-readable message.
+   * @param int $status
+   *   The HTTP status.
+   * @param string|null $code
+   *   An optional machine-readable code, added as "code" for clients that
+   *   branch on the error (the promote endpoint).
    */
-  protected function errorResponse(string $message, int $status): JsonResponse {
-    return new JsonResponse(['error' => $message], $status);
+  protected function errorResponse(string $message, int $status, ?string $code = NULL): JsonResponse {
+    $body = ['error' => $message];
+    if ($code !== NULL) {
+      $body['code'] = $code;
+    }
+    return new JsonResponse($body, $status);
   }
 
 }

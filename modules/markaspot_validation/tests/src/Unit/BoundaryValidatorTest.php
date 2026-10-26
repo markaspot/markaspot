@@ -70,6 +70,99 @@ class BoundaryValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Tests a child without geometry falls back to its root boundary.
+   *
+   * @covers ::isWithinFirstUsableBoundary
+   */
+  public function testFirstUsableBoundaryFallsBackToRoot(): void {
+    $logger = $this->createMock(LoggerInterface::class);
+    // The root decides, so the child's missing geometry is not logged.
+    $logger->expects($this->never())->method('warning');
+    $validator = new BoundaryValidator(
+      $this->entityTypeManagerReturningMap([
+        11 => $this->groupWithoutBoundary(),
+        1 => $this->groupWithBoundary($this->squareBoundary()),
+      ]),
+      $logger,
+    );
+
+    $this->assertTrue($validator->isWithinFirstUsableBoundary([11, 1], 0.5, 0.5));
+    $this->assertFalse($validator->isWithinFirstUsableBoundary([11, 1], 2.0, 2.0));
+  }
+
+  /**
+   * Tests the most specific usable boundary decides.
+   *
+   * @covers ::isWithinFirstUsableBoundary
+   */
+  public function testFirstUsableBoundaryPrefersChild(): void {
+    $validator = new BoundaryValidator(
+      $this->entityTypeManagerReturningMap([
+        11 => $this->groupWithBoundary($this->squareBoundary()),
+        1 => $this->groupWithBoundary($this->squareBoundary(10)),
+      ]),
+      $this->createMock(LoggerInterface::class),
+    );
+
+    // Inside the root square but outside the child square.
+    $this->assertFalse($validator->isWithinFirstUsableBoundary([11, 1], 5.0, 5.0));
+  }
+
+  /**
+   * Tests no usable boundary at any level is accepted and logged once.
+   *
+   * @covers ::isWithinFirstUsableBoundary
+   */
+  public function testFirstUsableBoundaryAcceptsWhenNoneUsable(): void {
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('warning')
+      ->with($this->stringContains('submission.boundary_missing'), $this->callback(
+        static fn(array $context): bool => $context['@jurisdiction'] === 11 && $context['@reason'] === 'missing_boundary'
+      ));
+    $validator = new BoundaryValidator(
+      $this->entityTypeManagerReturningMap([
+        11 => $this->groupWithoutBoundary(),
+        1 => NULL,
+      ]),
+      $logger,
+    );
+
+    $this->assertTrue($validator->isWithinFirstUsableBoundary([11, 1, 11, 0], 2.0, 2.0));
+    $this->assertTrue($validator->isWithinFirstUsableBoundary([], 2.0, 2.0), 'No jurisdiction at all is accepted without a log entry.');
+  }
+
+  /**
+   * Creates an entity type manager returning groups by id.
+   *
+   * @param array<int, \Drupal\Core\Entity\ContentEntityInterface|null> $groups
+   *   Groups keyed by id.
+   */
+  protected function entityTypeManagerReturningMap(array $groups): EntityTypeManagerInterface {
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('load')
+      ->willReturnCallback(static fn($id) => $groups[(int) $id] ?? NULL);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($storage);
+
+    return $entityTypeManager;
+  }
+
+  /**
+   * Creates a group mock without a field_boundary value.
+   */
+  protected function groupWithoutBoundary(): ContentEntityInterface {
+    $group = $this->createMock(ContentEntityInterface::class);
+    $group->method('hasField')
+      ->with('field_boundary')
+      ->willReturn(FALSE);
+    return $group;
+  }
+
+  /**
    * Creates an entity type manager returning the provided group.
    */
   protected function entityTypeManagerReturning(?ContentEntityInterface $group): EntityTypeManagerInterface {
@@ -106,17 +199,17 @@ class BoundaryValidatorTest extends UnitTestCase {
   }
 
   /**
-   * Returns a one-degree square GeoJSON polygon around 0.5/0.5.
+   * Returns a square GeoJSON polygon from 0/0, one degree wide by default.
    */
-  protected function squareBoundary(): string {
+  protected function squareBoundary(int $size = 1): string {
     return json_encode([
       'type' => 'Polygon',
       'coordinates' => [
         [
           [0, 0],
-          [1, 0],
-          [1, 1],
-          [0, 1],
+          [$size, 0],
+          [$size, $size],
+          [0, $size],
           [0, 0],
         ],
       ],

@@ -44,6 +44,10 @@ services:
       - '@queue'
       - '@?markaspot_mail_inbound.category_suggestion'
 
+  # One lock per mail guards every promotion path (API, admin form, worker).
+  # Boundary validator and hierarchy resolver are optional: without them a
+  # geocoded or confirmed point is not boundary-checked (fail-open, like the
+  # Open311 submission path).
   markaspot_mail_inbound.promoter:
     class: Drupal\markaspot_mail_inbound\Service\InboundMailPromoter
     arguments:
@@ -56,9 +60,12 @@ services:
       - '@file_system'
       - '@token'
       - '@markaspot_mail_inbound.internal_remark_writer'
+      - '@lock'
       - '@?markaspot_open311.processor'
       - '@?markaspot_geocoder.geocoder'
       - '@language_manager'
+      - '@?markaspot_validation.boundary_validator'
+      - '@?markaspot_group.hierarchy_resolver'
 
   # Shared fidelity / degradation checks: hook_requirements() and the
   # dashboard API's "fidelity" block consume the same answers (#482).
@@ -140,6 +147,7 @@ services:
       - '@markaspot_mail_inbound.category_repository'
       - '@logger.channel.markaspot_mail_inbound'
       - '@language_manager'
+      - '@lock'
       - '@?markaspot_vision.image_processing'
       - '@?markaspot_ai.client'
       - '@?markaspot_ai.token_tracking'

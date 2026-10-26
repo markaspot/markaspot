@@ -12,9 +12,11 @@ use Drupal\Core\Queue\Attribute\QueueWorker;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
+use Drupal\markaspot_mail_inbound\Service\PromoteOptions;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -127,8 +129,9 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
       return;
     }
 
-    // Run the suggestion. This updates suggestion_status and the related fields
-    // directly on the entity and saves it.
+    // Run the suggestion. It writes suggestion_status and the related fields
+    // onto the stored mail under the promotion lock, never this copy; a mail
+    // promoted meanwhile keeps its state and gets no suggestion.
     try {
       $this->suggestionService->suggest($mail);
     }
@@ -140,7 +143,7 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
       throw $e;
     }
 
-    // Re-load to pick up the saved state (suggest() may have saved internally).
+    // Re-load to pick up the stored suggestion.
     /** @var \Drupal\markaspot_mail_inbound\Entity\InboundMail|null $mail */
     $mail = $this->entityTypeManager->getStorage('inbound_mail')->load($mailId);
     if ($mail === NULL || $mail->getSuggestionStatus() !== InboundMail::SUGGESTION_DONE) {
@@ -200,16 +203,27 @@ final class MailCategorySuggestionQueueWorker extends QueueWorkerBase implements
       return;
     }
 
-    // Pass suggested address as an address hint for geocoding.
+    // Pass suggested address as an address hint for geocoding. When the
+    // report ends up without coordinates (hint unresolved or outside the
+    // jurisdiction), the suggestion is kept as field_address text so staff
+    // can place it on the edit page, like the dashboard dialog does.
     $suggestedAddress = $mail->getSuggestedAddress();
 
     try {
-      $node = $this->promoter->promoteToServiceRequest($mail, $tid, $suggestedAddress);
+      $node = $this->promoter->promoteToServiceRequest($mail, $tid, $suggestedAddress, new PromoteOptions(useSuggestedAddress: TRUE));
       $this->logger->notice('Auto-promoted mail @id to service request @nid (tid @tid, confidence @conf).', [
         '@id' => $mail->id(),
         '@nid' => $node->id(),
         '@tid' => $tid,
         '@conf' => round($confidence, 3),
+      ]);
+    }
+    catch (PromotionConflictException $e) {
+      // Staff promoted the mail first (or is doing so right now): exactly one
+      // report exists, nothing to retry. Logged so the race stays visible.
+      $this->logger->info('Auto-promote of mail @id skipped: @reason.', [
+        '@id' => $mail->id(),
+        '@reason' => $e->reason,
       ]);
     }
     catch (\RuntimeException $e) {

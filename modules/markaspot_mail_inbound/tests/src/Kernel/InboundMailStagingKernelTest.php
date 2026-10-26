@@ -10,8 +10,10 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\IngestResult;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
+use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -690,6 +692,136 @@ class InboundMailStagingKernelTest extends KernelTestBase {
   }
 
   /**
+   * The promoter re-reads the stored state and refuses a stale entity.
+   *
+   * The race guard: a caller holding a staged copy (a second staff member,
+   * the auto-promote worker) must not create a second report once another
+   * request promoted the mail.
+   */
+  public function testPromotionReloadsMailAndRejectsChangedState(): void {
+    $staged = $this->ingest($this->makeRaw('race-001@example.org'));
+    $stale = $this->loadMail((int) $staged->entityId);
+    $this->assertSame(InboundMail::STATE_STAGED, $stale->getState());
+
+    // Another request promoted the mail meanwhile (storage changes, the
+    // caller's copy does not).
+    $other = $this->container->get('entity_type.manager')->getStorage('inbound_mail')->loadUnchanged($stale->id());
+    $other->setState(InboundMail::STATE_PROMOTED);
+    $other->save();
+
+    try {
+      $this->makePromoter()->promoteToServiceRequest($stale, $this->categoryTid);
+      $this->fail('A mail that is no longer staged in storage must not be promoted.');
+    }
+    catch (PromotionConflictException $e) {
+      $this->assertSame(PromotionConflictException::NOT_STAGED, $e->reason);
+    }
+    $this->assertSame(0, $this->countNodes());
+
+    // A mail that is staged in storage still promotes normally.
+    $next = $this->ingest($this->makeRaw('race-002@example.org'));
+    $this->makePromoter()->promoteToServiceRequest($this->loadMail((int) $next->entityId), $this->categoryTid);
+    $this->assertSame(1, $this->countNodes());
+  }
+
+  /**
+   * An AI suggestion finishing after a promotion leaves the promotion intact.
+   *
+   * The suggestion service loads the mail before the slow AI call. Saving
+   * that copy afterwards restored state=staged and cleared nid, so the
+   * auto-promote worker created a second report. The result is written under
+   * the promotion lock onto the stored mail, suggestion fields only.
+   */
+  public function testSuggestionAfterPromotionKeepsPromotedState(): void {
+    $storage = $this->container->get('entity_type.manager')->getStorage('inbound_mail');
+    $promoter = $this->makePromoter();
+
+    // Staff promotes while the AI call runs.
+    $staged = $this->ingest($this->makeRaw('suggest-race-001@example.org'));
+    $stale = $this->loadMail((int) $staged->entityId);
+    $this->suggestionService(function () use ($promoter, $stale): void {
+      $promoter->promoteToServiceRequest($stale, $this->categoryTid);
+    })->suggest($stale);
+
+    /** @var \Drupal\markaspot_mail_inbound\Entity\InboundMail $stored */
+    $stored = $storage->loadUnchanged($stale->id());
+    $this->assertSame(InboundMail::STATE_PROMOTED, $stored->getState());
+    $this->assertFalse($stored->get('nid')->isEmpty(), 'The promoted mail keeps its node reference.');
+    $this->assertSame(1, $this->countNodes());
+    $this->assertNotSame(InboundMail::SUGGESTION_DONE, $stored->getSuggestionStatus());
+    $this->assertNull($stored->getSuggestedCategoryTid(), 'A promoted mail gets no late suggestion.');
+
+    // The mail stays staged but changes during the call (a citizen reply is
+    // appended): the suggestion is stored and the change survives.
+    $next = $this->ingest($this->makeRaw('suggest-race-002@example.org'));
+    $staleNext = $this->loadMail((int) $next->entityId);
+    $this->suggestionService(function () use ($storage, $staleNext): void {
+      $other = $storage->loadUnchanged($staleNext->id());
+      $other->set('body', ['value' => $other->getBody() . "\n\nReply: Marktplatz 1", 'format' => 'plain_text']);
+      $other->save();
+    })->suggest($staleNext);
+
+    /** @var \Drupal\markaspot_mail_inbound\Entity\InboundMail $storedNext */
+    $storedNext = $storage->loadUnchanged($staleNext->id());
+    $this->assertSame(InboundMail::STATE_STAGED, $storedNext->getState());
+    $this->assertSame(InboundMail::SUGGESTION_DONE, $storedNext->getSuggestionStatus());
+    $this->assertSame($this->categoryTid, $storedNext->getSuggestedCategoryTid());
+    $this->assertSame(0.93, $storedNext->getSuggestionConfidence());
+    $this->assertStringContainsString('Reply: Marktplatz 1', $storedNext->getBody());
+    $this->assertSame(1, $this->countNodes());
+  }
+
+  /**
+   * Builds the suggestion service with a text AI client double.
+   *
+   * @param \Closure $duringAiCall
+   *   Runs inside the AI call, before the answer is returned.
+   */
+  protected function suggestionService(\Closure $duringAiCall): MailCategorySuggestionService {
+    $categoryProvider = new class($this->categoryTid) {
+
+      public function __construct(private int $tid) {}
+
+      /**
+       * Returns the single test category.
+       */
+      public function getAllCategoriesHierarchical(?int $jurId = NULL): array {
+        return [['tid' => $this->tid, 'path' => 'Streetlight', 'label' => 'Streetlight']];
+      }
+
+    };
+    $aiClient = new class($duringAiCall, $this->categoryTid) {
+
+      public function __construct(private \Closure $duringAiCall, private int $tid) {}
+
+      /**
+       * Runs the interleaved action, then answers with a report verdict.
+       */
+      public function chat(array $messages, array $options = []): array {
+        ($this->duringAiCall)();
+        return ['choices' => [['message' => ['content' => json_encode([
+          'category_tid' => $this->tid,
+          'confidence' => 0.93,
+          'address' => NULL,
+          'is_report' => TRUE,
+          'summary' => 'A streetlight is out.',
+        ])]]]];
+      }
+
+    };
+    return new MailCategorySuggestionService(
+      $this->container->get('entity_type.manager'),
+      $this->container->get('config.factory'),
+      $this->container->get('markaspot_mail_inbound.category_repository'),
+      $this->container->get('logger.factory')->get('markaspot_mail_inbound'),
+      $this->container->get('language_manager'),
+      $this->container->get('lock'),
+      $categoryProvider,
+      $aiClient,
+    );
+  }
+
+  /**
    * Discard flips the mail to discarded and creates no node.
    */
   public function testDiscardMarksMailDiscarded(): void {
@@ -806,6 +938,7 @@ class InboundMailStagingKernelTest extends KernelTestBase {
       $this->container->get('file_system'),
       $this->container->get('token'),
       $this->container->get('markaspot_mail_inbound.internal_remark_writer'),
+      $this->container->get('lock'),
       $processor,
       NULL,
       $this->container->get('language_manager'),

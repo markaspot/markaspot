@@ -28,10 +28,14 @@ class InboundRequestCreatedEvent extends Event {
    *   The created service request node.
    * @param \Drupal\markaspot_mail_inbound\Dto\InboundMessage $message
    *   The originating email message.
+   * @param bool $staffInitiated
+   *   TRUE when staff promoted the mail by hand, FALSE for the auto-promote
+   *   worker and for callers that predate the flag.
    */
   public function __construct(
     protected NodeInterface $node,
     protected InboundMessage $message,
+    protected bool $staffInitiated = FALSE,
   ) {
   }
 
@@ -47,6 +51,13 @@ class InboundRequestCreatedEvent extends Event {
    */
   public function getMessage(): InboundMessage {
     return $this->message;
+  }
+
+  /**
+   * Whether staff promoted the mail by hand (dashboard API, admin form).
+   */
+  public function isStaffInitiated(): bool {
+    return $this->staffInitiated;
   }
 
 }

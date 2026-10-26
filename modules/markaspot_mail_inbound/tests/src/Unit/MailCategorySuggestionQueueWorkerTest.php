@@ -15,6 +15,7 @@ use Drupal\markaspot_mail_inbound\Plugin\QueueWorker\MailCategorySuggestionQueue
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
 use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
+use Drupal\markaspot_mail_inbound\Service\PromoteOptions;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -267,7 +268,7 @@ class MailCategorySuggestionQueueWorkerTest extends UnitTestCase {
   }
 
   /**
-   * Promoter receives the suggested address as address hint.
+   * Promoter receives the suggested address as hint and as address text.
    *
    * @covers ::maybeAutoPromote
    */
@@ -281,7 +282,12 @@ class MailCategorySuggestionQueueWorkerTest extends UnitTestCase {
       ->with(
         $this->anything(),
         5,
-        'Hauptstrasse 12, 50667 Koeln'
+        'Hauptstrasse 12, 50667 Koeln',
+        // Without coordinates the suggestion is kept as address text.
+        $this->callback(static fn($options): bool => $options instanceof PromoteOptions
+          && $options->useSuggestedAddress
+          && $options->useSuggestedDescription
+          && $options->locationMode === PromoteOptions::LOCATION_AUTO),
       )
       ->willReturn($node);
 

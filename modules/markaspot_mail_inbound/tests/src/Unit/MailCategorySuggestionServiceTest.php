@@ -10,6 +10,8 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\Lock\NullLockBackend;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
@@ -55,6 +57,7 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
     array $categories = [],
     ?TermInterface $term = NULL,
     ?LoggerChannelInterface $logger = NULL,
+    ?LockBackendInterface $lock = NULL,
   ): TestableSuggestionService {
     // Build config mock.
     $config = $this->createMock(ImmutableConfig::class);
@@ -112,10 +115,23 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
     $groupStorage = $this->createMock(EntityStorageInterface::class);
     $groupStorage->method('load')->willReturnMap([[$jurId, $jurisdiction]]);
 
+    // Persisting reloads the mail inside the promotion lock. By default the
+    // storage hands back the very mail passed to suggest(), so expectations
+    // on that double still apply; a test sets $svc->storedMail to model a
+    // copy that changed in storage meanwhile.
+    $svc = NULL;
+    $mailStorage = $this->createMock(EntityStorageInterface::class);
+    $mailStorage->method('loadUnchanged')->willReturnCallback(
+      static function () use (&$svc) {
+        return $svc->storedMail ?? $svc->lastSuggestedMail;
+      }
+    );
+
     $etm = $this->createMock(EntityTypeManagerInterface::class);
     $etm->method('getStorage')->willReturnMap([
       ['taxonomy_term', $termStorage],
       ['group', $groupStorage],
+      ['inbound_mail', $mailStorage],
     ]);
 
     // Language manager stub: always returns 'de' as site default.
@@ -133,6 +149,7 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
       $categoryRepo,
       $logger,
       $languageManager,
+      $lock ?? new NullLockBackend(),
       $vision,
       $aiClient,
       $tokenTracking,
@@ -147,7 +164,7 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
   /**
    * Builds an InboundMail stub for testing.
    */
-  protected function mail(int $jurId = 0, array $attachmentIds = []): InboundMail {
+  protected function mail(int $jurId = 0, array $attachmentIds = [], string $state = InboundMail::STATE_STAGED): InboundMail {
     $mail = $this->getMockBuilder(InboundMail::class)
       ->disableOriginalConstructor()
       ->onlyMethods([
@@ -164,10 +181,12 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
         'getSuggestionStatus',
         'getSuggestedCategoryTid',
         'getSuggestionConfidence',
+        'getState',
         'save',
       ])
       ->getMock();
 
+    $mail->method('getState')->willReturn($state);
     $mail->method('getJurisdictionId')->willReturn($jurId);
     $mail->method('getAttachmentFileIds')->willReturn($attachmentIds);
     $mail->method('id')->willReturn(99);
@@ -655,6 +674,131 @@ class MailCategorySuggestionServiceTest extends UnitTestCase {
   }
 
   /**
+   * The result goes onto the stored copy; the caller's stale mail is not saved.
+   *
+   * @covers ::persistSuggestion
+   */
+  public function testSuggestionIsWrittenOntoStoredCopyNotStaleMail(): void {
+    $svc = $this->service(aiClient: $this->reportClient(), categories: [
+      ['tid' => 7, 'path' => 'Streetlight', 'label' => 'Streetlight'],
+    ]);
+    $svc->overrideTermId = 7;
+
+    $stale = $this->mail(jurId: 1);
+    $untouched = [
+      'setSuggestedCategoryTid',
+      'setSuggestionConfidence',
+      'setSuggestedAddress',
+      'setSuggestedDescription',
+      'setSuggestionStatus',
+      'save',
+    ];
+    foreach ($untouched as $method) {
+      $stale->expects($this->never())->method($method);
+    }
+
+    $fresh = $this->mail(jurId: 1);
+    $fresh->expects($this->once())->method('setSuggestedCategoryTid')->with(7);
+    $fresh->expects($this->once())->method('setSuggestionConfidence')->with(0.92);
+    $fresh->expects($this->once())->method('setSuggestedAddress')->with('Hauptstrasse 12');
+    $fresh->expects($this->once())->method('setSuggestedDescription')->with('A streetlight is not working.');
+    $fresh->expects($this->once())->method('setSuggestionStatus')->with(InboundMail::SUGGESTION_DONE);
+    $fresh->expects($this->once())->method('save');
+    $svc->storedMail = $fresh;
+
+    $svc->suggest($stale);
+  }
+
+  /**
+   * A mail promoted during the AI call gets no suggestion and no save.
+   *
+   * @covers ::persistSuggestion
+   */
+  public function testMailPromotedDuringAiCallIsNotWritten(): void {
+    $messages = [];
+    $logger = $this->createMock(LoggerChannelInterface::class);
+    $logger->method('info')->willReturnCallback(function ($message) use (&$messages): void {
+      $messages[] = (string) $message;
+    });
+    $svc = $this->service(aiClient: $this->reportClient(), categories: [
+      ['tid' => 7, 'path' => 'Streetlight', 'label' => 'Streetlight'],
+    ], logger: $logger);
+    $svc->overrideTermId = 7;
+
+    $stale = $this->mail(jurId: 1);
+    $stale->expects($this->never())->method('save');
+    $promoted = $this->mail(jurId: 1, state: InboundMail::STATE_PROMOTED);
+    $promoted->expects($this->never())->method('setSuggestionStatus');
+    $promoted->expects($this->never())->method('save');
+    $svc->storedMail = $promoted;
+
+    $svc->suggest($stale);
+
+    $this->assertContains('AI suggestion for mail @id not stored: the mail is @state, not staged.', $messages);
+  }
+
+  /**
+   * A promotion holding the lock: one short wait, then nothing is saved.
+   *
+   * @covers ::persistSuggestion
+   */
+  public function testLockHeldByPromotionSkipsPersisting(): void {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->exactly(2))
+      ->method('acquire')
+      ->with('markaspot_mail_inbound.promote.99')
+      ->willReturn(FALSE);
+    $lock->expects($this->once())
+      ->method('wait')
+      ->with('markaspot_mail_inbound.promote.99');
+    $lock->expects($this->never())->method('release');
+    $logger = $this->createMock(LoggerChannelInterface::class);
+    $logger->expects($this->once())
+      ->method('warning')
+      ->with('AI suggestion for mail @id not stored: the mail is locked by a promotion.');
+
+    $svc = $this->service(aiClient: $this->reportClient(), categories: [
+      ['tid' => 7, 'path' => 'Streetlight', 'label' => 'Streetlight'],
+    ], logger: $logger, lock: $lock);
+    $svc->overrideTermId = 7;
+
+    $mail = $this->mail(jurId: 1);
+    $mail->expects($this->never())->method('save');
+
+    $svc->suggest($mail);
+  }
+
+  /**
+   * An AI client double answering with a valid report verdict for tid 7.
+   */
+  protected function reportClient(): object {
+    return new class {
+
+      /**
+       * Returns a valid report verdict.
+       */
+      public function chat(array $messages, array $options = []): array {
+        return [
+          'choices' => [
+            [
+              'message' => [
+                'content' => json_encode([
+                  'category_tid' => 7,
+                  'confidence' => 0.92,
+                  'address' => 'Hauptstrasse 12',
+                  'is_report' => TRUE,
+                  'summary' => 'A streetlight is not working.',
+                ]),
+              ],
+            ],
+          ],
+        ];
+      }
+
+    };
+  }
+
+  /**
    * CouldRun() returns FALSE when module setting is disabled.
    *
    * @covers ::couldRun
@@ -922,6 +1066,28 @@ class TestableSuggestionService extends MailCategorySuggestionService {
    * @var string[]|null
    */
   public ?array $overrideAttachmentUris = NULL;
+
+  /**
+   * The mail last passed to suggest().
+   *
+   * @var \Drupal\markaspot_mail_inbound\Entity\InboundMail|null
+   */
+  public ?InboundMail $lastSuggestedMail = NULL;
+
+  /**
+   * The copy the storage returns when persisting; NULL means the passed mail.
+   *
+   * @var \Drupal\markaspot_mail_inbound\Entity\InboundMail|null
+   */
+  public ?InboundMail $storedMail = NULL;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function suggest(InboundMail $mail): void {
+    $this->lastSuggestedMail = $mail;
+    parent::suggest($mail);
+  }
 
   /**
    * {@inheritdoc}

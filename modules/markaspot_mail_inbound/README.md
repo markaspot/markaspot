@@ -38,7 +38,10 @@ queue worker, so a large mailbox cannot stall cron.
     or failed), the description falls back to the original citizen mail
     text: the subject plus the first segment of the staged conversation
     log, before any appended entries. In both cases the subject is
-    prepended via `buildDescription()`.
+    prepended via `buildDescription()`. Staff can opt out of the AI text
+    in the dashboard dialog (`use_suggested_description: false`); there
+    is deliberately no free-text description input, staff edits the
+    report on its edit page.
   - **Internal remark — ALWAYS written:** regardless of which description
     path was taken, the FULL mail body log (original message plus any
     staged conversation entries) is preserved as ONE `internal_remark`
@@ -104,13 +107,40 @@ queue worker, so a large mailbox cannot stall cron.
   - `GET /api/inbound-mail?state=&page=&limit=` — scoped, paginated list
     with a `fidelity` block (imap_configured, outbound_available,
     private_fs, ai_available).
-  - `GET /api/inbound-mail/{id}` — full detail incl. attachment metadata.
+  - `GET /api/inbound-mail/{id}` — full detail incl. attachment metadata
+    and the AI `suggested_address` / `suggested_description` (both
+    nullable, detail-only; list rows never carry them).
   - `GET /api/inbound-mail/{id}/attachment/{fid}` — streams a staged file
     (no direct URLs; private staging stays private).
-  - `POST /api/inbound-mail/{id}/promote` `{"category_tid":N}` — 409 when
-    not staged, 422 for an unknown or foreign-jurisdiction category, 503
-    without the Open311 processor. All jurisdiction-scoped categories are
-    accepted, including those without a field_service_code (codeless).
+  - `POST /api/inbound-mail/{id}/promote` `{"category_tid":N,
+    "use_suggested_description"?:bool, "use_suggested_address"?:bool,
+    "location"?:{"lat":n,"lng":n}|null}`. All jurisdiction-scoped
+    categories are accepted, including those without a field_service_code
+    (codeless). Defaults reproduce the plain `{"category_tid":N}` call:
+    AI summary as description, server-side geocoding (regex) without the
+    suggested address. `location` absent: the server geocodes the
+    suggested address (when `use_suggested_address`); only when it does
+    not resolve, the regex match is tried. A point outside the
+    jurisdiction is dropped, and a suggested address that resolves outside
+    ends geocoding (no regex fallback): the report stays ungeolocated. The
+    auto-promote worker uses the same path. `location: null`:
+    no coordinates and no geocoding. `{lat, lng}`: a staff-confirmed point,
+    never geocoded, checked against the mail's jurisdiction boundary (the
+    child's own geometry, else its root's). Without coordinates and with
+    `use_suggested_address`, the suggested address is kept as
+    `field_address` text. Success: `{nid, request_id, uuid, ungeolocated,
+    location_source: confirmed|suggested|regex|null,
+    description_source: suggested|original, address_text_applied}`.
+    Errors are `{error, code}`: 403 `access_denied`; 409 `not_staged` /
+    `promotion_in_progress`; 422 `category_required` / `invalid_category`
+    / `invalid_location` / `location_outside_jurisdiction`; 503
+    `unavailable`; 500 `failed`. Every promotion path (API, admin form,
+    auto-promote worker) holds one lock per mail and re-reads the stored
+    state inside it, so concurrent attempts create exactly one report; the
+    lock is re-checked after geocoding, before anything is written.
+    Tenants without `field_boundary` get no real boundary check (fail-open,
+    like the Open311 submission path), and a root boundary accepts a point
+    inside a sibling child.
   - `POST /api/inbound-mail/{id}/discard` — 409 when not staged.
   - `POST /api/inbound-mail/{id}/reply` `{"body":"..."}` — staged mails
     only; `{"sent":false,"recorded":true}` when outbound is unavailable
