@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Controller;
 
+use Drupal\Core\Cache\MemoryCache\MemoryCacheInterface;
 use Drupal\Core\Access\CsrfTokenGenerator;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
@@ -35,6 +36,8 @@ class AiAdminController extends ControllerBase {
    *   The embedding service.
    * @param \Drupal\Core\Access\CsrfTokenGenerator $csrfToken
    *   The CSRF token generator.
+   * @param \Drupal\Core\Cache\MemoryCache\MemoryCacheInterface|null $entityMemoryCache
+   *   The entity memory cache, to release loaded reports in batches.
    */
   public function __construct(
     protected DuplicateDetectionService $duplicateDetection,
@@ -43,6 +46,7 @@ class AiAdminController extends ControllerBase {
     protected QueueWorkerManagerInterface $queueWorkerManager,
     protected EmbeddingService $embeddingService,
     protected CsrfTokenGenerator $csrfToken,
+    protected ?MemoryCacheInterface $entityMemoryCache = NULL,
   ) {}
 
   /**
@@ -56,6 +60,7 @@ class AiAdminController extends ControllerBase {
       $container->get('plugin.manager.queue_worker'),
       $container->get('markaspot_ai.embedding'),
       $container->get('csrf_token'),
+      $container->get('entity.memory_cache'),
     );
   }
 
@@ -66,9 +71,10 @@ class AiAdminController extends ControllerBase {
    *   A render array with processing status summary cards.
    */
   public function processingStatus(): array {
-    // Count total service requests.
+    // Count published service requests: only those are analysed.
     $total = (int) $this->database->select('node_field_data', 'n')
       ->condition('n.type', 'service_request')
+      ->condition('n.status', 1)
       ->countQuery()
       ->execute()
       ->fetchField();
@@ -76,19 +82,20 @@ class AiAdminController extends ControllerBase {
     // Count embeddings (verified against existing nodes).
     $embeddingQuery = $this->database->select('markaspot_ai_embeddings', 'e');
     $embeddingQuery->condition('e.entity_type', 'node');
-    $embeddingQuery->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
-    $embeddings = (int) $embeddingQuery->countQuery()->execute()->fetchField();
+    $embeddingQuery->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type AND n.status = 1', [':type' => 'service_request']);
+    $embeddingQuery->addExpression('COUNT(DISTINCT e.entity_id)', 'nodes');
+    $embeddings = (int) $embeddingQuery->execute()->fetchField();
 
     // Count sentiment records (verified against existing nodes).
     $sentimentQuery = $this->database->select('markaspot_ai_sentiment', 's');
-    $sentimentQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    $sentimentQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type AND n.status = 1', [':type' => 'service_request']);
     $sentimentTotal = (int) $sentimentQuery->countQuery()->execute()->fetchField();
 
     // Sentiment breakdown.
     $sentimentCounts = [];
     foreach (['frustrated', 'neutral', 'positive'] as $type) {
       $breakdownQuery = $this->database->select('markaspot_ai_sentiment', 's');
-      $breakdownQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+      $breakdownQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type AND n.status = 1', [':type' => 'service_request']);
       $breakdownQuery->condition('s.sentiment', $type);
       $sentimentCounts[$type] = (int) $breakdownQuery->countQuery()->execute()->fetchField();
     }
@@ -458,6 +465,14 @@ class AiAdminController extends ControllerBase {
       }
     }
 
+    // Release the batch from the static entity cache only: callers page
+    // through every missing report, and resetCache() would also evict the
+    // persistent entity cache.
+    $this->entityMemoryCache?->deleteMultiple(array_map(
+      static fn($id): string => 'values:node:' . $id,
+      array_values($node_ids),
+    ));
+
     return $enabled;
   }
 
@@ -476,7 +491,8 @@ class AiAdminController extends ControllerBase {
     $query = $this->database->select('markaspot_ai_embeddings', 'e');
     $query->addField('e', 'entity_id');
     $query->condition('e.entity_type', 'node');
-    $query->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    // Unpublished reports are analysed once they are published.
+    $query->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type AND n.status = 1', [':type' => 'service_request']);
     $query->leftJoin('markaspot_ai_sentiment', 's', 'e.entity_id = s.entity_id');
     $query->isNull('s.id');
     $query->range($offset, $limit);

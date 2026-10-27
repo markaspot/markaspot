@@ -165,6 +165,15 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
       return;
     }
 
+    // Unpublished reports are analysed once they are published. Items queued
+    // before a report was unpublished end here.
+    if (!$node->isPublished()) {
+      $this->logger->debug('Skipping unpublished node @nid.', [
+        '@nid' => $nid,
+      ]);
+      return;
+    }
+
     // GDPR safety net: skip if AI processing is disabled for this jurisdiction.
     // This catches nodes queued before the feature flag was disabled, or
     // items picked up by the cron backfill.

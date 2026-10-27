@@ -394,7 +394,9 @@ function markaspot_ai_node_update(NodeInterface $node): void {
   $original = $node->original ?? NULL;
 
   if ($original) {
-    $changed = FALSE;
+    // Publishing is when an unpublished report gets its analysis, even when
+    // its content stays the same.
+    $changed = !$original->isPublished();
 
     // Check title change.
     if ($node->getTitle() !== $original->getTitle()) {

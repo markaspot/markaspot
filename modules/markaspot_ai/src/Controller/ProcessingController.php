@@ -6,6 +6,8 @@ namespace Drupal\markaspot_ai\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Cache\MemoryCache\MemoryCacheInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerManagerInterface;
 use Drupal\markaspot_ai\Service\EmbeddingService;
@@ -36,6 +38,7 @@ class ProcessingController extends ControllerBase {
     protected RequestStack $requestStackService,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     protected ?FeatureScopeResolver $featureScopeResolver = NULL,
+    protected ?MemoryCacheInterface $entityMemoryCache = NULL,
   ) {}
 
   /**
@@ -52,6 +55,7 @@ class ProcessingController extends ControllerBase {
         ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL,
       $container->get('markaspot_nuxt.feature_scope_resolver'),
+      $container->get('entity.memory_cache'),
     );
   }
 
@@ -65,58 +69,48 @@ class ProcessingController extends ControllerBase {
    */
   public function getStatus(): JsonResponse {
     $request = $this->requestStackService->getCurrentRequest();
-    $jurisdiction_id = $this->resolveJurisdictionId($request?->query->get('jurisdiction_id'));
-    $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction($jurisdiction_id) : NULL;
+    $requested = $request?->query->get('jurisdiction_id');
+    $jurisdiction_id = is_int($requested) || is_string($requested) ? $this->resolveJurisdictionId($requested) : NULL;
+    $scope = $jurisdiction_id ? $this->buildJurisdictionScope($jurisdiction_id) : NULL;
 
-    if ($node_ids !== NULL && empty($node_ids)) {
-      // Jurisdiction specified but no nodes in it.
+    // A requested jurisdiction that does not resolve (unknown slug, org group,
+    // unpublished) never widens to every tenant.
+    if ($this->isRequested($requested) && $scope === NULL) {
       return new JsonResponse($this->buildEmptyStatus());
     }
 
-    // Count total service requests (including unpublished, as AI processes all).
-    $totalQuery = $this->database->select('node_field_data', 'n')
-      ->condition('n.type', 'service_request');
-    if ($node_ids !== NULL) {
-      $totalQuery->condition('n.nid', $node_ids, 'IN');
-    }
-    $total = (int) $totalQuery->countQuery()->execute()->fetchField();
-
-    // Count embeddings (joined to verify nodes still exist).
-    $embeddingQuery = $this->database->select('markaspot_ai_embeddings', 'e');
-    $embeddingQuery->condition('e.entity_type', 'node');
-    $embeddingQuery->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
-    if ($node_ids !== NULL) {
-      $embeddingQuery->condition('n.nid', $node_ids, 'IN');
-    }
-    $embeddings = (int) $embeddingQuery
-      ->countQuery()
-      ->execute()
-      ->fetchField();
-
-    // Count sentiment analyzed (joined to verify nodes still exist).
-    $sentimentQuery = $this->database->select('markaspot_ai_sentiment', 's');
-    $sentimentQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
-    if ($node_ids !== NULL) {
-      $sentimentQuery->condition('n.nid', $node_ids, 'IN');
-    }
-    $sentiment = (int) $sentimentQuery
-      ->countQuery()
-      ->execute()
-      ->fetchField();
-
-    // Sentiment breakdown.
-    $sentimentCounts = [];
-    foreach (['frustrated', 'neutral', 'positive'] as $type) {
-      $breakdownQuery = $this->database->select('markaspot_ai_sentiment', 's');
-      $breakdownQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
-      $breakdownQuery->condition('s.sentiment', $type);
-      if ($node_ids !== NULL) {
-        $breakdownQuery->condition('n.nid', $node_ids, 'IN');
+    // Only published reports are analysed (on create, update and publish).
+    // Unpublished ones are reported separately and never counted as missing.
+    $countQuery = function (?string $table, int $status) use ($scope): SelectInterface {
+      $query = $this->database->select('node_field_data', 'n')
+        ->condition('n.type', 'service_request')
+        ->condition('n.status', $status);
+      if ($scope !== NULL) {
+        $query->condition('n.nid', clone $scope, 'IN');
       }
-      $sentimentCounts[$type] = (int) $breakdownQuery
-        ->countQuery()
-        ->execute()
-        ->fetchField();
+      if ($table === 'markaspot_ai_embeddings') {
+        $query->join($table, 'e', "e.entity_id = n.nid AND e.entity_type = 'node'");
+      }
+      elseif ($table === 'markaspot_ai_sentiment') {
+        $query->join($table, 's', 's.entity_id = n.nid');
+      }
+      $query->addExpression('COUNT(DISTINCT n.nid)', 'nodes');
+      return $query;
+    };
+
+    $total = (int) $countQuery(NULL, 1)->execute()->fetchField();
+    $awaitingPublication = (int) $countQuery(NULL, 0)->execute()->fetchField();
+    $embeddings = (int) $countQuery('markaspot_ai_embeddings', 1)->execute()->fetchField();
+    $sentiment = (int) $countQuery('markaspot_ai_sentiment', 1)->execute()->fetchField();
+
+    $sentimentCounts = array_fill_keys(['frustrated', 'neutral', 'positive'], 0);
+    $breakdownQuery = $countQuery('markaspot_ai_sentiment', 1);
+    $breakdownQuery->addField('s', 'sentiment');
+    $breakdownQuery->groupBy('s.sentiment');
+    foreach ($breakdownQuery->execute()->fetchAll() as $row) {
+      if (array_key_exists((string) $row->sentiment, $sentimentCounts)) {
+        $sentimentCounts[$row->sentiment] = (int) $row->nodes;
+      }
     }
 
     // Queue status.
@@ -129,7 +123,7 @@ class ProcessingController extends ControllerBase {
           'node',
           'service_request',
           'content',
-          $node_ids,
+          $scope,
           $offset
         ),
       $jurisdiction_id,
@@ -138,7 +132,7 @@ class ProcessingController extends ControllerBase {
     $eligibleMissingSentiment = $this->countEligibleMissing(
       fn(int $batch_limit, int $offset): array => $this->findMissingSentiment(
         $batch_limit,
-        $node_ids,
+        $scope,
         $offset
       ),
       $jurisdiction_id,
@@ -147,6 +141,7 @@ class ProcessingController extends ControllerBase {
 
     return new JsonResponse([
       'total_requests' => $total,
+      'awaiting_publication' => $awaitingPublication,
       'embeddings' => [
         'count' => $embeddings,
         'percentage' => $total > 0 ? round(($embeddings / $total) * 100) : 0,
@@ -182,12 +177,17 @@ class ProcessingController extends ControllerBase {
     $limit = min(1000, max(1, (int) ($content['limit'] ?? 100)));
 
     // Optional jurisdiction scoping (supports slugs).
-    $jurisdiction_id = $this->resolveJurisdictionId(
-      $content['jurisdiction_id'] ?? $request->query->get('jurisdiction_id')
-    );
-    $jurisdiction_node_ids = $jurisdiction_id
-      ? $this->getNodeIdsForJurisdiction($jurisdiction_id)
-      : NULL;
+    $requested = $content['jurisdiction_id'] ?? $request->query->get('jurisdiction_id');
+    $jurisdiction_id = is_int($requested) || is_string($requested) ? $this->resolveJurisdictionId($requested) : NULL;
+    $scope = $jurisdiction_id ? $this->buildJurisdictionScope($jurisdiction_id) : NULL;
+    if ($this->isRequested($requested) && $scope === NULL) {
+      // Never fall back to every tenant for an unknown jurisdiction.
+      return new JsonResponse([
+        'success' => TRUE,
+        'message' => 'Nothing queued: the jurisdiction is unknown.',
+        'queued' => 0,
+      ]);
+    }
 
     try {
       $missing = $this->collectAiEnabledNodeIds(
@@ -197,7 +197,7 @@ class ProcessingController extends ControllerBase {
             'node',
             'service_request',
             'content',
-            $jurisdiction_node_ids,
+            $scope,
             $offset
           ),
         $limit
@@ -209,7 +209,7 @@ class ProcessingController extends ControllerBase {
       $missingSentiment = $this->collectAiEnabledNodeIds(
         fn(int $batch_limit, int $offset): array => $this->findMissingSentiment(
           $batch_limit,
-          $jurisdiction_node_ids,
+          $scope,
           $offset
         ),
         $limit
@@ -376,53 +376,54 @@ class ProcessingController extends ControllerBase {
   }
 
   /**
-   * Gets node IDs for a jurisdiction, including child jurisdictions.
+   * Whether the caller asked for a jurisdiction at all.
    *
-   * Uses the hierarchy resolver when available to include nodes from
-   * descendant jurisdictions. Falls back to flat single-group query.
+   * @param mixed $value
+   *   The raw jurisdiction_id parameter.
+   *
+   * @return bool
+   *   TRUE when a non-empty value was passed.
+   */
+  protected function isRequested(mixed $value): bool {
+    return $value !== NULL && $value !== '';
+  }
+
+  /**
+   * Builds a subquery selecting the report IDs of a jurisdiction subtree.
+   *
+   * A subquery instead of an ID list: large tenants hold over 150,000
+   * reports, and passing them to every count query cost minutes.
    *
    * @param int $group_id
    *   The jurisdiction group ID.
    *
-   * @return array<int>
-   *   Array of node IDs belonging to the jurisdiction subtree.
+   * @return \Drupal\Core\Database\Query\SelectInterface|null
+   *   The subquery, or NULL when the group is not a jurisdiction.
    */
-  protected function getNodeIdsForJurisdiction(int $group_id): array {
+  protected function buildJurisdictionScope(int $group_id): ?SelectInterface {
     if (!$this->moduleHandler()->moduleExists('group')) {
-      return [];
+      return NULL;
     }
 
     // Validate group exists and is a jurisdiction type.
     // Prevents cross-tenant leakage by rejecting org/other group types.
     $group = $this->entityTypeManager()->getStorage('group')->load($group_id);
     if (!$this->isJurisdictionGroup($group)) {
-      return [];
+      return NULL;
     }
 
-    if ($this->hierarchyResolver) {
-      return $this->hierarchyResolver->getNodeIdsInJurisdiction($group_id);
+    // Child jurisdictions belong to the scope when the resolver is available.
+    $group_ids = $this->hierarchyResolver
+      ? $this->hierarchyResolver->getScopeJurisdictionIds($group_id)
+      : [$group_id];
+    if ($group_ids === []) {
+      return NULL;
     }
 
-    // Fallback: flat single-group query when hierarchy resolver unavailable.
-    $relationship_storage = $this->entityTypeManager()->getStorage('group_relationship');
-    $relationship_ids = $relationship_storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('gid', $group_id)
-      ->condition('plugin_id', 'group_node:service_request')
-      ->execute();
-
-    if (empty($relationship_ids)) {
-      return [];
-    }
-
-    $relationships = $relationship_storage->loadMultiple($relationship_ids);
-    $node_ids = [];
-
-    foreach ($relationships as $relationship) {
-      $node_ids[] = (int) $relationship->get('entity_id')->target_id;
-    }
-
-    return array_values(array_unique($node_ids));
+    return $this->database->select('group_relationship_field_data', 'gr')
+      ->fields('gr', ['entity_id'])
+      ->condition('gr.gid', $group_ids, 'IN')
+      ->condition('gr.plugin_id', 'group_node:service_request');
   }
 
   /**
@@ -430,27 +431,25 @@ class ProcessingController extends ControllerBase {
    *
    * @param int $limit
    *   Maximum number of results.
-   * @param array|null $node_ids
-   *   Optional array of node IDs to scope the query (jurisdiction).
+   * @param \Drupal\Core\Database\Query\SelectInterface|null $scope
+   *   Optional subquery selecting the jurisdiction's report IDs.
    * @param int $offset
    *   Result offset for paged scans.
    *
    * @return array<int>
-   *   Array of node IDs missing sentiment.
+   *   Array of published node IDs missing sentiment.
    */
-  protected function findMissingSentiment(int $limit, ?array $node_ids = NULL, int $offset = 0): array {
+  protected function findMissingSentiment(int $limit, ?SelectInterface $scope = NULL, int $offset = 0): array {
     $query = $this->database->select('markaspot_ai_embeddings', 'e');
     $query->addField('e', 'entity_id');
+    $query->distinct();
     $query->condition('e.entity_type', 'node');
-    $query->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    $query->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type AND n.status = 1', [':type' => 'service_request']);
     $query->leftJoin('markaspot_ai_sentiment', 's', 'e.entity_id = s.entity_id');
     $query->isNull('s.id');
 
-    if ($node_ids !== NULL) {
-      if (empty($node_ids)) {
-        return [];
-      }
-      $query->condition('n.nid', $node_ids, 'IN');
+    if ($scope !== NULL) {
+      $query->condition('n.nid', clone $scope, 'IN');
     }
 
     $query->range($offset, $limit);
@@ -485,6 +484,14 @@ class ProcessingController extends ControllerBase {
         $enabled[] = (int) $node->id();
       }
     }
+
+    // Release the batch from the static entity cache only: callers page
+    // through every missing report, and resetCache() would also evict the
+    // persistent entity cache.
+    $this->entityMemoryCache?->deleteMultiple(array_map(
+      static fn($id): string => 'values:node:' . $id,
+      array_values($node_ids),
+    ));
 
     return $enabled;
   }
@@ -578,6 +585,7 @@ class ProcessingController extends ControllerBase {
   protected function buildEmptyStatus(): array {
     return [
       'total_requests' => 0,
+      'awaiting_publication' => 0,
       'embeddings' => [
         'count' => 0,
         'percentage' => 0,

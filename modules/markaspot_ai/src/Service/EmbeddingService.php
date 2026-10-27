@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_ai\Service;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
@@ -321,6 +322,9 @@ class EmbeddingService {
   /**
    * Finds entities that are missing embeddings.
    *
+   * Only published nodes count: unpublished reports are analysed when they
+   * are published, like on create and update.
+   *
    * @param int $limit
    *   Maximum number of entities to return (default: 100).
    * @param string $entityType
@@ -329,9 +333,9 @@ class EmbeddingService {
    *   Optional bundle to filter by (e.g., 'service_request').
    * @param string $embeddingType
    *   The embedding type to check for (default: 'content').
-   * @param array|null $nodeIds
-   *   Optional array of node IDs to restrict the search to (e.g. for
-   *   jurisdiction scoping). NULL means no restriction.
+   * @param array|\Drupal\Core\Database\Query\SelectInterface|null $nodeIds
+   *   Optional node IDs, or a subquery selecting them, to restrict the search
+   *   to (e.g. for jurisdiction scoping). NULL means no restriction.
    * @param int $offset
    *   Result offset for paged scans.
    *
@@ -343,14 +347,15 @@ class EmbeddingService {
     string $entityType = 'node',
     ?string $bundle = 'service_request',
     string $embeddingType = 'content',
-    ?array $nodeIds = NULL,
+    array|SelectInterface|null $nodeIds = NULL,
     int $offset = 0,
   ): array {
     try {
       // Build query based on entity type.
       if ($entityType === 'node') {
         $entity_query = $this->database->select('node_field_data', 'n')
-          ->fields('n', ['nid']);
+          ->fields('n', ['nid'])
+          ->condition('n.status', 1);
 
         if ($bundle !== NULL) {
           $entity_query->condition('n.type', $bundle);
@@ -358,10 +363,11 @@ class EmbeddingService {
 
         // Filter to specific node IDs if provided (jurisdiction scoping).
         if ($nodeIds !== NULL) {
-          if (empty($nodeIds)) {
+          if ($nodeIds === []) {
             return [];
           }
-          $entity_query->condition('n.nid', $nodeIds, 'IN');
+          // A subquery is cloned: callers reuse it across several queries.
+          $entity_query->condition('n.nid', $nodeIds instanceof SelectInterface ? clone $nodeIds : $nodeIds, 'IN');
         }
 
         // Left join to find nodes without embeddings.
