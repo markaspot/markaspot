@@ -30,6 +30,8 @@ class LocalizedSortQuery extends Query {
     foreach (get_object_vars($source) as $name => $value) {
       $instance->$name = $name === 'condition' ? clone $value : $value;
     }
+    // The cloned condition must compile against this query's joins.
+    $instance->condition->setQuery($instance);
     foreach ($positions as $position) {
       $sort = $source->sort[$position];
       $instance->alterMetaData['dashboard_localized_sorts'][] = $sort;

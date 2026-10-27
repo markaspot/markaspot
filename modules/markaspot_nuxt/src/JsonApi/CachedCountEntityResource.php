@@ -122,6 +122,9 @@ final class CachedCountEntityResource extends EntityResource {
     // The dashboard needs indexed numeric record order without exposing the
     // internal nid attribute. Validate request_id normally, then replace only
     // the explicitly requested virtual sort with the internal primary key.
+    // The 400s below depend on the sort parameter; without this context a
+    // rejected request would be cached for the whole collection route.
+    $query_cacheability->addCacheContexts(['url.query_args:sort']);
     $record_order_positions = [];
     $localized_sort_positions = [];
     $localized_paths = [

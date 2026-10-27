@@ -272,6 +272,8 @@ final class DashboardListSortKernelTest extends KernelTestBase {
     }
     catch (CacheableBadRequestHttpException $error) {
       $this->assertSame(400, $error->getStatusCode());
+      // A cached 400 must never apply to requests with another sort.
+      $this->assertContains('url.query_args:sort', $error->getCacheContexts());
     }
     $this->assertSame([], Database::getLog('too_many_virtual_sorts'));
   }
