@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\JsonApi;
 
+use Drupal\Core\Http\Exception\CacheableBadRequestHttpException;
 use Drupal\Component\Assertion\Inspector;
 use Drupal\Core\Entity\Query\Sql\Query;
 use Drupal\Core\Cache\CacheableMetadata;
@@ -14,6 +15,7 @@ use Drupal\jsonapi\JsonApiResource\NullIncludedData;
 use Drupal\jsonapi\JsonApiResource\ResourceObjectData;
 use Drupal\jsonapi\Query\OffsetPage;
 use Drupal\jsonapi\Query\Filter;
+use Drupal\jsonapi\Query\Sort;
 use Drupal\jsonapi\ResourceType\ResourceType;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -117,6 +119,36 @@ final class CachedCountEntityResource extends EntityResource {
       return parent::getCollectionQuery($resource_type, $params, $query_cacheability);
     }
 
+    // The dashboard needs indexed numeric record order without exposing the
+    // internal nid attribute. Validate request_id normally, then replace only
+    // the explicitly requested virtual sort with the internal primary key.
+    $record_order_positions = [];
+    $localized_sort_positions = [];
+    $localized_paths = [
+      'category_order' => 'field_category.name',
+      'status_order' => 'field_status.name',
+      'organisation_order' => 'field_organisation.label',
+      'address_order' => 'field_address.address_line1',
+    ];
+    if (($params[Sort::KEY_NAME] ?? NULL) instanceof Sort) {
+      $sort_fields = array_values($params[Sort::KEY_NAME]->fields());
+      foreach ($sort_fields as $position => &$sort_field) {
+        if (($sort_field[Sort::PATH_KEY] ?? '') === 'request_order') {
+          $record_order_positions[] = $position;
+          $sort_field[Sort::PATH_KEY] = 'request_id';
+        }
+        elseif (isset($localized_paths[$sort_field[Sort::PATH_KEY] ?? ''])) {
+          $localized_sort_positions[] = $position;
+          $sort_field[Sort::PATH_KEY] = $localized_paths[$sort_field[Sort::PATH_KEY]];
+        }
+      }
+      unset($sort_field);
+      if (count($localized_sort_positions) > 4) {
+        throw new CacheableBadRequestHttpException($query_cacheability, 'At most four localized dashboard sort keys are supported.');
+      }
+      $params[Sort::KEY_NAME] = new Sort($sort_fields);
+    }
+
     // Build the normal access-checked, bundle-scoped query, then apply the
     // filter with Group-aware subsets instead of Core's published/own subset.
     $filter = $params[Filter::KEY_NAME] ?? NULL;
@@ -134,10 +166,25 @@ final class CachedCountEntityResource extends EntityResource {
     // to work. On alternative storage backends (e.g. search_api) the inner
     // query is not a Sql\Query, so fall back to the unmodified query.
     if (!($inner instanceof Query)) {
+      if ($record_order_positions || $localized_sort_positions) {
+        throw new CacheableBadRequestHttpException($query_cacheability, 'Dashboard sorting requires SQL entity storage.');
+      }
       return $inner;
     }
 
-    return new DeferredAccessQueryWrapper($inner);
+    if ($localized_sort_positions) {
+      $inner = LocalizedSortQuery::wrap($inner, $localized_sort_positions);
+    }
+    CandidateEntityQuery::useRecordOrderSort($inner, $record_order_positions);
+    $sorts = CandidateEntityQuery::readSort($inner);
+    if ($sorts && !in_array('nid', array_column($sorts, 'field'), TRUE)) {
+      // A total order is also required beyond the two-phase window, including
+      // full CSV exports. Core does not append a primary-key tiebreaker.
+      $inner->sort('nid', $sorts[0]['direction'] ?? 'ASC');
+    }
+
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+    return new DeferredAccessQueryWrapper($inner, \Drupal::service('entity_field.manager'));
   }
 
   /**

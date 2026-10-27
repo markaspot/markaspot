@@ -54,7 +54,7 @@ use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
  *
  * @phpstan-ignore classExtendsInternalClass.classExtendsInternalClass
  */
-final class CandidateEntityQuery extends SqlQuery {
+final class CandidateEntityQuery extends LocalizedSortQuery {
   /**
    * Number of SQL rows fetched by the most recent execution.
    *
@@ -309,6 +309,25 @@ final class CandidateEntityQuery extends SqlQuery {
    */
   public static function readSort(SqlQuery $query): array {
     return $query->sort;
+  }
+
+  /**
+   * Resolves validated virtual request-order sorts to indexed node order.
+   *
+   * @param \Drupal\Core\Entity\Query\Sql\Query $query
+   *   The original access-checked query.
+   * @param int[] $positions
+   *   Positions explicitly requested as request_order by the API caller.
+   */
+  public static function useRecordOrderSort(SqlQuery $query, array $positions): void {
+    foreach ($positions as $position) {
+      if (!isset($query->sort[$position]) || !in_array($query->sort[$position]['field'], [
+        'request_id', 'request_id.value',
+      ], TRUE)) {
+        throw new \LogicException('Unexpected validated request-order sort.');
+      }
+      $query->sort[$position]['field'] = 'nid';
+    }
   }
 
   /**

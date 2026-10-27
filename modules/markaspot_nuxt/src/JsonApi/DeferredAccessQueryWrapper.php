@@ -6,6 +6,7 @@ namespace Drupal\markaspot_nuxt\JsonApi;
 
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 
 /**
  * Two-phase entity query wrapper that defers access checks to a narrow IN-list.
@@ -124,9 +125,12 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    *   The fully-configured, access-checked entity query from EntityResource.
    *   Must NOT be mutated by this wrapper; Phase 2 and fallback both need it
    *   in its original state.
+   * @param \Drupal\Core\Entity\EntityFieldManagerInterface|null $fieldManager
+   *   Optional definitions for recognizing safe single-valued sort paths.
    */
   public function __construct(
     private readonly SqlQuery $inner,
+    private readonly ?EntityFieldManagerInterface $fieldManager = NULL,
   ) {
   }
 
@@ -140,9 +144,8 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    * - Range is set on the inner query and
    *   offset + length <= MAX_TWO_PHASE_RANGE
    * - Sort is present on the inner query
-   * - No sort field contains '.' (dotted fields traverse relationships and
-   *   cause join multiplications that would make CandidateEntityQuery
-   *   produce wrong orderings)
+   * - Dotted sorts have single-valued scalar paths and an explicit language
+   *   for translatable fields. Multi-valued/unknown paths retain Core's query.
    * - count() was not called on this wrapper (count-mode -> always passthrough)
    */
   public function execute() {
@@ -175,7 +178,8 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
     $has_nid_sort = FALSE;
     foreach ($inner_sort as $sort_entry) {
       $sort_field = (string) ($sort_entry['field'] ?? '');
-      if (str_contains($sort_field, '.')) {
+      if (str_contains($sort_field, '.') && (!$this->fieldManager
+        || !SingleValueSortPath::isSafe($this->inner->getEntityTypeId(), $sort_entry, $this->fieldManager))) {
         return $this->inner->execute();
       }
       if ($sort_field === 'nid') {
