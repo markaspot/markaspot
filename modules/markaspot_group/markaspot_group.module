@@ -2696,6 +2696,31 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
 }
 
 /**
+ * Returns the paths of a JSON:API sort parameter, NULL when malformed.
+ *
+ * @return string[]|null
+ *   Paths without direction prefix.
+ */
+function _markaspot_group_requested_sort_paths(mixed $sort): ?array {
+  if (is_string($sort)) {
+    $items = $sort === '' ? [] : explode(',', $sort);
+  }
+  elseif (is_array($sort)) {
+    $items = [];
+    foreach ($sort as $item) {
+      if (!is_array($item) || !is_string($item['path'] ?? NULL)) {
+        return NULL;
+      }
+      $items[] = $item['path'];
+    }
+  }
+  else {
+    return NULL;
+  }
+  return array_map(static fn(string $path): string => ltrim(trim($path), '-'), $items);
+}
+
+/**
  * Installs the independent paired scope for a private collection filter.
  */
 function _markaspot_group_enable_private_service_request_filter_scope(AccountInterface $account, string $field_name): bool {
@@ -2708,11 +2733,20 @@ function _markaspot_group_enable_private_service_request_filter_scope(AccountInt
   if ($scope['legacy_unscoped']) {
     $scope['elevated_jurisdiction_ids'] = _markaspot_group_private_field_scope_jurisdiction_ids($account);
   }
-  $sort = $request?->query->all()['sort'] ?? '';
   $resource_type = \Drupal::service('jsonapi.resource_type.repository')->get('node', 'service_request');
   $public_name = $resource_type?->getPublicName($field_name) ?? $field_name;
-  if (!is_string($sort) || str_contains($sort, $public_name)) {
+  // Never allow sorting by the private field itself: the order would leak
+  // its values across scopes. Sorts arrive as "a,-b" or as
+  // sort[key][path] with a langcode; read the paths of both forms.
+  $sort_paths = _markaspot_group_requested_sort_paths($request?->query->all()['sort'] ?? '');
+  if ($sort_paths === NULL) {
     return FALSE;
+  }
+  $virtual_sorts = ['field_organisation' => 'organisation_order'];
+  foreach ($sort_paths as $path) {
+    if (str_contains($path, $public_name) || (isset($virtual_sorts[$field_name]) && $path === $virtual_sorts[$field_name])) {
+      return FALSE;
+    }
   }
   if ($route instanceof Route
     && $route->getDefault('_is_jsonapi') === TRUE
