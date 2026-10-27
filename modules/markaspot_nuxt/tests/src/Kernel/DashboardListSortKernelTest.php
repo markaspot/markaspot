@@ -107,7 +107,14 @@ final class DashboardListSortKernelTest extends KernelTestBase {
     $manager = $this->container->get('entity_field.manager');
     $sort = ['field' => 'field_category.entity.name', 'direction' => 'ASC', 'langcode' => 'de'];
     $this->assertTrue(SingleValueSortPath::isSafe('node', $sort, $manager));
-    foreach (['field_multi.value', 'field_category.entity.missing', 'uid.target_id', 'field_category.entity.name.extra'] as $field) {
+    // JSON:API's field resolver names the target type in the hop.
+    $resolved = $this->container->get('jsonapi.field_resolver')->resolveInternalEntityQueryPath(
+      $this->container->get('jsonapi.resource_type.repository')->get('node', 'service_request'),
+      'field_category.name',
+    );
+    $this->assertSame('field_category.entity:taxonomy_term.name', $resolved);
+    $this->assertTrue(SingleValueSortPath::isSafe('node', ['field' => $resolved] + $sort, $manager));
+    foreach (['field_multi.value', 'field_category.entity.missing', 'uid.target_id', 'field_category.entity.name.extra', 'field_category.entity:node.title'] as $field) {
       $this->assertFalse(SingleValueSortPath::isSafe('node', ['field' => $field, 'langcode' => 'de'], $manager));
     }
     $this->assertFalse(SingleValueSortPath::isSafe('node', ['field' => 'field_category.entity.name'], $manager));

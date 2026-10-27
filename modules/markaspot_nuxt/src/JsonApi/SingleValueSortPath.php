@@ -25,15 +25,18 @@ final class SingleValueSortPath {
     }
 
     if ($definition->getType() === 'entity_reference') {
-      // Do not broaden the existing guard for arbitrary reference properties.
-      if (array_shift($parts) !== 'entity' || count($parts) < 1 || count($parts) > 2) {
+      $target_type = $definition->getSetting('target_type');
+      if (!is_string($target_type) || $target_type === '') {
+        return FALSE;
+      }
+      // JSON:API resolves relationship paths to "entity:<target type>"; a
+      // hand-written entity query uses plain "entity". Do not broaden the
+      // guard for arbitrary reference properties.
+      $hop = array_shift($parts);
+      if (($hop !== 'entity' && $hop !== 'entity:' . $target_type) || count($parts) < 1 || count($parts) > 2) {
         return FALSE;
       }
       if ($definition->isTranslatable() && empty($sort['langcode'])) {
-        return FALSE;
-      }
-      $target_type = $definition->getSetting('target_type');
-      if (!is_string($target_type) || $target_type === '') {
         return FALSE;
       }
       $target_definitions = $fields->getFieldStorageDefinitions($target_type);
