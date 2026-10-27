@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.232](https://github.com/markaspot/markaspot/compare/11.9.231...11.9.232) (2026-10-27)
+
+### Bug Fixes
+
+* **ai:** analyse only published reports and scope the processing status by subquery ([51ea352](https://github.com/markaspot/markaspot/commit/51ea35297e8a8c998e83251bc706b87e56473a91))
+* **ai:** count AI processing status per jurisdiction without loading every report ([a996e93](https://github.com/markaspot/markaspot/commit/a996e93ef768f0264f3ae201654ece3abd9caced))
+
 ## [11.9.231](https://github.com/markaspot/markaspot/compare/11.9.230...11.9.231) (2026-10-26)
 
 ### Bug Fixes
