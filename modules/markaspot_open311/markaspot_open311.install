@@ -630,3 +630,46 @@ function _markaspot_open311_watchdog_credential_condition(Connection $database):
 
   return $condition;
 }
+
+/**
+ * Accept the Open311 api_key as POST and query parameter.
+ *
+ * GeoReport v2 clients send api_key as a request parameter. The
+ * services_api_key_auth defaults read only the header, so on sites installed
+ * without the profile's local start script a spec-compliant POST ran as
+ * anonymous and got a 403. Configured names are kept.
+ */
+function markaspot_open311_update_11813(): TranslatableMarkup {
+  $changed = _markaspot_open311_ensure_api_key_parameters();
+  if ($changed === []) {
+    return new TranslatableMarkup('Open311 api_key parameter names were already configured.');
+  }
+  return new TranslatableMarkup('Open311 now accepts api_key as @keys.', [
+    '@keys' => implode(', ', $changed),
+  ]);
+}
+
+/**
+ * Fills empty api_key parameter names of services_api_key_auth.
+ *
+ * @return string[]
+ *   The setting keys that were set.
+ */
+function _markaspot_open311_ensure_api_key_parameters(): array {
+  $config = \Drupal::configFactory()->getEditable('services_api_key_auth.settings');
+  if ($config->isNew()) {
+    return [];
+  }
+
+  $changed = [];
+  foreach (['api_key_post_parameter_name', 'api_key_get_parameter_name'] as $key) {
+    if ((string) $config->get($key) === '') {
+      $config->set($key, 'api_key');
+      $changed[] = $key;
+    }
+  }
+  if ($changed !== []) {
+    $config->save();
+  }
+  return $changed;
+}
