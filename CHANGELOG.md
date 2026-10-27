@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.233](https://github.com/markaspot/markaspot/compare/11.9.232...11.9.233) (2026-10-27)
+
+### Bug Fixes
+
+* **group:** allow language-pinned dashboard sorts with organisation filters ([09c7596](https://github.com/markaspot/markaspot/commit/09c7596aa71ddc275e568adfd93b6d37c729b903))
+* **nuxt:** recognize JSON:API relationship sort paths for the two-phase list query ([a8176e9](https://github.com/markaspot/markaspot/commit/a8176e980c3c4d01cdcbeb2257af2af308926623))
+* **nuxt:** vary rejected dashboard sorts by the sort parameter and keep the wrapped condition bound ([4fee85b](https://github.com/markaspot/markaspot/commit/4fee85b9f823ceae832eb75eab67dd834f80dac1))
+* **open311:** accept api_key as POST and query parameter as GeoReport v2 clients send it ([bc8aa9e](https://github.com/markaspot/markaspot/commit/bc8aa9e6186fd8b2d5681f704549ca651b2f4e0b))
+* stabilize and accelerate dashboard collection sorting ([0a43b0c](https://github.com/markaspot/markaspot/commit/0a43b0c2a8e00410e2d1686df767bbe53757dc60))
+
 ## [11.9.232](https://github.com/markaspot/markaspot/compare/11.9.231...11.9.232) (2026-10-27)
 
 ### Bug Fixes
