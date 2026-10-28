@@ -1,5 +1,19 @@
 # Changelog
 
+## [11.9.235](https://github.com/markaspot/markaspot/compare/11.9.234...11.9.235) (2026-10-28)
+
+### Features
+
+* **nuxt:** cap the service request count at countCap and report more as countCapped ([f4e44bf](https://github.com/markaspot/markaspot/commit/f4e44bf6e904eca4d7ad030d08cd139d7ebb7c27))
+
+### Bug Fixes
+
+* **passwordless:** cache only the groups of the auth status and rely on the pre-build checksum against races ([9345ec1](https://github.com/markaspot/markaspot/commit/9345ec1ed17130979ea5708574c0bfce9b808348))
+
+### Performance
+
+* **passwordless:** cache the group part of the auth status per account, invalidated by cache tags only ([df1312c](https://github.com/markaspot/markaspot/commit/df1312c792f3dcbb99c8d43aaf36c2e59b367a3e))
+
 ## [11.9.234](https://github.com/markaspot/markaspot/compare/11.9.233...11.9.234) (2026-10-28)
 
 ### Features
