@@ -29,12 +29,14 @@ use Psr\Log\LoggerInterface;
  *   item stays in the queue until it was processed.
  * Those checks run live on every call. Row parity guards against writes
  * outside the entity API, such as manual SQL, and against translated service
- * requests: it requires one index row per service request and one node data
- * row per service request, because the index holds the default translation
+ * requests: it requires one index row per service request and no translation
+ * row of a service request, because the index holds the default translation
  * while the dashboard's access-checked query orders by the aggregate over
- * every translation row. Counting the index and the node table took about
- * 20 ms on 158k requests (MariaDB 10.11, warm buffer pool); the data table
- * count was added later and not measured separately. The verdict is cached
+ * every translation row. Data rows without a node row (left behind by old
+ * partial deletes) do not count: the entity query never reaches them.
+ * Counting the index and the node table took about 20 ms on 158k requests
+ * (MariaDB 10.11, warm buffer pool); the translation count was added later
+ * and not measured separately. The verdict is cached
  * for PARITY_TTL seconds and dropped whenever a full rebuild starts or
  * finishes. A failed read is cached as a FALSE verdict as well, so a broken
  * index logs once per PARITY_TTL instead of on every dashboard request.
@@ -73,8 +75,9 @@ final class RequestIndexReader {
    * Whether the index holds one current row per service request.
    *
    * FALSE while a request is marked stale, while re-projections are queued
-   * (through the queue API, so any queue backend counts), while row, request
-   * and node data row counts differ, or for PARITY_TTL seconds after a failed
+   * (through the queue API, so any queue backend counts), while row and
+   * request counts differ or a request has a translation, or for PARITY_TTL
+   * seconds after a failed
    * read. A database failure, such as a missing table, is logged without
    * values and makes the index unusable.
    */
@@ -142,11 +145,11 @@ final class RequestIndexReader {
   }
 
   /**
-   * Compares row, request and node data row counts, cached PARITY_TTL s.
+   * Compares row and request counts and counts translations, cached.
    *
-   * One statement counts all three tables from one snapshot: a request saved
-   * between two separate counts would look like a missing row. More data rows
-   * than requests means a service request has a translation.
+   * One statement counts from one snapshot: a request saved between two
+   * separate counts would look like a missing row. A translation is a data
+   * row that is not the default translation of an existing node.
    */
   private function rowParity(): bool {
     $cached = $this->cache->get(self::PARITY_CID);
@@ -154,7 +157,7 @@ final class RequestIndexReader {
       return (bool) $cached->data;
     }
     $counts = $this->database->query(
-      'SELECT (SELECT COUNT(*) FROM {' . RequestIndexWriter::TABLE . '}) AS indexed, (SELECT COUNT(*) FROM {' . $this->nodeBaseTable() . '} WHERE [type] = :bundle) AS requests, (SELECT COUNT(*) FROM {' . $this->nodeDataTable() . '} WHERE [type] = :data_bundle) AS data_rows',
+      'SELECT (SELECT COUNT(*) FROM {' . RequestIndexWriter::TABLE . '}) AS indexed, (SELECT COUNT(*) FROM {' . $this->nodeBaseTable() . '} WHERE [type] = :bundle) AS requests, (SELECT COUNT(*) FROM {' . $this->nodeDataTable() . '} d WHERE [d].[type] = :data_bundle AND [d].[default_langcode] = 0 AND EXISTS (SELECT 1 FROM {' . $this->nodeBaseTable() . '} n WHERE [n].[nid] = [d].[nid])) AS translations',
       [
         ':bundle' => RequestIndexProjector::BUNDLE,
         ':data_bundle' => RequestIndexProjector::BUNDLE,
@@ -162,7 +165,7 @@ final class RequestIndexReader {
     )->fetchAssoc();
     $parity = is_array($counts)
       && (int) $counts['indexed'] === (int) $counts['requests']
-      && (int) $counts['data_rows'] === (int) $counts['requests'];
+      && (int) $counts['translations'] === 0;
     $this->cache->set(self::PARITY_CID, $parity, $this->time->getRequestTime() + self::PARITY_TTL);
     return $parity;
   }

@@ -425,6 +425,19 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
     $this->reader()->resetParity();
     $this->assertGreaterThan(0, $this->runWrapper($plain(), TRUE)[1], 'Usable again without the translation.');
 
+    // A translation data row without its node row, as an old partial delete
+    // leaves it: the entity query never reaches it, so the index stays usable.
+    $orphan = $this->database()->select('node_field_data', 'd')->fields('d')
+      ->condition('nid', $translated_nid)->execute()->fetchAssoc();
+    $this->assertIsArray($orphan);
+    $orphan['nid'] = $orphan['vid'] = 990000;
+    $orphan['langcode'] = 'de';
+    $orphan['default_langcode'] = 0;
+    $this->database()->insert('node_field_data')->fields($orphan)->execute();
+    $this->reader()->resetParity();
+    $this->assertGreaterThan(0, $this->runWrapper($plain(), TRUE)[1], 'An orphaned data row does not disable the index.');
+    $this->database()->delete('node_field_data')->condition('nid', 990000)->execute();
+
     // A database error while reading the candidates is logged once, without
     // values, and Phase 1 falls back to Core for every widening round.
     $this->database()->schema()->dropTable('markaspot_request_index_jur');
