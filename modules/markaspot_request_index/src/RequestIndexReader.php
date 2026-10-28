@@ -34,9 +34,10 @@ use Psr\Log\LoggerInterface;
  * while the dashboard's access-checked query orders by the aggregate over
  * every translation row. Data rows without a node row (left behind by old
  * partial deletes) do not count: the entity query never reaches them.
- * Counting the index and the node table took about 20 ms on 158k requests
- * (MariaDB 10.11, warm buffer pool); the translation count was added later
- * and not measured separately. The verdict is cached
+ * On a tenant with 152k requests (MariaDB, warm) the statement took about
+ * 230 ms: about 60 ms for the index count, 75 ms for the node count and
+ * 85 ms for the translation count, which scans every data row whichever way
+ * it is written (a node-driven join measured the same). The verdict is cached
  * for PARITY_TTL seconds and dropped whenever a full rebuild starts or
  * finishes. A failed read is cached as a FALSE verdict as well, so a broken
  * index logs once per PARITY_TTL instead of on every dashboard request.
