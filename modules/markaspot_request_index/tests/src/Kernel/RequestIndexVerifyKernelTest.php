@@ -196,6 +196,20 @@ final class RequestIndexVerifyKernelTest extends RequestIndexKernelTestBase {
     $this->assertSame(RequestIndexRebuilder::MAX_ATTEMPTS, $result['failed'], 'The failing request was retried, then dropped.');
     $this->assertNull($this->row($poisonedNid));
     $this->assertNotNull($this->row((int) $healthy->id()));
+    // The dropped retry leaves the request marked stale: counts and queue
+    // alone would not show it once a row exists.
+    $staleSet = $this->container->get('markaspot_request_index.stale_set');
+    $reader = $this->container->get('markaspot_request_index.reader');
+    $this->assertSame([$poisonedNid], $staleSet->ids());
+    $this->assertSame(1, $rebuilder->status()['stale']);
+    $this->assertFalse($reader->isUsable());
+    $requirement = $this->requirement();
+    $this->assertSame(RequirementSeverity::Warning, $requirement['severity']);
+    $this->assertStringContainsString('marked stale', (string) $requirement['value']);
+    $this->assertStringContainsString('falls back', (string) $requirement['description']);
+    [$exit, $output] = $this->runVerifyCommand();
+    $this->assertSame(RequestIndexCommands::EXIT_FAILURE, $exit);
+    $this->assertStringContainsString("marked stale 1: $poisonedNid", $output);
 
     // The save of the request itself still succeeds and queues a retry.
     $poisoned->set('field_facility', 'bench-12')->save();
@@ -212,6 +226,21 @@ final class RequestIndexVerifyKernelTest extends RequestIndexKernelTestBase {
     $this->database()->query('DROP TRIGGER {markaspot_request_index_poison}');
     $rebuilder->drain();
     $this->assertSame('bench-12', $this->row($poisonedNid)['facility_id'] ?? NULL);
+    $this->assertSame([], $staleSet->ids(), 'The successful re-projection cleared the mark.');
+    $reader->resetParity();
+    $this->assertTrue($reader->isUsable());
+    $this->assertSame(RequirementSeverity::OK, $this->requirement()['severity']);
+
+    // A mark whose row matches its source again is cleared by verify, and a
+    // mark of a request that no longer exists by the next rebuild.
+    $staleSet->add([(int) $healthy->id()]);
+    [$exit, $output] = $this->runVerifyCommand();
+    $this->assertSame(RequestIndexCommands::EXIT_SUCCESS, $exit, $output);
+    $this->assertSame([], $staleSet->ids());
+    $staleSet->add([$poisonedNid + 5000]);
+    $rebuilder->startFullRebuild();
+    $rebuilder->drain();
+    $this->assertSame([], $staleSet->ids());
   }
 
   /**
@@ -224,7 +253,9 @@ final class RequestIndexVerifyKernelTest extends RequestIndexKernelTestBase {
     $node = $this->createRequest();
     $nid = (int) $node->id();
     $rebuilder = $this->container->get('markaspot_request_index.rebuilder');
-    $this->assertSame(RequirementSeverity::OK, $this->requirement()['severity']);
+    $requirement = $this->requirement();
+    $this->assertSame(RequirementSeverity::OK, $requirement['severity']);
+    $this->assertStringContainsString('dashboard list takes its candidates from this index', (string) $requirement['description']);
 
     $this->database()->delete(RequestIndexWriter::TABLE)->execute();
     $requirement = $this->requirement();

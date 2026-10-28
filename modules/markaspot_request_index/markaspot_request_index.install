@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 use Drupal\markaspot_request_index\RequestIndexRebuilder;
+use Drupal\markaspot_request_index\RequestIndexStaleSet;
 
 /**
  * Implements hook_schema().
@@ -136,8 +137,10 @@ function markaspot_request_index_schema(): array {
  * Implements hook_install().
  *
  * Queues a full rebuild, also during a config import: the queue holds no
- * configuration. Cron or drush mas:request-index:rebuild drains it; nothing
- * reads the index yet, so there is no blackout while it fills.
+ * configuration. Cron or drush mas:request-index:rebuild drains it. While
+ * batches are queued the index counts as incomplete, so the staff dashboard
+ * list keeps using the slower entity query instead of reading partial rows;
+ * there is no blackout while it fills.
  */
 function markaspot_request_index_install(bool $is_syncing): void {
   /** @var \Drupal\markaspot_request_index\RequestIndexRebuilder $rebuilder */
@@ -151,4 +154,5 @@ function markaspot_request_index_install(bool $is_syncing): void {
 function markaspot_request_index_uninstall(bool $is_syncing): void {
   \Drupal::queue(RequestIndexRebuilder::QUEUE)->deleteQueue();
   \Drupal::state()->delete(RequestIndexRebuilder::STATE_RUN);
+  \Drupal::keyValue(RequestIndexStaleSet::COLLECTION)->deleteAll();
 }

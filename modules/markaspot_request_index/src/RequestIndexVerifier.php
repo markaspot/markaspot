@@ -89,17 +89,66 @@ final class RequestIndexVerifier {
       $query->orderBy('n.nid');
     }
     $nids = array_map('intval', $query->execute()->fetchCol());
+    $result = $this->diffIds($nids);
+    return ['checked' => $result['checked'], 'differences' => $result['differences']];
+  }
 
+  /**
+   * Returns the given requests whose index state matches their source.
+   *
+   * A request matches when its stored row equals a fresh projection, or when
+   * neither a service request nor a row exists for the ID. Used to clear
+   * stale marks of requests that a later write repaired.
+   *
+   * @param list<int> $nids
+   *   Node IDs.
+   *
+   * @return list<int>
+   *   The matching node IDs.
+   */
+  public function matchingIds(array $nids): array {
+    $nids = array_values(array_unique(array_map('intval', $nids)));
+    $result = $this->diffIds($nids);
+    $matching = [];
+    foreach ($nids as $nid) {
+      if (in_array($nid, $result['gone'], TRUE)) {
+        if (!$result['gone_with_row'][$nid]) {
+          $matching[] = $nid;
+        }
+        continue;
+      }
+      if (!isset($result['differences'][$nid])) {
+        $matching[] = $nid;
+      }
+    }
+    return $matching;
+  }
+
+  /**
+   * Re-projects requests in memory and compares them with the stored rows.
+   *
+   * @param list<int> $nids
+   *   Node IDs.
+   *
+   * @return array{checked: int, differences: array<int, list<string>>, gone: list<int>, gone_with_row: array<int, bool>}
+   *   Checked requests, the differing columns per node ID, the IDs that are
+   *   no service request and whether a row exists for each of them.
+   */
+  private function diffIds(array $nids): array {
     $storage = $this->entityTypeManager->getStorage('node');
     $checked = 0;
     $differences = [];
+    $gone = [];
+    $goneWithRow = [];
     foreach (array_chunk($nids, self::DIFF_CHUNK) as $chunk) {
       $storage->resetCache($chunk);
       $nodes = $storage->loadMultiple($chunk);
       $stored = $this->storedRecords($chunk);
       foreach ($chunk as $nid) {
         $node = $nodes[$nid] ?? NULL;
-        if (!$node instanceof NodeInterface) {
+        if (!$node instanceof NodeInterface || !$this->projector->applies($node)) {
+          $gone[] = $nid;
+          $goneWithRow[$nid] = isset($stored[$nid]);
           continue;
         }
         $checked++;
@@ -111,7 +160,12 @@ final class RequestIndexVerifier {
       $storage->resetCache($chunk);
     }
 
-    return ['checked' => $checked, 'differences' => $differences];
+    return [
+      'checked' => $checked,
+      'differences' => $differences,
+      'gone' => $gone,
+      'gone_with_row' => $goneWithRow,
+    ];
   }
 
   /**

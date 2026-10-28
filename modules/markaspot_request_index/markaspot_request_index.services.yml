@@ -10,6 +10,22 @@ services:
       - '@entity_type.manager'
       - '@markaspot_group.hierarchy_resolver'
 
+  markaspot_request_index.stale_set:
+    class: Drupal\markaspot_request_index\RequestIndexStaleSet
+    arguments:
+      - '@keyvalue'
+
+  markaspot_request_index.reader:
+    class: Drupal\markaspot_request_index\RequestIndexReader
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@queue'
+      - '@markaspot_request_index.stale_set'
+      - '@cache.default'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_request_index'
+
   markaspot_request_index.writer:
     class: Drupal\markaspot_request_index\RequestIndexWriter
     arguments:
@@ -17,6 +33,7 @@ services:
       - '@entity_type.manager'
       - '@markaspot_request_index.projector'
       - '@datetime.time'
+      - '@markaspot_request_index.stale_set'
 
   markaspot_request_index.rebuilder:
     class: Drupal\markaspot_request_index\RequestIndexRebuilder
@@ -30,6 +47,8 @@ services:
       - '@markaspot_request_index.projector'
       - '@markaspot_group.hierarchy_resolver'
       - '@logger.channel.markaspot_request_index'
+      - '@markaspot_request_index.reader'
+      - '@markaspot_request_index.stale_set'
 
   markaspot_request_index.verifier:
     class: Drupal\markaspot_request_index\RequestIndexVerifier
@@ -47,4 +66,5 @@ services:
       - '@markaspot_request_index.rebuilder'
       - '@config.factory'
       - '@logger.channel.markaspot_request_index'
+      - '@markaspot_request_index.stale_set'
     public: true

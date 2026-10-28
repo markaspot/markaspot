@@ -326,6 +326,19 @@ final class CandidateEntityQuery extends LocalizedSortQuery {
   }
 
   /**
+   * Reads the database connection of a Sql\Query instance.
+   *
+   * @param \Drupal\Core\Entity\Query\Sql\Query $query
+   *   The query whose connection to read.
+   *
+   * @return \Drupal\Core\Database\Connection
+   *   The connection the query runs on.
+   */
+  public static function readConnection(SqlQuery $query): Connection {
+    return $query->connection;
+  }
+
+  /**
    * Resolves validated virtual request-order sorts to indexed node order.
    *
    * @param \Drupal\Core\Entity\Query\Sql\Query $query

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_request_index\Drush\Commands;
 
 use Drupal\markaspot_request_index\RequestIndexRebuilder;
+use Drupal\markaspot_request_index\RequestIndexStaleSet;
 use Drupal\markaspot_request_index\RequestIndexVerifier;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
@@ -26,6 +27,7 @@ final class RequestIndexCommands extends DrushCommands {
   public function __construct(
     private readonly RequestIndexRebuilder $rebuilder,
     private readonly RequestIndexVerifier $verifier,
+    private readonly RequestIndexStaleSet $staleSet,
   ) {
     parent::__construct();
   }
@@ -37,6 +39,7 @@ final class RequestIndexCommands extends DrushCommands {
     return new self(
       $container->get('markaspot_request_index.rebuilder'),
       $container->get('markaspot_request_index.verifier'),
+      $container->get('markaspot_request_index.stale_set'),
     );
   }
 
@@ -103,11 +106,17 @@ final class RequestIndexCommands extends DrushCommands {
     }
     if ($result['left'] > 0) {
       $this->io()->warning(sprintf(
-        'Stopped with %d batches left; rerun the command to resume. Batches claimed by an interrupted run are released after %d seconds.',
+        'Stopped with %d batches left; rerun the command to resume. Batches claimed by an interrupted run are released after %d seconds. Until the queue is drained the dashboard list does not read the index.',
         $result['left'],
         RequestIndexRebuilder::LEASE,
       ));
       return self::EXIT_SUCCESS;
+    }
+    if ($status['stale'] > 0) {
+      $this->io()->warning(sprintf(
+        '%d service requests are marked stale; the dashboard list does not read the index until they are re-projected. drush mas:request-index:verify lists them.',
+        $status['stale'],
+      ));
     }
     $this->io()->success(sprintf('Rebuilt: %d rows for %d service requests in %.0f s.', $status['indexed'], $status['requests'], microtime(TRUE) - $started));
     return self::EXIT_SUCCESS;
@@ -116,9 +125,10 @@ final class RequestIndexCommands extends DrushCommands {
   /**
    * Verifies row parity, projector output and organisation drift.
    *
-   * Exits non-zero when rows are missing or orphaned or a re-projection
-   * differs from the stored row. Drift between field_organisation and the
-   * group_node relations is reported only.
+   * Exits non-zero when rows are missing or orphaned, a re-projection
+   * differs from the stored row or a request stays marked stale. A stale mark
+   * whose row matches its source again is cleared. Drift between
+   * field_organisation and the group_node relations is reported only.
    *
    * @param array<string, mixed> $options
    *   Command options.
@@ -143,6 +153,15 @@ final class RequestIndexCommands extends DrushCommands {
     if ($queued > 0) {
       $io->writeln(sprintf('%d re-projection batches are still queued.', $queued));
     }
+
+    // A stale mark is cleared once the stored row matches its source again.
+    $stale = $this->staleSet->ids();
+    if ($stale !== []) {
+      $this->staleSet->remove($this->verifier->matchingIds($stale));
+      $stale = $this->staleSet->ids();
+    }
+    $io->section('Stale marks');
+    $io->writeln(sprintf('marked stale %d%s', count($stale), $stale === [] ? '' : ': ' . implode(', ', array_slice($stale, 0, 20))));
 
     $diff = $this->verifier->diff((int) $options['sample']);
     $io->section('Projector diff');
@@ -191,7 +210,7 @@ final class RequestIndexCommands extends DrushCommands {
       }
     }
 
-    $failed = $parity['missing'] > 0 || $parity['orphans'] > 0 || $diff['differences'] !== [];
+    $failed = $parity['missing'] > 0 || $parity['orphans'] > 0 || $diff['differences'] !== [] || $stale !== [];
     if ($failed) {
       $io->error('Request index differs from its sources. Run drush mas:request-index:rebuild.');
       return self::EXIT_FAILURE;

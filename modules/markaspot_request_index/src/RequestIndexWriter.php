@@ -15,6 +15,8 @@ use Drupal\node\NodeInterface;
  *
  * Called from entity hooks, so every write joins the node save transaction;
  * the writer's own transaction becomes a savepoint there. Never saves a node.
+ * A successful write or removal of a request's row takes the request out of
+ * the stale set.
  */
 final class RequestIndexWriter {
 
@@ -39,6 +41,7 @@ final class RequestIndexWriter {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly RequestIndexProjector $projector,
     private readonly TimeInterface $time,
+    private readonly RequestIndexStaleSet $staleSet,
   ) {}
 
   /**
@@ -87,6 +90,7 @@ final class RequestIndexWriter {
     foreach ([self::TABLE, ...array_values(self::CHILD_TABLES)] as $table) {
       $this->database->delete($table)->condition('nid', $nids, 'IN')->execute();
     }
+    $this->staleSet->remove($nids);
   }
 
   /**
@@ -98,7 +102,8 @@ final class RequestIndexWriter {
    * resurrected from a cached instance. Requests that no longer exist or are
    * not service requests lose their rows. A request whose projection fails
    * keeps its previous row and is reported, so one broken request never
-   * blocks the others.
+   * blocks the others; the caller marks it stale. Projected requests leave
+   * the stale set.
    *
    * @param list<int> $nids
    *   Node IDs.
@@ -117,6 +122,7 @@ final class RequestIndexWriter {
     $storage->resetCache($nids);
     $nodes = $storage->loadMultiple($nids);
     $gone = [];
+    $projected = [];
     foreach ($nids as $nid) {
       $node = $nodes[$nid] ?? NULL;
       if (!$node instanceof NodeInterface || !$this->projector->applies($node)) {
@@ -125,13 +131,15 @@ final class RequestIndexWriter {
       }
       try {
         $this->upsert($this->projector->build($node));
-        $result['projected']++;
+        $projected[] = $nid;
       }
       catch (\Throwable $throwable) {
         $result['failed'][$nid] = self::describeFailure($throwable);
       }
     }
+    $result['projected'] = count($projected);
     $this->delete($gone);
+    $this->staleSet->remove($projected);
     $storage->resetCache($nids);
     return $result;
   }
@@ -193,6 +201,12 @@ final class RequestIndexWriter {
     }
     $orphans = array_values(array_unique($orphans));
     $this->delete($orphans);
+    // A request that failed and was deleted before a retry may have left no
+    // row behind; in this range it is gone either way.
+    $this->staleSet->remove(array_filter(
+      $this->staleSet->ids(),
+      static fn(int $nid): bool => $nid > $from && $nid <= $to && !in_array($nid, $keep, TRUE),
+    ));
     return count($orphans);
   }
 

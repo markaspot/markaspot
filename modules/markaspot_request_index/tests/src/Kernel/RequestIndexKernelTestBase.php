@@ -236,10 +236,14 @@ abstract class RequestIndexKernelTestBase extends KernelTestBase {
     $this->createReferenceField('node', 'service_request', 'field_status', 'taxonomy_term', 1, ['service_status' => 'service_status']);
     $this->createReferenceField('node', 'service_request', 'field_category', 'taxonomy_term', 1, ['service_category' => 'service_category']);
 
+    // Translatability as shipped: field_open311_mapping storage untranslatable
+    // (markaspot_open311), field_service_code instance untranslatable
+    // (service_request).
     FieldStorageConfig::create([
       'field_name' => 'field_open311_mapping',
       'entity_type' => 'taxonomy_term',
       'type' => 'list_string',
+      'translatable' => FALSE,
       'settings' => [
         'allowed_values' => ['open' => 'Open', 'closed' => 'Closed'],
       ],
@@ -250,7 +254,7 @@ abstract class RequestIndexKernelTestBase extends KernelTestBase {
       'bundle' => 'service_status',
       'label' => 'Open311 mapping',
     ])->save();
-    $this->createSimpleField('taxonomy_term', 'service_category', 'field_service_code', 'string');
+    $this->createSimpleField('taxonomy_term', 'service_category', 'field_service_code', 'string', 'public', FALSE);
 
     FieldStorageConfig::create([
       'field_name' => 'field_address',
@@ -318,9 +322,9 @@ abstract class RequestIndexKernelTestBase extends KernelTestBase {
   }
 
   /**
-   * Creates a single-value field.
+   * Creates a single-value field; $translatable sets the field instance.
    */
-  private function createSimpleField(string $entity_type, string $bundle, string $field_name, string $type, string $permission_type = 'public'): void {
+  private function createSimpleField(string $entity_type, string $bundle, string $field_name, string $type, string $permission_type = 'public', bool $translatable = TRUE): void {
     FieldStorageConfig::create([
       'field_name' => $field_name,
       'entity_type' => $entity_type,
@@ -334,6 +338,7 @@ abstract class RequestIndexKernelTestBase extends KernelTestBase {
       'entity_type' => $entity_type,
       'bundle' => $bundle,
       'label' => $field_name,
+      'translatable' => $translatable,
     ])->save();
   }
 

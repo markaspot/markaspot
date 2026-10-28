@@ -77,12 +77,15 @@ final class RequestIndexRebuilder {
     private readonly RequestIndexProjector $projector,
     private readonly JurisdictionHierarchyResolverInterface $hierarchyResolver,
     private readonly LoggerInterface $logger,
+    private readonly RequestIndexReader $reader,
+    private readonly RequestIndexStaleSet $staleSet,
   ) {}
 
   /**
    * Replaces the queue with a full rebuild in node ID ranges.
    *
    * Queued incremental items are dropped: the ranges cover every request.
+   * Stale marks stay until the range that holds the request projects it.
    *
    * @return array{id: string, started: int, requests: int, items: int, batch_size: int, finished: int|null}
    *   The new run.
@@ -117,6 +120,7 @@ final class RequestIndexRebuilder {
       $from = $to;
     }
     $this->state->set(self::STATE_RUN, $run);
+    $this->reader->resetParity();
     return $run;
   }
 
@@ -234,17 +238,22 @@ final class RequestIndexRebuilder {
   }
 
   /**
-   * Returns counts for the status report and drush.
+   * Returns live counts for the status report and drush.
    *
-   * @return array{requests: int, indexed: int, queued: int, run: array<string, mixed>|null}
-   *   Service request count, row count, queued items and the last run.
+   * The index is usable for the dashboard list only while requests and
+   * indexed are equal and queued and stale are 0 (RequestIndexReader).
+   *
+   * @return array{requests: int, indexed: int, queued: int, stale: int, run: array<string, mixed>|null}
+   *   Service request count, row count, queued items, requests marked stale
+   *   and the last run.
    */
   public function status(): array {
     $run = $this->state->get(self::STATE_RUN);
     return [
       'requests' => $this->countServiceRequests(),
-      'indexed' => (int) $this->database->select(RequestIndexWriter::TABLE, 'i')->countQuery()->execute()->fetchField(),
+      'indexed' => $this->reader->countRows(),
       'queued' => $this->queue()->numberOfItems(),
+      'stale' => count($this->staleSet->ids()),
       'run' => is_array($run) ? $run : NULL,
     ];
   }
@@ -253,11 +262,7 @@ final class RequestIndexRebuilder {
    * Counts service requests.
    */
   public function countServiceRequests(): int {
-    return (int) $this->database->select($this->nodeBaseTable(), 'n')
-      ->condition('n.type', RequestIndexProjector::BUNDLE)
-      ->countQuery()
-      ->execute()
-      ->fetchField();
+    return $this->reader->countServiceRequests();
   }
 
   /**
@@ -324,7 +329,10 @@ final class RequestIndexRebuilder {
   }
 
   /**
-   * Logs failed projections and queues them again until MAX_ATTEMPTS.
+   * Marks failed projections stale and queues them again until MAX_ATTEMPTS.
+   *
+   * A request stays marked after the last attempt, so the dashboard list does
+   * not read the index until a later save or rebuild projects it.
    *
    * @param array<int, string> $failed
    *   Failure descriptions keyed by node ID.
@@ -336,6 +344,7 @@ final class RequestIndexRebuilder {
       return;
     }
     $this->failed += count($failed);
+    $this->staleSet->add(array_keys($failed));
     $attempt++;
     foreach ($failed as $nid => $failure) {
       $this->logger->error('Request index projection of node @nid failed (attempt @attempt of @max): @failure', [
@@ -346,7 +355,7 @@ final class RequestIndexRebuilder {
       ]);
     }
     if ($attempt >= self::MAX_ATTEMPTS) {
-      $this->logger->error('Gave up projecting nodes @nids after @max attempts; their rows stay stale until the next save. drush mas:request-index:verify lists them.', [
+      $this->logger->error('Gave up projecting nodes @nids after @max attempts; they stay marked stale and the dashboard list does not read the index until the next save or drush mas:request-index:rebuild projects them. drush mas:request-index:verify lists them.', [
         '@nids' => implode(', ', array_keys($failed)),
         '@max' => self::MAX_ATTEMPTS,
       ]);
@@ -455,6 +464,7 @@ final class RequestIndexRebuilder {
     }
     $run['finished'] = $this->time->getCurrentTime();
     $this->state->set(self::STATE_RUN, $run);
+    $this->reader->resetParity();
   }
 
   /**

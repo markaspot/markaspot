@@ -13,6 +13,7 @@ use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_request_index\RequestIndexProjector;
 use Drupal\markaspot_request_index\RequestIndexRebuilder;
+use Drupal\markaspot_request_index\RequestIndexStaleSet;
 use Drupal\markaspot_request_index\RequestIndexWriter;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
@@ -27,9 +28,10 @@ use Psr\Log\LoggerInterface;
  * saving it. Group relationship writes need no hook of their own: the index
  * reads field_organisation, and Group re-saves the grouped node on every
  * relationship insert and delete, which runs node_update. A failing
- * projection never fails the save: it is logged and queued, and a stale row
- * is only ever a false negative because entity access still runs per row
- * once the index is read.
+ * projection never fails the save: it is logged, the request is marked stale
+ * and queued. The staff dashboard list reads the index only while nothing is
+ * stale or queued (RequestIndexReader::isUsable()), so a row a failed write
+ * left behind never hides or misorders a request there.
  */
 final class RequestIndexHooks {
 
@@ -49,6 +51,7 @@ final class RequestIndexHooks {
     private readonly RequestIndexRebuilder $rebuilder,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly LoggerInterface $logger,
+    private readonly RequestIndexStaleSet $staleSet,
   ) {}
 
   /**
@@ -131,7 +134,10 @@ final class RequestIndexHooks {
   }
 
   /**
-   * Reports an empty, incomplete or still rebuilding index.
+   * Reports an empty, incomplete, stale or still rebuilding index.
+   *
+   * The staff dashboard list takes its candidates from the index only while
+   * none of these problems exists; otherwise it uses the slower entity query.
    *
    * @return array<string, array<string, mixed>>
    *   The status report entry.
@@ -152,6 +158,9 @@ final class RequestIndexHooks {
     if ($status['queued'] > 0) {
       $problems[] = (string) $this->t('@count re-projection batches are queued.', ['@count' => $status['queued']]);
     }
+    if ($status['stale'] > 0) {
+      $problems[] = (string) $this->t('@count service requests failed to re-project and are marked stale.', ['@count' => $status['stale']]);
+    }
 
     $requirement = [
       'title' => $this->t('Mark-a-Spot request index'),
@@ -159,9 +168,10 @@ final class RequestIndexHooks {
         ? $this->t('@count service requests indexed', ['@count' => $status['indexed']])
         : implode(' ', $problems),
       'severity' => $problems === [] ? RequirementSeverity::OK : RequirementSeverity::Warning,
+      'description' => $this->t('The staff dashboard list takes its candidates from this index while it is complete.'),
     ];
     if ($problems !== []) {
-      $requirement['description'] = $this->t('Nothing reads the index yet. Run <code>drush mas:request-index:rebuild</code> to fill it, then <code>drush mas:request-index:verify</code>.');
+      $requirement['description'] = $this->t('The index is incomplete, so the staff dashboard list falls back to the slower entity query until it is complete again. Cron drains queued batches; run <code>drush mas:request-index:rebuild</code> to fill or repair the index, then <code>drush mas:request-index:verify</code>.');
     }
     return ['markaspot_request_index' => $requirement];
   }
@@ -181,12 +191,14 @@ final class RequestIndexHooks {
   }
 
   /**
-   * Runs an index write; on failure logs it and queues a retry.
+   * Runs an index write; on failure logs it, marks it stale, queues a retry.
    *
    * The writer rolls back its savepoint, so the node save continues. The
-   * retry relies on the queue table that hook_install() created: creating it
-   * here would be DDL inside the save transaction. The log line carries no
-   * field values (see RequestIndexWriter::describeFailure()).
+   * stale mark keeps the dashboard list off the index even when queueing the
+   * retry fails as well. The retry relies on the queue table that
+   * hook_install() created: creating it here would be DDL inside the save
+   * transaction. The log lines carry no field values (see
+   * RequestIndexWriter::describeFailure()).
    *
    * @param int $nid
    *   The node ID.
@@ -207,11 +219,28 @@ final class RequestIndexHooks {
       '@nid' => $nid,
       '@failure' => $failure,
     ]);
+    $marked = TRUE;
+    try {
+      $this->staleSet->add([$nid]);
+    }
+    catch (\Throwable $throwable) {
+      $marked = FALSE;
+      $this->logger->error('Request index could not mark node @nid stale: @failure', [
+        '@nid' => $nid,
+        '@failure' => RequestIndexWriter::describeFailure($throwable),
+      ]);
+    }
     try {
       $this->rebuilder->enqueueNids([$nid]);
     }
-    catch (\Throwable) {
-      // The status report and verify surface the stale row.
+    catch (\Throwable $throwable) {
+      // The stale mark keeps the dashboard list off the index; the status
+      // report and verify surface the request.
+      $this->logger->error('Request index retry for node @nid could not be queued (@marked): @failure', [
+        '@nid' => $nid,
+        '@marked' => $marked ? 'marked stale' : 'not marked stale either',
+        '@failure' => RequestIndexWriter::describeFailure($throwable),
+      ]);
     }
   }
 

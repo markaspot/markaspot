@@ -214,9 +214,11 @@ final class RequestIndexSyncKernelTest extends RequestIndexKernelTestBase {
     $this->assertNull($this->row($nid), 'The partial write was rolled back.');
     $rebuilder = $this->container->get('markaspot_request_index.rebuilder');
     $this->assertGreaterThan(0, $rebuilder->status()['queued']);
+    $this->assertSame([$nid], $this->container->get('markaspot_request_index.stale_set')->ids());
 
     $schema->createTable('markaspot_request_index_jur', $definition);
     $rebuilder->drain();
+    $this->assertSame([], $this->container->get('markaspot_request_index.stale_set')->ids());
     $this->assertSame((string) $this->organisationA->id(), $this->row($nid)['org_gid'] ?? NULL);
     $this->assertSame([(int) $this->childJurisdiction->id()], $this->children('jur', $nid));
   }
