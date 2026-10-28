@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\JsonApi;
 
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
@@ -131,6 +132,7 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
   public function __construct(
     private readonly SqlQuery $inner,
     private readonly ?EntityFieldManagerInterface $fieldManager = NULL,
+    private readonly ?Connection $database = NULL,
   ) {
   }
 
@@ -237,10 +239,17 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
       );
 
     for ($round = 0; $round < self::MAX_TWO_PHASE_ROUNDS; $round++) {
-      // Phase 1: fast candidate query without access checks.
-      $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
-      if ($tiebreak_direction !== NULL) {
-        $candidate_query->sort('nid', $tiebreak_direction);
+      // Phase 1: fast candidate query without access checks. The request
+      // index answers it with one ordered index walk when it can reproduce the
+      // order; otherwise Core's simplified copy of the query does.
+      $candidate_query = $this->database
+        ? IndexCandidateQuery::fromQuery($this->inner, $window, $tiebreak_direction, $this->database)
+        : NULL;
+      if ($candidate_query === NULL) {
+        $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
+        if ($tiebreak_direction !== NULL) {
+          $candidate_query->sort('nid', $tiebreak_direction);
+        }
       }
       $candidate_result = $candidate_query->execute();
 

@@ -187,7 +187,10 @@ final class CachedCountEntityResource extends EntityResource {
     }
 
     // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
-    return new DeferredAccessQueryWrapper($inner, \Drupal::service('entity_field.manager'));
+    $field_manager = \Drupal::service('entity_field.manager');
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+    $database = \Drupal::service('database');
+    return new DeferredAccessQueryWrapper($inner, $field_manager, $database);
   }
 
   /**
