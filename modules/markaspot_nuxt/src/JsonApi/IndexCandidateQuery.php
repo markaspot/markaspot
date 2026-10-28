@@ -68,6 +68,7 @@ final class IndexCandidateQuery {
     'status' => 'published',
     'created' => 'created',
     'changed' => 'changed',
+    'request_id' => 'request_id',
     'field_status' => 'status_tid',
     'field_category' => 'category_tid',
     'field_category.entity:taxonomy_term.field_service_code' => 'service_code',
@@ -106,6 +107,7 @@ final class IndexCandidateQuery {
    * values that survive that unchanged are translated.
    */
   private const STRING_COLUMN_LENGTHS = [
+    'request_id' => 64,
     'service_code' => 64,
     'open311_mapping' => 32,
   ];

@@ -152,7 +152,9 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    * Guards (any violation -> passthrough to $inner->execute()):
    * - Range is set on the inner query and
    *   offset + length <= MAX_TWO_PHASE_RANGE
-   * - Sort is present on the inner query
+   * - Sort is present on the inner query, or the request index can answer
+   *   Phase 1 (an unsorted query, such as the detail lookup by request ID,
+   *   then gets a nid order in both phases; without a sort any order is valid)
    * - Dotted sorts have single-valued scalar paths and an explicit language
    *   for translatable fields. Multi-valued/unknown paths retain Core's query.
    * - count() was not called on this wrapper (count-mode -> always passthrough)
@@ -177,9 +179,13 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
       return $this->inner->execute();
     }
 
-    // Guard: at least one sort must be present.
+    // Without a sort Core's Phase 1 copy costs as much as the query itself,
+    // so only the request index may answer it. Any order is valid then; the
+    // nid order makes both phases agree.
     if (empty($inner_sort)) {
-      return $this->inner->execute();
+      return $this->indexReader === NULL
+        ? $this->inner->execute()
+        : $this->executeTwoPhase($offset, $length, 'ASC', TRUE);
     }
 
     // Guard: no dotted sort fields (relationship traversal via Tables::addField
@@ -234,11 +240,14 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    * @param string|null $tiebreak_direction
    *   Direction for the deterministic nid tiebreaker appended to both
    *   phases, or NULL when the inner query already sorts on nid.
+   * @param bool $index_only
+   *   Run the inner query unchanged instead of Core's Phase 1 copy when the
+   *   request index cannot answer.
    *
    * @return array<int|string, int|string>
    *   Entity query result in [revision_id => entity_id] format.
    */
-  private function executeTwoPhase(int $offset, int $length, ?string $tiebreak_direction): array {
+  private function executeTwoPhase(int $offset, int $length, ?string $tiebreak_direction, bool $index_only = FALSE): array {
     $required_rows = $offset + $length;
     $window = min(
           $offset + max(100, 5 * $length),
@@ -266,6 +275,9 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
         }
       }
       if ($candidate_result === NULL) {
+        if ($index_only) {
+          return $this->inner->execute();
+        }
         $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
         if ($tiebreak_direction !== NULL) {
           $candidate_query->sort('nid', $tiebreak_direction);

@@ -42,7 +42,7 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
   /**
    * {@inheritdoc}
    */
-  protected static $modules = ['language', 'content_translation'];
+  protected static $modules = ['language', 'content_translation', 'markaspot_request_id'];
 
   /**
    * Page length as JSON:API passes it: page size 10 plus one.
@@ -408,7 +408,11 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
     $translated_nid = (int) reset($oldest);
     $translated = Node::load($translated_nid);
     $this->assertInstanceOf(Node::class, $translated);
-    $translated->addTranslation('de', ['title' => 'Fiktiver Bericht', 'created' => 1800000000])->save();
+    $translated->addTranslation('de', [
+      'title' => 'Fiktiver Bericht',
+      'request_id' => $translated->get('request_id')->value,
+      'created' => 1800000000,
+    ])->save();
     $this->reader()->resetParity();
     $this->assertSame($translated_nid, (int) array_values($plain()->execute())[0], 'The translation moved the request to the top.');
     [$indexed, $reads] = $this->runWrapper($plain(), TRUE);
@@ -459,6 +463,104 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
     $this->assertFalse($this->reader()->isUsable());
     $assert_declined('missing table, cached');
     $this->assertCount(1, $this->logger->messages, 'A broken index logs once per parity TTL.');
+  }
+
+  /**
+   * An unsorted lookup by request ID runs through the index or unchanged.
+   *
+   * Without a sort Core's Phase 1 copy would cost as much as the query, so
+   * only the index answers it; when the index cannot, the inner query runs
+   * once, unchanged.
+   */
+  public function testRequestIdLookupWithoutSort(): void {
+    $root = (int) $this->rootJurisdiction->id();
+    $child = (int) $this->childJurisdiction->id();
+    $cases = [
+      // Request 1004 lies in the root jurisdiction, 1003 in the child and is
+      // unpublished, 1006 in the child and published.
+      'request id' => [
+        static fn(SqlQuery $q) => $q->condition('request_id', '1004-2026'),
+        TRUE,
+      ],
+      'request id value with jurisdiction' => [
+        static fn(SqlQuery $q) => $q
+          ->condition('request_id.value', '1006-2026')
+          ->condition('field_jurisdiction.target_id', [$root, $child], 'IN'),
+        TRUE,
+      ],
+      'two request ids' => [
+        static fn(SqlQuery $q) => $q->condition('request_id', ['1003-2026', '1006-2026'], 'IN'),
+        TRUE,
+      ],
+      'request id with whitespace' => [
+        static fn(SqlQuery $q) => $q->condition('request_id', ' 1004-2026'),
+        FALSE,
+      ],
+    ];
+    $build = function (callable $condition): SqlQuery {
+      $query = $this->container->get('entity_type.manager')->getStorage('node')->getQuery();
+      $this->assertInstanceOf(SqlQuery::class, $query);
+      $query->accessCheck(TRUE)->condition('type', 'service_request');
+      $condition($query);
+      $query->range(0, 51);
+      $this->assertSame([], CandidateEntityQuery::readSort($query));
+      return $query;
+    };
+    $node_queries = function (string $key): int {
+      return count(array_filter(
+        Database::getLog($key),
+        static fn(array $entry): bool => str_contains($entry['query'], 'node_field_data') && str_contains($entry['query'], 'request_id'),
+      ));
+    };
+    $hits = [];
+    foreach ([$this->districtStaff, $this->editor] as $account) {
+      $this->container->get('current_user')->setAccount($account);
+      foreach ($cases as $case => [$condition, $applied]) {
+        $label = sprintf('%s / uid %d', $case, $account->id());
+        $expected = array_values($build($condition)->execute());
+        sort($expected);
+        $key = 'request_id_lookup_' . bin2hex(random_bytes(4));
+        Database::startLog($key);
+        [$indexed, $reads, $sql] = $this->runWrapper($build($condition), TRUE);
+        $this->assertSame($expected, $indexed, "Index path: $label");
+        // A value the index cannot match exactly is left to Phase 2: the
+        // index still answers, with a wider candidate set.
+        $this->assertGreaterThan(0, $reads, "Index read: $label");
+        $this->assertSame($reads, $node_queries($key), "One Phase 2 per index read, no Core Phase 1: $label");
+        $this->assertCount($applied ? $reads : 0, preg_grep('/"i"\."request_id" (=|IN)/', $sql) ?: [], "Index condition applied: $label");
+        [$direct, $direct_reads] = $this->runWrapper($build($condition), FALSE);
+        sort($direct);
+        $this->assertSame(0, $direct_reads, $label);
+        $this->assertSame($expected, $direct, "Without the reader: $label");
+        $hits[(int) $account->id()][$case] = count($expected);
+      }
+    }
+    // Phase 2 stays the authority: the district account sees request 1006
+    // only, the editor all three.
+    $this->assertSame([
+      'request id' => 0,
+      'request id value with jurisdiction' => 1,
+      'two request ids' => 1,
+      'request id with whitespace' => 0,
+    ], $hits[(int) $this->districtStaff->id()]);
+    $this->assertSame([
+      'request id' => 1,
+      'request id value with jurisdiction' => 1,
+      'two request ids' => 2,
+      'request id with whitespace' => 0,
+    ], $hits[(int) $this->editor->id()]);
+
+    // An unusable index leaves the unsorted query to Core, run once.
+    $this->container->get('current_user')->setAccount($this->editor);
+    $queue = $this->container->get('queue')->get(RequestIndexRebuilder::QUEUE, TRUE);
+    $queue->createItem(['op' => 'nids', 'nids' => []]);
+    $key = 'request_id_lookup_unusable';
+    Database::startLog($key);
+    [$result, $reads] = $this->runWrapper($build($cases['request id'][0]), TRUE);
+    $this->assertSame(0, $reads);
+    $this->assertCount(1, $result);
+    $this->assertSame(1, $node_queries($key), 'No Core Phase 1 copy for an unsorted query.');
+    $queue->deleteQueue();
   }
 
   /**
@@ -554,6 +656,7 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
         'title' => 'Fictional report ' . $i,
         'langcode' => $i % 2 ? 'und' : 'en',
         'status' => $i % 6 !== 3,
+        'request_id' => sprintf('%d-2026', 1000 + $i),
         'created' => 1700000000 + intdiv($i, 3) * 60,
         'changed' => 1700500000 + ($i * 37) % 97,
         'field_jurisdiction' => [$i % 3 === 0 ? $this->childJurisdiction->id() : $this->rootJurisdiction->id()],

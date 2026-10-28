@@ -109,6 +109,7 @@ function markaspot_request_index_schema(): array {
       'jur_changed' => ['jur_gid', 'changed', 'nid'],
       'jur_address' => ['jur_gid', ['address_line1', 64], 'nid'],
       'jur_request_id' => ['jur_gid', 'request_id', 'nid'],
+      'request_id' => ['request_id', 'nid'],
       'jur_status' => ['jur_gid', 'status_tid', 'created'],
       'jur_category' => ['jur_gid', 'category_tid', 'created'],
       'created_nid' => ['created', 'nid'],
@@ -155,4 +156,16 @@ function markaspot_request_index_uninstall(bool $is_syncing): void {
   \Drupal::queue(RequestIndexRebuilder::QUEUE)->deleteQueue();
   \Drupal::state()->delete(RequestIndexRebuilder::STATE_RUN);
   \Drupal::keyValue(RequestIndexStaleSet::COLLECTION)->deleteAll();
+}
+
+/**
+ * Add an index for request ID lookups without a jurisdiction prefix.
+ */
+function markaspot_request_index_update_11958(): void {
+  $schema = \Drupal::database()->schema();
+  if ($schema->indexExists('markaspot_request_index', 'request_id')) {
+    return;
+  }
+  $spec = markaspot_request_index_schema()['markaspot_request_index'];
+  $schema->addIndex('markaspot_request_index', 'request_id', $spec['indexes']['request_id'], $spec);
 }
