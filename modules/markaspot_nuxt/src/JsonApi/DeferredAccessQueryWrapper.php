@@ -329,6 +329,13 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
         return array_slice($phase2_result, $offset, $length, TRUE);
       }
 
+      // An unsorted query has no aggregate sort that would make a wider
+      // window cheaper than the query itself: when the first window did not
+      // settle it, run the inner query once instead of widening.
+      if ($index_only) {
+        break;
+      }
+
       if ($window >= self::MAX_CANDIDATE_WINDOW) {
         break;
       }

@@ -571,6 +571,22 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
       'request id with a non-ASCII character' => 0,
     ], $hits[(int) $this->editor->id()]);
 
+    // A condition the index drops, on more requests than the first window
+    // (100 for one row): the inner query runs once after the first round
+    // instead of widening four times.
+    $this->container->get('current_user')->setAccount($this->editor);
+    $narrow = function () use ($build, $cases): SqlQuery {
+      $query = $build($cases['request id with whitespace'][0]);
+      $query->range(0, 1);
+      return $query;
+    };
+    $key = 'request_id_lookup_dropped';
+    Database::startLog($key);
+    [$result, $reads] = $this->runWrapper($narrow(), TRUE);
+    $this->assertSame([], $result);
+    $this->assertSame(1, $reads, 'One index window, no widening.');
+    $this->assertSame(2, $node_queries($key), 'Phase 2 of the first window plus the inner query.');
+
     // An unusable index leaves the unsorted query to Core, run once.
     $this->container->get('current_user')->setAccount($this->editor);
     $queue = $this->container->get('queue')->get(RequestIndexRebuilder::QUEUE, TRUE);
