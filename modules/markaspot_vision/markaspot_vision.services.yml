@@ -24,6 +24,7 @@ services:
       - '@state'
       - '@logger.factory'
       - '@?markaspot_open311.status_classifier'
+      - '@?Drupal\image\ImageDerivativeUtilities'
   markaspot_vision.media_analysis_access_guard:
     class: Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard
     arguments:

@@ -14,6 +14,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\StreamWrapper\LocalStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\image\ImageDerivativeUtilities;
 use Drupal\markaspot_open311\Service\StatusClassifier;
 use Drupal\media\MediaInterface;
 use Drupal\node\NodeInterface;
@@ -22,7 +23,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Keeps the unblurred original of a blurred photo for the staff handling it.
  *
- * Opt-in per site (retain_originals). The original lives in the private file
+ * Per site setting (retain_originals, on by default for new installs since
+ * 2026-10-28). The original lives in the private file
  * system, one file per media named by its UUID, mapped in a table of its own
  * so JSON:API and GeoReport never enumerate it. Each original belongs to one
  * report, the first that showed the photo; only accounts that may edit that
@@ -82,6 +84,7 @@ class OriginalImageStore {
     protected StateInterface $state,
     LoggerChannelFactoryInterface $loggerFactory,
     protected ?StatusClassifier $statusClassifier = NULL,
+    protected ?ImageDerivativeUtilities $derivativeUtilities = NULL,
   ) {
     $this->logger = $loggerFactory->get('markaspot_vision');
   }
@@ -296,15 +299,22 @@ class OriginalImageStore {
       return;
     }
     $this->database->delete(self::TABLE)->condition('mid', $mid)->execute();
-    $unlink = function (bool $committed = TRUE) use ($original): void {
+    $unlink = function (bool $committed = TRUE) use ($original, $mid): void {
       if (!$committed) {
         return;
       }
+      // Styled copies of the original are unblurred too and must go with it.
+      $this->derivativeUtilities?->pathFlush($original['uri']);
       try {
         $this->fileSystem->delete($original['uri']);
       }
       catch (\Throwable $e) {
-        // Nothing is left to serve it once the mapping is gone.
+        // Nothing can serve it once the mapping is gone, but the file stays
+        // on disk, so leave a trace for the operator.
+        $this->logger->warning('GDPR audit: original of media @id could not be unlinked after its mapping was removed: @message', [
+          '@id' => $mid,
+          '@message' => mb_substr($e->getMessage(), 0, 200),
+        ]);
       }
     };
     // Inside an entity delete, the file goes only if the delete commits.
