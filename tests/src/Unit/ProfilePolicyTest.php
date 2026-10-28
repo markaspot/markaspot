@@ -53,6 +53,19 @@ class ProfilePolicyTest extends TestCase {
   }
 
   /**
+   * The dark request index reaches every site and stays uninstallable.
+   */
+  public function testRequestIndexIsInstalledButNotRequired(): void {
+    $root = dirname(__DIR__, 3);
+    $info = Yaml::parseFile($root . '/markaspot.info.yml');
+    $this->assertContains('markaspot_request_index', $info['install'] ?? []);
+    $this->assertNotContains('markaspot_request_index', $info['dependencies'] ?? []);
+    $source = file_get_contents($root . '/markaspot.install');
+    $this->assertIsString($source);
+    $this->assertMatchesRegularExpression("/function markaspot_update_11944\(\).*?install\(\['markaspot_request_index'\]\)/s", $source);
+  }
+
+  /**
    * Modules that exist inside the profile but must stay opt-in.
    *
    * @return array
