@@ -106,9 +106,12 @@ final class IndexCandidateQuery {
    * The projector trims and truncates these values, so only = and IN with
    * values that survive that unchanged are translated. The index table and
    * node_field_data may carry different collations (seen on a tenant:
-   * utf8mb4_unicode_ci against utf8mb4_general_ci). Both agree on printable
-   * ASCII but not beyond (unicode_ci matches "ß" to "ss", general_ci does
-   * not), so other values are left to Phase 2.
+   * utf8mb4_unicode_ci against utf8mb4_general_ci). The case-insensitive
+   * collations agree for an ASCII value against an ASCII stored value but
+   * not beyond (unicode_ci matches "ß" to "ss", general_ci does not), so
+   * other values are left to Phase 2. Not covered: an ASCII value typed as a
+   * near-match of a stored non-ASCII value ("Strase" for "Straße") or a
+   * _bin/_cs collation on one side; request IDs and service codes are ASCII.
    */
   private const STRING_COLUMN_LENGTHS = [
     'request_id' => 64,
