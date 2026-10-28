@@ -6,7 +6,9 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Hook\Attribute\LegacyHook;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\markaspot_vision\Hook\HazardLevelHooks;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
@@ -46,24 +48,37 @@ function markaspot_vision_media_insert(EntityInterface $entity): void {
 }
 
 /**
+ * Implements hook_node_presave().
+ *
+ * Drupal 10 invokes this compatibility bridge. Drupal 11 discovers the native
+ * attribute hook HazardLevelHooks::nodePresave() and skips this wrapper
+ * through #[LegacyHook].
+ */
+#[LegacyHook]
+function markaspot_vision_node_presave(NodeInterface $node): void {
+  /** @var \Drupal\markaspot_vision\Hook\HazardLevelHooks $hooks */
+  $hooks = \Drupal::service(HazardLevelHooks::class);
+  $hooks->nodePresave($node);
+}
+
+/**
  * Implements hook_node_insert().
  *
- * Publishes safe media and propagates hazard levels on node creation.
+ * Publishes safe media on node creation. The hazard level is set before the
+ * write, in HazardLevelHooks::nodePresave().
  */
 function markaspot_vision_node_insert(NodeInterface $node): void {
   _markaspot_vision_publish_safe_media($node);
-  _markaspot_vision_propagate_hazard_level($node);
   \Drupal::service('markaspot_vision.original_image_store')->bind($node);
 }
 
 /**
  * Implements hook_node_update().
  *
- * Publishes safe media and propagates hazard levels on node update.
+ * Publishes safe media on node update.
  */
 function markaspot_vision_node_update(NodeInterface $node): void {
   _markaspot_vision_publish_safe_media($node);
-  _markaspot_vision_propagate_hazard_level($node);
   \Drupal::service('markaspot_vision.original_image_store')->bind($node);
 }
 
@@ -142,38 +157,6 @@ function _markaspot_vision_publish_safe_media(NodeInterface $node): void {
       }
     }
   }
-}
-
-/**
- * Propagates the highest hazard level from media entities to the node.
- *
- * Iterates all referenced media on a service request and sets
- * field_hazard_level to the maximum AI-detected hazard level.
- */
-function _markaspot_vision_propagate_hazard_level(NodeInterface $node): void {
-  if ($node->bundle() !== 'service_request') {
-    return;
-  }
-  if (!$node->hasField('field_hazard_level') || !$node->hasField('field_request_media')) {
-    return;
-  }
-  $media_field = $node->get('field_request_media');
-  if ($media_field->isEmpty()) {
-    return;
-  }
-
-  $max_hazard_level = 0;
-  foreach ($media_field->referencedEntities() as $media) {
-    if ($media->hasField('field_ai_hazard_level')) {
-      $level = (int) $media->get('field_ai_hazard_level')->value;
-      if ($level > $max_hazard_level) {
-        $max_hazard_level = $level;
-      }
-    }
-  }
-
-  // Set directly on the entity object (mid-save), no $node->save() needed.
-  $node->set('field_hazard_level', $max_hazard_level);
 }
 
 /**

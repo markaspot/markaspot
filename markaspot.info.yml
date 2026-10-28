@@ -82,6 +82,9 @@ dependencies:
   - markaspot_feedback
   - markaspot_health
   - markaspot_mail
+# Installed on new sites but not required: dark modules stay uninstallable.
+install:
+  - markaspot_request_index
 themes:
   - gin
   - stark

@@ -17,6 +17,7 @@ use Drupal\jsonapi\Query\OffsetPage;
 use Drupal\jsonapi\Query\Filter;
 use Drupal\jsonapi\Query\Sort;
 use Drupal\jsonapi\ResourceType\ResourceType;
+use Drupal\markaspot_request_index\RequestIndexReader;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -187,7 +188,15 @@ final class CachedCountEntityResource extends EntityResource {
     }
 
     // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
-    return new DeferredAccessQueryWrapper($inner, \Drupal::service('entity_field.manager'));
+    $field_manager = \Drupal::service('entity_field.manager');
+    // The request index is optional: markaspot_request_index provides the
+    // reader only while it is installed.
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+    $index_reader = \Drupal::hasService('markaspot_request_index.reader')
+      // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (Core decorator retains the parent's constructor contract)
+      ? \Drupal::service('markaspot_request_index.reader')
+      : NULL;
+    return new DeferredAccessQueryWrapper($inner, $field_manager, $index_reader instanceof RequestIndexReader ? $index_reader : NULL);
   }
 
   /**

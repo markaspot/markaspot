@@ -7,6 +7,7 @@ namespace Drupal\markaspot_nuxt\JsonApi;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Statement\FetchAs;
 use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Entity\Query\ConditionInterface;
 use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
 
 /**
@@ -309,6 +310,32 @@ final class CandidateEntityQuery extends LocalizedSortQuery {
    */
   public static function readSort(SqlQuery $query): array {
     return $query->sort;
+  }
+
+  /**
+   * Reads the root condition group from a Sql\Query instance.
+   *
+   * @param \Drupal\Core\Entity\Query\Sql\Query $query
+   *   The query whose conditions to read.
+   *
+   * @return \Drupal\Core\Entity\Query\ConditionInterface
+   *   The root condition group (not cloned; callers must not mutate it).
+   */
+  public static function readCondition(SqlQuery $query): ConditionInterface {
+    return $query->condition;
+  }
+
+  /**
+   * Reads the database connection of a Sql\Query instance.
+   *
+   * @param \Drupal\Core\Entity\Query\Sql\Query $query
+   *   The query whose connection to read.
+   *
+   * @return \Drupal\Core\Database\Connection
+   *   The connection the query runs on.
+   */
+  public static function readConnection(SqlQuery $query): Connection {
+    return $query->connection;
   }
 
   /**

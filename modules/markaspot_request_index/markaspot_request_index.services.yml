@@ -1,0 +1,70 @@
+services:
+  logger.channel.markaspot_request_index:
+    parent: logger.channel_base
+    arguments: ['markaspot_request_index']
+
+  markaspot_request_index.projector:
+    class: Drupal\markaspot_request_index\RequestIndexProjector
+    arguments:
+      - '@entity_field.manager'
+      - '@entity_type.manager'
+      - '@markaspot_group.hierarchy_resolver'
+
+  markaspot_request_index.stale_set:
+    class: Drupal\markaspot_request_index\RequestIndexStaleSet
+    arguments:
+      - '@keyvalue'
+
+  markaspot_request_index.reader:
+    class: Drupal\markaspot_request_index\RequestIndexReader
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@queue'
+      - '@markaspot_request_index.stale_set'
+      - '@cache.default'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_request_index'
+
+  markaspot_request_index.writer:
+    class: Drupal\markaspot_request_index\RequestIndexWriter
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@markaspot_request_index.projector'
+      - '@datetime.time'
+      - '@markaspot_request_index.stale_set'
+
+  markaspot_request_index.rebuilder:
+    class: Drupal\markaspot_request_index\RequestIndexRebuilder
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@queue'
+      - '@state'
+      - '@datetime.time'
+      - '@markaspot_request_index.writer'
+      - '@markaspot_request_index.projector'
+      - '@markaspot_group.hierarchy_resolver'
+      - '@logger.channel.markaspot_request_index'
+      - '@markaspot_request_index.reader'
+      - '@markaspot_request_index.stale_set'
+
+  markaspot_request_index.verifier:
+    class: Drupal\markaspot_request_index\RequestIndexVerifier
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@entity_field.manager'
+      - '@markaspot_request_index.projector'
+
+  Drupal\markaspot_request_index\Hook\RequestIndexHooks:
+    class: Drupal\markaspot_request_index\Hook\RequestIndexHooks
+    arguments:
+      - '@markaspot_request_index.projector'
+      - '@markaspot_request_index.writer'
+      - '@markaspot_request_index.rebuilder'
+      - '@config.factory'
+      - '@logger.channel.markaspot_request_index'
+      - '@markaspot_request_index.stale_set'
+    public: true

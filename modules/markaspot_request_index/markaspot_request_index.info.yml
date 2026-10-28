@@ -1,0 +1,10 @@
+name: 'Mark-a-Spot Request Index'
+type: module
+description: 'Keeps a one-row-per-request projection of service requests. The staff dashboard list takes its candidates from it while it is complete and falls back to the slower entity query otherwise.'
+package: 'Mark-a-Spot'
+core_version_requirement: ^11.2
+dependencies:
+  - drupal:node
+  - drupal:taxonomy
+  - group:group
+  - markaspot:markaspot_group

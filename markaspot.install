@@ -5173,6 +5173,23 @@ function markaspot_update_11943(): string {
 }
 
 /**
+ * Enables the request index for the staff dashboard list on existing sites.
+ *
+ * Its hook_install() queues a full rebuild, which cron drains a minute per
+ * run; drush mas:request-index:rebuild fills it at once. Until it is complete
+ * the dashboard keeps the slower entity query. The module stays out of the
+ * profile dependencies, so it can be uninstalled again without touching the
+ * profile.
+ */
+function markaspot_update_11944(): string {
+  if (\Drupal::moduleHandler()->moduleExists('markaspot_request_index')) {
+    return 'The request index is already enabled.';
+  }
+  \Drupal::service('module_installer')->install(['markaspot_request_index']);
+  return 'Enabled the request index and queued a full rebuild. Run drush mas:request-index:rebuild to fill it now instead of through cron.';
+}
+
+/**
  * Re-syncs the management View, its German labels and orphan overrides.
  *
  * @return string

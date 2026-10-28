@@ -1,4 +1,7 @@
 services:
+  Drupal\markaspot_vision\Hook\HazardLevelHooks:
+    class: Drupal\markaspot_vision\Hook\HazardLevelHooks
+    public: true
   markaspot_vision.image_processing:
     class: Drupal\markaspot_vision\Service\ImageProcessingService
     arguments:

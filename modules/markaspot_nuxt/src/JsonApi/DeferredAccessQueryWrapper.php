@@ -7,6 +7,7 @@ namespace Drupal\markaspot_nuxt\JsonApi;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Entity\Query\Sql\Query as SqlQuery;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\markaspot_request_index\RequestIndexReader;
 
 /**
  * Two-phase entity query wrapper that defers access checks to a narrow IN-list.
@@ -26,7 +27,10 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
  * FIX (Two-Phase Pattern):
  * Phase 1 — run a simplified query without access tags (CandidateEntityQuery
  *   with isSimpleQuery()=TRUE) to retrieve a candidate set of nids using a
- *   plain ORDER BY created DESC LIMIT window. Cost: ~0ms (index walk).
+ *   plain ORDER BY created DESC LIMIT window. Cost: ~0ms (index walk). While
+ *   markaspot_request_index is installed and its index usable
+ *   (RequestIndexReader::isUsable()), IndexCandidateQuery reads the
+ *   candidates from the index instead whenever it can reproduce the order.
  * Phase 2 — run the original access-checked query with an additional
  *   `nid IN (candidates)` condition. The IN-list is tiny; MySQL evaluates the
  *   full access JOINs on at most `window` rows. Cost: ~2ms.
@@ -126,11 +130,16 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    *   Must NOT be mutated by this wrapper; Phase 2 and fallback both need it
    *   in its original state.
    * @param \Drupal\Core\Entity\EntityFieldManagerInterface|null $fieldManager
-   *   Optional definitions for recognizing safe single-valued sort paths.
+   *   Optional definitions for recognizing safe single-valued sort paths and,
+   *   on the request index path, conditions the index matches like Core.
+   * @param \Drupal\markaspot_request_index\RequestIndexReader|null $indexReader
+   *   Reader of the request index when markaspot_request_index is installed;
+   *   Phase 1 then reads the index while it is usable.
    */
   public function __construct(
     private readonly SqlQuery $inner,
     private readonly ?EntityFieldManagerInterface $fieldManager = NULL,
+    private readonly ?RequestIndexReader $indexReader = NULL,
   ) {
   }
 
@@ -143,7 +152,9 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    * Guards (any violation -> passthrough to $inner->execute()):
    * - Range is set on the inner query and
    *   offset + length <= MAX_TWO_PHASE_RANGE
-   * - Sort is present on the inner query
+   * - Sort is present on the inner query, or the request index can answer
+   *   Phase 1 (an unsorted query, such as the detail lookup by request ID,
+   *   then gets a nid order in both phases; without a sort any order is valid)
    * - Dotted sorts have single-valued scalar paths and an explicit language
    *   for translatable fields. Multi-valued/unknown paths retain Core's query.
    * - count() was not called on this wrapper (count-mode -> always passthrough)
@@ -168,9 +179,13 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
       return $this->inner->execute();
     }
 
-    // Guard: at least one sort must be present.
+    // Without a sort Core's Phase 1 copy costs as much as the query itself,
+    // so only the request index may answer it. Any order is valid then; the
+    // nid order makes both phases agree.
     if (empty($inner_sort)) {
-      return $this->inner->execute();
+      return $this->indexReader === NULL
+        ? $this->inner->execute()
+        : $this->executeTwoPhase($offset, $length, 'ASC', TRUE);
     }
 
     // Guard: no dotted sort fields (relationship traversal via Tables::addField
@@ -225,24 +240,51 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    * @param string|null $tiebreak_direction
    *   Direction for the deterministic nid tiebreaker appended to both
    *   phases, or NULL when the inner query already sorts on nid.
+   * @param bool $index_only
+   *   Run the inner query unchanged instead of Core's Phase 1 copy when the
+   *   request index cannot answer.
    *
    * @return array<int|string, int|string>
    *   Entity query result in [revision_id => entity_id] format.
    */
-  private function executeTwoPhase(int $offset, int $length, ?string $tiebreak_direction): array {
+  private function executeTwoPhase(int $offset, int $length, ?string $tiebreak_direction, bool $index_only = FALSE): array {
     $required_rows = $offset + $length;
     $window = min(
           $offset + max(100, 5 * $length),
           self::MAX_CANDIDATE_WINDOW,
       );
 
+    // The request index is consulted at most once per execution: whether it
+    // is usable is asked only for a query it can answer, and a decline or a
+    // read failure (logged once) keeps the remaining rounds on Core's path.
+    $index_usable = $this->indexReader === NULL ? FALSE : NULL;
+
     for ($round = 0; $round < self::MAX_TWO_PHASE_ROUNDS; $round++) {
-      // Phase 1: fast candidate query without access checks.
-      $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
-      if ($tiebreak_direction !== NULL) {
-        $candidate_query->sort('nid', $tiebreak_direction);
+      // Phase 1: fast candidate query without access checks. The request
+      // index answers it with one ordered index walk when it can reproduce the
+      // order; otherwise Core's simplified copy of the query does.
+      $candidate_result = NULL;
+      $candidate_rows = 0;
+      if ($index_usable !== FALSE && $this->indexReader !== NULL) {
+        $index_query = IndexCandidateQuery::fromQuery($this->inner, $window, $tiebreak_direction, $this->indexReader, $this->fieldManager);
+        $index_usable = $index_query !== NULL && ($index_usable ?? $this->indexReader->isUsable());
+        if ($index_query !== NULL && $index_usable) {
+          $candidate_result = $index_query->execute();
+          $candidate_rows = $index_query->getResultRowCount();
+          $index_usable = $candidate_result !== NULL;
+        }
       }
-      $candidate_result = $candidate_query->execute();
+      if ($candidate_result === NULL) {
+        if ($index_only) {
+          return $this->inner->execute();
+        }
+        $candidate_query = CandidateEntityQuery::fromQuery($this->inner, $window);
+        if ($tiebreak_direction !== NULL) {
+          $candidate_query->sort('nid', $tiebreak_direction);
+        }
+        $candidate_result = $candidate_query->execute();
+        $candidate_rows = $candidate_query->getResultRowCount();
+      }
 
       // No candidates at all: the access-checked result is empty too, because
       // Phase 1 operates on a superset of the rows visible to the user.
@@ -251,10 +293,10 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
       }
 
       // Exhausted = Phase 1 returned fewer rows than the window (there is
-      // nothing beyond this set). CandidateEntityQuery records the SQL row
+      // nothing beyond this set). Both candidate sources record the SQL row
       // count before fetchAllKeyed-style deduplication, so joins or translated
       // data rows cannot create a false exhaustion signal.
-      $exhausted = $candidate_query->getResultRowCount() < $window;
+      $exhausted = $candidate_rows < $window;
 
       // Deduplicate while preserving insertion order. Duplicates arise from
       // multi-value fields or translated data-table rows when the simple
@@ -285,6 +327,13 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
       // [revision_id => entity_id] result shape.
       if ($exhausted || $access_checked_count >= $required_rows) {
         return array_slice($phase2_result, $offset, $length, TRUE);
+      }
+
+      // An unsorted query has no aggregate sort that would make a wider
+      // window cheaper than the query itself: when the first window did not
+      // settle it, run the inner query once instead of widening.
+      if ($index_only) {
+        break;
       }
 
       if ($window >= self::MAX_CANDIDATE_WINDOW) {
