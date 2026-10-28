@@ -1,0 +1,10 @@
+name: 'Mark-a-Spot Request Index'
+type: module
+description: 'Keeps a one-row-per-request projection of service requests for the staff dashboard list and count. Dark: nothing reads from it yet.'
+package: 'Mark-a-Spot'
+core_version_requirement: ^11.2
+dependencies:
+  - drupal:node
+  - drupal:taxonomy
+  - group:group
+  - markaspot:markaspot_group

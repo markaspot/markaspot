@@ -1,0 +1,154 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_request_index.
+ */
+
+declare(strict_types=1);
+
+use Drupal\markaspot_request_index\RequestIndexRebuilder;
+
+/**
+ * Implements hook_schema().
+ *
+ * One row per service request with node-side facts only: no account data and
+ * no contact fields. Optional columns are always present and stay NULL on
+ * tenants whose service_request bundle lacks the source field.
+ */
+function markaspot_request_index_schema(): array {
+  $int = static fn(string $description, bool $nullable = FALSE): array => [
+    'type' => 'int',
+    'unsigned' => TRUE,
+    'not null' => !$nullable,
+    'description' => $description,
+  ] + ($nullable ? [] : ['default' => 0]);
+  $flag = static fn(string $description): array => [
+    'type' => 'int',
+    'size' => 'tiny',
+    'unsigned' => TRUE,
+    'not null' => TRUE,
+    'default' => 0,
+    'description' => $description,
+  ];
+  $string = static fn(string $description, int $length, bool $nullable = FALSE): array => [
+    'type' => 'varchar',
+    'length' => $length,
+    'not null' => !$nullable,
+    'description' => $description,
+  ] + ($nullable ? [] : ['default' => '']);
+
+  $schema['markaspot_request_index'] = [
+    'description' => 'Dashboard read model: one row per service request.',
+    'fields' => [
+      'nid' => $int('Service request node ID.'),
+      'uid' => $int('Author user ID of the default translation.'),
+      'published' => $flag('Published status of the default translation.'),
+      'jur_gid' => $int('Most specific field_jurisdiction group ID, 0 if none.'),
+      'root_gid' => $int('Root jurisdiction of jur_gid, 0 if unresolved.'),
+      'org_gid' => $int('First field_organisation delta, 0 if none.'),
+      'org_multi' => $flag('1 when field_organisation holds more than one group.'),
+      'jur_multi' => $flag('1 when field_jurisdiction holds more than one group.'),
+      'status_tid' => $int('field_status term ID, 0 if none.'),
+      'category_tid' => $int('field_category term ID, 0 if none.'),
+      'service_code' => $string('field_service_code of the category term.', 64),
+      'open311_mapping' => $string('field_open311_mapping of the status term.', 32),
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Created timestamp.',
+      ],
+      'changed' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Changed timestamp.',
+      ],
+      'request_id' => $string('Public request ID.', 64),
+      'address_line1' => $string('field_address address_line1.', 255),
+      'postal_code' => $string('field_address postal_code.', 255),
+      'locality' => $string('field_address locality.', 255),
+      'district_tid' => $int('field_district term ID.', TRUE),
+      'sublocality_tid' => $int('field_sublocality term ID.', TRUE),
+      'facility_id' => $string('field_facility value (a facility identifier string).', 128, TRUE),
+      'source' => $string('field_source value.', 255, TRUE),
+      'assignee_uid' => $int('field_assignee user ID.', TRUE),
+      'hazard_level' => [
+        'type' => 'int',
+        'not null' => FALSE,
+        'description' => 'field_hazard_level value.',
+      ],
+      'sentiment' => $string('field_sentiment value.', 255, TRUE),
+      'search_text' => [
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => FALSE,
+        'description' => 'Title, request ID, address line, postcode and locality. Never contact fields.',
+      ],
+      'projected' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Timestamp of the last projection.',
+      ],
+    ],
+    'primary key' => ['nid'],
+    'indexes' => [
+      'jur_created' => [
+        'jur_gid',
+        'created',
+        'nid',
+        'org_gid',
+        'published',
+        'status_tid',
+        'category_tid',
+        'org_multi',
+      ],
+      'jur_changed' => ['jur_gid', 'changed', 'nid'],
+      'jur_address' => ['jur_gid', ['address_line1', 64], 'nid'],
+      'jur_request_id' => ['jur_gid', 'request_id', 'nid'],
+      'jur_status' => ['jur_gid', 'status_tid', 'created'],
+      'jur_category' => ['jur_gid', 'category_tid', 'created'],
+      'created_nid' => ['created', 'nid'],
+      'uid' => ['uid'],
+    ],
+  ];
+
+  foreach (['org' => 'field_organisation', 'jur' => 'field_jurisdiction'] as $suffix => $field) {
+    $schema['markaspot_request_index_' . $suffix] = [
+      'description' => sprintf('Every %s delta of a service request; used only through EXISTS.', $field),
+      'fields' => [
+        'nid' => $int('Service request node ID.'),
+        'gid' => $int('Referenced group ID.'),
+      ],
+      'primary key' => ['gid', 'nid'],
+      'indexes' => [
+        'nid' => ['nid'],
+      ],
+    ];
+  }
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ *
+ * Queues a full rebuild, also during a config import: the queue holds no
+ * configuration. Cron or drush mas:request-index:rebuild drains it; nothing
+ * reads the index yet, so there is no blackout while it fills.
+ */
+function markaspot_request_index_install(bool $is_syncing): void {
+  /** @var \Drupal\markaspot_request_index\RequestIndexRebuilder $rebuilder */
+  $rebuilder = \Drupal::service('markaspot_request_index.rebuilder');
+  $rebuilder->startFullRebuild();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_request_index_uninstall(bool $is_syncing): void {
+  \Drupal::queue(RequestIndexRebuilder::QUEUE)->deleteQueue();
+  \Drupal::state()->delete(RequestIndexRebuilder::STATE_RUN);
+}

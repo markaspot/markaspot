@@ -1,0 +1,8 @@
+name: 'Mark-a-Spot Request Index test'
+type: module
+description: 'Changes a saved service request in memory after the write, as markaspot_vision did, without saving it again.'
+package: Testing
+hidden: true
+core_version_requirement: ^11.2
+dependencies:
+  - markaspot_request_index:markaspot_request_index

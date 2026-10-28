@@ -1,0 +1,6 @@
+services:
+  Drupal\markaspot_request_index_test\Hook\RequestIndexTestHooks:
+    class: Drupal\markaspot_request_index_test\Hook\RequestIndexTestHooks
+    arguments:
+      - '@state'
+    public: true
