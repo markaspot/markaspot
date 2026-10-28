@@ -60,7 +60,13 @@ const SCRUB_PURGE_TABLES = [
   'inbound_mail',
   'resubmission_reminder',
   'devel_mail_logger',
+  // Mapping of retained unblurred photo originals; the files themselves are
+  // removed from private://markaspot_vision/originals below.
+  'markaspot_vision_original',
 ];
+
+// Where markaspot_vision keeps unblurred photo originals for staff.
+const SCRUB_ORIGINALS_DIRECTORY = 'private://markaspot_vision/originals';
 
 // Free-text columns holding model output derived from a report. The sentiment
 // reasoning can quote the description, and the storage sweep below rewrites
@@ -193,6 +199,15 @@ if ($verify) {
     else {
       printf("ok   %s\n", $table);
     }
+  }
+
+  $originals = scrub_retained_originals();
+  if ($originals > 0) {
+    $residual += $originals;
+    printf("FAIL %s: %d unblurred photo originals remain\n", SCRUB_ORIGINALS_DIRECTORY, $originals);
+  }
+  elseif ($originals === 0) {
+    printf("ok   %s\n", SCRUB_ORIGINALS_DIRECTORY);
   }
 
   // Every table the apply path empties is checked, so the two cannot drift.
@@ -418,6 +433,16 @@ foreach (SCRUB_PURGE_TABLES as $table) {
   printf("Table %s: %d rows%s\n", $table, $rows, $apply ? ' truncated' : ' would be truncated');
 }
 
+// Unblurred photo originals (markaspot_vision) are files, not rows; their
+// mapping table is emptied above.
+$originals = scrub_retained_originals();
+if ($originals !== NULL) {
+  if ($apply) {
+    \Drupal::service('file_system')->deleteRecursive(SCRUB_ORIGINALS_DIRECTORY);
+  }
+  printf("Retained photo originals: %d files%s\n", $originals, $apply ? ' deleted' : ' would be deleted');
+}
+
 // The search index keeps its own copy of body, title and field_e_mail, which no
 // cache rebuild removes.
 if (\Drupal::moduleHandler()->moduleExists('search_api')) {
@@ -558,6 +583,19 @@ function scrub_value_for_type(string $type): int|string|null {
     'string', 'string_long', 'text', 'text_long', 'text_with_summary' => scrub_token(),
     default => NULL,
   };
+}
+
+/**
+ * Counts retained photo originals, or NULL when the site cannot hold any.
+ *
+ * @return int|null
+ *   Number of files below SCRUB_ORIGINALS_DIRECTORY.
+ */
+function scrub_retained_originals(): ?int {
+  if (!\Drupal::service('stream_wrapper_manager')->isValidScheme('private') || !is_dir(SCRUB_ORIGINALS_DIRECTORY)) {
+    return NULL;
+  }
+  return count(\Drupal::service('file_system')->scanDirectory(SCRUB_ORIGINALS_DIRECTORY, '/.*/'));
 }
 
 /**
