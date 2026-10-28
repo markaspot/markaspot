@@ -1128,8 +1128,9 @@ function markaspot_nuxt_update_11918(): string {
   $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
   $source = new FileStorage($module_path . '/config/optional');
   $created = [];
-  // Fixed UUIDs: tenants on config/sync export the same styles, so the config
-  // import that follows this update keeps them instead of recreating them.
+  // Fixed UUIDs and the site language: tenants on config/sync export the same
+  // styles, so the config import that follows this update keeps them as they
+  // are instead of recreating or rewriting them.
   $uuids = [
     'markaspot_request_preview' => 'f314e912-cbd2-4082-bf0d-073cd44ce7f2',
     'markaspot_request_thumb' => 'd9962929-a919-4bf0-8df3-c0c1cff2c985',
@@ -1142,7 +1143,10 @@ function markaspot_nuxt_update_11918(): string {
     if (empty($config_data)) {
       throw new \RuntimeException(sprintf('Could not create the %s image style: its optional config is missing.', $style_id));
     }
-    $style_storage->create(['uuid' => $uuid] + $config_data)->save();
+    $style_storage->create([
+      'uuid' => $uuid,
+      'langcode' => \Drupal::languageManager()->getDefaultLanguage()->getId(),
+    ] + $config_data)->save();
     $created[] = $style_id;
   }
 

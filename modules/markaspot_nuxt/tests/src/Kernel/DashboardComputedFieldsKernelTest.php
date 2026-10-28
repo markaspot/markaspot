@@ -284,21 +284,6 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
   }
 
   /**
-   * The update creates both styles with fixed UUIDs, once.
-   */
-  public function testRequestImageStyleUpdateUsesFixedUuids(): void {
-    ImageStyle::load('markaspot_request_preview')->delete();
-    ImageStyle::load('markaspot_request_thumb')->delete();
-    // The .install file next to this test, not the discovered module path.
-    require_once dirname(__DIR__, 3) . '/markaspot_nuxt.install';
-
-    $this->assertSame('Created image styles: markaspot_request_preview, markaspot_request_thumb.', markaspot_nuxt_update_11918());
-    $this->assertSame('f314e912-cbd2-4082-bf0d-073cd44ce7f2', ImageStyle::load('markaspot_request_preview')?->uuid());
-    $this->assertSame('d9962929-a919-4bf0-8df3-c0c1cff2c985', ImageStyle::load('markaspot_request_thumb')?->uuid());
-    $this->assertSame('Request photo image styles already exist.', markaspot_nuxt_update_11918());
-  }
-
-  /**
    * Missing profile styles fall back to stock styles, not to the original.
    */
   public function testRequestImageStylesFallBackToStockStyles(): void {
@@ -330,8 +315,17 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
       'Created image styles: markaspot_request_preview, markaspot_request_thumb.',
       markaspot_nuxt_update_11918()
     );
-    $this->assertNotNull(ImageStyle::load('markaspot_request_preview'));
-    $this->assertNotNull(ImageStyle::load('markaspot_request_thumb'));
+    // Fixed UUIDs and the site language, as config/sync tenants export them.
+    $default_langcode = $this->container->get('language_manager')->getDefaultLanguage()->getId();
+    foreach ([
+      'markaspot_request_preview' => 'f314e912-cbd2-4082-bf0d-073cd44ce7f2',
+      'markaspot_request_thumb' => 'd9962929-a919-4bf0-8df3-c0c1cff2c985',
+    ] as $style_id => $uuid) {
+      $style = ImageStyle::load($style_id);
+      $this->assertNotNull($style);
+      $this->assertSame($uuid, $style->uuid());
+      $this->assertSame($default_langcode, $style->language()->getId());
+    }
     $this->assertSame('Request photo image styles already exist.', markaspot_nuxt_update_11918());
   }
 
