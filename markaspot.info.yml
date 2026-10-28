@@ -2,7 +2,7 @@ name: Mark-a-Spot
 description: Mark-a-Spot Installation Profile
 type: profile
 core_version_requirement: ^10 || ^11
-version: 11.9.233
+version: 11.9.234
 distribution:
   name: Mark-a-Spot
   install:
@@ -82,7 +82,6 @@ dependencies:
   - markaspot_feedback
   - markaspot_health
   - markaspot_mail
-# Installed on new sites but not required: dark modules stay uninstallable.
 install:
   - markaspot_request_index
 themes:

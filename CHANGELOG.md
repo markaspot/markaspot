@@ -1,5 +1,38 @@
 # Changelog
 
+## [11.9.234](https://github.com/markaspot/markaspot/compare/11.9.233...11.9.234) (2026-10-28)
+
+### Features
+
+* **group:** add a drush command that aligns organisation relations with field_organisation ([3ed6504](https://github.com/markaspot/markaspot/commit/3ed65042cef54751e4a53fb84a95d24ac82074c8))
+* install the request index on existing sites ([01b006e](https://github.com/markaspot/markaspot/commit/01b006ed8a4ec828f96ccc2a3a471b3338100b32))
+* **request-index:** add a one-row-per-request read model for the staff dashboard ([109e464](https://github.com/markaspot/markaspot/commit/109e4644b897d9037fddc4e4147cce0601d1840e))
+* **vision:** keep unblurred originals for staff by default on new installs ([f79026e](https://github.com/markaspot/markaspot/commit/f79026e33ae160fce5771c31fbb24f1218b26c34))
+
+### Bug Fixes
+
+* **media:** create the request photo styles in the site language ([3454d61](https://github.com/markaspot/markaspot/commit/3454d61b57417930a8552c59178498e79a5e46ba))
+* **media:** create the request photo styles with fixed UUIDs so config/sync tenants keep them ([bf6f612](https://github.com/markaspot/markaspot/commit/bf6f612405f572f803718a6cf4de04afccf84b87))
+* **nuxt:** read dashboard candidates from the request index only while it matches Core exactly ([35521df](https://github.com/markaspot/markaspot/commit/35521dff6c4536747d5b3224aed27608a0bb2f90))
+* **nuxt:** run the inner query once when the index cannot narrow an unsorted lookup ([2a7f715](https://github.com/markaspot/markaspot/commit/2a7f715f5ee0d1d078ac5b5b86cf95673faff1f4))
+* **nuxt:** take string conditions into the index only for printable ASCII values ([8d60931](https://github.com/markaspot/markaspot/commit/8d60931148c0794cc6719d0972ecd727f172a41d))
+* **request-index:** count only translations of existing requests, not orphaned data rows, in the parity check ([bd2b953](https://github.com/markaspot/markaspot/commit/bd2b9538732985ae42714a4180268e33fda64aba))
+* **scrub:** purge retained photo originals and their mapping before dumps leave the machine ([2051a44](https://github.com/markaspot/markaspot/commit/2051a44e914ce42f0905f133415df86a6f6f9a56))
+* **vision:** flush derivatives and log unlink failures when an original is purged ([fcb1a61](https://github.com/markaspot/markaspot/commit/fcb1a6192cfe8020a370251d06125d61946f63ae))
+* **vision:** propagate the hazard level before save and only from assessed photos ([fa62509](https://github.com/markaspot/markaspot/commit/fa62509d9345a6b5cca61486e56475f995c11d6d))
+
+### Performance
+
+* **media:** add display-size WebP derivatives for request photos ([bae6c03](https://github.com/markaspot/markaspot/commit/bae6c03a82da77994ce6881c4e4f86625dd36b6e))
+* **nuxt:** answer unsorted request ID lookups from the request index ([baff394](https://github.com/markaspot/markaspot/commit/baff3946ad3115ac4dc43012311a6b11936e4d9e))
+* **nuxt:** take dashboard list candidates from the request index when it can reproduce the order ([86ad784](https://github.com/markaspot/markaspot/commit/86ad78476f597f30049f99dec852ebd35f1dc171))
+
+### Documentation
+
+* describe the request index update as it ships in 11.9.234 ([a576f3d](https://github.com/markaspot/markaspot/commit/a576f3d189d8bfd70410a72dd191d300f7d64def))
+* **nuxt:** state the limits of the ASCII guard for string conditions ([f71c2ac](https://github.com/markaspot/markaspot/commit/f71c2ac14b51f41ffee5e6f6a60219ff65a6a3d6))
+* **request-index:** record the measured cost of the parity statement ([3e6fab8](https://github.com/markaspot/markaspot/commit/3e6fab8b0c474b61470f47bdae1a0f2adbe67d2d))
+
 ## [11.9.233](https://github.com/markaspot/markaspot/compare/11.9.232...11.9.233) (2026-10-27)
 
 ### Bug Fixes
