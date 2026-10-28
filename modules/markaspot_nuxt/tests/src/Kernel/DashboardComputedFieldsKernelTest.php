@@ -93,8 +93,13 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
     $style_config = $source->read('image.style.markaspot_dashboard_media');
     $this->assertIsArray($style_config);
     ImageStyle::create($style_config)->save();
+    // Installing image config already installs these optional styles when
+    // markaspot_nuxt is discovered at its own path.
     $optional = new FileStorage(dirname(__DIR__, 3) . '/config/optional');
     foreach (['markaspot_request_preview', 'markaspot_request_thumb'] as $style_id) {
+      if (ImageStyle::load($style_id)) {
+        continue;
+      }
       $style_config = $optional->read('image.style.' . $style_id);
       $this->assertIsArray($style_config);
       ImageStyle::create($style_config)->save();
