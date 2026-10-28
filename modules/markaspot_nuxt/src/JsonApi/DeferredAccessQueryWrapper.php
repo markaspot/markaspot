@@ -123,12 +123,20 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
   private bool $isCount = FALSE;
 
   /**
+   * Row limit of a capped count, or NULL when execute() returns rows.
+   *
+   * @var int|null
+   */
+  private ?int $countLimit = NULL;
+
+  /**
    * Constructs a DeferredAccessQueryWrapper.
    *
    * @param \Drupal\Core\Entity\Query\Sql\Query $inner
    *   The fully-configured, access-checked entity query from EntityResource.
    *   Must NOT be mutated by this wrapper; Phase 2 and fallback both need it
-   *   in its original state.
+   *   in its original state. Only capCount() sets its range, before any
+   *   execution.
    * @param \Drupal\Core\Entity\EntityFieldManagerInterface|null $fieldManager
    *   Optional definitions for recognizing safe single-valued sort paths and,
    *   on the request index path, conditions the index matches like Core.
@@ -158,12 +166,49 @@ final class DeferredAccessQueryWrapper implements QueryInterface {
    * - Dotted sorts have single-valued scalar paths and an explicit language
    *   for translatable fields. Multi-valued/unknown paths retain Core's query.
    * - count() was not called on this wrapper (count-mode -> always passthrough)
+   *
+   * After capCount() the same rows are fetched and only their number is
+   * returned.
    */
   public function execute() {
     if ($this->isCount) {
       return $this->inner->execute();
     }
+    $rows = $this->executeRows();
+    return $this->countLimit === NULL ? $rows : count($rows);
+  }
 
+  /**
+   * Turns this query into a count that stops after $cap + 1 visible rows.
+   *
+   * The rows come from the same access-checked query as the collection, so a
+   * capped count never exceeds what the account can read. For an unsorted
+   * query execute() runs the index two-phase path when the request index can
+   * answer, and otherwise the inner query once. Its result is keyed
+   * by revision ID, one entry per entity, so counting it counts entities, not
+   * joined rows.
+   *
+   * @param int $cap
+   *   The largest count reported exactly; a positive integer.
+   *
+   * @return $this
+   */
+  public function capCount(int $cap): static {
+    if ($cap < 1) {
+      throw new \InvalidArgumentException('The count cap must be a positive integer.');
+    }
+    $this->countLimit = $cap + 1;
+    $this->inner->range(0, $this->countLimit);
+    return $this;
+  }
+
+  /**
+   * Runs the guarded two-phase query, or the inner query, and returns rows.
+   *
+   * @return array<int|string, int|string>
+   *   Entity query result in [revision_id => entity_id] format.
+   */
+  private function executeRows(): array {
     // CandidateEntityQuery is a subclass of SqlQuery and can read its
     // protected properties via the static helper methods.
     $inner_range = CandidateEntityQuery::readRange($this->inner);

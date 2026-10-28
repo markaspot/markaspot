@@ -32,7 +32,8 @@ use Symfony\Component\HttpFoundation\Request;
  *
  * 2. getCollectionCountQuery() — wraps the count query in a
  *    CountCacheQueryWrapper that caches the result per user+filter so the
- *    expensive count query is not re-run on every page navigation.
+ *    expensive count query is not re-run on every page navigation. With a
+ *    countCap query parameter it counts at most countCap + 1 visible rows.
  *
  * INTENTIONAL USE OF @internal API:
  * Drupal\jsonapi\Controller\EntityResource is marked @internal. We accept
@@ -61,6 +62,13 @@ use Symfony\Component\HttpFoundation\Request;
  * @phpstan-ignore classExtendsInternalClass.classExtendsInternalClass
  */
 final class CachedCountEntityResource extends EntityResource {
+
+  /**
+   * Largest countCap a request may ask for.
+   *
+   * @var int
+   */
+  private const MAX_COUNT_CAP = 10000;
 
   /**
    * {@inheritdoc}
@@ -210,6 +218,11 @@ final class CachedCountEntityResource extends EntityResource {
    * count result and are intentionally excluded from the cache key so that
    * paginating through a result set still benefits from cached counts.
    *
+   * With a valid countCap (1 to MAX_COUNT_CAP, not combined with skipCount)
+   * the count is capped: DeferredAccessQueryWrapper::capCount() fetches at
+   * most countCap + 1 visible IDs from the same access-checked query, and the
+   * cap is part of the cache key.
+   *
    * Cache dependencies (\Drupal::cache() / \Drupal::currentUser()) are resolved
    * at call time rather than injected into the constructor. This is pragmatic:
    * adding constructor arguments to the decorated service would require
@@ -224,16 +237,34 @@ final class CachedCountEntityResource extends EntityResource {
    * permanent cache entries (security review findings 1+3).
    */
   protected function getCollectionCountQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
-    $inner = parent::getCollectionCountQuery($resource_type, $params, $query_cacheability);
-
     if ($resource_type->getTypeName() !== 'node--service_request') {
-      return $inner;
+      return parent::getCollectionCountQuery($resource_type, $params, $query_cacheability);
     }
 
     $query_cacheability->addCacheContexts([
       'url.query_args:skipCount',
       'url.query_args:skip-count',
+      'url.query_args:countCap',
     ]);
+
+    // A capped count fetches at most countCap + 1 IDs of the access-checked
+    // collection query instead of counting every visible row. Sorts do not
+    // change the count; without them the wrapper may stop at the cap.
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (intentional, this decorates an internal Core service)
+    $count_cap = self::requestedCountCap(\Drupal::request());
+    $inner = NULL;
+    if ($count_cap !== NULL) {
+      unset($params[Sort::KEY_NAME]);
+      $rows = $this->getCollectionQuery($resource_type, $params, $query_cacheability);
+      if ($rows instanceof DeferredAccessQueryWrapper) {
+        $inner = $rows->capCount($count_cap);
+      }
+      else {
+        // Non-SQL storage keeps the exact count; the response caps it.
+        $count_cap = NULL;
+      }
+    }
+    $inner ??= parent::getCollectionCountQuery($resource_type, $params, $query_cacheability);
 
     // Authenticated users only. The dashboard (the consumer this cache
     // exists for) is session-gated behind the Nuxt proxy. Anonymous traffic
@@ -273,10 +304,16 @@ final class CachedCountEntityResource extends EntityResource {
     // deterministic for identical query strings, so hashing it is fine — but
     // it must never meet an array type hint. Hash here, pass the string.
     // Including context keys also leaves pre-fix warm cache entries unused.
-    $filter_hash = hash('xxh64', serialize([
+    // A capped count is cached under its own key per cap; uncapped keys stay
+    // as before, so neither kind is ever served for the other.
+    $hash_parts = [
       $params['filter'] ?? [],
       $permission_keys->getKeys(),
-    ]));
+    ];
+    if ($count_cap !== NULL) {
+      $hash_parts[] = 'countCap:' . $count_cap;
+    }
+    $filter_hash = hash('xxh64', serialize($hash_parts));
 
     return new CountCacheQueryWrapper(
       $inner,
@@ -297,6 +334,9 @@ final class CachedCountEntityResource extends EntityResource {
    * Keeps negative count sentinels out of the Core pager link context. Core's
    * implementation assumes every included count is a real total and would
    * otherwise calculate a bogus `links.last` URL from `meta.count = -1`.
+   *
+   * A count above a valid countCap is reported as countCap + 1 with
+   * `meta.countCapped`, also without a `links.last` URL.
    */
   protected function respondWithCollection(ResourceObjectData $primary_data, Data $includes, Request $request, ResourceType $resource_type, OffsetPage $page_param) {
     assert(Inspector::assertAllObjects([$includes], IncludedData::class, NullIncludedData::class));
@@ -307,11 +347,21 @@ final class CachedCountEntityResource extends EntityResource {
     $count_skipped = FALSE;
     if ($resource_type->includeCount()) {
       $total_count = $primary_data->getTotalCount();
-      $meta['count'] = $total_count;
-      if ((int) $total_count >= 0) {
+      $count_cap = $resource_type->getTypeName() === 'node--service_request'
+        ? self::requestedCountCap($request)
+        : NULL;
+      if ($count_cap !== NULL && (int) $total_count > $count_cap) {
+        // The capped query already stops at countCap + 1; clamping also covers
+        // an exact count from a path that could not cap.
+        $meta['count'] = $count_cap + 1;
+        $meta['countCapped'] = TRUE;
+      }
+      elseif ((int) $total_count >= 0) {
+        $meta['count'] = $total_count;
         $link_context['total_count'] = $total_count;
       }
       else {
+        $meta['count'] = $total_count;
         $count_skipped = TRUE;
       }
     }
@@ -333,14 +383,33 @@ final class CachedCountEntityResource extends EntityResource {
   /**
    * Whether the current JSON:API request asks to skip uncached counts.
    */
-  private static function requestWantsSkippedCount(): bool {
+  private static function requestWantsSkippedCount(?Request $request = NULL): bool {
     // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (intentional, this decorates an internal Core service)
-    $query = \Drupal::request()->query->all();
+    $query = ($request ?? \Drupal::request())->query->all();
     $raw = $query['skipCount'] ?? $query['skip-count'] ?? NULL;
     if (!is_scalar($raw)) {
       return FALSE;
     }
     return filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === TRUE;
+  }
+
+  /**
+   * Returns the valid countCap of a counting request, or NULL to ignore it.
+   *
+   * Only a plain integer from 1 to MAX_COUNT_CAP is honoured, and only when
+   * the count is not skipped. The count path and the response both decide
+   * through this method, so an ignored cap is ignored in both.
+   */
+  private static function requestedCountCap(Request $request): ?int {
+    $raw = $request->query->all()['countCap'] ?? NULL;
+    if (!is_string($raw) || preg_match('/^[1-9][0-9]{0,4}$/', $raw) !== 1) {
+      return NULL;
+    }
+    $cap = (int) $raw;
+    if ($cap > self::MAX_COUNT_CAP || self::requestWantsSkippedCount($request)) {
+      return NULL;
+    }
+    return $cap;
   }
 
 }
