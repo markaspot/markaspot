@@ -104,7 +104,11 @@ final class IndexCandidateQuery {
    * Varchar columns and their lengths (markaspot_request_index_schema()).
    *
    * The projector trims and truncates these values, so only = and IN with
-   * values that survive that unchanged are translated.
+   * values that survive that unchanged are translated. The index table and
+   * node_field_data may carry different collations (seen on a tenant:
+   * utf8mb4_unicode_ci against utf8mb4_general_ci). Both agree on printable
+   * ASCII but not beyond (unicode_ci matches "ß" to "ss", general_ci does
+   * not), so other values are left to Phase 2.
    */
   private const STRING_COLUMN_LENGTHS = [
     'request_id' => 64,
@@ -426,7 +430,8 @@ final class IndexCandidateQuery {
         // The projector stores trim()med values cut to the column length.
         // A value that would not survive that unchanged could miss rows.
         $item = (string) $item;
-        if ($item !== trim($item) || mb_strlen($item) > self::STRING_COLUMN_LENGTHS[$column]) {
+        if ($item !== trim($item) || mb_strlen($item) > self::STRING_COLUMN_LENGTHS[$column]
+          || preg_match('/[^\x20-\x7E]/', $item) === 1) {
           return;
         }
       }

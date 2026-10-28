@@ -509,6 +509,12 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
         static fn(SqlQuery $q) => $q->condition('request_id', ' 1004-2026'),
         FALSE,
       ],
+      // Collations of the index and the node data table may differ beyond
+      // printable ASCII.
+      'request id with a non-ASCII character' => [
+        static fn(SqlQuery $q) => $q->condition('request_id', '1004-2026ß'),
+        FALSE,
+      ],
     ];
     $build = function (callable $condition): SqlQuery {
       $query = $this->container->get('entity_type.manager')->getStorage('node')->getQuery();
@@ -555,12 +561,14 @@ final class IndexCandidateQueryKernelTest extends RequestIndexKernelTestBase {
       'request id value with jurisdiction' => 1,
       'two request ids' => 1,
       'request id with whitespace' => 0,
+      'request id with a non-ASCII character' => 0,
     ], $hits[(int) $this->districtStaff->id()]);
     $this->assertSame([
       'request id' => 1,
       'request id value with jurisdiction' => 1,
       'two request ids' => 2,
       'request id with whitespace' => 0,
+      'request id with a non-ASCII character' => 0,
     ], $hits[(int) $this->editor->id()]);
 
     // An unusable index leaves the unsorted query to Core, run once.
