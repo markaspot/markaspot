@@ -242,10 +242,12 @@ final class AuthStatusGroupCacheKernelTest extends KernelTestBase {
   }
 
   /**
-   * A role assignment removed without any cache tag still takes effect.
+   * A role assignment removed without any cache tag gets a new cache ID.
    *
    * Only the account's live roles in the cache ID cover a removal outside
-   * the entity API, such as SQL.
+   * the entity API, such as SQL. The entity caches are reset here because a
+   * raw SQL write leaves them stale in production too, exactly as before the
+   * group cache existed; the test proves the cache ID rekeys.
    */
   public function testRoleRemovedInSqlDropsItsSynchronizedGroupRole(): void {
     $this->assertContains('jur-staff', $this->roleIds($this->statusGroups(), $this->jurisdiction));
@@ -263,6 +265,32 @@ final class AuthStatusGroupCacheKernelTest extends KernelTestBase {
     $this->container->get('current_user')->setAccount(User::load($this->staff->id()));
 
     $this->assertNotContains('jur-staff', $this->roleIds($this->statusGroups(), $this->jurisdiction));
+  }
+
+  /**
+   * A synchronized group role follows a changed global role mapping.
+   */
+  public function testSynchronizedRoleMappingChangeReachesTheNextCall(): void {
+    $this->assertContains('jur-staff', $this->roleIds($this->statusGroups(), $this->jurisdiction));
+
+    GroupRole::load('jur-staff')->set('global_role', 'administrator')->save();
+    $this->container->get('entity_type.manager')->getStorage('group_role')->resetUserGroupRoleCache($this->staff);
+
+    $this->assertNotContains('jur-staff', $this->roleIds($this->statusGroups(), $this->jurisdiction));
+  }
+
+  /**
+   * The report-view jurisdictions are computed on every call.
+   */
+  public function testReportViewJurisdictionsStayLive(): void {
+    $workspace = $this->createMock(WorkspaceVisibilityInterface::class);
+    $workspace->method('requestUsesPublicApiKey')->willReturn(FALSE);
+    $workspace->expects($this->exactly(2))->method('getReportViewJurisdictionIds')->willReturn([7]);
+    $this->container->set('markaspot_group.workspace_visibility', $workspace);
+
+    $this->statusGroups();
+    $response = PasswordlessAuthController::create($this->container)->status(Request::create('/api/auth/status'));
+    $this->assertSame([7], json_decode((string) $response->getContent(), TRUE)['user']['report_view_jurisdictions']);
   }
 
   /**

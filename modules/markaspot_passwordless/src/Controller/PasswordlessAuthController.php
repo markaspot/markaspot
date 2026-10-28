@@ -916,7 +916,6 @@ class PasswordlessAuthController extends ControllerBase {
     $preferred_langcode = $user && method_exists($user, 'getPreferredLangcode')
       ? (string) $user->getPreferredLangcode(FALSE)
       : '';
-    $group_slice = $this->getGroupSlice($account, $user, $preferred_langcode);
 
     return [
       'uid' => $account->id(),
@@ -925,8 +924,8 @@ class PasswordlessAuthController extends ControllerBase {
       'email' => $account->getEmail(),
       'roles' => $account->getRoles(),
       'permissions' => $this->getFrontendPermissions($account),
-      'report_view_jurisdictions' => $group_slice['report_view_jurisdictions'],
-      'groups' => $group_slice['groups'],
+      'report_view_jurisdictions' => $this->workspaceVisibility?->getReportViewJurisdictionIds($account) ?? [],
+      'groups' => $this->getCachedUserGroups($account, $user, $preferred_langcode),
       'preferred_langcode' => $preferred_langcode,
       // The shared staff account of a template demo (markaspot_fastmap).
       'is_demo_account' => $this->demoStaffAccount?->isDemoAccount($account) ?? FALSE,
@@ -1574,21 +1573,25 @@ class PasswordlessAuthController extends ControllerBase {
   }
 
   /**
-   * Returns the groups and report-view jurisdictions of the auth payload.
+   * Returns the groups of the auth payload, cached per account.
    *
    * Building them loads every membership, group and group role: most of the
-   * endpoint's cost, and the Nuxt proxy asks before every dashboard call. They
-   * are cached per account without a time limit and dropped by cache tags
-   * only, so a removed or added membership, a changed group role or group, or
-   * a changed role permission takes effect on the next request:
+   * endpoint's cost, and the Nuxt proxy asks before dashboard data calls.
+   * They are cached without a time limit and dropped by cache tags only, so a
+   * removed or added membership, a changed group role or group, or a changed
+   * role permission takes effect on the next request:
    * - the cache ID holds the account's global roles as Drupal reads them for
    *   this request; deleting a role removes its user__roles rows without any
    *   cache tag, so the ID itself changes;
    * - the list tags that fire with each such change are attached, next to the
    *   tags of every membership, group and group role read;
-   * - a build that overlaps an invalidation of those list tags is not kept.
-   * A request with a public API key sees other jurisdictions and is never
-   * cached, nor is an incomplete build.
+   * - those list tags are read before the build, so the stored checksum
+   *   predates it and an invalidation by another request during the build
+   *   makes the entry invalid; one fired by this request is caught after
+   *   storing and the entry is dropped.
+   * report_view_jurisdictions depends on far more (other jurisdictions'
+   * visibility, roles, settings) and stays live. A request with a public API
+   * key and an incomplete build are never cached.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The current account.
@@ -1597,26 +1600,27 @@ class PasswordlessAuthController extends ControllerBase {
    * @param string $preferred_langcode
    *   The user's preferred language, used for the labels.
    *
-   * @return array{groups: array, report_view_jurisdictions: array}
-   *   The two payload values.
+   * @return array
+   *   The groups payload.
    */
-  protected function getGroupSlice(AccountInterface $account, $user, string $preferred_langcode): array {
-    $build = function (?CacheableMetadata $cacheability = NULL) use ($account, $user): array {
-      return [
-        'groups' => $user ? $this->getUserGroups($user, $cacheability) : [],
-        'report_view_jurisdictions' => $this->workspaceVisibility?->getReportViewJurisdictionIds($account) ?? [],
-      ];
-    };
-    if ($this->authStatusCache === NULL || $this->cacheTagsChecksum === NULL || !$user
+  protected function getCachedUserGroups(AccountInterface $account, $user, string $preferred_langcode): array {
+    if (!$user) {
+      return [];
+    }
+    if ($this->authStatusCache === NULL || $this->cacheTagsChecksum === NULL
       || !$account->isAuthenticated()
       || ($this->workspaceVisibility?->requestUsesPublicApiKey() ?? FALSE)) {
-      return $build();
+      return $this->getUserGroups($user);
     }
 
+    // The dependencies' cache contexts are replaced by the ID parts: user is
+    // the uid, user.roles the role hash, the language contexts the two
+    // langcodes. A new request-dependent input must be added here or bypass
+    // the cache like the public API key above.
     $roles = $account->getRoles();
     sort($roles);
     $cid = implode(':', [
-      'markaspot_passwordless:auth_status:groups',
+      'markaspot_passwordless:auth_status:groups:v1',
       $account->id(),
       hash('sha256', implode(',', $roles)),
       $preferred_langcode,
@@ -1627,7 +1631,7 @@ class PasswordlessAuthController extends ControllerBase {
       return $cached->data;
     }
 
-    // Each change the slice depends on also fires one of these list tags.
+    // Each change the groups depend on also fires one of these list tags.
     $guard_tags = [
       'user:' . $account->id(),
       'group_relationship_list:plugin:group_membership:entity:' . $account->id(),
@@ -1635,25 +1639,20 @@ class PasswordlessAuthController extends ControllerBase {
       'config:group_role_list',
       'config:user_role_list',
       'config:markaspot_open311.settings',
-      'config:services_api_key_auth.settings',
       'config:configurable_language_list',
       'config:system.site',
-      'entity_field_info',
     ];
     $before = $this->cacheTagsChecksum->getCurrentChecksum($guard_tags);
     $cacheability = (new CacheableMetadata())->addCacheTags($guard_tags);
-    $slice = $build($cacheability);
-    if ($cacheability->getCacheMaxAge() === 0) {
-      return $slice;
+    $groups = $this->getUserGroups($user, $cacheability);
+    if ($cacheability->getCacheMaxAge() !== Cache::PERMANENT) {
+      return $groups;
     }
-    $this->authStatusCache->set($cid, $slice, Cache::PERMANENT, $cacheability->getCacheTags());
-    // The checksum service keeps tag counts per request: read them again
-    // from storage, and drop the entry when a tag changed during the build.
-    $this->cacheTagsChecksum->reset();
+    $this->authStatusCache->set($cid, $groups, Cache::PERMANENT, $cacheability->getCacheTags());
     if ($this->cacheTagsChecksum->getCurrentChecksum($guard_tags) !== $before) {
       $this->authStatusCache->delete($cid);
     }
-    return $slice;
+    return $groups;
   }
 
   /**
