@@ -13,6 +13,7 @@ use Drupal\file\Entity\File;
 use Drupal\image\Entity\ImageStyle;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_nuxt\Field\DashboardReferenceData;
+use Drupal\markaspot_nuxt\Image\RequestImageStyles;
 use Drupal\media\Entity\Media;
 use Drupal\media\Entity\MediaType;
 use Drupal\node\Entity\Node;
@@ -92,6 +93,12 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
     $style_config = $source->read('image.style.markaspot_dashboard_media');
     $this->assertIsArray($style_config);
     ImageStyle::create($style_config)->save();
+    $optional = new FileStorage(dirname(__DIR__, 3) . '/config/optional');
+    foreach (['markaspot_request_preview', 'markaspot_request_thumb'] as $style_id) {
+      $style_config = $optional->read('image.style.' . $style_id);
+      $this->assertIsArray($style_config);
+      ImageStyle::create($style_config)->save();
+    }
 
     User::create(['uid' => 0, 'name' => '', 'status' => 0])->save();
     User::create([
@@ -229,6 +236,107 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
 
     $this->assertStringContainsString('/styles/thumbnail/public/fallback-dashboard-photo.jpg', $value[0]['url']);
     $this->assertContains('config:image.style.markaspot_dashboard_media', $access->getCacheTags());
+  }
+
+  /**
+   * List cells get a thumbnail URL next to the 480 px preview.
+   */
+  public function testDashboardMediaCarriesThumbUrl(): void {
+    $file = File::create([
+      'uri' => 'public://thumb-dashboard-photo.jpg',
+      'status' => 1,
+    ]);
+    $file->save();
+    $media = Media::create([
+      'bundle' => 'request_image',
+      'name' => 'Thumb dashboard photo',
+      'status' => 1,
+      'field_media_image' => ['target_id' => $file->id()],
+    ]);
+    $media->save();
+    $node = $this->createRequest([
+      'field_request_media' => [$media->id()],
+    ]);
+    $viewer = $this->createUser(['access content', 'view media', 'view field_request_media']);
+
+    $value = DashboardReferenceData::media($node, $viewer);
+    $access = DashboardReferenceData::addCacheability(
+      AccessResult::allowed(),
+      $node,
+      $viewer,
+      'field_request_media'
+    );
+
+    $this->assertStringContainsString('/styles/markaspot_dashboard_media/public/thumb-dashboard-photo.jpg', $value[0]['url']);
+    // GD without WebP skips the WebP style for the stock thumbnail.
+    $expected = $this->toolkitWritesWebp()
+      ? '/styles/markaspot_request_thumb/public/thumb-dashboard-photo.jpg.webp'
+      : '/styles/thumbnail/public/thumb-dashboard-photo.jpg';
+    $this->assertStringContainsString($expected, $value[0]['thumb_url']);
+    $this->assertStringContainsString('itok=', $value[0]['thumb_url']);
+    $this->assertContains('config:image.style.markaspot_request_thumb', $access->getCacheTags());
+    $this->assertContains('config:image.style.thumbnail', $access->getCacheTags());
+  }
+
+  /**
+   * Missing profile styles fall back to stock styles, not to the original.
+   */
+  public function testRequestImageStylesFallBackToStockStyles(): void {
+    if ($this->toolkitWritesWebp()) {
+      $this->assertSame('markaspot_request_preview', RequestImageStyles::preview()?->id());
+      $this->assertSame('markaspot_request_thumb', RequestImageStyles::thumb()?->id());
+    }
+
+    ImageStyle::load('markaspot_request_preview')->delete();
+    ImageStyle::load('markaspot_request_thumb')->delete();
+
+    $this->assertSame('wide', RequestImageStyles::preview()?->id());
+    $this->assertSame('thumbnail', RequestImageStyles::thumb()?->id());
+
+    ImageStyle::load('wide')->delete();
+    $this->assertNull(RequestImageStyles::preview());
+    $this->assertNull(RequestImageStyles::url(RequestImageStyles::preview(), 'public://photo.jpg'));
+  }
+
+  /**
+   * The update hook creates missing request photo styles once.
+   */
+  public function testUpdateHookCreatesRequestImageStyles(): void {
+    ImageStyle::load('markaspot_request_preview')->delete();
+    ImageStyle::load('markaspot_request_thumb')->delete();
+    require_once dirname(__DIR__, 3) . '/markaspot_nuxt.install';
+
+    $this->assertSame(
+      'Created image styles: markaspot_request_preview, markaspot_request_thumb.',
+      markaspot_nuxt_update_11918()
+    );
+    $this->assertNotNull(ImageStyle::load('markaspot_request_preview'));
+    $this->assertNotNull(ImageStyle::load('markaspot_request_thumb'));
+    $this->assertSame('Request photo image styles already exist.', markaspot_nuxt_update_11918());
+  }
+
+  /**
+   * The request photo styles orient, scale and convert to WebP.
+   */
+  public function testRequestImageStylesShipExpectedEffects(): void {
+    $preview = array_values(ImageStyle::load('markaspot_request_preview')->getEffects()->getConfiguration());
+    $this->assertSame(
+      ['image_effects_auto_orient', 'image_scale', 'image_convert'],
+      array_column($preview, 'id')
+    );
+    $this->assertSame(960, $preview[1]['data']['width']);
+    $this->assertSame(960, $preview[1]['data']['height']);
+    $this->assertFalse($preview[1]['data']['upscale']);
+    $this->assertSame('webp', $preview[2]['data']['extension']);
+
+    $thumb = array_values(ImageStyle::load('markaspot_request_thumb')->getEffects()->getConfiguration());
+    $this->assertSame(
+      ['image_effects_auto_orient', 'image_scale_and_crop', 'image_convert'],
+      array_column($thumb, 'id')
+    );
+    $this->assertSame(160, $thumb[1]['data']['width']);
+    $this->assertSame(160, $thumb[1]['data']['height']);
+    $this->assertSame('webp', $thumb[2]['data']['extension']);
   }
 
   /**
@@ -557,6 +665,13 @@ final class DashboardComputedFieldsKernelTest extends KernelTestBase {
       'label' => $fieldName,
       'settings' => $settings,
     ])->save();
+  }
+
+  /**
+   * Whether the image toolkit of this environment can write WebP.
+   */
+  private function toolkitWritesWebp(): bool {
+    return in_array('webp', $this->container->get('image.factory')->getSupportedExtensions(), TRUE);
   }
 
   /**

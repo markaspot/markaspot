@@ -7,6 +7,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\File\FileExists;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
+use Drupal\image\ImageStyleInterface;
 use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
 use Drupal\Core\File\Exception\FileException;
@@ -39,6 +40,7 @@ use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Image\RequestImageStyles;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
 use Psr\Log\LoggerInterface;
@@ -3512,16 +3514,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   private function getMediaDetails(object $node): array {
     $mediaDetails = [];
+    // Resolved on the first photo, then reused for the others.
+    $styles = NULL;
 
     // Include legacy field_request_image if present.
     if ($node->hasField('field_request_image') && !$node->get('field_request_image')->isEmpty()) {
       $file = $node->get('field_request_image')->entity;
       if ($file) {
+        $styles ??= [RequestImageStyles::preview(), RequestImageStyles::thumb()];
         $mediaDetails[] = [
           'mid' => 'legacy',
           'url' => $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri()),
           'published' => TRUE,
-        ];
+        ] + $this->getDisplayImageDetails($file->getFileUri(), ...$styles);
       }
     }
 
@@ -3536,17 +3541,41 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         if ($media->hasField('field_media_image') && !$media->get('field_media_image')->isEmpty()) {
           $file = $media->get('field_media_image')->entity;
           if ($file) {
+            $styles ??= [RequestImageStyles::preview(), RequestImageStyles::thumb()];
             $mediaDetails[] = [
               'mid' => (int) $media->id(),
               'url' => $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri()),
               'published' => (bool) $media->isPublished(),
-            ];
+            ] + $this->getDisplayImageDetails($file->getFileUri(), ...$styles);
           }
         }
       }
     }
 
     return $mediaDetails;
+  }
+
+  /**
+   * Returns display-size derivative URLs of a photo.
+   *
+   * The derivatives pass the same download access check as the original and
+   * only cut the bytes.
+   *
+   * @param string $uri
+   *   The URI of the photo file.
+   * @param \Drupal\image\ImageStyleInterface|null $preview
+   *   The preview style, or NULL when none is usable.
+   * @param \Drupal\image\ImageStyleInterface|null $thumb
+   *   The thumbnail style, or NULL when none is usable.
+   *
+   * @return array
+   *   The preview and thumb URLs that could be built.
+   */
+  private function getDisplayImageDetails(string $uri, ?ImageStyleInterface $preview, ?ImageStyleInterface $thumb): array {
+    return array_filter([
+      'preview' => RequestImageStyles::url($preview, $uri),
+      'thumb' => RequestImageStyles::url($thumb, $uri),
+    ]);
   }
 
   /**

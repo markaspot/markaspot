@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - image_effects
+name: markaspot_request_thumb
+label: 'Request photo thumbnail (160, WebP)'
+effects:
+  2f458557-8749-4412-a0fb-14720a828188:
+    uuid: 2f458557-8749-4412-a0fb-14720a828188
+    id: image_effects_auto_orient
+    weight: -10
+    data:
+      scan_exif: true
+  0e13ec95-8099-4232-b143-ede46137cf17:
+    uuid: 0e13ec95-8099-4232-b143-ede46137cf17
+    id: image_scale_and_crop
+    weight: -9
+    data:
+      width: 160
+      height: 160
+      anchor: center-center
+  1618e7e0-02c6-45ba-8c98-40508b4534e0:
+    uuid: 1618e7e0-02c6-45ba-8c98-40508b4534e0
+    id: image_convert
+    weight: -8
+    data:
+      extension: webp

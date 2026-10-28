@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\file\FileInterface;
 use Drupal\image\ImageStyleInterface;
+use Drupal\markaspot_nuxt\Image\RequestImageStyles;
 use Drupal\media\MediaInterface;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\ParagraphInterface;
@@ -116,6 +117,7 @@ final class DashboardReferenceData {
     if (!$style instanceof ImageStyleInterface) {
       return [];
     }
+    $thumb_style = RequestImageStyles::thumb();
 
     $items = [];
     foreach ($node->get('field_request_media') as $reference) {
@@ -139,12 +141,18 @@ final class DashboardReferenceData {
         continue;
       }
 
-      $items[] = [
+      $item = [
         'uuid' => $media->uuid(),
         'url' => $style->buildUrl($uri),
         'cache_key' => $file->uuid(),
         'alt' => trim((string) ($image->alt ?? '')),
       ];
+      // List cells are 32 to 40 px; the 480 px preview stays for popovers.
+      $thumb_url = RequestImageStyles::url($thumb_style, $uri);
+      if ($thumb_url !== NULL) {
+        $item['thumb_url'] = $thumb_url;
+      }
+      $items[] = $item;
       if ($media->hasField('field_ai_hazard_category')
         && !$media->get('field_ai_hazard_category')->isEmpty()
         && $media->get('field_ai_hazard_category')->access('view', $account)) {
@@ -257,6 +265,7 @@ final class DashboardReferenceData {
         $result->addCacheableDependency($style);
       }
       $result->addCacheableDependency(\Drupal::config('image.settings'));
+      RequestImageStyles::addCacheableDependencies($result, RequestImageStyles::THUMB);
     }
 
     return $result;

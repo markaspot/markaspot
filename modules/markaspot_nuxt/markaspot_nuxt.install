@@ -1112,3 +1112,35 @@ function markaspot_nuxt_update_11917(): string {
   $role->grantPermission('view service_request revisions')->save();
   return 'Granted "view service_request revisions" to tenant_admin.';
 }
+
+/**
+ * Creates the WebP image styles for request photo previews and thumbnails.
+ *
+ * Without them GeoReport and the dashboard fall back to stock styles, so a
+ * site without image_effects keeps working and is skipped here.
+ */
+function markaspot_nuxt_update_11918(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('image_effects')) {
+    return 'Skipped request photo image styles: image_effects is not enabled.';
+  }
+
+  $style_storage = \Drupal::entityTypeManager()->getStorage('image_style');
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
+  $source = new FileStorage($module_path . '/config/optional');
+  $created = [];
+  foreach (['markaspot_request_preview', 'markaspot_request_thumb'] as $style_id) {
+    if ($style_storage->load($style_id)) {
+      continue;
+    }
+    $config_data = $source->read('image.style.' . $style_id);
+    if (empty($config_data)) {
+      throw new \RuntimeException(sprintf('Could not create the %s image style: its optional config is missing.', $style_id));
+    }
+    $style_storage->create($config_data)->save();
+    $created[] = $style_id;
+  }
+
+  return $created
+    ? 'Created image styles: ' . implode(', ', $created) . '.'
+    : 'Request photo image styles already exist.';
+}

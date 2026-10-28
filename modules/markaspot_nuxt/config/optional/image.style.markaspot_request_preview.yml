@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - image_effects
+name: markaspot_request_preview
+label: 'Request photo preview (960, WebP)'
+effects:
+  b0db541f-5b5e-4282-8443-77e85137cf46:
+    uuid: b0db541f-5b5e-4282-8443-77e85137cf46
+    id: image_effects_auto_orient
+    weight: -10
+    data:
+      scan_exif: true
+  35fb8bb8-1ae4-4cfb-8508-9a8814c20509:
+    uuid: 35fb8bb8-1ae4-4cfb-8508-9a8814c20509
+    id: image_scale
+    weight: -9
+    data:
+      width: 960
+      height: 960
+      upscale: false
+  cd1308cd-a1c5-46b5-88eb-e19b27c15844:
+    uuid: cd1308cd-a1c5-46b5-88eb-e19b27c15844
+    id: image_convert
+    weight: -8
+    data:
+      extension: webp
