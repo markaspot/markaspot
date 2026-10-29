@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.236](https://github.com/markaspot/markaspot/compare/11.9.235...11.9.236) (2026-10-29)
+
+### Bug Fixes
+
+* **nuxt:** hide the raw AI analysis of request images from JSON:API ([1f56081](https://github.com/markaspot/markaspot/commit/1f56081bf9ccb6806462d7c45c77eb1229f36db8))
+* **service-provider:** rate-limit e-mail verification on the response endpoints ([d4ed952](https://github.com/markaspot/markaspot/commit/d4ed952841beecb6dcbe9038257ce956bb50a6c5))
+* **vision:** escalate residual privacy blur per attributed photo ([72b4fdc](https://github.com/markaspot/markaspot/commit/72b4fdc80d7bc2dd45ae10af65e2f0eb5d20c35a))
+
 ## [11.9.235](https://github.com/markaspot/markaspot/compare/11.9.234...11.9.235) (2026-10-28)
 
 ### Features
