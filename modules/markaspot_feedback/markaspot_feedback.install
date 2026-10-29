@@ -9,13 +9,23 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Component\Serialization\Yaml;
+use Drupal\user\Entity\Role;
 
 /**
  * Implements hook_install().
  */
 function markaspot_feedback_install() {
+  $existing_storage = FieldStorageConfig::loadByName('node', 'field_feedback');
   // Create field_feedback on node.service_request.
   _markaspot_feedback_create_feedback_field();
+  if ($existing_storage) {
+    // Uninstall preserves this field. Reinstall must also secure public or
+    // unset storage without changing deliberate custom/private settings.
+    markaspot_feedback_update_9004();
+  }
+  else {
+    _markaspot_feedback_grant_feedback_permissions();
+  }
 
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Feedback module installed successfully.'));
 }
@@ -148,6 +158,81 @@ function markaspot_feedback_update_9003(): string {
 }
 
 /**
+ * Gives citizen feedback the same field permissions as the e-mail address.
+ *
+ * The feedback field holds free text written by the reporter. With public
+ * field permissions Drupal returned it to everyone who may view the report,
+ * anonymous visitors included; only the Nuxt proxy hid it. Sites that chose
+ * custom or private permissions keep their setting and their grants.
+ */
+function markaspot_feedback_update_9004(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('field_permissions')) {
+    return 'field_permissions is not installed; field_feedback unchanged.';
+  }
+  $storage = FieldStorageConfig::loadByName('node', 'field_feedback');
+  if (!$storage) {
+    return 'field_feedback does not exist; no change.';
+  }
+  $type = $storage->getThirdPartySetting('field_permissions', 'permission_type');
+  if (!in_array($type, [NULL, '', 'public'], TRUE)) {
+    return sprintf('field_feedback already uses %s field permissions; kept.', $type);
+  }
+  $storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom')->save();
+  $granted = _markaspot_feedback_grant_feedback_permissions();
+  return sprintf(
+    'field_feedback switched from %s to custom field permissions; granted to: %s.',
+    $type ?: 'public (default)',
+    $granted ? implode(', ', $granted) : 'no corresponding e-mail permissions'
+  );
+}
+
+/**
+ * Mirrors each role's explicit field_e_mail grants onto field_feedback.
+ *
+ * Citizens use the feedback endpoint, so never mirror their create grant.
+ *
+ * The field_permissions module defines these permissions only while
+ * field_feedback uses custom permissions. Core 11.4 strips unknown permissions
+ * when saving roles, so only grant after the custom field permissions exist.
+ *
+ * @return string[]
+ *   The roles that received at least one permission.
+ */
+function _markaspot_feedback_grant_feedback_permissions(): array {
+  if (!\Drupal::moduleHandler()->moduleExists('field_permissions')) {
+    return [];
+  }
+  $storage = FieldStorageConfig::loadByName('node', 'field_feedback');
+  if (!$storage || $storage->getThirdPartySetting('field_permissions', 'permission_type') !== 'custom') {
+    return [];
+  }
+  $operations = ['create', 'edit', 'edit own', 'view', 'view own'];
+  $granted = [];
+  foreach (Role::loadMultiple() as $role) {
+    $changed = FALSE;
+    // Use stored permissions: hasPermission() also returns TRUE for every
+    // permission on administrator roles, even without an explicit grant.
+    $permissions = $role->getPermissions();
+    foreach ($operations as $operation) {
+      if ($operation === 'create' && in_array($role->id(), ['anonymous', 'authenticated'], TRUE)) {
+        continue;
+      }
+      $permission = $operation . ' field_feedback';
+      if (in_array($operation . ' field_e_mail', $permissions, TRUE)
+        && !in_array($permission, $permissions, TRUE)) {
+        $role->grantPermission($permission);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $role->save();
+      $granted[] = $role->id();
+    }
+  }
+  return $granted;
+}
+
+/**
  * Reads a shipped feedback mail config in base or override data shape.
  *
  * @return array<string, mixed>|null
@@ -253,7 +338,7 @@ function _markaspot_feedback_create_feedback_field() {
       ],
       'third_party_settings' => [
         'field_permissions' => [
-          'permission_type' => 'public',
+          'permission_type' => 'custom',
         ],
       ],
       'id' => 'node.field_feedback',

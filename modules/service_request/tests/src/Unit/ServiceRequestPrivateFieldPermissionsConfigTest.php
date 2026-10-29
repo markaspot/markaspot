@@ -40,6 +40,7 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
   public function testPersonalFieldStoragesUseCustomPermissions(): void {
     $fields = [
       'field_e_mail' => $this->moduleRoot . '/config/install/field.storage.node.field_e_mail.yml',
+      'field_feedback' => $this->profileRoot . '/modules/markaspot_feedback/config/optional/field.storage.node.field_feedback.yml',
       'field_first_name' => $this->moduleRoot . '/config/install/field.storage.node.field_first_name.yml',
       'field_last_name' => $this->moduleRoot . '/config/install/field.storage.node.field_last_name.yml',
       'field_notification' => $this->moduleRoot . '/config/install/field.storage.node.field_notification.yml',
@@ -135,7 +136,6 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       'field_category',
       'field_district',
       'field_facility',
-      'field_feedback',
       'field_email_message_id',
       'field_geolocation',
       'field_jurisdiction',
@@ -148,6 +148,7 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       'field_sublocality',
       // Citizen-supplied private data.
       'field_e_mail',
+      'field_feedback',
       'field_first_name',
       'field_gdpr',
       'field_last_name',

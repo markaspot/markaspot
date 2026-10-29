@@ -82,7 +82,7 @@ class GDPRForm extends FormBase {
    * @param \Drupal\Core\Extension\ModuleHandlerInterface|null $module_handler
    *   The module handler, used to announce the anonymization.
    * @param \Drupal\markaspot_privacy\ReportEmailErasureInterface|null $emailErasure
-   *   Revision-aware email erasure, required when submitting erasure.
+   *   Revision-aware email and feedback erasure, required on submission.
    */
   public function __construct(MessengerInterface $messenger, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, $request_link_service = NULL, ?ModuleHandlerInterface $module_handler = NULL, protected ?ReportEmailErasureInterface $emailErasure = NULL) {
     $this->messenger = $messenger;
@@ -173,7 +173,7 @@ class GDPRForm extends FormBase {
   }
 
   /**
-   * Unpublishes a node and overwrites its citizen contact email.
+   * Unpublishes a node and erases its citizen contact email and feedback.
    *
    * Shared by the target node and every node it cascades to.
    *

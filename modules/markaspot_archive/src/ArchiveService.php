@@ -266,7 +266,7 @@ class ArchiveService implements ArchiveServiceInterface {
 
       $items = $archivable->get($field_name);
       $type = $items->getFieldDefinition()->getType();
-      $value = $this->anonymizedValue($type);
+      $value = $field_name === 'field_feedback' ? '' : $this->anonymizedValue($type);
       if ($value === NULL) {
         if ($this->fieldHasValue($archivable, $field_name)) {
           $this->logger->warning('field @field of type @type skipped, not anonymizable', [
@@ -431,6 +431,10 @@ class ArchiveService implements ArchiveServiceInterface {
       if (is_string($field_name) && $field_name !== '') {
         $names[$field_name] = $field_name;
       }
+    }
+    // Existing contact-field configurations must also erase citizen free text.
+    if ($names !== []) {
+      $names['field_feedback'] = 'field_feedback';
     }
     return array_values($names);
   }

@@ -8,7 +8,7 @@ dependencies:
     - text
 third_party_settings:
   field_permissions:
-    permission_type: public
+    permission_type: custom
 _core:
   default_config_hash: I18Qsff7yNCXUhxPDqyJAg7hbSqlVs_0-Od3rhhE8gA
 id: node.field_feedback

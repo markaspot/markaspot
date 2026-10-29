@@ -2238,8 +2238,9 @@ function _markaspot_group_service_request_private_field_view_access(FieldDefinit
 /**
  * Checks whether a field holds private, permission-gated report data.
  *
- * Private means custom field permissions that the anonymous role lacks;
- * fields anonymous visitors may view are public and stay unscoped.
+ * Private means custom field permissions that the anonymous role lacks.
+ * This includes field_feedback under the same rule as field_e_mail, without
+ * a separate field list. Fields anonymous visitors may view stay unscoped.
  */
 function _markaspot_group_is_private_service_request_field(FieldDefinitionInterface $field_definition): bool {
   $storage = $field_definition->getFieldStorageDefinition();

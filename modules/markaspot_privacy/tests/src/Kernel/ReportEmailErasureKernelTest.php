@@ -8,6 +8,7 @@ use Drupal\Core\Form\FormState;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\KernelTests\KernelTestBase;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\markaspot_privacy\Form\GDPRForm;
 use Drupal\markaspot_privacy\ReportEmailErasure;
 use Drupal\node\Entity\Node;
@@ -33,37 +34,58 @@ final class ReportEmailErasureKernelTest extends KernelTestBase {
     'filter',
     'text',
     'node',
+    'language',
     'service_request',
     'markaspot_privacy',
   ];
 
   /**
-   * Erasure preserves the history while removing every retained email value.
+   * {@inheritdoc}
    */
-  public function testErasureCoversUntouchedEditedAndSplitReports(): void {
+  protected function setUp(): void {
+    parent::setUp();
     $this->installEntitySchema('user');
     $this->installEntitySchema('node');
     $this->installSchema('node', ['node_access']);
     $this->installConfig(['system', 'user', 'field', 'filter', 'node']);
     $this->container->get('config.storage')->write('markaspot_open311.settings', ['status_note_auto_create' => FALSE]);
     NodeType::create(['type' => 'service_request', 'name' => 'Report'])->save();
-    foreach (['field_e_mail' => 'email', 'field_status' => 'entity_reference'] as $field => $type) {
+    foreach (['field_e_mail' => 'email', 'field_feedback' => 'text_long', 'field_status' => 'entity_reference'] as $field => $type) {
       FieldStorageConfig::create([
         'field_name' => $field, 'entity_type' => 'node', 'type' => $type,
         'settings' => $type === 'entity_reference' ? ['target_type' => 'node'] : [],
+        'translatable' => TRUE,
       ])->save();
-      FieldConfig::create(['field_name' => $field, 'entity_type' => 'node', 'bundle' => 'service_request'])->save();
+      FieldConfig::create([
+        'field_name' => $field, 'entity_type' => 'node', 'bundle' => 'service_request',
+        'translatable' => $field === 'field_feedback',
+      ])->save();
     }
     User::create(['uid' => 0, 'name' => 'Anonymous', 'status' => 0])->save();
+    ConfigurableLanguage::createFromLangcode('de')->save();
+  }
+
+  /**
+   * Erasure removes email and feedback from split reports and all translations.
+   */
+  public function testErasureCoversUntouchedEditedAndSplitReports(): void {
     $original = Node::create([
       'type' => 'service_request',
       'title' => 'Original',
       'field_e_mail' => 'original@example.invalid',
+      'field_feedback' => 'Fictional original feedback',
+    ]);
+    $original->addTranslation('de', [
+      'title' => 'Fiktive Meldung', 'field_feedback' => 'Fiktive private Antwort',
     ]);
     $original->save();
-    $sibling = Node::create(['type' => 'service_request', 'title' => 'Split', 'field_e_mail' => 'old@example.invalid']);
+    $sibling = Node::create([
+      'type' => 'service_request', 'title' => 'Split', 'field_e_mail' => 'old@example.invalid',
+      'field_feedback' => 'Fictional historic feedback',
+    ]);
     $sibling->save();
-    $sibling->set('field_e_mail', 'new@example.invalid')->save();
+    $sibling->setNewRevision(TRUE);
+    $sibling->set('field_e_mail', 'new@example.invalid')->set('field_feedback', NULL)->save();
     $storage = $this->container->get('entity_type.manager')->getStorage('node');
     $before = [];
     foreach ([$original, $sibling] as $node) {
@@ -90,17 +112,37 @@ final class ReportEmailErasureKernelTest extends KernelTestBase {
     foreach ([$original, $sibling] as $node) {
       $current = $storage->loadUnchanged($node->id());
       $this->assertFalse($current->isPublished());
+      $this->assertTrue($current->get('field_feedback')->isEmpty());
       $revisions = $storage->revisionIds($current);
       $this->assertCount(count($before[$node->id()]) + 1, $revisions);
       foreach ($revisions as $vid) {
         $revision = $storage->loadRevision($vid);
         $this->assertSame(ReportEmailErasure::ERASED_EMAIL, $revision->get('field_e_mail')->value);
         $this->assertSame($node->label(), $revision->label());
+        foreach ($revision->getTranslationLanguages() as $langcode => $language) {
+          $this->assertTrue($revision->getTranslation($langcode)->get('field_feedback')->isEmpty());
+        }
       }
     }
     $remaining = $this->container->get('database')->select('node_revision__field_e_mail', 'email')
       ->condition('field_e_mail_value', ReportEmailErasure::ERASED_EMAIL, '<>')->countQuery()->execute()->fetchField();
     $this->assertSame(0, (int) $remaining);
+    foreach (['node__field_feedback', 'node_revision__field_feedback'] as $table) {
+      $this->assertSame(0, (int) $this->container->get('database')->select($table)->countQuery()->execute()->fetchField());
+    }
+  }
+
+  /**
+   * Erasure still works on installations without the optional feedback field.
+   */
+  public function testErasureWithoutFeedbackField(): void {
+    FieldStorageConfig::loadByName('node', 'field_feedback')->delete();
+    $node = Node::create([
+      'type' => 'service_request', 'title' => 'Fictional report', 'field_e_mail' => 'fictional@example.invalid',
+    ]);
+    $node->save();
+    $this->container->get('markaspot_privacy.report_email_erasure')->erase($node);
+    $this->assertSame(ReportEmailErasure::ERASED_EMAIL, Node::load($node->id())->get('field_e_mail')->value);
   }
 
 }

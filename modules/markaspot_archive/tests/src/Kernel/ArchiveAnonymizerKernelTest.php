@@ -159,6 +159,7 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
       'field_last_name' => 'field_last_name',
       'field_phone' => 'field_phone',
       'field_notification' => 'field_notification',
+      'field_feedback' => 'field_feedback',
     ], $this->config('markaspot_archive.settings')->get('anonymize_fields'));
     self::assertArrayNotHasKey(
       'field_address',
@@ -313,6 +314,35 @@ final class ArchiveAnonymizerKernelTest extends KernelTestBase {
       $this->revisionFieldValue($second_revision, 'field_e_mail')
     );
     self::assertSame($current_value, $node->get('field_e_mail')->value);
+  }
+
+  /**
+   * Legacy contact-only config also erases current and historic feedback.
+   */
+  public function testFeedbackIsErasedWithLegacyContactConfig(): void {
+    $this->createNodeField('field_feedback', 'text_long');
+    $node = $this->createRequest([
+      'field_e_mail' => 'fictional@example.invalid',
+      'field_feedback' => ['value' => 'Fictional private feedback', 'format' => 'plain_text'],
+    ]);
+    $first_revision = (int) $node->getRevisionId();
+    $node->setNewRevision(TRUE);
+    $node->set('field_feedback', 'Fictional current feedback');
+    $node->save();
+    $second_revision = (int) $node->getRevisionId();
+    $fields = ['field_e_mail' => 'field_e_mail'];
+    self::assertContains('field_feedback', $this->archiveService->previewAnonymizeFields($node, $fields));
+    $values = $this->archiveService->anonymize($node, $fields);
+    self::assertTrue($node->get('field_feedback')->isEmpty());
+    $node->setNewRevision(TRUE);
+    $node->save();
+    $this->archiveService->anonymizeRevisions($node, $values);
+    $storage = $this->container->get('entity_type.manager')->getStorage('node');
+    self::assertTrue($storage->loadUnchanged($node->id())->get('field_feedback')->isEmpty());
+    foreach ([$first_revision, $second_revision] as $vid) {
+      self::assertTrue($storage->loadRevision($vid)->get('field_feedback')->isEmpty());
+      self::assertSame('', $this->revisionFieldValue($vid, 'field_feedback'));
+    }
   }
 
   /**

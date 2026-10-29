@@ -144,12 +144,14 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
     ])->save();
     FieldConfig::create(['field_name' => 'field_organisation', 'entity_type' => 'node', 'bundle' => 'service_request'])->save();
     $this->createCustomPermissionField('field_e_mail', 'email');
+    $this->createCustomPermissionField('field_feedback', 'text_long');
     $this->createCustomPermissionField('field_status_notes', 'string');
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
 
     // Staff hold global field permissions, as the shipped roles do.
     $staff_permissions = [
       'view field_e_mail',
+      'view field_feedback',
       'view field_status_notes',
     ];
     foreach (['tenant_admin', 'moderator', 'editorial_board'] as $role_id) {
@@ -199,8 +201,10 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
   public function testModeratorsAreScopedByMembership(): void {
     $moderatorA = $this->account('moderator-a', ['moderator']);
     $this->tenantA->addMember($moderatorA);
-    $this->assertTrue($this->reportA->get('field_e_mail')->access('view', $moderatorA));
-    $this->assertFalse($this->reportB->get('field_e_mail')->access('view', $moderatorA));
+    foreach (['field_e_mail', 'field_feedback'] as $field) {
+      $this->assertTrue($this->reportA->get($field)->access('view', $moderatorA), $field);
+      $this->assertFalse($this->reportB->get($field)->access('view', $moderatorA), $field);
+    }
 
     // A sub-jurisdiction membership does not reach up to the parent.
     $districtModerator = $this->account('district-moderator', ['moderator']);
@@ -231,17 +235,18 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
     $sibling = $this->report($this->tenantA)->set('field_organisation', $a->id());
     $this->assertTrue($own->get('field_e_mail')->access('view', $staff));
     $this->assertFalse($sibling->get('field_e_mail')->access('view', $staff));
+    $this->assertFalse($sibling->get('field_feedback')->access('view', $staff));
     // Exercise the legacy single-jurisdiction shortcut explicitly. It must
     // not remove the organisation boundary established above.
     $count = &drupal_static('_markaspot_group_jurisdiction_group_count');
     $count = 1;
     $this->assertFalse($sibling->get('field_e_mail')->access('view', $staff));
+    $this->assertFalse($sibling->get('field_feedback')->access('view', $staff));
     $this->assertFalse(_markaspot_group_service_request_organisation_view_access($sibling, $staff)->isAllowed());
   }
 
   /**
-   * Elevated jurisdiction staff keep private-field filters on a single
-   * jurisdiction even when they also belong to an organisation.
+   * Elevated staff retain private-field filters with organisation membership.
    */
   public function testElevatedStaffWithOrganisationKeepPrivateFieldFilters(): void {
     GroupRole::create([
@@ -384,6 +389,7 @@ final class PrivateFieldJurisdictionScopeKernelTest extends KernelTestBase {
       'uid' => $owner?->id() ?? 1,
       'field_jurisdiction' => [$jurisdiction->id()],
       'field_e_mail' => 'citizen@example.org',
+      'field_feedback' => 'Fictional citizen feedback',
       'field_status_notes' => 'Public answer',
     ]);
     $node->enforceIsNew(FALSE);

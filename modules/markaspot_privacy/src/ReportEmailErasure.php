@@ -14,7 +14,7 @@ use Drupal\node\NodeInterface;
 use Drupal\service_request\RevisionLog;
 
 /**
- * Erases email values without discarding the report's revision history.
+ * Erases email and feedback without discarding the report's revision history.
  */
 final class ReportEmailErasure implements ReportEmailErasureInterface {
 
@@ -41,11 +41,23 @@ final class ReportEmailErasure implements ReportEmailErasureInterface {
     }
     $table = $mapping->getDedicatedRevisionTableName($definition);
     $column = $mapping->getFieldColumnName($definition, 'value');
+    $feedback_table = NULL;
+    if ($node->hasField('field_feedback')) {
+      $feedback_definition = $node->getFieldDefinition('field_feedback')->getFieldStorageDefinition();
+      if (!$mapping->requiresDedicatedTableStorage($feedback_definition)) {
+        throw new EntityStorageException('Report feedback erasure requires a dedicated feedback field table.');
+      }
+      $feedback_table = $mapping->getDedicatedRevisionTableName($feedback_definition);
+    }
     $transaction = $this->database->startTransaction();
     try {
       $node->setUnpublished();
       foreach (array_keys($node->getTranslationLanguages()) as $langcode) {
-        $node->getTranslation($langcode)->set('field_e_mail', self::ERASED_EMAIL);
+        $translation = $node->getTranslation($langcode);
+        $translation->set('field_e_mail', self::ERASED_EMAIL);
+        if ($feedback_table !== NULL) {
+          $translation->set('field_feedback', NULL);
+        }
       }
       $node->setNewRevision(TRUE);
       $node->setRevisionUserId(0);
@@ -55,11 +67,16 @@ final class ReportEmailErasure implements ReportEmailErasureInterface {
       }
       $node->save();
       // Do not save old revisions through entity hooks: that would create
-      // further revisions. Keep their audit state, removing only the email.
+      // further revisions. Keep their audit state, erasing email and feedback.
       $this->database->update($table)
         ->fields([$column => self::ERASED_EMAIL])
         ->condition('entity_id', $node->id())
         ->execute();
+      if ($feedback_table !== NULL) {
+        $this->database->delete($feedback_table)
+          ->condition('entity_id', $node->id())
+          ->execute();
+      }
     }
     catch (\Throwable $error) {
       $transaction->rollBack();

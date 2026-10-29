@@ -34,6 +34,7 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
     'system',
     'user',
     'field',
+    'field_permissions',
     'filter',
     'text',
     'node',
@@ -62,6 +63,7 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
     $this->installSchema('node', ['node_access']);
     $this->installConfig(['system', 'user', 'field', 'filter', 'node']);
     User::create(['uid' => 0, 'name' => '', 'status' => 0])->save();
+    User::create(['uid' => 1, 'name' => 'fixture-root', 'status' => 1])->save();
     Role::load('anonymous')->grantPermission('access content')->save();
 
     NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
@@ -71,9 +73,10 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
     $this->reopened = Term::create(['vid' => 'service_status', 'name' => 'In progress']);
     $this->reopened->save();
 
+    FieldStorageConfig::loadByName('node', 'field_feedback')?->delete();
     $fields = [
       'field_e_mail' => ['email', []],
-      'field_feedback' => ['string_long', []],
+      'field_feedback' => ['text_long', []],
       'field_has_feedback' => ['boolean', []],
       'field_status' => ['entity_reference', ['target_type' => 'taxonomy_term']],
     ];
@@ -83,6 +86,9 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
         'entity_type' => 'node',
         'type' => $type,
         'settings' => $settings,
+        'third_party_settings' => $name === 'field_feedback' ? [
+          'field_permissions' => ['permission_type' => 'custom'],
+        ] : [],
       ])->save();
       FieldConfig::create([
         'field_name' => $name,
@@ -150,6 +156,32 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
   }
 
   /**
+   * The verified endpoint writes for citizens without any feedback grant.
+   */
+  public function testCitizensCanSubmitWithoutFieldGrants(): void {
+    $citizen = User::create(['name' => 'fictional-citizen', 'status' => 1]);
+    $citizen->save();
+    foreach ([User::getAnonymousUser(), $citizen] as $account) {
+      $this->container->get('current_user')->setAccount($account);
+      $report = $this->report('reporter@example.org', (int) $account->id());
+      foreach (['create', 'edit', 'view'] as $operation) {
+        $this->assertFalse($account->hasPermission($operation . ' field_feedback'));
+      }
+      $this->assertFalse($report->get('field_feedback')->access('view', $account));
+      $this->assertFalse($report->get('field_feedback')->access('edit', $account));
+      $response = $this->post($report, [
+        'feedback' => 'Fictional citizen feedback without field grants.',
+        'email_verification' => 'reporter@example.org',
+      ]);
+      $this->assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+      $saved = $this->container->get('entity_type.manager')->getStorage('node')->loadUnchanged($report->id());
+      $this->assertSame('Fictional citizen feedback without field grants.', $saved->get('field_feedback')->value);
+      $this->assertTrue((bool) $saved->get('field_has_feedback')->value);
+      $this->assertFalse($saved->get('field_feedback')->access('view', $account));
+    }
+  }
+
+  /**
    * Guessing addresses is limited per client and report.
    */
   public function testVerificationIsRateLimited(): void {
@@ -200,10 +232,19 @@ final class FeedbackVerificationKernelTest extends KernelTestBase {
 
     // The read endpoint says it was answered but never shows the text, not
     // even to staff who may read the field.
-    $staff = User::create(['name' => 'staff', 'mail' => 'staff@example.org', 'status' => 1]);
+    Role::create([
+      'id' => 'feedback_reader', 'label' => 'Feedback reader',
+      'permissions' => ['access content', 'view field_feedback'],
+    ])->save();
+    $staff = User::create([
+      'name' => 'staff', 'mail' => 'staff@example.org', 'status' => 1,
+      'roles' => ['feedback_reader'],
+    ]);
     $staff->save();
+    $this->assertTrue($report->get('field_feedback')->access('view', $staff));
     $this->container->get('current_user')->setAccount($staff);
     $read = $controller->getServiceRequest($report->uuid());
+    $this->assertSame(200, $read->getStatusCode());
     $this->assertTrue(json_decode((string) $read->getContent(), TRUE)['has_feedback']);
     $this->assertStringNotContainsString('First answer', (string) $read->getContent());
     $this->assertArrayNotHasKey('feedback', json_decode((string) $read->getContent(), TRUE));

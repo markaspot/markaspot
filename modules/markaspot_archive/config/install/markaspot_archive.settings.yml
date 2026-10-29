@@ -10,6 +10,7 @@ anonymize_fields:
   field_last_name: field_last_name
   field_phone: field_phone
   field_notification: field_notification
+  field_feedback: field_feedback
 ## Toggle automatic archiving on cron and its interval.
 cron_enable: 1
 cron_always_run: 0

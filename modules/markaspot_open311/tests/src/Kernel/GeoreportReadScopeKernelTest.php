@@ -16,6 +16,7 @@ use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\Tests\node\Traits\ContentTypeCreationTrait;
 use Drupal\Tests\user\Traits\UserCreationTrait;
 use Drupal\user\RoleInterface;
+use Drupal\user\Entity\User;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -42,6 +43,7 @@ final class GeoreportReadScopeKernelTest extends KernelTestBase {
     'system',
     'user',
     'field',
+    'field_permissions',
     'filter',
     'text',
     'node',
@@ -123,6 +125,23 @@ final class GeoreportReadScopeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Anonymous GeoReport output never includes citizen feedback or its text.
+   */
+  public function testAnonymousOutputExcludesFeedback(): void {
+    $anonymous = User::getAnonymousUser();
+    $this->setCurrentUser($anonymous);
+    $node = Node::load($this->requestNid);
+    $this->assertFalse($node->get('field_feedback')->isEmpty());
+    $this->assertFalse($node->get('field_feedback')->access('view', $anonymous));
+    $result = $this->createProcessor(FALSE)->getResults($this->buildRequestQuery(), $anonymous, [], 42);
+    $this->assertCount(1, $result);
+    $this->assertSame('REQ-476', $result[0]['service_request_id']);
+    $output = json_encode($result, JSON_THROW_ON_ERROR);
+    $this->assertStringNotContainsString('field_feedback', $output);
+    $this->assertStringNotContainsString('Fictional private citizen feedback', $output);
+  }
+
+  /**
    * Builds the service_request fields used by the real mapper.
    */
   private function createServiceRequestFields(): void {
@@ -162,6 +181,10 @@ final class GeoreportReadScopeKernelTest extends KernelTestBase {
     $this->createNodeFieldConfig('field_first_name', 'string');
     $this->createNodeFieldStorage('field_last_name', 'string');
     $this->createNodeFieldConfig('field_last_name', 'string');
+    $this->createNodeFieldStorage('field_feedback', 'text_long');
+    FieldStorageConfig::loadByName('node', 'field_feedback')
+      ->setThirdPartySetting('field_permissions', 'permission_type', 'custom')->save();
+    $this->createNodeFieldConfig('field_feedback', 'text_long');
   }
 
   /**
@@ -231,6 +254,7 @@ final class GeoreportReadScopeKernelTest extends KernelTestBase {
       'field_e_mail' => 'citizen@example.test',
       'field_first_name' => 'Ada',
       'field_last_name' => 'Lovelace',
+      'field_feedback' => 'Fictional private citizen feedback',
       'created' => 1600000000,
       'changed' => 1600000100,
     ]);
