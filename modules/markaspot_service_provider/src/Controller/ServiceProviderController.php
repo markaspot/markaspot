@@ -2,7 +2,9 @@
 
 namespace Drupal\markaspot_service_provider\Controller;
 
+use Drupal\Component\Uuid\Uuid;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Flood\FloodInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -21,6 +23,21 @@ use Drupal\taxonomy\TermInterface;
  * Controller for service provider response requests.
  */
 class ServiceProviderController extends ControllerBase {
+
+  /**
+   * Failed provider address checks, shared across both endpoints.
+   */
+  public const FLOOD_EVENT = 'markaspot_service_provider.verify';
+
+  /**
+   * Failed checks allowed per window.
+   */
+  public const FLOOD_THRESHOLD = 10;
+
+  /**
+   * Flood window in seconds.
+   */
+  public const FLOOD_WINDOW = 3600;
 
   /**
    * The entity type manager.
@@ -88,6 +105,8 @@ class ServiceProviderController extends ControllerBase {
    *   The event dispatcher.
    * @param \Drupal\Core\Mail\MailManagerInterface $mail_manager
    *   The mail manager.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -97,6 +116,7 @@ class ServiceProviderController extends ControllerBase {
     DateFormatterInterface $date_formatter,
     EventDispatcherInterface $event_dispatcher,
     MailManagerInterface $mail_manager,
+    protected FloodInterface $flood,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->loggerFactory = $logger_factory;
@@ -118,7 +138,8 @@ class ServiceProviderController extends ControllerBase {
           $container->get('config.factory'),
           $container->get('date.formatter'),
           $container->get('event_dispatcher'),
-          $container->get('plugin.manager.mail')
+          $container->get('plugin.manager.mail'),
+          $container->get('flood')
       );
   }
 
@@ -136,59 +157,31 @@ class ServiceProviderController extends ControllerBase {
   public function updateResponse($uuid, Request $request): JsonResponse {
     $logger = $this->loggerFactory->get('markaspot_service_provider');
 
+    $uuid = strtolower($uuid);
+    if (strlen($uuid) !== 36 || !Uuid::isValid($uuid)) {
+      return $this->verificationFailureResponse(403);
+    }
+    if (!$this->verificationIsAllowed($uuid, $request)) {
+      return new JsonResponse([
+        'message' => $this->t('Too many attempts. Please try again later.'),
+      ], 429, ['Retry-After' => (string) self::FLOOD_WINDOW]);
+    }
+
     try {
-      // Get the JSON data from the request body.
-      $content = $request->getContent();
-      $data = json_decode($content, TRUE);
-
-      if (empty($data)) {
-        $logger->warning('Empty request data for service provider response on UUID: @uuid', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('No data provided')], 400);
+      $data = json_decode($request->getContent(), TRUE);
+      if (!is_array($data) || $data === []) {
+        return $this->verificationFailed($uuid, $request, 403);
       }
+      $email_verification = $data['email_verification'] ?? NULL;
+      if (!is_string($email_verification) || trim($email_verification) === '') {
+        return $this->verificationFailed($uuid, $request, 403);
+      }
+      $email_verification = trim($email_verification);
 
-      // Load the node by UUID.
       $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
-
-      if (empty($nodes)) {
-        $logger->warning('No node found with UUID: @uuid', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Service request not found')], 404);
-      }
-
       $node = reset($nodes);
-
-      // Check if the node is a service request.
-      if ($node->getType() != 'service_request') {
-        $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Not a service request')], 400);
-      }
-
-      // Normalize email verification from either JSON body or query param.
-      $email_verification = trim((string) ($data['email_verification'] ?? $request->query->get('email_verification', '')));
-      if ($email_verification === '') {
-        $logger->warning('Missing service provider email verification for node @nid', ['@nid' => $node->id()]);
-        return new JsonResponse(
-              [
-                'message' => $this->t('Email is required'),
-                'error_code' => 'EMAIL_REQUIRED',
-              ], 400
-          );
-      }
-
-      $validation_result = $this->validateServiceProviderEmail($node, $email_verification);
-      if ($validation_result !== TRUE) {
-        $logger->warning(
-              'Service provider validation failed for @email on node @nid: @reason', [
-                '@email' => $email_verification,
-                '@nid' => $node->id(),
-                '@reason' => $validation_result,
-              ]
-          );
-        return new JsonResponse(
-              [
-                'message' => $validation_result,
-                'error_code' => 'EMAIL_NOT_AUTHORIZED',
-              ], 403
-          );
+      if (!$node || $node->getType() !== 'service_request' || $this->validateServiceProviderEmail($node, $email_verification) !== TRUE) {
+        return $this->verificationFailed($uuid, $request, 403);
       }
 
       // Check if multiple completions are allowed.
@@ -216,8 +209,7 @@ class ServiceProviderController extends ControllerBase {
 
         if (!$reassignment_allowed && $last_note_from_sp) {
           $logger->warning(
-                'Service provider @email attempted completion without reassignment flag for node @nid', [
-                  '@email' => $email_verification,
+                'Service provider attempted completion without reassignment flag for node @nid', [
                   '@nid' => $node->id(),
                 ]
             );
@@ -363,54 +355,27 @@ class ServiceProviderController extends ControllerBase {
   public function authenticateServiceProvider($uuid, Request $request): JsonResponse {
     $logger = $this->loggerFactory->get('markaspot_service_provider');
 
+    $uuid = strtolower($uuid);
+    if (strlen($uuid) !== 36 || !Uuid::isValid($uuid)) {
+      return $this->verificationFailureResponse(401);
+    }
+    if (!$this->verificationIsAllowed($uuid, $request)) {
+      return new JsonResponse([
+        'message' => $this->t('Too many attempts. Please try again later.'),
+      ], 429, ['Retry-After' => (string) self::FLOOD_WINDOW]);
+    }
+
     try {
-      // Get the JSON data from the request body.
-      $content = $request->getContent();
-      $data = json_decode($content, TRUE);
-
-      // Get email from request body.
-      $email = $data['email'] ?? NULL;
-
-      if (empty($email)) {
-        return new JsonResponse(
-              [
-                'message' => $this->t('Email is required'),
-                'error_code' => 'EMAIL_REQUIRED',
-              ], 400
-          );
+      $data = json_decode($request->getContent(), TRUE);
+      $email = is_array($data) ? ($data['email'] ?? NULL) : NULL;
+      if (!is_string($email) || trim($email) === '') {
+        return $this->verificationFailed($uuid, $request, 401);
       }
 
-      // Load the node by UUID.
       $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
-
-      if (empty($nodes)) {
-        $logger->warning('No node found with UUID: @uuid', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Service request not found')], 404);
-      }
-
       $node = reset($nodes);
-
-      // Check if the node is a service request.
-      if ($node->getType() != 'service_request') {
-        $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Not a service request')], 400);
-      }
-
-      // Validate email against service provider.
-      $validation_result = $this->validateServiceProviderEmail($node, $email);
-
-      if ($validation_result !== TRUE) {
-        $logger->warning(
-              'Service provider email validation failed on node @nid', [
-                '@nid' => $node->id(),
-              ]
-          );
-        return new JsonResponse(
-              [
-                'message' => $this->t('Email not authorized'),
-                'error_code' => 'EMAIL_NOT_AUTHORIZED',
-              ], 401
-          );
+      if (!$node || $node->getType() !== 'service_request' || $this->validateServiceProviderEmail($node, $email) !== TRUE) {
+        return $this->verificationFailed($uuid, $request, 401);
       }
 
       // Email validated. Build full response with all node data.
@@ -435,6 +400,44 @@ class ServiceProviderController extends ControllerBase {
 
       return new JsonResponse(['message' => $this->t('Error processing authentication')], 500);
     }
+  }
+
+  /**
+   * Records a failed verification without revealing whether the report exists.
+   */
+  protected function verificationFailed(string $uuid, Request $request, int $status): JsonResponse {
+    $ip = (string) $request->getClientIp();
+    $this->flood->register(self::FLOOD_EVENT, self::FLOOD_WINDOW, $ip . ':' . $uuid);
+    return $this->verificationFailureResponse($status);
+  }
+
+  /**
+   * Checks the per-report verification limit before loading any report.
+   */
+  protected function verificationIsAllowed(string $uuid, Request $request): bool {
+    $ip = (string) $request->getClientIp();
+    // An IP-wide limit requires the real client IP through the UI proxy first.
+    if ($this->flood->isAllowed(self::FLOOD_EVENT, self::FLOOD_THRESHOLD, self::FLOOD_WINDOW, $ip . ':' . $uuid)) {
+      return TRUE;
+    }
+
+    $this->loggerFactory->get('markaspot_service_provider')->warning(
+      'Service provider verification rate limit exceeded for client IP @ip and report @uuid',
+      ['@ip' => $ip, '@uuid' => $uuid],
+    );
+    return FALSE;
+  }
+
+  /**
+   * Builds the same failure response for all unauthorized verifications.
+   */
+  protected function verificationFailureResponse(int $status): JsonResponse {
+    return new JsonResponse([
+      'message' => $status === 401
+        ? $this->t('Email not authorized')
+        : $this->t('The provided email address is not authorized for this service request'),
+      'error_code' => 'EMAIL_NOT_AUTHORIZED',
+    ], $status);
   }
 
   /**

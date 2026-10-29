@@ -13,6 +13,7 @@ markaspot_service_provider.response_form:
     _form: '\Drupal\markaspot_service_provider\Form\ServiceProviderResponseForm'
   requirements:
     _permission: 'access content'
+    uuid: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 
 markaspot_service_provider.rest_update:
   path: '/api/service-response/{uuid}'
@@ -22,6 +23,7 @@ markaspot_service_provider.rest_update:
   methods: [POST, PATCH]
   requirements:
     _access: 'TRUE'
+    uuid: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 
 markaspot_service_provider.rest_get:
   path: '/api/service-response/{uuid}'
@@ -31,6 +33,7 @@ markaspot_service_provider.rest_get:
   methods: [GET]
   requirements:
     _access: 'TRUE'
+    uuid: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 
 markaspot_service_provider.rest_auth:
   path: '/api/service-response/{uuid}/auth'
@@ -40,3 +43,4 @@ markaspot_service_provider.rest_auth:
   methods: [POST]
   requirements:
     _access: 'TRUE'
+    uuid: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
