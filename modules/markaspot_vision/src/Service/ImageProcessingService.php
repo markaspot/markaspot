@@ -828,8 +828,8 @@ class ImageProcessingService {
       . "names, documents, IDs, or house numbers), set privacy_flag to true and "
       . "list the concerns in privacy_issues. ";
 
-    // Per-image attribution so the citizen UI can mark only the offending
-    // thumbnail. Ordering mirrors the alt_text array contract.
+    // Per-image attribution scopes moderation, escalation and UI hints when
+    // trusted by the controller. Ordering mirrors the alt_text array contract.
     $count_wording = $image_count > 0 ? "exactly {$image_count} booleans" : 'booleans';
     $instruction .= "Also set privacy_image_flags to an array of {$count_wording}, "
       . "one per image in the exact order the images are provided: true only "
@@ -1439,9 +1439,11 @@ class ImageProcessingService {
         ],
         // Per-image privacy attribution: one boolean per supplied image
         // in input order, TRUE when THAT image shows personal data. The
-        // aggregate privacy_flag stays authoritative for moderation;
-        // this array only scopes the citizen-facing per-thumbnail
-        // warning so harmless siblings are not tainted.
+        // controller uses it for moderation, escalation and UI hints only
+        // if it is a boolean list matching the analysed image count, any
+        // aggregate finding is attributed, and numbered image references
+        // agree. Otherwise every photo retains the aggregate fallback.
+        // Attribution cannot clear a persisted hold; skipped media stay held.
         'privacy_image_flags' => [
           'type' => 'array',
           'items' => ['type' => 'boolean'],

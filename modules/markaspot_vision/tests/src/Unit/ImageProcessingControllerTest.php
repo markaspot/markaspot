@@ -20,6 +20,7 @@ use Drupal\markaspot_vision\Service\OriginalImageStore;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -235,14 +236,17 @@ class ImageProcessingControllerTest extends UnitTestCase {
    *   Whether update access is granted.
    * @param string|null $fileUri
    *   Optional file URI for the media image field.
+   * @param \ArrayObject|null $persistedFields
+   *   Stored field values, optionally updated by the test's set() callback.
    *
    * @return \Drupal\media\MediaInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked media entity.
    */
-  protected function createMockMedia(int $id, bool $viewAccess = TRUE, bool $updateAccess = TRUE, ?string $fileUri = 'public://test.jpg'): MediaInterface {
+  protected function createMockMedia(int $id, bool $viewAccess = TRUE, bool $updateAccess = TRUE, ?string $fileUri = 'public://test.jpg', ?\ArrayObject $persistedFields = NULL): MediaInterface {
     $media = $this->createMock(MediaInterface::class);
     $media->method('id')->willReturn($id);
     $media->method('uuid')->willReturn('uuid-' . $id);
+    $media->method('hasField')->willReturn(TRUE);
     $media->method('access')
       ->willReturnCallback(function ($operation) use ($viewAccess, $updateAccess) {
         if ($operation === 'view') {
@@ -254,6 +258,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
         return FALSE;
       });
 
+    $fieldItem = NULL;
     if ($fileUri) {
       $file = new class($fileUri) {
 
@@ -306,14 +311,15 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
       };
 
-      $media->method('get')
-        ->willReturnCallback(function ($field_name) use ($fieldItem) {
-          if ($field_name === 'field_media_image') {
-            return $fieldItem;
-          }
-          return NULL;
-        });
     }
+    $media->method('get')
+      ->willReturnCallback(function ($field_name) use ($fieldItem, $persistedFields) {
+        if ($field_name === 'field_media_image') {
+          return $fieldItem;
+        }
+        return isset($persistedFields[$field_name])
+          ? (object) ['value' => $persistedFields[$field_name]] : NULL;
+      });
 
     return $media;
   }
@@ -1569,7 +1575,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
     // Any text in the issues field would hold the photo again on node save.
     $this->assertSame('', $captured['field_ai_privacy_issues']);
     $metadata = json_decode($captured['field_ai_metadata'], TRUE);
-    $this->assertSame(['mode' => 'strong'], $metadata['markaspot_privacy_escalation']);
+    $this->assertSame(['mode' => 'strong', 'reason' => 'attribution_invalid'], $metadata['markaspot_privacy_escalation']);
     $this->assertTrue($metadata['privacy_flag'], 'The raw model verdict stays in the audit blob.');
   }
 
@@ -1615,6 +1621,8 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertTrue($data['privacy_flag']);
     $this->assertArrayNotHasKey('privacy_reblurred', $data);
     $this->assertTrue($captured['field_ai_privacy_flag']);
+    $metadata = json_decode($captured['field_ai_metadata'], TRUE);
+    $this->assertSame(['mode' => 'none', 'reason' => 'attribution_invalid'], $metadata['markaspot_privacy_escalation']);
   }
 
   /**
@@ -1692,7 +1700,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * A photo whose escalation failed keeps the verdict despite attribution.
+   * An attributed photo whose escalation failed keeps the citizen verdict.
    */
   public function testFailedEscalationInBatchKeepsTheCitizenVerdict(): void {
     $this->residualHandling = 'reblur';
@@ -1707,7 +1715,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
         'alt_text' => ['Bulky waste', 'Bulky waste'],
         'privacy_flag' => TRUE,
         'privacy_issues' => ['readable name on a letter'],
-        'privacy_image_flags' => [FALSE, TRUE],
+        'privacy_image_flags' => [TRUE, TRUE],
       ]),
       'blur_results' => [
         'public://first.jpg' => [
@@ -1740,6 +1748,387 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertTrue($data['privacy_flag']);
     $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => FALSE], $data['privacy_flags']);
     $this->assertSame(['uuid-2' => 'strong'], $data['privacy_reblurred']);
+  }
+
+  /**
+   * Three-photo batches share one attribution rule across all verdicts.
+   */
+  #[DataProvider('residualPrivacyAttributionProvider')]
+  public function testResidualPrivacyAttribution(mixed $flags, array $affected, string $reason, ?int $skipped = NULL, bool $finding = TRUE, string $handling = 'reblur', array $options = []): void {
+    $this->residualHandling = $handling;
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $media = [];
+    $stored = [];
+    $blur_results = [];
+    $expected_saves = [];
+    $expected_reblurred = [];
+    $expected_flags = [];
+    $blur_attempts = 0;
+    $issues = $options['issues'] ?? ($finding
+      ? ['In image 1 a vehicle licence plate is visible.'] : []);
+    foreach ([1, 2, 3] as $id) {
+      $uri = 'public://photo-' . $id . '.jpg';
+      $stored[$id] = new \ArrayObject();
+      $previously_held = isset($options['persisted'][$id]);
+      if ($previously_held) {
+        $stored[$id]['field_ai_privacy_flag'] = TRUE;
+        $stored[$id]['field_ai_privacy_issues'] = $options['persisted'][$id];
+      }
+      $missing = $id === ($options['missing'] ?? NULL);
+      $blurred = in_array($id, $options['blurred'] ?? [], TRUE);
+      $failed = in_array($id, $options['failed'] ?? [], TRUE);
+      $media[$id] = $this->createMockMedia($id,
+        fileUri: $missing ? NULL : $uri, persistedFields: $stored[$id]);
+      $capture = $stored[$id];
+      $photo = $media[$id];
+      $photo->method('set')->willReturnCallback(function (string $field, $value) use ($capture, $photo) {
+        $capture[$field] = $value;
+        return $photo;
+      });
+      $held = $id === $skipped || $missing || $failed
+        || ($handling === 'hold' && in_array($id, $affected, TRUE));
+      $photo->expects($held ? $this->never() : $this->once())->method('setPublished');
+      $photo->expects($this->once())->method('save');
+      $escalated = $handling === 'reblur' && in_array($id, $affected, TRUE);
+      if ($escalated) {
+        $blur_attempts += ($finding && !$issues) || ($previously_held
+          && $options['persisted'][$id] === '') ? 1 : 2;
+        if (!$failed) {
+          $expected_reblurred['uuid-' . $id] = 'full';
+          $expected_saves[] = [$photo, 'full-' . $id, $uri];
+        }
+      }
+      if ($blurred && (!$escalated || $failed)) {
+        $expected_saves[] = [$photo, 'original-' . $id, $uri];
+      }
+      $expected_flags['uuid-' . $id] = $held;
+      $blur_results[$uri] = [
+        'contents' => 'original-' . $id,
+        'source' => 'original-' . $id,
+        'blurred' => $blurred,
+        'mime' => 'image/jpeg',
+      ];
+    }
+    $this->mediaStorage->method('loadByProperties')->willReturn($media);
+    $model_result = [
+      'description' => 'Three views of a discarded box',
+      'privacy_flag' => $finding,
+      'privacy_issues' => $issues,
+    ];
+    if ($flags !== NULL) {
+      $model_result['privacy_image_flags'] = $flags;
+    }
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode($model_result),
+      'blur_results' => $blur_results,
+      'skipped_uris' => $skipped === NULL ? [] : ['public://photo-' . $skipped . '.jpg' => 'unreadable'],
+    ]);
+    // No detector found a plate: a strong pass cannot cover the finding.
+    $this->imageProcessingService->expects($this->exactly($blur_attempts))
+      ->method('blurSensitiveAreas')->willReturnCallback(function (string $contents, string $mime, string $mode) use ($options) {
+        $id = (int) substr($contents, -1);
+        if (in_array($id, $options['failed'] ?? [], TRUE)) {
+          throw new \RuntimeException('Fictional blur failure.');
+        }
+        return [
+          'contents' => str_replace('original', $mode, $contents),
+          'blurred' => $mode === 'full',
+          'faces' => 0,
+          'plates' => 0,
+        ];
+      });
+    $this->imageProcessingService->expects($this->never())->method('screenPrivacy');
+    $this->imageProcessingService->expects($this->exactly(count($expected_saves)))
+      ->method('saveBlurredImage')->willReturnCallback(function ($photo, $contents, $uri) use (&$expected_saves) {
+        $this->assertSame(array_shift($expected_saves), [$photo, $contents, $uri]);
+      });
+
+    $response = $this->controller->getAIResults($this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2', 'uuid-3']]));
+
+    $this->assertSame(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame($expected_reblurred, $data['privacy_reblurred'] ?? []);
+    $this->assertSame($expected_flags, $data['privacy_flags']);
+    $this->assertSame(in_array(TRUE, $expected_flags, TRUE), $data['privacy_flag']);
+    foreach ($stored as $id => $fields) {
+      $this->assertSame($expected_flags['uuid-' . $id], $fields['field_ai_privacy_flag']);
+      $this->assertSame($expected_flags['uuid-' . $id], $fields['field_ai_privacy_issues'] !== '');
+      if (isset($options['persisted'][$id]) && $flags[$id - 1] === FALSE
+        && $expected_flags['uuid-' . $id] && $options['persisted'][$id] !== '') {
+        $this->assertSame($options['persisted'][$id],
+          $fields['field_ai_privacy_issues']);
+      }
+      $metadata = json_decode($fields['field_ai_metadata'], TRUE);
+      $this->assertSame($model_result, array_intersect_key($metadata, $model_result));
+      $expected_reason = isset($options['persisted'][$id])
+        && $expected_flags['uuid-' . $id] ? 'hold_kept'
+        : ($id === $skipped || $id === ($options['missing'] ?? NULL)
+          ? 'analysis_skipped'
+          : ($reason === 'attribution_invalid' ? $reason
+            : ($flags[$id - 1] ?? FALSE ? 'attributed' : 'not_attributed')));
+      // Skipped files consume no model entry, unlike their media position.
+      if ($id > ($skipped ?? 3) && $reason !== 'attribution_invalid') {
+        $expected_reason = $flags[$id - 2] ? 'attributed' : 'not_attributed';
+      }
+      $this->assertSame([
+        'mode' => $expected_reblurred['uuid-' . $id] ?? 'none',
+        'reason' => $expected_reason,
+      ], $metadata['markaspot_privacy_escalation']);
+    }
+  }
+
+  /**
+   * Attribution cases, including skipped files between analysed siblings.
+   */
+  public static function residualPrivacyAttributionProvider(): iterable {
+    $cases = [
+      'valid' => [[TRUE, FALSE, FALSE], [1], 'attributed'],
+      'wrong length' => [[TRUE, FALSE], [1, 2, 3], 'attribution_invalid'],
+      'too long' => [[TRUE, FALSE, FALSE, FALSE], [1, 2, 3], 'attribution_invalid'],
+      'non-bool integer' => [[TRUE, FALSE, 0], [1, 2, 3], 'attribution_invalid'],
+      'non-bool string' => [[TRUE, FALSE, 'false'], [1, 2, 3], 'attribution_invalid'],
+      'non-bool null' => [[TRUE, FALSE, NULL], [1, 2, 3], 'attribution_invalid'],
+      'missing key' => [NULL, [1, 2, 3], 'attribution_invalid'],
+      'non-array' => ['invalid', [1, 2, 3], 'attribution_invalid'],
+      'non-list' => [[1 => TRUE, 2 => FALSE, 3 => FALSE], [1, 2, 3], 'attribution_invalid'],
+      'contradiction' => [[FALSE, FALSE, FALSE], [1, 2, 3], 'attribution_invalid'],
+      'skipped' => [[TRUE, FALSE], [1], 'attributed', 2],
+      'skipped contradiction' => [[FALSE, FALSE], [1, 3], 'attribution_invalid', 2],
+      'skipped clean batch' => [[FALSE, FALSE], [], 'not_attributed', 2, FALSE],
+      'blurred false sibling' => [[TRUE, FALSE, FALSE], [1], 'attributed',
+        NULL, TRUE, ['blurred' => [2]],
+      ],
+      'false siblings beside failed escalation' => [
+        [TRUE, FALSE, FALSE], [1], 'attributed', NULL, TRUE, ['failed' => [1]],
+      ],
+      'unclassified valid list' => [[TRUE, FALSE, FALSE], [1], 'attributed',
+        NULL, TRUE, ['issues' => []],
+      ],
+      'issues-only contradiction' => [[FALSE, FALSE, FALSE], [1, 2, 3],
+        'attribution_invalid', NULL, FALSE,
+        ['issues' => ['A vehicle licence plate is visible.']],
+      ],
+      'missing file URI' => [[TRUE, FALSE], [1], 'attributed',
+        NULL, TRUE, ['missing' => 2],
+      ],
+      'missing file URI clean batch' => [[FALSE, FALSE], [], 'not_attributed',
+        NULL, FALSE, ['missing' => 2],
+      ],
+      'persisted hold false attribution' => [[TRUE, FALSE, FALSE], [1, 2],
+        'attributed', NULL, TRUE,
+        ['persisted' => [2 => 'A readable name on a letter.']],
+      ],
+      'persisted hold clean batch' => [[FALSE, FALSE, FALSE], [2],
+        'not_attributed', NULL, FALSE,
+        ['persisted' => [2 => 'A readable name on a letter.']],
+      ],
+      'persisted hold normal blur false attribution' => [
+        [TRUE, FALSE, FALSE], [1, 2], 'attributed', NULL, TRUE,
+        ['persisted' => [2 => 'A readable name on a letter.'], 'blurred' => [2]],
+      ],
+      'persisted unclassified hold' => [[TRUE, FALSE, FALSE], [1, 2],
+        'attributed', NULL, TRUE, ['persisted' => [2 => '']],
+      ],
+      'persisted hold escalation failure' => [[TRUE, FALSE, FALSE], [1, 2],
+        'attributed', NULL, TRUE,
+        ['persisted' => [2 => 'A readable name on a letter.'], 'failed' => [2]],
+      ],
+    ];
+    foreach (['image', 'PHOTO', 'picture', 'BILD', 'Foto'] as $label) {
+      $cases['numbered contradiction ' . $label] = [
+        [TRUE, FALSE, FALSE], [1, 2, 3], 'attribution_invalid', NULL, TRUE,
+        ['issues' => [$label . ' 2: a vehicle licence plate is visible.']],
+      ];
+    }
+    $cases['multiple numbered references'] = [
+      [TRUE, FALSE, FALSE], [1, 2, 3], 'attribution_invalid', NULL, TRUE,
+      ['issues' => ['Image 1 and Bild 2 show vehicle licence plates.']],
+    ];
+    $cases['out of range and unrelated numbers'] = [
+      [TRUE, FALSE, FALSE], [1], 'attributed', NULL, TRUE,
+      ['issues' => ['Image 1: a vehicle licence plate. Photo 0, Foto 20, 2 boxes.']],
+    ];
+    $cases['numbered contradiction after skipped photo'] = [
+      [TRUE, FALSE], [1, 3], 'attribution_invalid', 2, TRUE,
+      ['issues' => ['Bild 2: a vehicle licence plate is visible.']],
+    ];
+    foreach ($cases as $name => $arguments) {
+      foreach (['reblur', 'hold'] as $handling) {
+        $options = $arguments[5] ?? [];
+        if ($handling === 'hold') {
+          unset($options['failed']);
+        }
+        yield $name . ' ' . $handling => [
+          $arguments[0], $arguments[1], $arguments[2],
+          $arguments[3] ?? NULL, $arguments[4] ?? TRUE, $handling, $options,
+        ];
+      }
+    }
+  }
+
+  /**
+   * Attribution does not restore a notice that normal blur already handled.
+   */
+  public function testNormalBlurKeepsHandledPrivacyNoticeCleared(): void {
+    $this->residualHandling = 'hold';
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $stored = new \ArrayObject();
+    $media = $this->createMockMedia(1, persistedFields: $stored);
+    $clean_stored = new \ArrayObject();
+    $clean = $this->createMockMedia(2, fileUri: 'public://clean.jpg',
+      persistedFields: $clean_stored);
+    $media->method('set')->willReturnCallback(
+      function (string $field, $value) use ($stored, $media) {
+        $stored[$field] = $value;
+        return $media;
+      },
+    );
+    $clean->method('set')->willReturnCallback(
+      function (string $field, $value) use ($clean_stored, $clean) {
+        $clean_stored[$field] = $value;
+        return $clean;
+      },
+    );
+    $media->expects($this->once())->method('setPublished');
+    $clean->expects($this->once())->method('setPublished');
+    $this->mediaStorage->method('loadByProperties')
+      ->willReturn([1 => $media, 2 => $clean]);
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode([
+        'privacy_flag' => TRUE,
+        'privacy_issues' => ['Image 1: a vehicle licence plate is visible.'],
+        'privacy_image_flags' => [TRUE, FALSE],
+      ]),
+      'blur_results' => [
+        'public://test.jpg' => ['blurred' => TRUE, 'contents' => 'normal'],
+        'public://clean.jpg' => ['blurred' => FALSE, 'contents' => 'clean'],
+      ],
+    ]);
+
+    $response = $this->controller->getAIResults(
+      $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]),
+    );
+    $this->assertSame(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['privacy_flag']);
+    $this->assertSame([], $data['privacy_issues']);
+    $this->assertFalse($stored['field_ai_privacy_flag']);
+    $this->assertFalse($clean_stored['field_ai_privacy_flag']);
+  }
+
+  /**
+   * A FALSE sibling's old text hold needs no unrelated plate detector.
+   */
+  public function testPersistedSiblingHoldRechecksOnlyItsOwnFinding(): void {
+    $this->residualHandling = 'reblur';
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $stored = new \ArrayObject([
+      'field_ai_privacy_flag' => TRUE,
+      'field_ai_privacy_issues' => 'A readable name on a letter.',
+    ]);
+    $first = $this->createMockMedia(1, fileUri: 'public://first.jpg');
+    $second = $this->createMockMedia(2, fileUri: 'public://second.jpg',
+      persistedFields: $stored);
+    $second->method('set')->willReturnCallback(
+      function (string $field, $value) use ($stored, $second) {
+        $stored[$field] = $value;
+        return $second;
+      },
+    );
+    $this->mediaStorage->method('loadByProperties')
+      ->willReturn([1 => $first, 2 => $second]);
+    $this->imageProcessingService->method('processImages')->willReturn([
+      'ai_result' => json_encode([
+        'privacy_flag' => TRUE,
+        'privacy_issues' => ['Image 1: a vehicle licence plate is visible.'],
+        'privacy_image_flags' => [TRUE, FALSE],
+      ]),
+      'blur_results' => [
+        'public://first.jpg' => ['source' => 'first', 'blurred' => FALSE],
+        'public://second.jpg' => ['source' => 'second', 'blurred' => FALSE],
+      ],
+    ]);
+    $this->imageProcessingService->expects($this->exactly(2))
+      ->method('blurSensitiveAreas')->willReturnCallback(
+        function (string $contents, string $mime, string $mode): array {
+          $this->assertSame(ImageProcessingService::BLUR_MODE_STRONG, $mode);
+          return ['contents' => $contents . '-strong', 'blurred' => TRUE,
+            'texts' => $contents === 'second' ? 1 : 0,
+            'plates' => $contents === 'first' ? 1 : 0,
+          ];
+        },
+      );
+    $checks = [];
+    $this->imageProcessingService->expects($this->exactly(2))
+      ->method('screenPrivacy')->willReturnCallback(
+        function (string $contents, string $mime, array $issues) use (&$checks) {
+          $checks[$contents] = $issues;
+          return ['privacy_flag' => FALSE, 'privacy_issues' => []];
+        },
+      );
+    $first->expects($this->once())->method('setPublished');
+    $second->expects($this->once())->method('setPublished');
+
+    $response = $this->controller->getAIResults(
+      $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]),
+    );
+    $this->assertSame(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(['uuid-1' => 'strong', 'uuid-2' => 'strong'],
+      $data['privacy_reblurred']);
+    $this->assertSame(['A readable name on a letter.'], $checks['second-strong']);
+    $this->assertFalse($data['privacy_flag']);
+    $this->assertFalse($stored['field_ai_privacy_flag']);
+    $this->assertSame('', $stored['field_ai_privacy_issues']);
+  }
+
+  /**
+   * A second analysis cannot publish a photo the first analysis held.
+   */
+  public function testReanalysisCannotClearPersistedHoldByAttribution(): void {
+    $this->residualHandling = 'hold';
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $stored = new \ArrayObject();
+    $media = $this->createMockMedia(1, persistedFields: $stored);
+    $media->method('set')->willReturnCallback(
+      function (string $field, $value) use ($stored, $media) {
+        $stored[$field] = $value;
+        return $media;
+      },
+    );
+    $media->expects($this->never())->method('setPublished');
+    $media->expects($this->exactly(2))->method('save');
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+    $this->imageProcessingService->method('processImages')->willReturn(
+      ['ai_result' => json_encode([
+        'privacy_flag' => TRUE,
+        'privacy_issues' => ['Image 1: a readable name on a letter.'],
+        'privacy_image_flags' => [TRUE],
+      ])],
+      ['ai_result' => json_encode([
+        'privacy_flag' => FALSE,
+        'privacy_issues' => [],
+        'privacy_image_flags' => [FALSE],
+      ])],
+    );
+    $this->imageProcessingService->expects($this->never())
+      ->method('blurSensitiveAreas');
+
+    for ($run = 0; $run < 2; $run++) {
+      $response = $this->controller->getAIResults(
+        $this->createJsonRequest(['media_ids' => ['uuid-1']]),
+      );
+      $this->assertSame(200, $response->getStatusCode());
+      $data = json_decode($response->getContent(), TRUE);
+      $this->assertTrue($data['privacy_flag']);
+      $this->assertSame(['uuid-1' => TRUE], $data['privacy_flags']);
+      $this->assertTrue($stored['field_ai_privacy_flag']);
+      $this->assertSame('Image 1: a readable name on a letter.',
+        $stored['field_ai_privacy_issues']);
+    }
+    $metadata = json_decode($stored['field_ai_metadata'], TRUE);
+    $this->assertSame(['mode' => 'none', 'reason' => 'hold_kept'],
+      $metadata['markaspot_privacy_escalation']);
   }
 
   /**

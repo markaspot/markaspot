@@ -269,7 +269,15 @@ class ImageProcessingController extends ControllerBase {
       // Collect file URIs, keyed by media ID for blur result mapping.
       $file_uris = [];
       $media_uri_map = [];
+      $persisted_privacy_holds = [];
       foreach ($media_entities as $media) {
+        // Snapshot before this request replaces the stored model verdict.
+        if ($media->hasField('field_ai_privacy_flag')
+          && !empty($media->get('field_ai_privacy_flag')->value)) {
+          $issues = trim((string) $media->get('field_ai_privacy_issues')->value);
+          $persisted_privacy_holds[$media->uuid()] = $issues !== ''
+            ? [$issues] : [];
+        }
         $field_media_image = $media->get('field_media_image');
         if ($field_media_image && !$field_media_image->isEmpty()) {
           $file = $field_media_image->entity;
@@ -331,6 +339,15 @@ class ImageProcessingController extends ControllerBase {
       $blur_results = $ai_result['blur_results'] ?? [];
       $skipped_uris = $ai_result['skipped_uris'] ?? [];
       $batch_has_skipped_media = !empty($skipped_uris);
+      $privacy_attribution = $this->resolvePrivacyAttribution(
+        $media_entities,
+        $media_uri_map,
+        $skipped_uris,
+        $decoded_result['privacy_image_flags'] ?? NULL,
+        count($file_uris) - count($skipped_uris),
+        $effective_privacy_flag,
+        $privacy_issues,
+      );
       $blur_applied = FALSE;
       foreach ($blur_results as $blur_result) {
         if (!empty($blur_result['blurred'])) {
@@ -342,8 +359,9 @@ class ImageProcessingController extends ControllerBase {
       // Residual findings the normal blur left behind: sites that chose
       // re-blurring over holding the photo escalate those media (strong, then
       // full), so they can be published instead of waiting for moderation.
-      $escalation = $this->isResidualReblurEnabled()
-        ? $this->escalateResidualPrivacy($media_entities, $media_uri_map, $blur_results, $skipped_uris, $privacy_issues, $unclassified_privacy_flag, $effective_privacy_flag)
+      $reblur_enabled = $this->isResidualReblurEnabled();
+      $escalation = $reblur_enabled
+        ? $this->escalateResidualPrivacy($media_entities, $media_uri_map, $blur_results, $skipped_uris, $privacy_issues, $unclassified_privacy_flag, $effective_privacy_flag, $privacy_attribution, $persisted_privacy_holds)
         : ['applied' => [], 'failed' => [], 'rechecks' => 0];
       $reblurred = $escalation['applied'];
       if ($reblurred) {
@@ -354,6 +372,7 @@ class ImageProcessingController extends ControllerBase {
       // the citizen's upload preview can show the privacy-protected version.
       $blurred_previews = [];
 
+      $privacy_holds = [];
       $media_index = 0;
       foreach ($media_entities as $media) {
         try {
@@ -364,7 +383,7 @@ class ImageProcessingController extends ControllerBase {
           // on THIS media. Used to save the anonymised bytes.
           $media_uri = $media_uri_map[$media->id()] ?? NULL;
           $media_was_blurred = $media_uri && !empty($blur_results[$media_uri]['blurred']);
-          $media_was_skipped = $media_uri && isset($skipped_uris[$media_uri]);
+          $media_was_skipped = !$media_uri || isset($skipped_uris[$media_uri]);
           $media_privacy_issues = $privacy_issues;
 
           // Persisted moderation flag: a successful blur overwrite clears only
@@ -379,6 +398,19 @@ class ImageProcessingController extends ControllerBase {
           else {
             $privacy_held = $effective_privacy_flag || $media_was_skipped;
           }
+          // Attribution cannot revoke an earlier persisted privacy hold.
+          $previously_held = isset($persisted_privacy_holds[$media->uuid()]);
+          if ($previously_held) {
+            $media_privacy_issues = $privacy_attribution[$media->uuid()] === FALSE
+              ? $persisted_privacy_holds[$media->uuid()]
+              : array_merge($media_privacy_issues,
+                $persisted_privacy_holds[$media->uuid()]);
+            $privacy_held = TRUE;
+          }
+          elseif ($privacy_attribution[$media->uuid()] === FALSE) {
+            $media_privacy_issues = [];
+            $privacy_held = FALSE;
+          }
 
           // An escalated blur covered what the model still saw: nothing left
           // to hold, and the audit trail is in the log, not in the issues
@@ -387,13 +419,16 @@ class ImageProcessingController extends ControllerBase {
             $media_privacy_issues = [];
             $privacy_held = FALSE;
           }
-          if ($privacy_held && $unclassified_privacy_flag && empty($media_privacy_issues)) {
+          if ($privacy_held && empty($media_privacy_issues)
+            && ($unclassified_privacy_flag || $previously_held)) {
             $media_privacy_issues[] = $unclassified_privacy_issue;
           }
           if ($media_was_skipped) {
-            $skip_reason = $skipped_uris[$media_uri] ?: 'unknown';
+            $skip_reason = $media_uri
+              ? ($skipped_uris[$media_uri] ?: 'unknown') : 'missing file URI';
             $media_privacy_issues[] = 'AI analysis skipped for this media (' . $skip_reason . ')';
           }
+          $privacy_holds[$media->uuid()] = $privacy_held;
 
           // Deliberate split (do NOT reconcile): field_ai_metadata stores the
           // RAW model output (provenance/audit), while field_ai_privacy_flag is
@@ -402,9 +437,14 @@ class ImageProcessingController extends ControllerBase {
           // not the mere fact that blur preprocessing ran successfully.
           // The raw model output, plus which escalation covered what it saw.
           $media_metadata = $decoded_result;
-          if ($media_uri && isset($reblurred[$media_uri])) {
-            $media_metadata['markaspot_privacy_escalation'] = ['mode' => $reblurred[$media_uri]];
-          }
+          $media_attribution = $privacy_attribution[$media->uuid()];
+          $media_metadata['markaspot_privacy_escalation'] = [
+            'mode' => $reblurred[$media_uri] ?? 'none',
+            'reason' => $previously_held && $privacy_held ? 'hold_kept'
+              : ($media_was_skipped ? 'analysis_skipped'
+                : ($media_attribution === NULL ? 'attribution_invalid'
+                  : ($media_attribution ? 'attributed' : 'not_attributed'))),
+          ];
           $media->set('field_ai_metadata', json_encode($media_metadata));
           $media->set('field_ai_privacy_flag', $privacy_held);
           $media->set('field_ai_privacy_issues', implode(', ', (array) $media_privacy_issues));
@@ -569,42 +609,15 @@ class ImageProcessingController extends ControllerBase {
       $response_result['privacy_issues'] = $response_privacy_issues;
       $response_result['privacy_handled_by_blur'] = $blur_applied;
 
-      // Response-only per-media privacy attribution, keyed by media UUID, so
-      // the citizen upload preview marks only the offending thumbnail instead
-      // of tainting every sibling. Sources, strongest first:
-      // skipped media fail closed (no complete analysis happened); otherwise
-      // the model's per-image flags apply (the model judges the post-blur
-      // bytes, so blur-handled faces/plates are already excluded); when the
-      // model returned no usable attribution array, every analysed media
-      // falls back to the aggregate response verdict — exactly the previous
-      // global behavior. The persisted per-media moderation verdict above is
-      // deliberately untouched: attribution here only scopes UI hints.
-      $model_image_flags = $decoded_result['privacy_image_flags'] ?? NULL;
-      $analyzed_image_count = count($file_uris) - count($skipped_uris);
-      $attribution_valid = is_array($model_image_flags)
-        && count($model_image_flags) === $analyzed_image_count;
+      // Use the same trusted attribution as escalation and moderation. NULL
+      // means invalid attribution: retain the aggregate response fallback.
+      // Skipped media are always flagged by resolvePrivacyAttribution().
       $response_privacy_flags = [];
-      $model_image_index = 0;
       foreach ($media_entities as $media) {
-        $media_uri = $media_uri_map[$media->id()] ?? NULL;
-        if (!$media_uri || isset($skipped_uris[$media_uri])) {
-          // Never analysed (no file URI or skipped): fail closed.
-          $response_privacy_flags[$media->uuid()] = TRUE;
-          continue;
-        }
-        $response_privacy_flags[$media->uuid()] = $attribution_valid
-          ? !empty($model_image_flags[$model_image_index])
-          : (bool) $response_result['privacy_flag'];
-        $model_image_index++;
-      }
-      // Contradiction guard: the model asserted an aggregate privacy problem
-      // but attributed it to no image (and nothing was skipped) — distrust
-      // the attribution and fail closed on every media.
-      if ($attribution_valid
-        && $response_result['privacy_flag']
-        && !empty($response_privacy_flags)
-        && !in_array(TRUE, $response_privacy_flags, TRUE)) {
-        $response_privacy_flags = array_fill_keys(array_keys($response_privacy_flags), TRUE);
+        $response_privacy_flags[$media->uuid()] =
+          isset($persisted_privacy_holds[$media->uuid()])
+          || ($privacy_attribution[$media->uuid()]
+            ?? (bool) $response_result['privacy_flag']);
       }
       // Escalated media are covered; the verdict clears once nothing else is
       // flagged. privacy_reblurred tells the citizen why a photo looks
@@ -630,6 +643,12 @@ class ImageProcessingController extends ControllerBase {
         if ($reblur_levels) {
           $response_result['privacy_reblurred'] = $reblur_levels;
         }
+      }
+      // The complete moderation verdict includes prior holds and normal blur.
+      $response_result['privacy_flag'] = in_array(TRUE, $privacy_holds, TRUE)
+        || count($privacy_holds) !== count($media_entities);
+      if (!$response_result['privacy_flag']) {
+        $response_result['privacy_issues'] = [];
       }
       $response_result['privacy_flags'] = $response_privacy_flags;
       // Blurred thumbnails (data URLs) so the citizen preview shows the
@@ -675,16 +694,87 @@ class ImageProcessingController extends ControllerBase {
   }
 
   /**
+   * Resolves trusted per-image flags for moderation, escalation and UI hints.
+   *
+   * @param \Drupal\media\MediaInterface[] $media_entities
+   *   Media in the order supplied to the analysis.
+   * @param array $media_uri_map
+   *   File URI per media id.
+   * @param array $skipped_uris
+   *   URIs omitted from the model input.
+   * @param mixed $model_image_flags
+   *   The model's untrusted per-image attribution.
+   * @param int $analyzed_image_count
+   *   Number of images actually supplied to the model.
+   * @param bool $effective_privacy_flag
+   *   Whether the batch has any privacy finding.
+   * @param array $privacy_issues
+   *   Findings with optional explicit, 1-based image references.
+   *
+   * @return array<string, bool|null>
+   *   Flags keyed by media UUID. NULL retains the aggregate fallback. Missing
+   *   or skipped files are always TRUE and consume no attribution entry.
+   */
+  private function resolvePrivacyAttribution(array $media_entities, array $media_uri_map, array $skipped_uris, mixed $model_image_flags, int $analyzed_image_count, bool $effective_privacy_flag, array $privacy_issues): array {
+    $attribution_valid = is_array($model_image_flags)
+      && array_is_list($model_image_flags)
+      && count($model_image_flags) === $analyzed_image_count
+      && count(array_filter($model_image_flags, 'is_bool')) === count($model_image_flags);
+    // An aggregate finding attributed to no analysed image is untrustworthy,
+    // even if another file was skipped. Fail closed on the whole batch.
+    if ($attribution_valid && $effective_privacy_flag && !in_array(TRUE, $model_image_flags, TRUE)) {
+      $attribution_valid = FALSE;
+    }
+    // Only explicit numbered references are evidence of a contradiction.
+    if ($attribution_valid) {
+      foreach ($privacy_issues as $issue) {
+        if (!is_string($issue)) {
+          continue;
+        }
+        preg_match_all(
+          '/\b(?:image|photo|picture|bild|foto)\s+([0-9]+)\b/iu',
+          $issue,
+          $references,
+        );
+        foreach ($references[1] as $number) {
+          $index = (int) $number - 1;
+          if ($index >= 0 && $index < $analyzed_image_count
+            && $model_image_flags[$index] === FALSE) {
+            $attribution_valid = FALSE;
+            break 2;
+          }
+        }
+      }
+    }
+
+    $flags = [];
+    $index = 0;
+    foreach ($media_entities as $media) {
+      $uri = $media_uri_map[$media->id()] ?? NULL;
+      if (!$uri || isset($skipped_uris[$uri])) {
+        $flags[$media->uuid()] = TRUE;
+        continue;
+      }
+      $flags[$media->uuid()] = $attribution_valid ? $model_image_flags[$index] : NULL;
+      $index++;
+    }
+    return $flags;
+  }
+
+  /**
    * Re-blurs media that the normal blur left with a privacy finding.
    *
    * Strong mode (eager detection plus text regions) counts only when the
    * detector matching the finding fired (text for names and documents,
    * faces or plates for people and vehicles) and the model then sees nothing
    * left; findings no detector can locate, and every doubt, go to the full
-   * blur. Every media the moderation predicate would hold is escalated: the
-   * model's per-image attribution only scopes UI hints, never moderation.
-   * Media whose escalation fails stay held, so nothing is ever published
-   * less blurred than before.
+   * blur. A boolean list with exactly one entry per analysed image scopes
+   * escalation, moderation and UI hints to attributed photos. Missing or
+   * malformed attribution, or an aggregate finding attributed to no image,
+   * or a numbered finding contradicting a FALSE entry, retains the batch-level
+   * moderation predicate for every photo. Attribution alone never clears a
+   * persisted hold: escalation must cover the previous findings too. Skipped
+   * media and media whose escalation fails stay held.
    *
    * @param \Drupal\media\MediaInterface[] $media_entities
    *   Analysed media, keyed by id.
@@ -700,12 +790,16 @@ class ImageProcessingController extends ControllerBase {
    *   Whether the model flagged privacy without naming an issue.
    * @param bool $effective_privacy_flag
    *   The batch verdict for media the normal blur did not touch.
+   * @param array<string, bool|null> $privacy_attribution
+   *   Shared trusted attribution; FALSE exempts photos without a prior hold.
+   * @param array<string, array> $persisted_privacy_holds
+   *   Previous findings per held media UUID, read before this analysis.
    *
    * @return array
    *   'applied': blur mode ('strong' or 'full') keyed by file URI; 'failed':
    *   URIs whose escalation failed (still held); 'rechecks': model calls made.
    */
-  private function escalateResidualPrivacy(array $media_entities, array $media_uri_map, array &$blur_results, array $skipped_uris, array $privacy_issues, bool $unclassified_privacy_flag, bool $effective_privacy_flag): array {
+  private function escalateResidualPrivacy(array $media_entities, array $media_uri_map, array &$blur_results, array $skipped_uris, array $privacy_issues, bool $unclassified_privacy_flag, bool $effective_privacy_flag, array $privacy_attribution, array $persisted_privacy_holds): array {
     $applied = [];
     $failed = [];
     $rechecks = 0;
@@ -720,8 +814,15 @@ class ImageProcessingController extends ControllerBase {
       $held = !empty($blur_results[$uri]['blurred'])
         ? (!empty($media_issues) || $unclassified_privacy_flag)
         : $effective_privacy_flag;
-      if (!$held) {
+      $previously_held = isset($persisted_privacy_holds[$media->uuid()]);
+      if (!$previously_held
+        && (!$held || $privacy_attribution[$media->uuid()] === FALSE)) {
         continue;
+      }
+      if ($previously_held) {
+        $media_issues = $privacy_attribution[$media->uuid()] === FALSE
+          ? $persisted_privacy_holds[$media->uuid()]
+          : array_merge($media_issues, $persisted_privacy_holds[$media->uuid()]);
       }
 
       $source = $blur_results[$uri]['source'];
@@ -729,6 +830,12 @@ class ImageProcessingController extends ControllerBase {
       $escalated = NULL;
       $mode = NULL;
       $needs = $this->classifyResidualIssues($media_issues);
+      if (($unclassified_privacy_flag
+        && $privacy_attribution[$media->uuid()] !== FALSE)
+        || ($previously_held && !$persisted_privacy_holds[$media->uuid()])) {
+        // A new finding cannot classify an older, unexplained hold.
+        $needs['other'] = TRUE;
+      }
       if (!$needs['other']) {
         try {
           $strong = $this->imageProcessingService->blurSensitiveAreas($source, $mime, ImageProcessingService::BLUR_MODE_STRONG);
