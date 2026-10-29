@@ -123,13 +123,13 @@ resourceFields:
     enhancer:
       id: ''
   field_ai_hazard_issues:
-    disabled: false
+    disabled: true
     fieldName: field_ai_hazard_issues
     publicName: field_ai_hazard_issues
     enhancer:
       id: ''
   field_ai_metadata:
-    disabled: false
+    disabled: true
     fieldName: field_ai_metadata
     publicName: field_ai_metadata
     enhancer:
@@ -141,7 +141,7 @@ resourceFields:
     enhancer:
       id: ''
   field_ai_privacy_issues:
-    disabled: false
+    disabled: true
     fieldName: field_ai_privacy_issues
     publicName: field_ai_privacy_issues
     enhancer:

@@ -1154,3 +1154,42 @@ function markaspot_nuxt_update_11918(): string {
     ? 'Created image styles: ' . implode(', ', $created) . '.'
     : 'Request photo image styles already exist.';
 }
+
+/**
+ * Hides raw request image AI analysis from JSON:API.
+ */
+function markaspot_nuxt_update_11919(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('jsonapi_resource_config')) {
+    return 'Skipped request image JSON:API resource config: jsonapi_extras is not enabled.';
+  }
+
+  $resource = $entity_type_manager->getStorage('jsonapi_resource_config')->load('media--request_image');
+  if (!$resource) {
+    return 'Skipped request image JSON:API resource config: resource is not configured.';
+  }
+
+  $fields = $resource->get('resourceFields') ?: [];
+  $changed = FALSE;
+  foreach (['field_ai_metadata', 'field_ai_privacy_issues', 'field_ai_hazard_issues'] as $field_name) {
+    $field = $fields[$field_name] ?? [
+      'fieldName' => $field_name,
+      'publicName' => $field_name,
+      'enhancer' => ['id' => ''],
+    ];
+    $field['disabled'] = TRUE;
+    if (($fields[$field_name] ?? NULL) !== $field) {
+      $fields[$field_name] = $field;
+      $changed = TRUE;
+    }
+  }
+
+  if (!$changed) {
+    return 'Request image AI analysis fields are already hidden from JSON:API.';
+  }
+
+  // Entity saves invalidate JSON:API Extras resource and route caches.
+  $resource->set('resourceFields', $fields);
+  $resource->save();
+  return 'Hidden request image AI analysis fields from JSON:API.';
+}
