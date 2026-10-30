@@ -6,27 +6,27 @@ Provides service provider workflow management for Mark-a-Spot service requests.
 
 This module handles the service provider side of the service request workflow, allowing external service providers to:
 
-- Access a dedicated response form at `/service-response/{uuid}`
+- Use the service provider response flow in the Nuxt frontend
 - Submit completion notes and mark requests as completed
 - Support multiple completions with reassignment workflow
 - Receive notifications via ECA (Event-Condition-Action) rules
 
 ## Features
 
-### Service Provider Response Form
+### Service Provider Response Flow
 
-- **Route**: `/service-response/{uuid}`
-- **Purpose**: Allows service providers to submit completion notes for assigned requests
-- **Features**:
-  - Display existing completion notes
-  - Support for multiple completions (if reassignment is enabled)
-  - Automatic form disabling after completion (unless reassignment allowed)
-  - Option to mark request as completed with status change
+The Nuxt frontend handles provider responses. The Drupal response form has been
+removed. Providers must verify their email before receiving service request
+data.
 
 ### REST API
 
 - **POST/PATCH** `/api/service-response/{uuid}` - Submit completion notes
-- **GET** `/api/service-response/{uuid}` - Get service request details
+- **GET** `/api/service-response/{uuid}` - Always return 401 with
+  `AUTH_REQUIRED`, without looking up the report or returning its title
+- **POST** `/api/service-response/{uuid}/auth` - Verify the provider email
+  in the JSON body (`{"email":"provider@example.com"}`) and return service
+  request details
 
 #### Request Format (POST/PATCH)
 
@@ -69,7 +69,8 @@ Service Provider: Example Service Provider
 
 The module supports multiple completions through the `field_reassign_sp` flag:
 
-- If `field_reassign_sp` is FALSE and completion notes exist: Form is disabled, API returns 403
+- If `field_reassign_sp` is FALSE and the last note is from the provider:
+  API returns 403
 - If `field_reassign_sp` is TRUE: Multiple completions are allowed
 
 ### Status Management
@@ -169,9 +170,9 @@ This allows for periodic reminder emails to service providers about pending work
 ## Security
 
 - Email validation ensures only authorized service providers can submit completions
-- UUID-based routing prevents enumeration of service requests
-- REST endpoints are publicly accessible but require email verification
-- Form access requires 'access content' permission
+- GET returns the same authentication response for existing and unknown UUIDs
+- Data retrieval and completion submissions require email verification
+- The Drupal response form is unavailable
 
 ## Integration
 
@@ -188,7 +189,8 @@ This module integrates with Mark-a-Spot's service request workflow by:
 This module is separated from `markaspot_feedback`, which handles citizen satisfaction surveys. The two modules operate independently:
 
 - **markaspot_feedback**: Citizen satisfaction surveys at `/feedback/{uuid}`
-- **markaspot_service_provider**: Provider completion tracking at `/service-response/{uuid}`
+- **markaspot_service_provider**: Provider completion tracking through the
+  Nuxt frontend and verified REST endpoints
 
 ## Development
 
@@ -205,7 +207,10 @@ The `ServiceProviderService` class provides helper methods:
 The `ServiceProviderController` provides:
 
 - `updateResponse($uuid, Request)` - Handle POST/PATCH completion submissions
-- `getServiceRequest($uuid)` - Handle GET requests for service request data
+- `getServiceRequest($uuid, Request)` - Require authentication without
+  exposing report data
+- `authenticateServiceProvider($uuid, Request)` - Verify the email and
+  return service request data
 
 Protected helper methods:
 - `validateServiceProviderEmail($node, $email)` - Validate provider email

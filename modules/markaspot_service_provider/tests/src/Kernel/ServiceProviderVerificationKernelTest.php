@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot_service_provider\Kernel;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\Extension;
 use Drupal\Core\Flood\DatabaseBackend;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
@@ -21,6 +22,7 @@ use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\Filesystem\Path;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Route;
@@ -108,6 +110,75 @@ final class ServiceProviderVerificationKernelTest extends KernelTestBase {
       'update POST' => ['updateResponse', 'POST', 403],
       'update PATCH' => ['updateResponse', 'PATCH', 403],
     ];
+  }
+
+  /**
+   * The removed public form cannot expose completion notes or provider emails.
+   */
+  public function testPublicResponseFormReturnsNotFound(): void {
+    $report = $this->report();
+    $this->assertSame(200, $this->send('updateResponse', 'POST', $report->uuid(), 'provider@example.org')->getStatusCode());
+    // Discover this checkout's routing YAML, including when run in a worktree.
+    $module_path = Path::makeRelative(dirname(__DIR__, 3), $this->root);
+    $module_handler = $this->container->get('module_handler');
+    $modules = $module_handler->getModuleList();
+    $modules['markaspot_service_provider'] = new Extension(
+      $this->root, 'module', $module_path . '/markaspot_service_provider.info.yml', 'markaspot_service_provider.module',
+    );
+    $module_handler->setModuleList($modules);
+    $this->container->get('router.builder')->rebuild();
+    foreach ([$report->uuid(), '00000000-0000-4000-8000-000000000000'] as $uuid) {
+      $request = Request::create('/service-response/' . $uuid, 'GET', [], [], [], ['HTTP_ACCEPT' => 'application/json']);
+      $response = $this->container->get('http_kernel')->handle($request);
+      $this->assertSame(404, $response->getStatusCode(), (string) $response->getContent());
+      $this->assertStringNotContainsString('provider@example.org', (string) $response->getContent());
+      $this->assertStringNotContainsString('Work completed.', (string) $response->getContent());
+    }
+  }
+
+  /**
+   * GET reveals neither existence, content type nor unpublished report titles.
+   */
+  public function testGetRequiresVerificationForEveryUuid(): void {
+    $report = $this->report();
+    $unpublished = $this->report();
+    $unpublished->setUnpublished()->setTitle('Private example report')->save();
+    $this->assertFalse($unpublished->access('view'));
+    $other = Node::create(['type' => 'other', 'title' => 'Other content']);
+    $other->save();
+    $expected = json_encode([
+      'message' => 'Authentication required',
+      'error_code' => 'AUTH_REQUIRED',
+    ]);
+    foreach ([$report->uuid(), $unpublished->uuid(), $other->uuid(), '00000000-0000-4000-8000-000000000000'] as $uuid) {
+      foreach (['', '?email=provider@example.org&email_verification=provider@example.org'] as $query) {
+        $request = Request::create('/api/service-response/' . $uuid . $query, 'GET', [], [], [], [
+          'CONTENT_TYPE' => 'application/json',
+        ], '{"email":"provider@example.org","email_verification":"provider@example.org"}');
+        $response = ServiceProviderController::create($this->container)->getServiceRequest($uuid, $request);
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame($expected, $response->getContent());
+      }
+    }
+    // Verified data still comes from POST /auth with its existing contract.
+    $verified = $this->send('authenticateServiceProvider', 'POST', $report->uuid(), 'provider@example.org');
+    $this->assertSame(200, $verified->getStatusCode());
+    $data = json_decode((string) $verified->getContent(), TRUE);
+    $this->assertTrue($data['authenticated']);
+    $this->assertSame($report->uuid(), $data['uuid']);
+    $this->assertSame($report->getTitle(), $data['title']);
+    $this->assertSame(0, $this->floodCount());
+  }
+
+  /**
+   * GET cannot acquire an existence-dependent response through storage errors.
+   */
+  public function testGetDoesNotLoadReports(): void {
+    $manager = $this->createMock(EntityTypeManagerInterface::class);
+    $manager->expects($this->never())->method('getStorage');
+    $this->container->set('entity_type.manager', $manager);
+    $response = $this->send('getServiceRequest', 'GET', '00000000-0000-4000-8000-000000000000', NULL);
+    $this->assertSame(401, $response->getStatusCode());
   }
 
   /**

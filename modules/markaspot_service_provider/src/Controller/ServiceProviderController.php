@@ -284,9 +284,9 @@ class ServiceProviderController extends ControllerBase {
   }
 
   /**
-   * Gets service request data by UUID.
+   * Requires provider verification before returning any service request data.
    *
-   * Returns basic info requiring authentication via POST /auth endpoint.
+   * The POST /auth endpoint verifies the email and returns the full response.
    *
    * @param string $uuid
    *   The UUID of the service request.
@@ -294,49 +294,14 @@ class ServiceProviderController extends ControllerBase {
    *   The request object.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
-   *   A JSON response with service request data.
+   *   An authentication-required response.
    */
   public function getServiceRequest($uuid, Request $request): JsonResponse {
-    $logger = $this->loggerFactory->get('markaspot_service_provider');
-
-    try {
-      // Load the node by UUID.
-      $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
-
-      if (empty($nodes)) {
-        $logger->warning('No node found with UUID: @uuid', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Service request not found')], 404);
-      }
-
-      $node = reset($nodes);
-
-      // Check if the node is a service request.
-      if ($node->getType() != 'service_request') {
-        $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
-        return new JsonResponse(['message' => $this->t('Not a service request')], 400);
-      }
-
-      // GET endpoint no longer accepts email in query string for security.
-      // Return 401 requiring authentication via POST /auth endpoint.
-      return new JsonResponse(
-            [
-              'message' => $this->t('Authentication required'),
-              'error_code' => 'AUTH_REQUIRED',
-              'uuid' => $uuid,
-              'title' => $node->getTitle(),
-            ], 401
-        );
-    }
-    catch (\Exception $e) {
-      $logger->error(
-            'Error getting service request for UUID @uuid: @error', [
-              '@uuid' => $uuid,
-              '@error' => $e->getMessage(),
-            ]
-        );
-
-      return new JsonResponse(['message' => $this->t('Error retrieving service request')], 500);
-    }
+    // Do not look up the UUID: even existence is private before verification.
+    return new JsonResponse([
+      'message' => $this->t('Authentication required'),
+      'error_code' => 'AUTH_REQUIRED',
+    ], 401);
   }
 
   /**

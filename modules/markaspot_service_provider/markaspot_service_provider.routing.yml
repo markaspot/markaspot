@@ -6,15 +6,6 @@ markaspot_service_provider.settings:
   requirements:
     _permission: 'administer site configuration'
 
-markaspot_service_provider.response_form:
-  path: '/service-response/{uuid}'
-  defaults:
-    _title: 'Service Provider Response'
-    _form: '\Drupal\markaspot_service_provider\Form\ServiceProviderResponseForm'
-  requirements:
-    _permission: 'access content'
-    uuid: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
-
 markaspot_service_provider.rest_update:
   path: '/api/service-response/{uuid}'
   defaults:

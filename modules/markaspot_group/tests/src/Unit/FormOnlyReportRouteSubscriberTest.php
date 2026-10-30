@@ -34,7 +34,6 @@ class FormOnlyReportRouteSubscriberTest extends UnitTestCase {
     $subscriber = new FormOnlyReportRouteSubscriber();
     (new \ReflectionMethod($subscriber, 'alterRoutes'))->invoke($subscriber, $collection);
     $token_authenticated = [
-      'markaspot_service_provider.response_form',
       'markaspot_service_provider.rest_update',
       'markaspot_service_provider.rest_get',
       'markaspot_service_provider.rest_auth',
