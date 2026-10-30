@@ -35,10 +35,12 @@ use Drupal\markaspot_ai\Exception\ProviderRequestException;
  * The daily limit is the install-wide provider-cost ceiling for everything
  * that goes through this client. Two separate limits sit next to it and are
  * not replaced by it: Vision analysis (markaspot_vision) calls its own
- * provider endpoint and is bounded by the per-jurisdiction SaaS analysis
- * count; the Fastmap onboarding chat runs in the frontend with its own
- * controls. Server-side Fastmap workspace provisioning does use this client
- * and therefore counts against the daily limit.
+ * provider endpoint; imported image analysis checks this daily limit and
+ * accounts for responses through accountChatResponse(). Vision is also
+ * bounded by the per-jurisdiction SaaS analysis count; the Fastmap onboarding
+ * chat runs in the frontend with its own controls. Server-side Fastmap
+ * workspace provisioning does use this client and therefore counts against
+ * the daily limit.
  */
 class AiClientService {
 
@@ -422,6 +424,30 @@ class AiClientService {
       $entity_id !== NULL && is_string($options['entity_type'] ?? NULL) ? $options['entity_type'] : NULL,
       $entity_id,
     );
+  }
+
+  /**
+   * Accounts for a chat response from a separately configured transport.
+   *
+   * Vision uses its own endpoint, authentication and parameter repair. It must
+   * hand successful responses here before validating their content, rather
+   * than interpreting token usage itself. Never use this after chat(), which
+   * already accounts for its responses.
+   *
+   * @param string $provider
+   *   The transport's provider name.
+   * @param string $model
+   *   The configured model or deployment.
+   * @param array $options
+   *   Attribution: operation, entity_type and entity_id.
+   * @param array $response
+   *   The unmodified OpenAI-compatible provider response.
+   * @param array $payload
+   *   The request payload, used only to estimate missing usage.
+   */
+  public function accountChatResponse(string $provider, string $model, array $options, array $response, array $payload): void {
+    $content = $response['choices'][0]['message']['content'] ?? '';
+    $this->bookUsage($provider, $model, $options, 'chat', $response, $payload, is_string($content) ? $content : '');
   }
 
   /**

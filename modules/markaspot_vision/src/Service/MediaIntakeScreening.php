@@ -431,10 +431,7 @@ class MediaIntakeScreening {
       'blur_required' => $entry['blur_required'] ?? FALSE,
       'source_sha256' => $entry['prepared_hash'],
       'blurred' => $entry['blurred'] ?? FALSE,
-    ]], $node->language()->getId(), $jid);
-    if ($result && $this->tokenTracking) {
-      $this->tokenTracking->logUsage('vision', (string) ($result['model'] ?? 'unknown'), 'vision', (int) ($result['usage']['prompt_tokens'] ?? 0), (int) ($result['usage']['completion_tokens'] ?? 0), 'media', (int) $media->id());
-    }
+    ]], $node->language()->getId(), $jid, NULL, (int) $media->id());
     $decoded = json_decode((string) ($result['ai_result'] ?? ''), TRUE);
     if (!is_array($decoded) || !is_bool($decoded['privacy_flag'] ?? NULL)) {
       return 'failed';

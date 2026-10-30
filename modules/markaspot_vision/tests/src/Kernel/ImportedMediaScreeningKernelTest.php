@@ -366,22 +366,22 @@ final class ImportedMediaScreeningKernelTest extends KernelTestBase {
     $this->features->method('isEnabledEffective')->willReturn(TRUE);
     $this->budget->method('isAIBudgetExhausted')->willReturn(FALSE);
     $this->budget->expects($this->once())->method('recordAIAnalysis')->with(41);
-    $this->tokens->expects($this->once())->method('logUsage')
-      ->with('vision', 'fictional-model', 'vision', 17, 9, 'media', $this->anything());
-    $this->images->expects($this->once())->method('processScreenedImages')->willReturn([
-      'model' => 'fictional-model',
-      'usage' => ['prompt_tokens' => 17, 'completion_tokens' => 9],
-      'ai_result' => json_encode([
-        'privacy_flag' => FALSE, 'privacy_issues' => [],
-        'description' => 'Fictional suggestion', 'category' => 123,
-      ]),
-    ]);
+    $this->tokens->expects($this->never())->method('logUsage');
     [$media] = $this->fixture(TRUE, 'Fictional citizen description');
     $this->screening->process((int) $media->id());
     $metadata = json_decode(Media::load($media->id())->get('field_ai_metadata')->value, TRUE);
     $this->assertSame('description_present', $metadata['intake_screening']['analysis']);
     $this->config('markaspot_vision.settings')->set('imported_image_analysis', 'always')->save();
     [$second, $report] = $this->fixture(TRUE, 'Keep this fictional citizen description');
+    $this->images->expects($this->once())->method('processScreenedImages')
+      ->with($this->anything(), 'en', 41, NULL, (int) $second->id())->willReturn([
+        'model' => 'fictional-model',
+        'usage' => ['prompt_tokens' => 17, 'completion_tokens' => 9],
+        'ai_result' => json_encode([
+          'privacy_flag' => FALSE, 'privacy_issues' => [],
+          'description' => 'Fictional suggestion', 'category' => 123,
+        ]),
+      ]);
     $this->screening->process((int) $second->id());
     $this->screening->process((int) $second->id());
     $metadata = json_decode(Media::load($second->id())->get('field_ai_metadata')->value, TRUE);

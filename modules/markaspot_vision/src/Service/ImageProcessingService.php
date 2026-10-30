@@ -23,6 +23,7 @@ use Drupal\markaspot_ai\Utility\BlurAdvisory;
 use Drupal\Core\State\StateInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\markaspot_ai\Utility\ProviderError;
+use Drupal\markaspot_ai\Service\AiClientService;
 
 // These standalone utilities are shared within the profile, including when
 // markaspot_ai is disabled and Drupal has not registered its namespace.
@@ -50,6 +51,13 @@ class ImageProcessingService {
    * @var array<string, array>
    */
   private array $screenedUris = [];
+
+  /**
+   * Usage attribution scoped to an imported image analysis.
+   *
+   * @var array
+   */
+  private array $accountingOptions = [];
 
   /**
    * Persists a blur result through the same path for uploads and imports.
@@ -85,17 +93,23 @@ class ImageProcessingService {
    *   The trusted tenant ID.
    * @param array|null $fileUris
    *   All source URIs in a mixed batch, or NULL for only screened files.
+   * @param int|null $mediaId
+   *   Imported media whose analysis is centrally accounted for, if any.
    *
    * @return array|null
    *   The normal vision result.
    */
-  public function processScreenedImages(array $screenedUris, ?string $langcode = NULL, ?int $jurisdictionId = NULL, ?array $fileUris = NULL): ?array {
+  public function processScreenedImages(array $screenedUris, ?string $langcode = NULL, ?int $jurisdictionId = NULL, ?array $fileUris = NULL, ?int $mediaId = NULL): ?array {
     $this->screenedUris = $screenedUris;
+    $this->accountingOptions = $mediaId !== NULL ? [
+      'operation' => 'vision', 'entity_type' => 'media', 'entity_id' => $mediaId,
+    ] : [];
     try {
       return $this->processImages($fileUris ?? array_keys($screenedUris), $langcode, $jurisdictionId);
     }
     finally {
       $this->screenedUris = [];
+      $this->accountingOptions = [];
     }
   }
 
@@ -226,6 +240,8 @@ class ImageProcessingService {
    * @param \Drupal\Core\Extension\ModuleHandlerInterface|null $moduleHandler
    *   Invokes hook_markaspot_vision_prompt_alter(); without it the prompt
    *   keeps its defaults.
+   * @param \Drupal\markaspot_ai\Service\AiClientService|null $aiClient
+   *   Central token accounting, when the AI module is installed.
    */
   public function __construct(
     ClientInterface $http_client,
@@ -238,6 +254,7 @@ class ImageProcessingService {
     protected ?FileUsageInterface $fileUsage = NULL,
     protected ?CitizenWordingResolver $wordingResolver = NULL,
     protected ?ModuleHandlerInterface $moduleHandler = NULL,
+    protected ?AiClientService $aiClient = NULL,
   ) {
     $this->httpClient = $http_client;
     $this->configFactory = $config_factory;
@@ -902,7 +919,7 @@ class ImageProcessingService {
 
     if ($blur_applied) {
       // Faces/plates were already blurred by preprocessing. The AI must still
-      // flag any personal data that remains visible, readable, or insufficiently
+      // flag personal data that remains visible, readable, or insufficiently
       // anonymised; the blur fact alone is not a moderation hold.
       $instruction .= "Some faces or license plates in these images have already "
         . "been blurred by preprocessing. Already blurred regions alone are not "
@@ -1045,6 +1062,11 @@ class ImageProcessingService {
           throw new \RuntimeException(ProviderError::message($body, $status), $status);
         }
         $decoded = json_decode($body, TRUE, 512, JSON_THROW_ON_ERROR);
+        if ($this->accountingOptions && $this->aiClient) {
+          // A successful provider answer consumed tokens even if validation
+          // below rejects it. HTTP failures and parameter repairs book nothing.
+          $this->aiClient->accountChatResponse('vision', $api_config['model'], $this->accountingOptions, $decoded, $request_payload);
+        }
         $content = $decoded['choices'][0]['message']['content'] ?? '';
         if ((!is_string($content) || trim($content) === '') && ($decoded['choices'][0]['finish_reason'] ?? '') === 'length') {
           $this->logger->error('Vision token budget exhausted; increase markaspot_vision.settings.max_tokens.');
