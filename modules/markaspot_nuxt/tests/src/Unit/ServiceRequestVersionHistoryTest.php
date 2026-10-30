@@ -23,6 +23,8 @@ use Drupal\node\NodeInterface;
 use Drupal\node\NodeStorageInterface;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
+use Drupal\service_request\RevisionLog;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
@@ -113,10 +115,10 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   /**
    * Builds the resource under test with the mocked collaborators.
    */
-  protected function resource(?AccountInterface $account = NULL): TestableServiceRequestVersionHistory {
+  protected function resource(?AccountInterface $account = NULL): ServiceRequestVersionHistory {
     $language_manager = $this->createMock(LanguageManagerInterface::class);
     $language_manager->method('getCurrentLanguage')->willReturn(new Language(['id' => 'en']));
-    return new TestableServiceRequestVersionHistory(
+    return new ServiceRequestVersionHistory(
       $this->entityTypeManager,
       $account ?? $this->createMock(AccountInterface::class),
       $this->dateFormatter,
@@ -124,6 +126,17 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
       $this->database,
       $language_manager
     );
+  }
+
+  /**
+   * Invokes the real protected builder without extending the internal resource.
+   *
+   * @return array{items: \Drupal\jsonapi\JsonApiResource\ResourceObject[], truncated: bool}
+   *   The built items and the truncation flag.
+   */
+  private function buildRevisionItems(NodeInterface $entity): array {
+    $method = new \ReflectionMethod(ServiceRequestVersionHistory::class, 'buildRevisionItems');
+    return $method->invoke($this->resource(), $entity);
   }
 
   /**
@@ -158,15 +171,19 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
    *   The revision metadata rows.
    * @param int[] $denied_vids
    *   Revisions outside the historical private-field scope.
+   * @param string[] $denied_fields
+   *   Fields hidden on historical revisions.
    */
-  protected function stubRevisionRows(array $rows, array $denied_vids = []): void {
+  protected function stubRevisionRows(array $rows, array $denied_vids = [], array $denied_fields = []): void {
     $revisions = [];
     foreach ($rows as $row) {
       $revision = $this->createMock(NodeInterface::class);
-      $revision->method('hasField')->with('field_assignee')->willReturn(TRUE);
+      $revision->method('hasField')->willReturn(TRUE);
       $field = $this->createMock(FieldItemListInterface::class);
       $field->method('access')->willReturn(in_array((int) $row->vid, $denied_vids, TRUE) ? AccessResult::forbidden() : AccessResult::allowed());
-      $revision->method('get')->with('field_assignee')->willReturn($field);
+      $denied = $this->createMock(FieldItemListInterface::class);
+      $denied->method('access')->willReturn(AccessResult::forbidden());
+      $revision->method('get')->willReturnCallback(static fn(string $name) => in_array($name, $denied_fields, TRUE) ? $denied : $field);
       $revisions[(int) $row->vid] = $revision;
     }
     $this->nodeStorage->method('loadMultipleRevisions')->willReturn($revisions);
@@ -195,11 +212,17 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   /**
    * Mocks the default-revision node passed to buildRevisionItems().
    */
-  protected function node(int $nid, int $current_vid, string $bundle = 'service_request'): NodeInterface {
+  protected function node(int $nid, int $current_vid, string $bundle = 'service_request', array $denied_fields = []): NodeInterface {
     $entity = $this->createMock(NodeInterface::class);
     $entity->method('bundle')->willReturn($bundle);
     $entity->method('id')->willReturn($nid);
     $entity->method('getRevisionId')->willReturn($current_vid);
+    $entity->method('hasField')->willReturn(TRUE);
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('access')->willReturn(AccessResult::allowed());
+    $denied = $this->createMock(FieldItemListInterface::class);
+    $denied->method('access')->willReturn(AccessResult::forbidden());
+    $entity->method('get')->willReturnCallback(static fn(string $name) => in_array($name, $denied_fields, TRUE) ? $denied : $field);
     return $entity;
   }
 
@@ -228,7 +251,7 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
       'message' => 'Fachliche Begründung. Original reason.',
     ];
     $this->stubRevisionRows([$this->row(7, 0, 3000, json_encode($entry, JSON_THROW_ON_ERROR))]);
-    $items = $this->resource()->callBuildRevisionItems($this->node(1, 7))['items'];
+    $items = $this->buildRevisionItems($this->node(1, 7))['items'];
     $this->assertSame('updated', $this->attr($items[0], 'action'));
     $this->assertSame($entry['message'], $this->attr($items[0], 'log_message'));
     $changes = $this->attr($items[0], 'changes');
@@ -237,12 +260,48 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   }
 
   /**
+   * Every field uses current AND historical view access, including old keys.
+   */
+  #[DataProvider('fieldAccessCases')]
+  public function testIndividualFieldAccess(string $hidden_field, string $scope): void {
+    $changes = array_map(static fn(string $concept): array => ['field' => $concept, 'before' => [], 'after' => []], array_values(RevisionLog::CHANGE_FIELDS));
+    $entry = [
+      'schema' => 'civic.revision.v1', 'action' => 'updated', 'message' => 'Fictional reason',
+      'changes' => $changes, 'events' => ['delegated', 'published', 'unpublished'],
+    ];
+    $this->stubRevisionRows([$this->row(7, 0, 3000, json_encode($entry, JSON_THROW_ON_ERROR))], [], $scope === 'historical' ? [$hidden_field] : []);
+    $node = $this->node(1, 7, 'service_request', $scope === 'current' ? [$hidden_field] : []);
+    $items = $this->buildRevisionItems($node)['items'];
+    $this->assertCount(1, $items);
+    $expected = array_values(array_filter($changes, static fn(array $change): bool => $change['field'] !== (RevisionLog::CHANGE_FIELDS[$hidden_field] ?? NULL)));
+    $this->assertSame($expected, $this->attr($items[0], 'changes'));
+    $this->assertSame($hidden_field === 'status' ? ['delegated'] : $entry['events'], $this->attr($items[0], 'events'));
+    $this->assertSame('Fictional reason', $this->attr($items[0], 'log_message'));
+  }
+
+  /**
+   * Assignment access gates entire revisions and is tested separately.
+   */
+  public static function fieldAccessCases(): array {
+    $cases = [];
+    foreach ([
+      'field_organisation', 'field_assigned_team', 'field_status',
+      'field_category', 'field_request_media', 'body', 'status',
+    ] as $field) {
+      foreach (['current', 'historical'] as $scope) {
+        $cases[$field . ':' . $scope] = [$field, $scope];
+      }
+    }
+    return $cases;
+  }
+
+  /**
    * Revision authors use the same label boundary as assignment references.
    */
   public function testForeignAuthorLabelIsHidden(): void {
     $this->stubUsers([42 => $this->user('Foreign private author', FALSE)]);
     $this->stubRevisionRows([$this->row(8, 42, 4000, 'Original reason')]);
-    $items = $this->resource()->callBuildRevisionItems($this->node(1, 8))['items'];
+    $items = $this->buildRevisionItems($this->node(1, 8))['items'];
     $this->assertNull($this->attr($items[0], 'author'));
     $this->assertSame('Original reason', $this->attr($items[0], 'log_message'));
   }
@@ -256,7 +315,7 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
       $this->row(7, 0, 3000, 'Foreign confidential manual explanation'),
       $this->row(8, 0, 4000, 'Authorised explanation'),
     ], [7]);
-    $items = $this->resource()->callBuildRevisionItems($this->node(1, 8))['items'];
+    $items = $this->buildRevisionItems($this->node(1, 8))['items'];
     $this->assertCount(1, $items);
     $this->assertSame(8, $this->attr($items[0], 'vid'));
     $this->assertSame('Authorised explanation', $this->attr($items[0], 'log_message'));
@@ -279,7 +338,7 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     // Distinct non-zero author uids ([7]) resolve in one batch load.
     $this->stubUsers([7 => $editor]);
 
-    $built = $this->resource()->callBuildRevisionItems($this->node(1, 3));
+    $built = $this->buildRevisionItems($this->node(1, 3));
     $items = $built['items'];
 
     $this->assertFalse($built['truncated']);
@@ -322,7 +381,7 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     $this->stubRevisionRows([$this->row(1, 42, 1000, 'edit')]);
     $this->stubUsers([]);
 
-    $items = $this->resource()->callBuildRevisionItems($this->node(1, 1))['items'];
+    $items = $this->buildRevisionItems($this->node(1, 1))['items'];
 
     $this->assertNull($this->attr($items[0], 'author'));
     $this->assertSame(42, $this->attr($items[0], 'author_uid'));
@@ -342,7 +401,7 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     // The truncation event must be logged, never silent.
     $this->logger->expects($this->once())->method('info');
 
-    $built = $this->resource()->callBuildRevisionItems($this->node(1, 60));
+    $built = $this->buildRevisionItems($this->node(1, 60));
     $items = $built['items'];
 
     $this->assertTrue($built['truncated']);
@@ -453,26 +512,6 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     $this->assertStringContainsString('function markaspot_nuxt_update_11905(): string', $install);
     $this->assertStringContainsString("moduleExists('jsonapi_resources')", $install);
     $this->assertStringContainsString("install(['jsonapi_resources'])", $install);
-  }
-
-}
-
-/**
- * Test-only subclass exposing the protected revision builder.
- */
-class TestableServiceRequestVersionHistory extends ServiceRequestVersionHistory {
-
-  /**
-   * Public proxy for buildRevisionItems().
-   *
-   * @param \Drupal\node\NodeInterface $entity
-   *   The node.
-   *
-   * @return array{items: \Drupal\jsonapi\JsonApiResource\ResourceObject[], truncated: bool}
-   *   The built items and the truncation flag.
-   */
-  public function callBuildRevisionItems(NodeInterface $entity): array {
-    return $this->buildRevisionItems($entity);
   }
 
 }

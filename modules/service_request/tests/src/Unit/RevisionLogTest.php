@@ -16,6 +16,27 @@ use Drupal\Tests\UnitTestCase;
 final class RevisionLogTest extends UnitTestCase {
 
   /**
+   * New concepts extend the same envelope; description never carries values.
+   */
+  public function testNewChangeContract(): void {
+    $entry = [
+      'schema' => 'civic.revision.v1', 'action' => 'updated', 'message' => '',
+      'changes' => [
+        ['field' => 'category', 'before' => [['id' => '1']], 'after' => [['id' => '2']]],
+        ['field' => 'photos', 'before' => [], 'after' => [['id' => '3']]],
+        ['field' => 'description', 'before' => [], 'after' => []],
+      ],
+      'events' => ['published', 'unpublished'],
+    ];
+    $this->assertSame($entry, RevisionLog::decode(json_encode($entry, JSON_THROW_ON_ERROR)));
+    foreach (['before', 'after'] as $side) {
+      $invalid = $entry;
+      $invalid['changes'][2][$side] = [['id' => 'Fictional confidential text']];
+      $this->assertNull(RevisionLog::decode(json_encode($invalid, JSON_THROW_ON_ERROR)));
+    }
+  }
+
+  /**
    * Structured actions retain the exact manual reason and reject invalid data.
    */
   public function testVersionedActionsPreserveOriginalReasons(): void {
@@ -35,8 +56,37 @@ final class RevisionLogTest extends UnitTestCase {
     $this->assertSame('Legacy reason', RevisionLog::message('Legacy reason'));
     $entry['changes'][0]['after'][0]['label'] = ['unexpected'];
     $this->assertNull(RevisionLog::decode(json_encode($entry, JSON_THROW_ON_ERROR)));
-    $entry['changes'] = [['field' => 'private_data', 'before' => [], 'after' => []]];
+    $entry['changes'] = [['field' => NULL, 'before' => [], 'after' => []]];
     $this->assertNull(RevisionLog::decode(json_encode($entry, JSON_THROW_ON_ERROR)));
+  }
+
+  /**
+   * Older readers omit unknown concepts without exposing the raw envelope.
+   */
+  public function testUnknownChangeConceptsAreSkipped(): void {
+    $known = ['field' => 'category', 'before' => [], 'after' => [['id' => '2']]];
+    $entry = [
+      'schema' => 'civic.revision.v1', 'action' => 'updated',
+      'message' => 'Keep the exact human reason.',
+      'changes' => [
+        ['field' => 'future_concept', 'payload' => 'Unknown future shape'],
+        $known,
+        ['field' => 'another_future_concept', 'before' => [], 'after' => []],
+      ],
+      'events' => ['published', 'future_event'],
+    ];
+    $value = json_encode($entry, JSON_THROW_ON_ERROR);
+    $expected = $entry;
+    $expected['changes'] = [$known];
+    $expected['events'] = ['published'];
+    $this->assertSame($expected, RevisionLog::decode($value));
+    $this->assertSame($entry['message'], RevisionLog::message($value));
+    unset($entry['changes'][1]);
+    $entry['changes'] = array_values($entry['changes']);
+    $value = json_encode($entry, JSON_THROW_ON_ERROR);
+    $expected['changes'] = [];
+    $this->assertSame($expected, RevisionLog::decode($value));
+    $this->assertSame($entry['message'], RevisionLog::message($value));
   }
 
   /**

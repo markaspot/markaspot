@@ -53,8 +53,24 @@ use Symfony\Component\Routing\Route;
  * labels, so it is both staff-only and tenant-scoped. Route permissions provide
  * the staff gate, VersionHistoryAccessCheck limits it to the platform operator
  * on the shared self-service platform; process() additionally requires the
- * same field-level view access as field_assignee. Author identity and assignment history are never
- * exposed to anonymous, reporter, or foreign-tenant accounts.
+ * same field-level view access as field_assignee. Author identity and
+ * assignment history are never exposed to anonymous, reporter, or
+ * foreign-tenant accounts.
+ *
+ * Change contract (civic.revision.v1): each change has field, before and after.
+ * Existing responsibility, person, team and status entries are unchanged.
+ * category (field_category) and photos (field_request_media) use before/after
+ * lists of {id: string, label: string}. Photos contain the full media ID sets;
+ * added = after minus before, removed = before minus after (compare IDs).
+ * Labels are resolved at read time with reference access checks, falling back
+ * to #ID; file URLs, private paths and file entities are never included.
+ * description (body) has empty before/after lists: its presence means changed,
+ * without text, summary or format. events adds published and unpublished for
+ * transitions of the node status field (not the workflow field_status).
+ * Changes and publication events are omitted unless their source field is
+ * viewable on BOTH the current entity and the historical revision. The other
+ * attributes (vid, author, author_uid, timestamp, log_message, action,
+ * is_current) and existing automatic event keys retain their contract.
  *
  * @internal
  */
@@ -246,7 +262,14 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
 
     $resource_type = $this->buildResourceType();
     $items = [];
-    $reference_labels = $this->referenceLabels($rows);
+    $entries = [];
+    foreach ($rows as $row) {
+      $entry = RevisionLog::decode((string) ($row->revision_log ?? ''));
+      if ($entry !== NULL) {
+        $entries[(int) $row->vid] = $this->filterEntry($entry, $entity, $revisions[(int) $row->vid]);
+      }
+    }
+    $reference_labels = $this->referenceLabels($entries);
     foreach ($rows as $row) {
       $vid = (int) $row->vid;
       $author_uid = (int) $row->revision_uid;
@@ -259,7 +282,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
         : NULL;
 
       $log_message = (string) ($row->revision_log ?? '');
-      $entry = RevisionLog::decode($log_message);
+      $entry = $entries[$vid] ?? NULL;
       if ($entry !== NULL) {
         foreach ($entry['changes'] as &$change) {
           foreach (['before', 'after'] as $side) {
@@ -344,13 +367,32 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
   }
 
   /**
+   * Applies the form's field-view boundary before resolving any labels.
+   */
+  private function filterEntry(array $entry, NodeInterface $entity, NodeInterface $revision): array {
+    $can_view = function (string $field) use ($entity, $revision): bool {
+      return $entity->hasField($field) && $revision->hasField($field)
+        && $entity->get($field)->access('view', $this->currentUser, TRUE)->isAllowed()
+        && $revision->get($field)->access('view', $this->currentUser, TRUE)->isAllowed();
+    };
+    $fields = array_flip(RevisionLog::CHANGE_FIELDS);
+    $entry['changes'] = array_values(array_filter($entry['changes'],
+      static fn(array $change): bool => $can_view($fields[$change['field']])));
+    $entry['events'] = array_values(array_filter($entry['events'] ?? [],
+      static fn(string $event): bool => !isset(RevisionLog::EVENT_FIELDS[$event]) || $can_view(RevisionLog::EVENT_FIELDS[$event])));
+    return $entry;
+  }
+
+  /**
    * Resolves accessible current labels in batches, never stores them in logs.
    */
-  private function referenceLabels(array $rows): array {
-    $types = ['responsibility' => 'group', 'person' => 'user', 'team' => 'group', 'status' => 'taxonomy_term'];
+  private function referenceLabels(array $entries): array {
+    $types = [
+      'responsibility' => 'group', 'person' => 'user', 'team' => 'group',
+      'status' => 'taxonomy_term', 'category' => 'taxonomy_term', 'photos' => 'media',
+    ];
     $ids = [];
-    foreach ($rows as $row) {
-      $entry = RevisionLog::decode((string) ($row->revision_log ?? ''));
+    foreach ($entries as $entry) {
       foreach ($entry['changes'] ?? [] as $change) {
         foreach (array_merge($change['before'], $change['after']) as $reference) {
           $ids[$types[$change['field']]][$reference['id']] = $reference['id'];
@@ -382,7 +424,9 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
    */
   private function canViewReferenceLabel(EntityInterface $reference): bool {
     $scoped_catalog = ($reference->getEntityTypeId() === 'group' && in_array($reference->bundle(), ['jur', 'org'], TRUE))
-      || ($reference->getEntityTypeId() === 'taxonomy_term' && $reference->bundle() === 'service_status');
+      || ($reference->getEntityTypeId() === 'taxonomy_term' && in_array($reference->bundle(), [
+        'service_status', 'service_category',
+      ], TRUE));
     if (!$scoped_catalog) {
       return (bool) $reference->access('view label', $this->currentUser);
     }
@@ -396,6 +440,9 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
     if (\_markaspot_group_account_bypasses_private_field_scope($this->currentUser)) {
       return TRUE;
     }
+    // Fail closed for category/status terms with no jurisdiction field or an
+    // empty assignment: non-bypass staff see #ID, even for public terms. A
+    // missing scope is not evidence that a historical label is tenant-local.
     $ids = $reference->getEntityTypeId() === 'group' && $reference->bundle() === 'jur'
       ? [(int) $reference->id()]
       : ($reference instanceof FieldableEntityInterface && $reference->hasField('field_jurisdiction')

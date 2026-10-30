@@ -21,7 +21,18 @@ final class RevisionLog {
   public const REFERENCE_FIELDS = [
     'field_organisation' => 'responsibility', 'field_assignee' => 'person',
     'field_assigned_team' => 'team', 'field_status' => 'status',
+    'field_category' => 'category', 'field_request_media' => 'photos',
   ];
+
+  /**
+   * Source fields mapped to all change concepts for view access checks.
+   */
+  public const CHANGE_FIELDS = self::REFERENCE_FIELDS + ['body' => 'description'];
+
+  /**
+   * Publication events expose the node's status field, not field_status.
+   */
+  public const EVENT_FIELDS = ['published' => 'status', 'unpublished' => 'status'];
 
   /**
    * Stable automatic causes. Human explanations are kept separately.
@@ -30,6 +41,7 @@ final class RevisionLog {
     'scope_sync', 'assignment_sync', 'escalated', 'delegated',
     'moderation_hidden', 'moderation_auto_hidden', 'privacy_hold',
     'anonymized', 'legacy_notes_migrated',
+    'published', 'unpublished',
   ];
 
   /**
@@ -116,11 +128,24 @@ final class RevisionLog {
     if (self::$pendingEvents !== NULL) {
       unset(self::$pendingEvents[$entity]);
     }
+    // Keep only the fact of a description change. Values, summaries and text
+    // formats remain exclusively in the access-controlled entity revision.
+    if ($entity->hasField('body')) {
+      $before = $original instanceof ContentEntityInterface && $original->hasField('body') ? $original->get('body') : NULL;
+      if ($before !== NULL ? !$entity->get('body')->equals($before) : !$entity->get('body')->isEmpty()) {
+        $changes[] = ['field' => 'description', 'before' => [], 'after' => []];
+      }
+    }
+    // Initial publication is part of creation, not a publication transition.
+    if ($original instanceof ContentEntityInterface && $original->hasField('status') && $entity->hasField('status')
+      && (bool) $original->get('status')->value !== (bool) $entity->get('status')->value) {
+      $events[] = $entity->get('status')->value ? 'published' : 'unpublished';
+    }
     return json_encode([
       'schema' => 'civic.revision.v1',
       'action' => $entity->isNew() ? 'created' : 'updated',
       'changes' => $changes,
-      'events' => $events,
+      'events' => array_values(array_unique($events)),
       'message' => $message,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
   }
@@ -136,12 +161,21 @@ final class RevisionLog {
       || !is_string($data['message'] ?? NULL)) {
       return NULL;
     }
+    $changes = [];
     foreach ($data['changes'] as $change) {
-      if (!is_array($change) || !in_array($change['field'] ?? NULL, ['responsibility', 'person', 'team', 'status'], TRUE)) {
+      if (!is_array($change) || !is_string($change['field'] ?? NULL)) {
         return NULL;
+      }
+      // A newer writer may add concepts this reader does not understand. Keep
+      // the reason and known changes instead of falling back to raw JSON.
+      if (!in_array($change['field'], self::CHANGE_FIELDS, TRUE)) {
+        continue;
       }
       foreach (['before', 'after'] as $side) {
         if (!is_array($change[$side] ?? NULL) || !array_is_list($change[$side])) {
+          return NULL;
+        }
+        if ($change['field'] === 'description' && $change[$side] !== []) {
           return NULL;
         }
         foreach ($change[$side] as $reference) {
@@ -150,13 +184,15 @@ final class RevisionLog {
           }
         }
       }
+      $changes[] = $change;
     }
+    $data['changes'] = $changes;
     if (array_key_exists('events', $data)) {
       if (!is_array($data['events']) || !array_is_list($data['events'])) {
         return NULL;
       }
-      // A rollback must retain the reason and changes written by a newer
-      // version. Unsupported automatic causes can safely be omitted on read.
+      // As with unknown change concepts, omit unsupported event codes while
+      // retaining the original reason and all understood metadata.
       $data['events'] = array_values(array_unique(array_filter($data['events'],
         static fn($event): bool => is_string($event) && in_array($event, self::EVENTS, TRUE))));
     }
