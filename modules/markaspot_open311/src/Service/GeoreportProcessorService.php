@@ -4291,7 +4291,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     $media->setName('media:' . $bundle . ':' . $media->uuid())
-      ->setPublished(!$privacyFlagged);
+      ->setUnpublished();
 
     // Media::save() does not validate, so the extension, size and image
     // checks of field_media_image would never run for files created here.

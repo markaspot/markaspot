@@ -149,7 +149,7 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
   }
 
   /**
-   * A PNG behind any URL is stored under a generated name as published media.
+   * A PNG behind any URL is stored under a generated name, unpublished.
    */
   public function testImageIsStoredUnderGeneratedName(): void {
     $this->fetchResults = [
@@ -161,7 +161,7 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
     $this->assertCount(1, $references);
     $media = Media::load($references[0]['target_id']);
     $this->assertSame('request_image', $media->bundle());
-    $this->assertTrue($media->isPublished());
+    $this->assertFalse($media->isPublished());
     $file = File::load($media->get('field_media_image')->target_id);
     $this->assertMatchesRegularExpression('#^public://([^/]+/)*open311-[0-9a-f]{16}\.png$#', $file->getFileUri());
     $this->assertSame('image/png', $file->getMimeType());
