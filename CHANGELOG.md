@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.237](https://github.com/markaspot/markaspot/compare/11.9.236...11.9.237) (2026-10-30)
+
+### Features
+
+* **group:** allow the priority filter for accounts that may view it ([db6f768](https://github.com/markaspot/markaspot/commit/db6f76854f24ec52db035a366f8174a852b0ab54))
+
+### Bug Fixes
+
+* **feedback:** give citizen feedback the same field access as the e-mail address ([31e5e00](https://github.com/markaspot/markaspot/commit/31e5e00cb663a79954fcdb5d0cafe830f2a55bb1))
+* **mail:** attach the service provider file to the provider commissioning mail ([24d291d](https://github.com/markaspot/markaspot/commit/24d291df48c1fb16ff0d51b5853fe0cfad07fa64))
+* **service-provider:** remove the public response form and the existence oracle ([d221576](https://github.com/markaspot/markaspot/commit/d2215760ae92c57e26b9ec01a106290df0e7123d))
+
 ## [11.9.236](https://github.com/markaspot/markaspot/compare/11.9.235...11.9.236) (2026-10-29)
 
 ### Bug Fixes
