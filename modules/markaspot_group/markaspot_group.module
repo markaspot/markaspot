@@ -2680,6 +2680,20 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
     }
   }
 
+  // Priority predicates need both the field permission and the independent
+  // query scope, including when an IS NULL predicate is nested in an OR group.
+  if ($field_definition->getTargetEntityTypeId() === 'node'
+    && $field_definition->getTargetBundle() === 'service_request'
+    && $field_definition->getName() === 'field_priority'
+    && _markaspot_group_is_private_service_request_field($field_definition)
+    && $account->isAuthenticated()
+    && $account->hasPermission('view field_priority')
+    && !_markaspot_group_account_bypasses_private_field_scope($account)
+    && _markaspot_group_enable_private_service_request_filter_scope($account, 'field_priority')) {
+    // Keep field_permissions and any other module veto authoritative.
+    return AccessResult::neutral()->cachePerUser()->cachePerPermissions()->setCacheMaxAge(0);
+  }
+
   // A filter or sort runs across every jurisdiction's published reports, so
   // it would turn private fields into a cross-tenant lookup oracle.
   if ($field_definition->getTargetBundle() === 'service_request'

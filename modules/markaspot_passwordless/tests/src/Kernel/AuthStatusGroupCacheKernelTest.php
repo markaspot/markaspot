@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_passwordless\Kernel;
 
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -16,6 +17,7 @@ use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
+use Drupal\node\Entity\NodeType;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
@@ -316,6 +318,79 @@ final class AuthStatusGroupCacheKernelTest extends KernelTestBase {
 
     $this->renameWithoutCacheTags($this->jurisdiction, 'After the race');
     $this->assertSame('After the race', $this->label($this->statusGroups(), $this->jurisdiction));
+  }
+
+  /**
+   * Field existence and permission changes reach the very next status call.
+   */
+  public function testPriorityCapabilityFollowsFieldAndPermissionRevocation(): void {
+    $controller = PasswordlessAuthController::create($this->container);
+    $this->assertFalse($this->priorityCapability($controller));
+    if (!NodeType::load('service_request')) {
+      NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
+    }
+    FieldStorageConfig::create([
+      'field_name' => 'field_priority', 'entity_type' => 'node', 'type' => 'boolean',
+      'third_party_settings' => ['field_permissions' => ['permission_type' => 'custom']],
+    ])->save();
+    Role::load('staff')->grantPermission('view field_priority')->save();
+    // Storage alone does not mean the field is attached to service requests.
+    $this->assertFalse($this->priorityCapability($controller));
+    FieldConfig::create([
+      'field_name' => 'field_priority', 'entity_type' => 'node', 'bundle' => 'service_request',
+    ])->save();
+    $this->assertTrue($this->priorityCapability($controller));
+    Role::load('staff')->revokePermission('view field_priority')
+      ->grantPermission('view own field_priority')->save();
+    $this->assertFalse($this->priorityCapability($controller));
+    Role::load('staff')->grantPermission('view field_priority')->save();
+    $this->assertTrue($this->priorityCapability($controller));
+    FieldConfig::loadByName('node', 'service_request', 'field_priority')->delete();
+    $this->assertFalse($this->priorityCapability($controller));
+  }
+
+  /**
+   * Switching accounts cannot reuse another account's capability.
+   */
+  public function testPriorityCapabilityIsAccountSpecificAndUncacheable(): void {
+    if (!NodeType::load('service_request')) {
+      NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
+    }
+    FieldStorageConfig::create([
+      'field_name' => 'field_priority', 'entity_type' => 'node', 'type' => 'boolean',
+      'third_party_settings' => ['field_permissions' => ['permission_type' => 'custom']],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_priority', 'entity_type' => 'node', 'bundle' => 'service_request',
+    ])->save();
+    Role::load('staff')->grantPermission('view field_priority')->save();
+    $controller = PasswordlessAuthController::create($this->container);
+    $this->assertTrue($this->priorityCapability($controller));
+    $other = User::create(['name' => 'no-priority@example.org', 'status' => 1]);
+    $other->save();
+    $this->container->get('current_user')->setAccount($other);
+    $this->assertFalse($this->priorityCapability($controller));
+    $this->container->get('current_user')->setAccount(User::getAnonymousUser());
+    $this->assertFalse($this->priorityCapability($controller));
+    $this->container->get('current_user')->setAccount($this->staff);
+    $this->assertTrue($this->priorityCapability($controller));
+  }
+
+  /**
+   * Returns the live flag and verifies the response cannot be retained.
+   */
+  private function priorityCapability(PasswordlessAuthController $controller): bool {
+    $response = $controller->status(Request::create('/api/auth/status'));
+    $this->assertInstanceOf(CacheableJsonResponse::class, $response);
+    $metadata = $response->getCacheableMetadata();
+    $this->assertSame(0, $metadata->getCacheMaxAge());
+    $this->assertContains('user', $metadata->getCacheContexts());
+    $this->assertContains('user.permissions', $metadata->getCacheContexts());
+    $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+    $this->assertTrue($response->headers->hasCacheControlDirective('private'));
+    $payload = json_decode((string) $response->getContent(), TRUE);
+    $this->assertIsBool($payload['capabilities']['view_field_priority']);
+    return $payload['capabilities']['view_field_priority'];
   }
 
   /**

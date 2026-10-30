@@ -10,6 +10,7 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\CacheTagsChecksumInterface;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Controller\ControllerBase;
@@ -22,6 +23,7 @@ use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\field\Entity\FieldConfig;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -729,6 +731,13 @@ class PasswordlessAuthController extends ControllerBase {
    */
   public function status(Request $request): JsonResponse {
     $account = $this->currentUser;
+    // This account capability stays outside the cached group slice. The
+    // frontend must also check the current jurisdiction's configured fields.
+    $capabilities = [
+      'view_field_priority' => $account->isAuthenticated()
+        && $account->hasPermission('view field_priority')
+        && FieldConfig::loadByName('node', 'service_request', 'field_priority') !== NULL,
+    ];
 
     if ($account->isAuthenticated()) {
       // Load full user entity to get groups.
@@ -736,8 +745,9 @@ class PasswordlessAuthController extends ControllerBase {
         ->getStorage('user')
         ->load($account->id());
 
-      return new JsonResponse([
+      $response = new CacheableJsonResponse([
         'authenticated' => TRUE,
+        'capabilities' => $capabilities,
         // Keep the frontend aligned with Drupal Core's exact exemption
         // semantics. It is intentionally a capability, not a role check:
         // installations may grant the Core permission to operational staff
@@ -746,11 +756,21 @@ class PasswordlessAuthController extends ControllerBase {
         'user' => $this->buildAuthUserPayload($account, $user),
       ]);
     }
+    else {
+      $response = new CacheableJsonResponse([
+        'authenticated' => FALSE,
+        'maintenance_access' => FALSE,
+        'capabilities' => $capabilities,
+      ]);
+    }
 
-    return new JsonResponse([
-      'authenticated' => FALSE,
-      'maintenance_access' => FALSE,
-    ]);
+    // Permissions can be revoked at any time. Neither Drupal nor downstream
+    // HTTP caches may retain this response, even for the same account.
+    $response->addCacheableDependency((new CacheableMetadata())
+      ->setCacheContexts(['user', 'user.permissions'])
+      ->setCacheMaxAge(0));
+    $response->headers->set('Cache-Control', 'private, no-store');
+    return $response;
   }
 
   /**
