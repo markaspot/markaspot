@@ -31,6 +31,26 @@ require_once dirname(__DIR__, 3) . '/src/Hook/MailAlterHook.php';
 final class MailAlterHookTest extends UnitTestCase {
 
   /**
+   * Recipient gates receive the actual headers, preserving casing and values.
+   */
+  public function testForwardsHeadersToBuilder(): void {
+    $headers = ['cC' => 'staff@example.test', 'BcC' => 'copy@example.test'];
+    $receivedHeaders = NULL;
+    $builder = $this->createMock(MailBuilderInterface::class);
+    $builder->method('supports')->willReturn(TRUE);
+    $builder->expects($this->once())->method('build')
+      ->willReturnCallback(static function (MailContext $ctx) use (&$receivedHeaders): ?MailMessage {
+        $receivedHeaders = $ctx->headers;
+        return NULL;
+      });
+
+    $message = $this->buildMessage('system', 'action_send_email');
+    $message['headers'] = $headers;
+    $this->buildHook($builder)->alter($message);
+    $this->assertSame($headers, $receivedHeaders);
+  }
+
+  /**
    * An optional action recipient resolving to nothing cancels delivery.
    */
   public function testEmptyActionRecipientCancelsMailWithoutBranding(): void {

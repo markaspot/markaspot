@@ -15,6 +15,7 @@ use Drupal\markaspot_mail\Mail\RequestFieldValueTrait;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Drupal\markaspot_mail\Service\AttachmentResolver;
+use Drupal\taxonomy\TermInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -117,9 +118,14 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
       && $entity->getEntityTypeId() === 'node'
       && $entity->bundle() === 'service_request'
       && !$this->recipientIsReporter($ctx->to, $entity)) {
+      $fields = ['field_request_image', 'field_request_media', 'field_attachment'];
+      if ($this->recipientsAreAssignedProvider($ctx, $entity)) {
+        $fields[] = 'field_sp_attachment';
+      }
+      // Resolve together so all files share one size budget and deduplication.
       $attachments = $this->attachmentResolver->resolve(
         $entity,
-        ['field_request_image', 'field_request_media', 'field_attachment'],
+        $fields,
         includePrivate: TRUE,
       );
     }
@@ -145,6 +151,72 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
       jurisdictionId: $jurisdictionId,
       attachments: $attachments,
     );
+  }
+
+  /**
+   * Allows the dedicated file only for the assigned provider's mailboxes.
+   *
+   * Attachments are shared by all recipients. Any non-empty Cc/Bcc header
+   * therefore denies this file, even if that copy address belongs to the
+   * provider. Every To address must match a stored provider address; mixed,
+   * malformed or unsupported lists fail closed. The existing citizen-upload
+   * policy remains independent of this narrower gate.
+   */
+  private function recipientsAreAssignedProvider(MailContext $ctx, ContentEntityInterface $entity): bool {
+    foreach ($ctx->headers as $name => $value) {
+      if (in_array(strtolower(trim((string) $name)), ['cc', 'bcc'], TRUE)
+        && (!is_string($value) || trim($value) !== '')) {
+        return FALSE;
+      }
+    }
+
+    if (!$entity->hasField('field_service_provider')) {
+      return FALSE;
+    }
+    $field = $entity->get('field_service_provider');
+    if (!$field instanceof EntityReferenceFieldItemListInterface || $field->isEmpty()) {
+      return FALSE;
+    }
+    $providers = $field->referencedEntities();
+    $provider = $providers[0] ?? NULL;
+    if (count($providers) !== 1 || !$provider instanceof TermInterface
+      || $provider->bundle() !== 'service_provider'
+      || !$provider->hasField('field_sp_email')) {
+      return FALSE;
+    }
+    $addresses = [];
+    foreach ($provider->get('field_sp_email')->getValue() as $item) {
+      $address = strtolower(trim((string) ($item['value'] ?? '')));
+      if (filter_var($address, FILTER_VALIDATE_EMAIL) !== FALSE) {
+        $addresses[] = $address;
+      }
+    }
+    if ($addresses === []) {
+      return FALSE;
+    }
+
+    $recipients = is_array($ctx->to) ? $ctx->to : [$ctx->to];
+    if ($recipients === []) {
+      return FALSE;
+    }
+    foreach ($recipients as $list) {
+      if (!is_string($list) || preg_match('/[\x00-\x1F\x7F]/', $list)) {
+        return FALSE;
+      }
+      // Accept bare addresses and simple display names. More complex RFC
+      // syntax (e.g. quoted commas or groups) is deliberately denied here.
+      foreach (explode(',', $list) as $recipient) {
+        $address = trim($recipient);
+        if (preg_match('/^(?:(?:"[^"]*"|[^<>,;"]+)\s*)?<([^<>\s]+)>$/D', $address, $matches)) {
+          $address = $matches[1];
+        }
+        if (filter_var($address, FILTER_VALIDATE_EMAIL) === FALSE
+          || !in_array(strtolower($address), $addresses, TRUE)) {
+          return FALSE;
+        }
+      }
+    }
+    return TRUE;
   }
 
   /**

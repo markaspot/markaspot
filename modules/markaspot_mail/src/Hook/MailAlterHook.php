@@ -112,6 +112,7 @@ final class MailAlterHook {
       to: $message['to'] ?? NULL,
       subject: (string) ($message['subject'] ?? ''),
       body: (array) ($message['body'] ?? []),
+      headers: (array) ($message['headers'] ?? []),
     );
 
     try {

@@ -38,6 +38,8 @@ final readonly class MailContext {
    *   paragraph or render-array output appended by the module's
    *   hook_mail. Empty array when the mail was never touched by a
    *   previous hook.
+   * @param array $headers
+   *   Current mail headers, including Cc/Bcc for recipient-sensitive builders.
    */
   public function __construct(
     public string $module,
@@ -47,6 +49,7 @@ final readonly class MailContext {
     public mixed $to,
     public string $subject = '',
     public array $body = [],
+    public array $headers = [],
   ) {}
 
 }
