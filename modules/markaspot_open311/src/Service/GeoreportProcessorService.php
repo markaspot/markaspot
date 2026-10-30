@@ -34,6 +34,8 @@ use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
 use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\Lock\NullLockBackend;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Component\Utility\Bytes;
 use Drupal\Component\Utility\Html;
@@ -41,6 +43,7 @@ use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Image\RequestImageStyles;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
 use Psr\Log\LoggerInterface;
@@ -415,6 +418,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The keyvalue store factory.
    * @param \Drupal\markaspot_open311\Service\RemoteImageFetcher|null $remoteImageFetcher
    *   The hardened downloader for media_url imports.
+   * @param \Drupal\markaspot_vision\Service\MediaIntakeScreening|null $intakeScreening
+   *   Optional asynchronous privacy screening for imported images.
+   * @param \Drupal\Core\Lock\LockBackendInterface|null $mediaPublicationLock
+   *   Serializes editorial publication with background media writes.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -438,6 +445,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     ?LoggerInterface $logger = NULL,
     ?KeyValueFactoryInterface $keyValueFactory = NULL,
     ?RemoteImageFetcher $remoteImageFetcher = NULL,
+    protected ?MediaIntakeScreening $intakeScreening = NULL,
+    protected ?LockBackendInterface $mediaPublicationLock = NULL,
   ) {
     $this->remoteImageFetcher = $remoteImageFetcher ?? new RemoteImageFetcher($httpClient, $logger);
     $this->configFactory = $configFactory;
@@ -4234,6 +4243,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * {@inheritdoc}
    */
   public function commitImportedMedia(): void {
+    foreach ($this->importedMedia as $entity) {
+      if ($entity instanceof MediaInterface) {
+        $this->intakeScreening?->enqueue($entity);
+      }
+    }
     $this->importedMedia = [];
   }
 
@@ -4301,6 +4315,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     $media->save();
+
+    $this->intakeScreening?->register($media);
 
     return $media;
   }
@@ -4449,31 +4465,46 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $mid = $validatedUpdate['mid'];
       $published = $validatedUpdate['published'];
 
-      $currentStatus = $media->isPublished();
-      // Only update if status is changing.
-      if ($currentStatus !== $published) {
-        if ($published) {
-          $media->setPublished();
-        }
-        else {
-          $media->setUnpublished();
-        }
-        $media->save();
+      $publicationLock = $this->mediaPublicationLock ?? new NullLockBackend();
+      $lockName = 'markaspot_open311.media_publication.' . $mid;
+      if (!$publicationLock->acquire($lockName, 30)) {
+        throw new GeoreportException('Media publication is being updated. Please retry.', 409);
       }
+      try {
+        if ($this->mediaPublicationLock) {
+          $media = $this->entityTypeManager->getStorage('media')->loadUnchanged($mid);
+        }
+        $currentStatus = $media->isPublished();
+        // Only update if status is changing.
+        if ($currentStatus !== $published) {
+          if ($published) {
+            $media->setPublished();
+          }
+          else {
+            $media->setUnpublished();
+          }
+          $media->save();
+        }
 
-      // Record that this media's publication is now under explicit editorial
-      // control, regardless of publish direction or whether a save was needed
-      // (the mark must also stick when the requested state already matched).
-      // The 'update open311 request media publication' permission is
-      // restrict-access (trusted roles / human-in-the-loop only), so once such
-      // a consumer sets the state, the AI publication pipeline must hand off
-      // entirely: markaspot_vision's node-save hook and the AI screening
-      // controller both consult this mark and skip manually controlled media
-      // (privacy safety net included). The last explicit decision wins; there
-      // is deliberately no path back to automatic management short of
-      // deleting and re-uploading the media. Cleaned up in
-      // markaspot_open311_media_delete().
-      $this->manualMediaPublication()->set($mid, TRUE);
+        // Record that this media's publication is now under explicit editorial
+        // control, regardless of publish direction or whether a save was needed
+        // (the mark must also stick when the requested state already matched).
+        // The 'update open311 request media publication' permission is
+        // restrict-access (trusted roles / human-in-the-loop only). Once a
+        // consumer sets the state, the AI publication pipeline must hand off
+        // entirely: markaspot_vision's node-save hook and the AI screening
+        // controller both consult this mark and skip manually controlled media
+        // (privacy safety net included). The last explicit decision wins; there
+        // is deliberately no path back to automatic management short of
+        // deleting and re-uploading the media. Cleaned up in
+        // markaspot_open311_media_delete().
+        $this->manualMediaPublication()->set($mid, TRUE);
+        $this->mediaPublicationState('markaspot_vision.media_intake')->delete($mid);
+        $this->mediaPublicationState('markaspot_vision.report_media_hold')->delete($mid);
+      }
+      finally {
+        $publicationLock->release($lockName);
+      }
     }
   }
 
@@ -4488,8 +4519,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * instantiation without the optional keyvalue factory.
    */
   protected function manualMediaPublication(): KeyValueStoreInterface {
+    return $this->mediaPublicationState('markaspot_open311.media_publication_manual');
+  }
+
+  /**
+   * Returns publication workflow state using the optional injected factory.
+   */
+  private function mediaPublicationState(string $collection): KeyValueStoreInterface {
     $factory = $this->keyValueFactory ?? \Drupal::service('keyvalue');
-    return $factory->get('markaspot_open311.media_publication_manual');
+    return $factory->get($collection);
   }
 
   /**

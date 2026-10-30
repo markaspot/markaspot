@@ -45,6 +45,61 @@ class ImageProcessingService {
   use JurisdictionIdResolverTrait;
 
   /**
+   * Already screened source URIs, scoped to processScreenedImages().
+   *
+   * @var array<string, array>
+   */
+  private array $screenedUris = [];
+
+  /**
+   * Persists a blur result through the same path for uploads and imports.
+   */
+  public function persistBlurResult(MediaInterface $media, array $result, string $uri, ?OriginalImageStore $originals = NULL): void {
+    if (!empty($result['blurred']) && empty($result['persisted'])) {
+      $this->assertOverwritable($media, $uri);
+      $originals?->retain($media, $uri);
+      $this->saveBlurredImage($media, $result['contents'], $uri);
+    }
+  }
+
+  /**
+   * Completes an overwrite, including recovery after a stopped worker.
+   */
+  public function finalizeBlurOverwrite(MediaInterface $media, string $uri): void {
+    $this->assertOverwritable($media, $uri);
+    // Same non-deprecated style API as ImageDerivativeUtilities::pathFlush().
+    foreach ($this->entityTypeManager->getStorage('image_style')->loadMultiple() as $style) {
+      /** @var \Drupal\image\ImageStyleInterface $style */
+      $style->flush($uri);
+    }
+  }
+
+  /**
+   * Analyses trusted, already screened files without blurring them again.
+   *
+   * @param array<string, array> $screenedUris
+   *   Source URIs mapped to verifiable blur checkpoints.
+   * @param string|null $langcode
+   *   The report language.
+   * @param int|null $jurisdictionId
+   *   The trusted tenant ID.
+   * @param array|null $fileUris
+   *   All source URIs in a mixed batch, or NULL for only screened files.
+   *
+   * @return array|null
+   *   The normal vision result.
+   */
+  public function processScreenedImages(array $screenedUris, ?string $langcode = NULL, ?int $jurisdictionId = NULL, ?array $fileUris = NULL): ?array {
+    $this->screenedUris = $screenedUris;
+    try {
+      return $this->processImages($fileUris ?? array_keys($screenedUris), $langcode, $jurisdictionId);
+    }
+    finally {
+      $this->screenedUris = [];
+    }
+  }
+
+  /**
    * Max bytes for the unscaled original-image fallback sent to the AI.
    *
    * Only applies when no scaled derivative could be produced (neither the
@@ -409,7 +464,7 @@ class ImageProcessingService {
 
       // Flush image style derivatives so they regenerate from the blurred
       // source.
-      image_path_flush($originalUri);
+      $this->finalizeBlurOverwrite($media, $originalUri);
 
       $this->logger->notice(
         'Original image replaced with blurred version for media @id.',
@@ -574,7 +629,15 @@ class ImageProcessingService {
         $mime = $finfo->buffer($contents) ?: 'image/jpeg';
 
         // Blur sensitive areas (faces, license plates) before AI analysis.
-        $blur_result = $this->blurSensitiveAreas($contents, $mime);
+        $marker = $this->screenedUris[$file_uri] ?? [];
+        $blur_result = ScreeningMarker::accepts($marker, @hash_file('sha256', $file_uri), BlurPolicy::isRequired($this->logger))
+          ? [
+            'contents' => $contents,
+            'processed' => TRUE,
+            'persisted' => TRUE,
+            'blurred' => !empty($marker['blurred']),
+          ]
+          : $this->blurSensitiveAreas($contents, $mime);
         // Carry the MIME so the controller can build a data URL preview.
         $blur_result['mime'] = $mime;
         // In-memory only: an escalated blur must start from the unblurred
@@ -716,6 +779,8 @@ class ImageProcessingService {
         'ai_result' => $ai_result_content,
         'blur_results' => $blur_results,
         'skipped_uris' => $skipped_uris,
+        'usage' => $ai_data['usage'] ?? [],
+        'model' => $api_config['model'],
       ];
 
     }

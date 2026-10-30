@@ -10,9 +10,17 @@ use Drupal\Core\Hook\Attribute\LegacyHook;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\markaspot_vision\Hook\HazardLevelHooks;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
+use Drupal\markaspot_vision\Service\ScreeningMarker;
+use Drupal\markaspot_ai\Utility\BlurPolicy;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
 use Drupal\node\NodeInterface;
+
+// Hosting policy is available even when the optional AI module is disabled.
+if (!class_exists(BlurPolicy::class)) {
+  require_once __DIR__ . '/../markaspot_ai/src/Utility/BlurPolicy.php';
+}
 
 /**
  * Implements hook_help().
@@ -45,6 +53,63 @@ function markaspot_vision_media_insert(EntityInterface $entity): void {
     $entity,
     \Drupal::requestStack()->getCurrentRequest(),
   );
+}
+
+/**
+ * Implements hook_media_presave().
+ */
+function markaspot_vision_media_presave(MediaInterface $media): void {
+  if ($media->isNew() || $media->bundle() !== 'request_image') {
+    return;
+  }
+  $original = $media->getOriginal();
+  if (!$original || (string) $original->get('field_media_image')->target_id === (string) $media->get('field_media_image')->target_id) {
+    return;
+  }
+  $store = \Drupal::keyValue(MediaIntakeScreening::STORE);
+  if (!$store->has($media->id())) {
+    return;
+  }
+  // A replacement source needs its own privacy screening, even on a media
+  // entity whose earlier job has finished. Explicit editorial status wins.
+  $store->set($media->id(), [
+    'status' => 'pending', 'attempts' => 0, 'queued' => FALSE,
+    'created' => \Drupal::time()->getCurrentTime(),
+  ]);
+  if (!\Drupal::keyValue('markaspot_open311.media_publication_manual')->get($media->id())) {
+    $media->setUnpublished();
+  }
+}
+
+/**
+ * Implements hook_media_update().
+ */
+function markaspot_vision_media_update(MediaInterface $media): void {
+  $store = \Drupal::keyValue(MediaIntakeScreening::STORE);
+  $entry = $store->get($media->id());
+  if ($entry) {
+    // A successful controller analysis supersedes an earlier fingerprint,
+    // including residual reblur of a completed import. The queue's own
+    // intermediate marker must not finalize its still-pending AI work.
+    $metadata = json_decode((string) $media->get('field_ai_metadata')->value, TRUE);
+    $screening = $metadata['intake_screening'] ?? [];
+    $uri = $media->get('field_media_image')->entity?->getFileUri();
+    if (($screening['origin'] ?? '') === 'vision' && $uri
+      && is_string($screening['source_sha256'] ?? NULL)
+      && $screening['source_sha256'] === @hash_file('sha256', $uri)
+      && (!BlurPolicy::isRequired(\Drupal::logger('markaspot_vision')) || ScreeningMarker::accepts($screening, $screening['source_sha256'], TRUE))) {
+      $entry['privacy_screened'] = ($screening['processed'] ?? FALSE) === TRUE;
+      $entry['processed'] = $screening['processed'] ?? FALSE;
+      $entry['blur_required'] = $screening['blur_required'] ?? FALSE;
+      $entry['prepared_hash'] = $screening['source_sha256'];
+      $entry['status'] = 'done';
+      $entry['analysis'] = 'existing';
+      $store->set($media->id(), $entry);
+    }
+  }
+  if ($entry && $entry['status'] === 'pending' && empty($entry['queued'])) {
+    \Drupal::service('markaspot_vision.media_intake')->enqueue($media);
+  }
 }
 
 /**
@@ -83,15 +148,16 @@ function markaspot_vision_node_update(NodeInterface $node): void {
 }
 
 /**
- * Publishes media on a service request based on AI screening results.
+ * Publishes media on a service request based on privacy screening results.
  *
  * When require_ai_screening is enabled (default), media stays unpublished
- * until AI analysis has completed successfully (field_ai_metadata is set)
- * and no privacy flag or privacy issue was raised. This prevents unanalyzed
+ * until screening has completed successfully (field_ai_metadata is set)
+ * and no privacy flag or privacy issue was raised. This prevents unscreened
  * images from being published (privacy by design, fail-closed).
  *
  * When require_ai_screening is disabled (legacy mode), media is published
- * unless it has been explicitly flagged by AI.
+ * unless it has been explicitly flagged by AI. Imported images still require
+ * their privacy checkpoint, regardless of the optional analysis setting.
  */
 function _markaspot_vision_publish_safe_media(NodeInterface $node): void {
   if ($node->bundle() !== 'service_request') {
@@ -107,54 +173,145 @@ function _markaspot_vision_publish_safe_media(NodeInterface $node): void {
   $manual_publication = \Drupal::keyValue('markaspot_open311.media_publication_manual');
 
   foreach ($media_field->referencedEntities() as $media) {
-    // Media whose publication was explicitly set through the GeoReport media
-    // publication API is under editorial (human-in-the-loop / trusted
-    // consumer) control. That decision is authoritative and wins over the
-    // whole AI publication pipeline — including the PII safety net below.
-    // The gating permission is restrict-access, so we assume the consumer
-    // knows what it is doing; automatic (un)publishing must not override it.
-    //
-    // Default to "not manually controlled" if the keyvalue lookup fails: a
-    // backend hiccup must not abort the whole node save. The AI branches
-    // below fail closed on PII on their own, so degrading to them is safe.
+    $lock = \Drupal::lock();
+    $lock_name = 'markaspot_open311.media_publication.' . $media->id();
+    if (!$lock->acquire($lock_name, 30)) {
+      $lock->wait($lock_name, 1);
+      if (!$lock->acquire($lock_name, 30)) {
+        // Abort/roll back this node save instead of losing its enforcement.
+        throw new \RuntimeException('Media publication is being edited. Please retry saving the report.');
+      }
+    }
     try {
-      $is_manual = (bool) $manual_publication->get($media->id());
-    }
-    catch (\Exception $e) {
-      $is_manual = FALSE;
-    }
-    if ($is_manual) {
-      continue;
-    }
+      $media = \Drupal::entityTypeManager()->getStorage('media')->loadUnchanged($media->id());
+      if (!$media) {
+        continue;
+      }
+      // Media whose publication was explicitly set through the GeoReport media
+      // publication API is under editorial (human-in-the-loop / trusted
+      // consumer) control. That decision is authoritative and wins over the
+      // whole AI publication pipeline — including the PII safety net below.
+      // The gating permission is restrict-access, so we assume the consumer
+      // knows what it is doing; automatic (un)publishing must not override it.
+      //
+      // Default to "not manually controlled" if the keyvalue lookup fails: a
+      // backend hiccup must not abort the whole node save. The AI branches
+      // below fail closed on PII on their own, so degrading to them is safe.
+      try {
+        $is_manual = (bool) $manual_publication->get($media->id());
+      }
+      catch (\Exception $e) {
+        $is_manual = FALSE;
+      }
+      if ($is_manual) {
+        continue;
+      }
 
-    $ai_completed = !empty($media->get('field_ai_metadata')->value);
-    $has_privacy_flag = !empty($media->get('field_ai_privacy_flag')->value);
-    $privacy_issues = $media->hasField('field_ai_privacy_issues')
-      ? trim((string) $media->get('field_ai_privacy_issues')->value)
-      : '';
-    $has_privacy_hold = $has_privacy_flag || $privacy_issues !== '';
-
-    if ($has_privacy_hold && $media->isPublished()) {
-      // Safety net: unpublish media held for PII (e.g. published by
-      // ImageProcessingController before a late or inconsistent detection).
-      $media->setUnpublished();
-      $media->save();
-    }
-    elseif (!$media->isPublished()) {
-      if ($require_screening) {
-        // Strict mode: only publish if AI ran and found no privacy issues.
-        if ($ai_completed && !$has_privacy_hold) {
-          $media->setPublished();
-          $media->save();
+      $intake_store = \Drupal::keyValue(MediaIntakeScreening::STORE);
+      $intake = $intake_store->get($media->id());
+      $required = BlurPolicy::isRequired(\Drupal::logger('markaspot_vision'));
+      // Controller uploads also carry checkpoints, even without intake work.
+      // A policy change must hold those originals before report publication.
+      $metadata = json_decode((string) $media->get('field_ai_metadata')->value, TRUE) ?: [];
+      $marker = $metadata['intake_screening'] ?? [];
+      if (!$intake && $required && $marker) {
+        $uri = $media->get('field_media_image')->entity?->getFileUri();
+        $hash = $uri ? @hash_file('sha256', $uri) : FALSE;
+        if (!ScreeningMarker::accepts($marker, $hash, TRUE)) {
+          $intake = [
+            'status' => 'pending', 'attempts' => 0, 'queued' => FALSE,
+            'created' => \Drupal::time()->getCurrentTime(),
+          ];
+          if ($hash !== FALSE && ($marker['source_sha256'] ?? '') === $hash) {
+            if (($marker['origin'] ?? '') === 'vision') {
+              $intake['analysis'] = 'existing';
+            }
+            elseif (isset($marker['analysis']) && $marker['analysis'] !== 'started') {
+              $intake['analysis'] = $marker['analysis'];
+            }
+          }
+          $intake_store->set($media->id(), $intake);
+          \Drupal::service('markaspot_vision.media_intake')->enqueue($media);
         }
       }
-      else {
-        // Legacy mode: publish unless explicitly flagged.
-        if (!$has_privacy_hold) {
-          $media->setPublished();
-          $media->save();
+      if ($intake && isset($intake['prepared_hash'])) {
+        $uri = $media->get('field_media_image')->entity?->getFileUri();
+        $hash = $uri ? @hash_file('sha256', $uri) : FALSE;
+        $source_changed = $hash !== FALSE && $intake['prepared_hash'] !== $hash;
+        $policy_changed = $required && (empty($intake['processed']) || empty($intake['blur_required']));
+        if ($hash === FALSE || $intake['prepared_hash'] !== $hash || $policy_changed) {
+          $intake['privacy_screened'] = FALSE;
+          $intake['status'] = $source_changed ? 'failed' : 'pending';
+          $intake['queued'] = FALSE;
+          $intake['attempts'] = 0;
+          unset($intake['next_attempt']);
+          if (!$source_changed) {
+            unset($intake['prepared_hash']);
+          }
+          else {
+            \Drupal::logger('markaspot_vision')->error('Imported media @mid source changed after privacy screening; holding it for review.', ['@mid' => $media->id()]);
+          }
+          $intake_store->set($media->id(), $intake);
         }
       }
+      $intake_held = $intake && ($intake['status'] !== 'done' || ($intake['analysis'] ?? '') === 'started');
+      // A fallback alone is not AI screening. Use the same strict outcome as
+      // citizen uploads: real blur or completed analysis, otherwise hold.
+      $blur_completed = !empty($intake['privacy_screened']) && ($intake['processed'] ?? FALSE) === TRUE;
+      $analysis_completed = in_array($intake['analysis'] ?? '', ['done', 'existing'], TRUE);
+      $ai_completed = $intake
+        ? ($blur_completed || $analysis_completed)
+        : !empty($media->get('field_ai_metadata')->value);
+      $has_privacy_flag = !empty($media->get('field_ai_privacy_flag')->value);
+      $privacy_issues = $media->hasField('field_ai_privacy_issues')
+        ? trim((string) $media->get('field_ai_privacy_issues')->value)
+        : '';
+      $has_privacy_hold = $has_privacy_flag || $privacy_issues !== '';
+
+      $report_holds = \Drupal::keyValue('markaspot_vision.report_media_hold');
+      if (!$node->isPublished() || $intake_held) {
+        if ($media->isPublished()) {
+          if (!$node->isPublished() && !$has_privacy_hold && !$intake_held) {
+            $report_holds->set($media->id(), TRUE);
+          }
+          $media->setUnpublished();
+          $media->save();
+        }
+        continue;
+      }
+      $restore = (bool) $report_holds->get($media->id());
+      if ($restore && !$has_privacy_hold) {
+        $media->setPublished();
+        $media->save();
+        $report_holds->delete($media->id());
+        continue;
+      }
+
+      if ($has_privacy_hold && $media->isPublished()) {
+        // Safety net: unpublish media held for PII (e.g. published by
+        // ImageProcessingController before a late or inconsistent detection).
+        $media->setUnpublished();
+        $media->save();
+      }
+      elseif (!$media->isPublished()) {
+        if ($require_screening) {
+          // Strict mode: only publish screened media without privacy issues.
+          if ($ai_completed && !$has_privacy_hold) {
+            $media->setPublished();
+            $media->save();
+          }
+        }
+        else {
+          // Legacy mode: publish unless explicitly flagged.
+          if (!$has_privacy_hold) {
+            $media->setPublished();
+            $media->save();
+          }
+        }
+      }
+    }
+    finally {
+      $lock->release($lock_name);
     }
   }
 }
@@ -195,6 +352,7 @@ function markaspot_vision_file_download(string $uri): array|int|null {
  * Implements hook_cron().
  */
 function markaspot_vision_cron(): void {
+  \Drupal::service('markaspot_vision.media_intake')->recoverPending();
   \Drupal::service('markaspot_vision.original_image_store')->purgeExpired();
 }
 
@@ -202,6 +360,8 @@ function markaspot_vision_cron(): void {
  * Implements hook_media_delete().
  */
 function markaspot_vision_media_delete(MediaInterface $media): void {
+  \Drupal::keyValue(MediaIntakeScreening::STORE)->delete($media->id());
+  \Drupal::keyValue('markaspot_vision.report_media_hold')->delete($media->id());
   \Drupal::service('markaspot_vision.original_image_store')->delete((int) $media->id());
   \Drupal::service('markaspot_vision.media_tenant_scope')->forget($media);
 }

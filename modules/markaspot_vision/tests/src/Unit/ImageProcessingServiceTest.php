@@ -180,10 +180,48 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
+   * Unprocessed or obsolete checkpoints never bypass mandatory blur before AI.
+   */
+  public function testRequiredBlurRejectsFallbackMarkersBeforeProvider(): void {
+    $image = tempnam(sys_get_temp_dir(), 'vision-marker-');
+    file_put_contents($image, 'Fictional unblurred source');
+    try {
+      putenv('MARKASPOT_BLUR_REQUIRED=1');
+      $style = $this->createMock(ImageStyleInterface::class);
+      $style->method('buildUri')->willReturn($image);
+      $storage = $this->createMock(EntityStorageInterface::class);
+      $storage->method('load')->willReturn($style);
+      $storage->method('loadByProperties')->willReturn([]);
+      $entities = $this->createMock(EntityTypeManagerInterface::class);
+      $entities->method('getStorage')->willReturn($storage);
+      $providerCalls = 0;
+      $http = new Client([
+        'handler' => static function () use (&$providerCalls) {
+          $providerCalls++;
+          return new FulfilledPromise(new Response(400, [], '{}'));
+        },
+      ]);
+      $service = $this->createService([], $entities, $http);
+      foreach ([[FALSE, TRUE], [TRUE, FALSE]] as [$processed, $required]) {
+        $marker = [
+          'privacy_screened' => TRUE, 'processed' => $processed,
+          'blur_required' => $required, 'source_sha256' => hash_file('sha256', $image),
+        ];
+        $result = $service->processScreenedImages([$image => $marker]);
+        $this->assertSame(0, $providerCalls, 'Required blur must precede every provider request.');
+        $this->assertNull($result);
+      }
+    }
+    finally {
+      unlink($image);
+    }
+  }
+
+  /**
    * Provider requests carry tenant context and stable platform policy.
    */
   #[DataProvider('projectContexts')]
-  public function testProjectContextReachesProviderPayload(string $tenantPrompt, string $globalPrompt, string $expected): void {
+  public function testProjectContextReachesProviderPayload(string $tenantPrompt, string $globalPrompt, string $expected, bool $alreadyScreened = FALSE): void {
     $image = tempnam(sys_get_temp_dir(), 'vision-context-');
     file_put_contents($image, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='));
     try {
@@ -235,7 +273,21 @@ class ImageProcessingServiceTest extends UnitTestCase {
       };
       $http = new Client(['handler' => $handler]);
       $service = $this->createService(['system_prompt' => $globalPrompt], $entities, $http);
-      $this->assertNotNull($service->processImages([$image, $image], 'fr', 42));
+      if ($alreadyScreened) {
+        // Missing required blur credentials would fail a fresh image. Trusted
+        // preprocessed bytes reach AI without a second blur HTTP request.
+        putenv('MARKASPOT_BLUR_REQUIRED=1');
+        $marker = [
+          'privacy_screened' => TRUE, 'processed' => TRUE, 'blur_required' => TRUE,
+          'source_sha256' => hash_file('sha256', $image), 'blurred' => TRUE,
+        ];
+        $result = $service->processScreenedImages([$image => $marker], 'fr', 42, [$image, $image]);
+        $this->assertNotNull($result);
+        $this->assertTrue($result['blur_results'][$image]['persisted']);
+      }
+      else {
+        $this->assertNotNull($service->processImages([$image, $image], 'fr', 42));
+      }
       $system = $captured['messages'][0]['content'][0]['text'];
       $user = $captured['messages'][1]['content'];
       $this->assertSame('system', $captured['messages'][0]['role']);
@@ -246,6 +298,11 @@ class ImageProcessingServiceTest extends UnitTestCase {
       $this->assertStringContainsString('exactly 2 booleans', $system);
       $this->assertStringContainsString('Do not invent measurements', $system);
       $this->assertStringContainsString('"tid":73', $user[0]['text']);
+      if ($alreadyScreened) {
+        // Reusing the service for another call restores normal fail-closed
+        // preprocessing. The bypass is scoped to the prepared-image call.
+        $this->assertNull($service->processImages([$image], 'fr', 42));
+      }
       $this->assertStringContainsString('Arbre sain', $user[0]['text']);
       $this->assertCount(3, $user);
       $this->assertSame('image_url', $user[1]['type']);
@@ -262,6 +319,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
   public static function projectContexts(): array {
     return [
       'tenant context' => ['Inventory healthy trees.', 'Municipal defects.', 'Inventory healthy trees.'],
+      'already screened import' => ['Inventory healthy trees.', '', 'Inventory healthy trees.', TRUE],
       'global fallback' => ['', 'Record trail conditions.', 'Record trail conditions.'],
       'whitespace fallback' => ['  ', 'Record trail conditions.', 'Record trail conditions.'],
       'no configured context' => ['', '', ''],
@@ -680,7 +738,9 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertStringNotContainsString('DESCRIPTION FRAMING', $default);
     $this->assertStringNotContainsString('screenshots', $default);
 
-    $custom = $this->invokeMethod($service, 'buildSystemInstruction', ['Ideas', 'German', FALSE, 1, "\n\nRULE", "\n\nFRAME"]);
+    $custom = $this->invokeMethod($service, 'buildSystemInstruction', [
+      'Ideas', 'German', FALSE, 1, "\n\nRULE", "\n\nFRAME",
+    ]);
     // A replaced relevance part keeps the off-domain and category fallback.
     $this->assertStringContainsString("\n\nRULE" . $rule . "\n\nFRAME\n\nPRIVACY INSTRUCTION", $custom);
     $this->assertStringNotContainsString('PROJECT RELEVANCE', $custom);

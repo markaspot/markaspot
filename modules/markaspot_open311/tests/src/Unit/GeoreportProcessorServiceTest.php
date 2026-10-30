@@ -1603,6 +1603,12 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         [11, $matchedMedia],
       ]);
 
+    $intake = $this->keyValueFactory->get('markaspot_vision.media_intake');
+    $reportHolds = $this->keyValueFactory->get('markaspot_vision.report_media_hold');
+    foreach ([10, 11] as $mid) {
+      $intake->set($mid, ['status' => 'failed']);
+      $reportHolds->set($mid, TRUE);
+    }
     $this->processor->updateMediaPublishedStatus([
       0 => [
         'target_id' => 10,
@@ -1617,6 +1623,10 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $store = $this->keyValueFactory->get('markaspot_open311.media_publication_manual');
     $this->assertTrue((bool) $store->get(10));
     $this->assertTrue((bool) $store->get(11));
+    foreach ([10, 11] as $mid) {
+      $this->assertFalse($intake->has($mid), 'Editorial decisions resolve failed work even if publication already matched.');
+      $this->assertFalse($reportHolds->has($mid));
+    }
   }
 
   /**

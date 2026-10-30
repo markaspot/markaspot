@@ -9,6 +9,8 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
+use Drupal\Core\KeyValueStore\KeyValueMemoryFactory;
+use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
@@ -125,7 +127,11 @@ class ImageProcessingControllerTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
 
-    $this->imageProcessingService = $this->createMock(ImageProcessingService::class);
+    // Exercise the shared persistence orchestration while keeping its I/O
+    // boundaries observable through the existing method expectations.
+    $methods = array_diff(get_class_methods(ImageProcessingService::class), ['__construct', 'persistBlurResult']);
+    $this->imageProcessingService = $this->getMockBuilder(ImageProcessingService::class)
+      ->disableOriginalConstructor()->onlyMethods($methods)->getMock();
     $this->mediaAnalysisAccessGuard = $this->createMock(MediaAnalysisAccessGuard::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->flood = $this->createMock(FloodInterface::class);
@@ -172,6 +178,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $scopeResolver = $this->createMock(MediaTenantScopeResolver::class);
     $scopeResolver->method('resolve')->willReturn(MediaTenantScope::unscoped());
 
+    $keyValueFactory = $this->createMock(KeyValueFactoryInterface::class);
     $this->controller = new ImageProcessingController(
       $this->imageProcessingService,
       $loggerFactory,
@@ -180,6 +187,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $this->mediaAnalysisAccessGuard,
       $configFactory,
       $scopeResolver,
+      $keyValueFactory,
     );
 
     // Inject entityTypeManager via reflection (ControllerBase stores it
@@ -188,16 +196,16 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $ref->setAccessible(TRUE);
     $ref->setValue($this->controller, $entityTypeManager);
 
-    // Inject the keyvalue store ControllerBase::keyValue() lazily resolves:
-    // the controller reads markaspot_open311.media_publication_manual to let
-    // explicit GeoReport publication decisions win over re-analysis. Default
-    // (no mark) means "not manually controlled" — publish flow unaffected.
+    // Keep editorial marks separate from intake state, as the real factory
+    // does. ControllerBase's single cached collection is deliberately unused.
     $manualPublication = $this->createMock(KeyValueStoreInterface::class);
     $manualPublication->method('get')
       ->willReturnCallback(fn ($key) => $this->manualPublicationMarks[$key] ?? NULL);
-    $keyValueRef = new \ReflectionProperty($this->controller, 'keyValue');
-    $keyValueRef->setAccessible(TRUE);
-    $keyValueRef->setValue($this->controller, $manualPublication);
+    $collections = new KeyValueMemoryFactory();
+    $keyValueFactory->method('get')->willReturnCallback(
+      fn ($collection) => $collection === 'markaspot_open311.media_publication_manual'
+        ? $manualPublication : $collections->get($collection),
+    );
 
     // Inject string translation stub so $this->t() works in tests.
     $this->controller->setStringTranslation($this->getStringTranslationStub());

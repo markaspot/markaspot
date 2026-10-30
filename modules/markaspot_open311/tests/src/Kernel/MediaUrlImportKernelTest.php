@@ -14,6 +14,7 @@ use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\markaspot_open311\Service\RemoteImageException;
 use Drupal\markaspot_open311\Service\RemoteImageFetcher;
 use Drupal\markaspot_open311\Service\StatusClassifier;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
 use Drupal\media\Entity\Media;
 use Drupal\media\Entity\MediaType;
 use Drupal\node\Entity\NodeType;
@@ -50,6 +51,20 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
    * @var array<int, array|\Throwable>
    */
   private array $fetchResults = [];
+
+  /**
+   * Imported media handed to the asynchronous screening queue.
+   *
+   * @var array<int|string>
+   */
+  private array $queuedMedia = [];
+
+  /**
+   * Jobs actually scheduled after the report succeeds.
+   *
+   * @var array<int|string>
+   */
+  private array $scheduledMedia = [];
 
   /**
    * {@inheritdoc}
@@ -114,6 +129,14 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
     };
 
     $container = $this->container;
+    $screening = $this->createMock(MediaIntakeScreening::class);
+    $screening->method('register')->willReturnCallback(function ($media): void {
+      $this->assertFalse($media->isPublished());
+      $this->queuedMedia[] = $media->id();
+    });
+    $screening->method('enqueue')->willReturnCallback(function ($media): void {
+      $this->scheduledMedia[] = $media->id();
+    });
     return new GeoreportProcessorService(
       $container->get('config.factory'),
       $container->get('current_user'),
@@ -136,6 +159,7 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
       NULL,
       new KeyValueMemoryFactory(),
       $fetcher,
+      $screening,
     );
   }
 
@@ -156,7 +180,9 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
       ['data' => base64_decode(self::PNG), 'extension' => 'png', 'mime' => 'image/png'],
     ];
 
-    $references = $this->import(['media_url' => 'https://images.example.com/../../shell.php']);
+    $processor = $this->processor();
+    $handler = new \ReflectionMethod($processor, 'handleMediaUrls');
+    $references = $handler->invoke($processor, ['media_url' => 'https://images.example.com/../../shell.php']);
 
     $this->assertCount(1, $references);
     $media = Media::load($references[0]['target_id']);
@@ -166,6 +192,12 @@ final class MediaUrlImportKernelTest extends KernelTestBase {
     $this->assertMatchesRegularExpression('#^public://([^/]+/)*open311-[0-9a-f]{16}\.png$#', $file->getFileUri());
     $this->assertSame('image/png', $file->getMimeType());
     $this->assertTrue($file->isPermanent());
+    $this->assertSame([$media->id()], $this->queuedMedia);
+    $this->assertSame([], $this->scheduledMedia, 'No queue job runs before successful report creation.');
+    $processor->commitImportedMedia();
+    $this->assertSame([$media->id()], $this->scheduledMedia);
+    // The intake path only stores and enqueues, with no synchronous blur.
+    $this->assertSame(base64_decode(self::PNG), file_get_contents($file->getFileUri()));
   }
 
   /**

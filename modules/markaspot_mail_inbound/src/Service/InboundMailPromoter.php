@@ -24,6 +24,7 @@ use Drupal\markaspot_mail_inbound\Event\InboundRequestCreatedEvent;
 use Drupal\markaspot_mail_inbound\Exception\LocationOutsideJurisdictionException;
 use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\Util\MailTextUtils;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
 use Drupal\node\NodeInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
@@ -92,6 +93,7 @@ class InboundMailPromoter {
     protected ?LanguageManagerInterface $languageManager = NULL,
     protected ?object $boundaryValidator = NULL,
     protected ?object $hierarchyResolver = NULL,
+    protected ?MediaIntakeScreening $intakeScreening = NULL,
   ) {
   }
 
@@ -358,6 +360,8 @@ class InboundMailPromoter {
     // the web path. markaspot_group is a hard transitive dependency
     // (markaspot_open311 -> markaspot_group), so the hook is always present.
     $node->save();
+
+    $this->intakeScreening?->enqueueReport($node, TRUE);
 
     // The staged body is the FULL conversation log (original message plus
     // every citizen reply appended while staged and every staff/auto reply).

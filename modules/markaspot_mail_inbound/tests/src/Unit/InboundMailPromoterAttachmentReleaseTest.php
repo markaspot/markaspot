@@ -19,6 +19,7 @@ use Drupal\file\FileInterface;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\InternalRemarkWriter;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
 use Drupal\media\MediaInterface;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
@@ -45,6 +46,13 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
    * @var string[]
    */
   protected array $publicationCalls = [];
+
+  /**
+   * Media handed to the same screening queue as Open311 imports.
+   *
+   * @var array<int|string>
+   */
+  protected array $queuedMedia = [];
 
   /**
    * Builds a promoter whose media storage throws on selected file ids.
@@ -117,6 +125,9 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
     $token = $this->createMock(Token::class);
     $token->method('replace')->willReturnArgument(0);
 
+    $screening = $this->createMock(MediaIntakeScreening::class);
+    $screening->expects($this->never())->method('register');
+    $screening->expects($this->never())->method('enqueue');
     return new TestablePromoterForAttachments(
       $etm,
       $moduleHandler,
@@ -131,6 +142,9 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
       NULL,
       NULL,
       $this->createMock(LanguageManagerInterface::class),
+      NULL,
+      NULL,
+      $screening,
     );
   }
 
@@ -184,6 +198,7 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
     $this->assertCount(1, $result['items']);
     $this->assertSame(1008, $result['items'][0]['target_id']);
     $this->assertSame(2, $mediaCreations, 'Both files were attempted.');
+    $this->assertSame([], $this->queuedMedia, 'Attachment creation precedes successful node save and must not register work.');
   }
 
   /**
@@ -202,6 +217,7 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
     $promoter->exposeBuildAttachmentMedia($this->mail([7, 8]), $this->node(TRUE));
 
     $this->assertSame(['unpublished', 'unpublished'], $this->publicationCalls);
+    $this->assertSame([], $this->queuedMedia);
   }
 
   /**

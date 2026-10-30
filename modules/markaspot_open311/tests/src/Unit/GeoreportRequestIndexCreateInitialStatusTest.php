@@ -11,6 +11,8 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
+use Drupal\markaspot_group\Service\WorkspaceVisibilityInterface;
 use Drupal\markaspot_open311\Plugin\rest\resource\GeoreportRequestIndexResource;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\Entity\Node;
@@ -74,7 +76,17 @@ final class GeoreportRequestIndexCreateInitialStatusTest extends UnitTestCase {
     $paragraph->method('getRevisionId')->willReturn(12);
 
     $processor = $this->createMock(GeoreportProcessorServiceInterface::class);
-    $processor->method('prepareNodeProperties')->willReturn(['type' => 'service_request']);
+    $processor->expects($this->once())->method('prepareNodeProperties')
+      ->with([
+        'jurisdiction_id' => 5, 'service_code' => 'pothole',
+        'media_url' => 'https://images.example.com/fictional.png',
+      ], 'create')
+      ->willReturn(['type' => 'service_request']);
+    $processor->method('resolveJurisdictionId')->willReturn(5);
+    $processor->expects($this->once())->method('commitImportedMedia')->willReturnCallback(static function () use (&$events): void {
+      $events[] = 'enqueue_imported_media';
+    });
+    $processor->expects($this->never())->method('discardImportedMedia');
     $processor->expects($this->once())
       ->method('getInitialStatusTid')
       ->with(5)
@@ -88,7 +100,12 @@ final class GeoreportRequestIndexCreateInitialStatusTest extends UnitTestCase {
 
     $account = $this->createMock(AccountProxyInterface::class);
     $account->method('isAnonymous')->willReturn(FALSE);
+    $account->method('getRoles')->willReturn(['administrator']);
 
+    $scope = $this->createMock(JurisdictionScopeValidator::class);
+    $scope->method('resolveSubmissionJurisdiction')->willReturn(5);
+    $visibility = $this->createMock(WorkspaceVisibilityInterface::class);
+    $visibility->method('isBlockedForSubmission')->willReturn(FALSE);
     $resource = (new \ReflectionClass(GeoreportRequestIndexResource::class))->newInstanceWithoutConstructor();
     foreach ([
       'entityTypeManager' => $entityTypeManager,
@@ -96,14 +113,19 @@ final class GeoreportRequestIndexCreateInitialStatusTest extends UnitTestCase {
       'languageManager' => $languageManager,
       'currentUser' => $account,
       'logger' => new NullLogger(),
+      'jurisdictionScopeValidator' => $scope,
+      'workspaceVisibility' => $visibility,
     ] as $name => $value) {
       (new \ReflectionProperty($resource, $name))->setValue($resource, $value);
     }
 
-    $result = $resource->createNode(['jurisdiction_id' => '5', 'service_code' => 'pothole']);
+    $result = $resource->post([
+      'jurisdiction_id' => '5', 'service_code' => 'pothole',
+      'media_url' => 'https://images.example.com/fictional.png',
+    ]);
 
-    $this->assertSame('R-1', $result['service_requests']['request']['service_request_id']);
-    $this->assertSame(['set_status:84', 'validate:84', 'save'], $events);
+    $this->assertSame(['service_requests' => ['request' => ['service_request_id' => 'R-1']]], $result);
+    $this->assertSame(['set_status:84', 'validate:84', 'save', 'enqueue_imported_media'], $events);
   }
 
 }

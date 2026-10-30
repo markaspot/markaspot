@@ -14,6 +14,7 @@ use Drupal\markaspot_mail_inbound\Exception\PromotionConflictException;
 use Drupal\markaspot_mail_inbound\IngestResult;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
 use Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
 use Drupal\node\Entity\NodeType;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -542,7 +543,15 @@ class InboundMailStagingKernelTest extends KernelTestBase {
     $fileIds = $mail->getAttachmentFileIds();
     $this->assertNotEmpty($fileIds);
 
-    $node = $this->makePromoter()->promoteToServiceRequest($mail, $this->categoryTid);
+    $screening = $this->createMock(MediaIntakeScreening::class);
+    $screening->expects($this->once())->method('enqueueReport')->willReturnCallback(function (NodeInterface $saved, bool $register): void {
+      $this->assertTrue($register, 'Register mail media only after the report save.');
+      $this->assertFalse($saved->isNew(), 'Queue dispatch follows the node save.');
+      $stored = $this->container->get('entity_type.manager')->getStorage('node')->loadUnchanged($saved->id());
+      $this->assertNotNull($stored);
+      $this->assertFalse($stored->get('field_request_media')->isEmpty(), 'Attachments are associated before queue dispatch.');
+    });
+    $node = $this->makePromoter(screening: $screening)->promoteToServiceRequest($mail, $this->categoryTid);
 
     $fid = (int) reset($fileIds);
     $file = $this->container->get('entity_type.manager')->getStorage('file')->load($fid);
@@ -844,8 +853,10 @@ class InboundMailStagingKernelTest extends KernelTestBase {
    * @param bool $emptyStatusNote
    *   When TRUE the double leaves field_status_note empty so the promoter's
    *   MEDIUM 4 default-note fallback is exercised.
+   * @param \Drupal\markaspot_vision\Service\MediaIntakeScreening|null $screening
+   *   Optional intake queue boundary.
    */
-  protected function makePromoter(bool $emptyStatusNote = FALSE): InboundMailPromoter {
+  protected function makePromoter(bool $emptyStatusNote = FALSE, ?MediaIntakeScreening $screening = NULL): InboundMailPromoter {
     $statusTerm = Term::create(['vid' => 'service_category', 'name' => 'Open']);
     $statusTerm->save();
     $statusTid = (int) $statusTerm->id();
@@ -942,6 +953,9 @@ class InboundMailStagingKernelTest extends KernelTestBase {
       $processor,
       NULL,
       $this->container->get('language_manager'),
+      NULL,
+      NULL,
+      $screening,
     );
   }
 

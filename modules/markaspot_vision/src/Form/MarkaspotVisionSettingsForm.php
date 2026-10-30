@@ -73,10 +73,22 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('multiple_uploads') ?? TRUE,
     ];
 
+    $form['file_upload']['imported_image_analysis'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Analyse imported photos'),
+      '#options' => [
+        'off' => $this->t('Off'),
+        'without_description' => $this->t('Only when the report has no description'),
+        'always' => $this->t('Always'),
+      ],
+      '#default_value' => $config->get('imported_image_analysis') ?? 'without_description',
+      '#description' => $this->t('Applies to Open311 media URLs and promoted email attachments. Blur follows the same configuration and hosting requirements as citizen uploads. With the default description policy, photos accompanying citizen text are blurred when configured but are not checked by AI for residual privacy issues. AI analysis also requires the tenant AI feature and available budget. Results are stored as staff suggestions and never replace the report description.'),
+    ];
+
     $form['file_upload']['require_ai_screening'] = [
       '#type' => 'checkbox',
-      '#title' => $this->t('Require AI screening before publishing media'),
-      '#description' => $this->t('When enabled, uploaded media stays unpublished until AI analysis completes successfully and confirms no privacy issues. When disabled, media is published immediately on node save (legacy behavior). Recommended: enabled.'),
+      '#title' => $this->t('Require privacy screening before publishing media'),
+      '#description' => $this->t('When enabled, media stays unpublished until screening completes without privacy issues. Imports wait for their queue job and follow the same blur policy as citizen uploads. If blur is neither configured nor required, an import without successful AI analysis remains held in strict mode. Turning this setting off allows media without a privacy hold to be published when the report is published (legacy behavior). Recommended: enabled.'),
       '#default_value' => $config->get('require_ai_screening') ?? TRUE,
     ];
 
@@ -356,6 +368,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
     // Save basic settings.
     $config
       ->set('multiple_uploads', $form_state->getValue('multiple_uploads'))
+      ->set('imported_image_analysis', $form_state->getValue('imported_image_analysis') ?? 'without_description')
       ->set('rate_limit_max', max(0, (int) $form_state->getValue('rate_limit_max')))
       ->set('require_ai_screening', $form_state->getValue('require_ai_screening'))
       ->set('auth_type', $form_state->getValue('auth_type'))

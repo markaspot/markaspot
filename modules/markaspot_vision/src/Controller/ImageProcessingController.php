@@ -6,6 +6,8 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\Lock\LockBackendInterface;
+use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -17,6 +19,9 @@ use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
+use Drupal\markaspot_vision\Service\MediaIntakeScreening;
+use Drupal\markaspot_vision\Service\ScreeningMarker;
+use Drupal\markaspot_ai\Utility\BlurPolicy;
 
 /**
  * Controller for processing images with AI vision services.
@@ -97,10 +102,14 @@ class ImageProcessingController extends ControllerBase {
    *   The configuration factory.
    * @param \Drupal\markaspot_vision\Service\MediaTenantScopeResolver $media_tenant_scope_resolver
    *   Resolves the tenant the analyzed media belong to.
+   * @param \Drupal\Core\KeyValueStore\KeyValueFactoryInterface $keyValueFactory
+   *   Provides separate intake and editorial-publication collections.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
    * @param \Drupal\markaspot_vision\Service\OriginalImageStore|null $original_image_store
    *   The original image store (optional).
+   * @param \Drupal\Core\Lock\LockBackendInterface|null $operationLock
+   *   Shared publication and tenant-budget locks.
    */
   public function __construct(
     ImageProcessingService $image_processing_service,
@@ -110,8 +119,10 @@ class ImageProcessingController extends ControllerBase {
     MediaAnalysisAccessGuard $media_analysis_access_guard,
     ConfigFactoryInterface $config_factory,
     MediaTenantScopeResolver $media_tenant_scope_resolver,
+    protected KeyValueFactoryInterface $keyValueFactory,
     ?TierConfigService $tier_config = NULL,
     ?OriginalImageStore $original_image_store = NULL,
+    protected ?LockBackendInterface $operationLock = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
@@ -137,10 +148,12 @@ class ImageProcessingController extends ControllerBase {
       $container->get('markaspot_vision.media_analysis_access_guard'),
       $container->get('config.factory'),
       $container->get('markaspot_vision.media_tenant_scope'),
+      $container->get('keyvalue'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
       $container->get('markaspot_vision.original_image_store'),
+      $container->get('lock'),
     );
   }
 
@@ -155,6 +168,8 @@ class ImageProcessingController extends ControllerBase {
    */
   // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public function getAIResults(Request $request): JsonResponse {
+    $budget_lock_name = NULL;
+    $intake_locks = [];
     $rate_limit_max = $this->getRateLimitMax();
 
     // A zero limit is an explicit operational kill switch for this limiter.
@@ -216,6 +231,24 @@ class ImageProcessingController extends ControllerBase {
         throw new \Exception('No valid media entities found for the provided media_ids.');
       }
 
+      // ControllerBase::keyValue() caches only its first collection. Use the
+      // factory to keep intake and editorial-publication state separate.
+      $intake_store = $this->keyValueFactory->get(MediaIntakeScreening::STORE);
+
+      // The queue and interactive analysis must never transform an imported
+      // image concurrently. Order locks consistently for multi-image batches.
+      ksort($media_entities, SORT_NUMERIC);
+      foreach ($media_entities as $mid => $media) {
+        if ($this->operationLock && $intake_store->has($mid)) {
+          $name = MediaIntakeScreening::QUEUE . ':' . $mid;
+          if (!$this->operationLock->acquire($name, 900)) {
+            return new JsonResponse(['error' => 'Imported image screening is already running. Please retry.'], 409);
+          }
+          $intake_locks[] = $name;
+          $media_entities[$mid] = $media_storage->loadUnchanged($mid);
+        }
+      }
+
       // Tenant scope follows the media, not the caller: the jurisdiction of a
       // report already referencing them or the binding made at upload (see
       // MediaTenantScopeResolver for the transitional first-analysis binding).
@@ -243,32 +276,12 @@ class ImageProcessingController extends ControllerBase {
         ], 403);
       }
 
-      // AI budget check (only on SaaS with markaspot_fastmap installed).
-      if ($this->tierConfig) {
-        if (!$jurisdiction instanceof GroupInterface || !$jurisdiction->hasField('field_tier')) {
-          return new JsonResponse(['error' => 'Invalid jurisdiction.'], 400);
-        }
-
-        $tier = !$jurisdiction->get('field_tier')->isEmpty()
-          ? $jurisdiction->get('field_tier')->value
-          : 'free';
-        if ($this->tierConfig->isAIBudgetExhausted((int) $jurisdiction->id(), $tier)) {
-          $this->logger->notice('AI budget exhausted for jurisdiction @jid (tier: @tier).', [
-            '@jid' => $jurisdiction->id(),
-            '@tier' => $tier,
-          ]);
-          return new JsonResponse([
-            'status' => 'budget_exhausted',
-            'message' => 'Monthly AI analysis budget exhausted.',
-          ], 429);
-        }
-      }
-
       $jurisdictionId = $jurisdiction instanceof GroupInterface ? (int) $jurisdiction->id() : NULL;
 
       // Collect file URIs, keyed by media ID for blur result mapping.
       $file_uris = [];
       $media_uri_map = [];
+      $media_source_hashes = [];
       $persisted_privacy_holds = [];
       foreach ($media_entities as $media) {
         // Snapshot before this request replaces the stored model verdict.
@@ -285,6 +298,7 @@ class ImageProcessingController extends ControllerBase {
             $uri = $file->getFileUri();
             $file_uris[] = $uri;
             $media_uri_map[$media->id()] = $uri;
+            $media_source_hashes[$uri] = @hash_file('sha256', $uri);
           }
         }
       }
@@ -292,11 +306,61 @@ class ImageProcessingController extends ControllerBase {
         throw new \Exception('No valid file URIs found for the media entities.');
       }
 
+      // AI budget check (only on SaaS with markaspot_fastmap installed).
+      if ($this->tierConfig) {
+        if (!$jurisdiction instanceof GroupInterface || !$jurisdiction->hasField('field_tier')) {
+          return new JsonResponse(['error' => 'Invalid jurisdiction.'], 400);
+        }
+
+        $tier = !$jurisdiction->get('field_tier')->isEmpty()
+          ? $jurisdiction->get('field_tier')->value
+          : 'free';
+        if ($this->operationLock) {
+          $name = 'markaspot_media_intake:budget:' . $jurisdiction->id();
+          if (!$this->operationLock->acquire($name, 30)) {
+            $this->operationLock->wait($name, 1);
+            if (!$this->operationLock->acquire($name, 30)) {
+              return new JsonResponse(['error' => 'AI analysis is already reserving budget for this jurisdiction. Please retry.'], 429);
+            }
+          }
+          $budget_lock_name = $name;
+        }
+        if ($this->tierConfig->isAIBudgetExhausted((int) $jurisdiction->id(), $tier)) {
+          $this->logger->notice('AI budget exhausted for jurisdiction @jid (tier: @tier).', [
+            '@jid' => $jurisdiction->id(),
+            '@tier' => $tier,
+          ]);
+          return new JsonResponse([
+            'status' => 'budget_exhausted',
+            'message' => 'Monthly AI analysis budget exhausted.',
+          ], 429);
+        }
+      }
+
       // Get user's language preference from request (frontend sends this).
       $langcode = $data['language'] ?? NULL;
 
       // Process images with ImageProcessingService.
-      $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode, $jurisdictionId);
+      if ($this->tierConfig && $jurisdictionId) {
+        // Reserve before the external call so an interruption cannot escape
+        // accounting. The shared tenant lock covers check and reservation.
+        $this->tierConfig->recordAIAnalysis($jurisdictionId);
+      }
+      if ($budget_lock_name !== NULL) {
+        $this->operationLock?->release($budget_lock_name);
+        $budget_lock_name = NULL;
+      }
+      $screened_uris = [];
+      foreach ($media_entities as $media) {
+        $metadata = json_decode((string) $media->get('field_ai_metadata')?->value, TRUE);
+        $uri = $media_uri_map[$media->id()] ?? NULL;
+        if ($uri && ScreeningMarker::accepts($metadata['intake_screening'] ?? [], $media_source_hashes[$uri], BlurPolicy::isRequired($this->logger))) {
+          $screened_uris[$uri] = $metadata['intake_screening'];
+        }
+      }
+      $ai_result = $screened_uris
+        ? $this->imageProcessingService->processScreenedImages($screened_uris, $langcode, $jurisdictionId, $file_uris)
+        : $this->imageProcessingService->processImages($file_uris, $langcode, $jurisdictionId);
       if (!$ai_result) {
         throw new \Exception('Failed to process images using the AI service.');
       }
@@ -313,7 +377,7 @@ class ImageProcessingController extends ControllerBase {
       // The observation only makes the model describe before it judges; it is
       // free text outside the description's privacy rule, so it is neither
       // stored in field_ai_metadata nor returned.
-      unset($decoded_result['observation']);
+      unset($decoded_result['observation'], $decoded_result['intake_screening'], $decoded_result['intake_suggestions']);
       // Normalized once: the media field holds 64 characters, and the raw
       // model value stays in field_ai_metadata for the audit trail.
       $hazard_category = $this->imageProcessingService->normalizeHazardCategory($decoded_result['hazard_category'] ?? NULL);
@@ -375,6 +439,7 @@ class ImageProcessingController extends ControllerBase {
       $privacy_holds = [];
       $media_index = 0;
       foreach ($media_entities as $media) {
+        $media_source_changed = FALSE;
         try {
           $hazard_flag = !empty($decoded_result['hazard_flag']);
           $hazard_issues = $decoded_result['hazard_issues'] ?? [];
@@ -437,6 +502,18 @@ class ImageProcessingController extends ControllerBase {
           // not the mere fact that blur preprocessing ran successfully.
           // The raw model output, plus which escalation covered what it saw.
           $media_metadata = $decoded_result;
+          if ($media_uri && !$media_was_skipped) {
+            $media_metadata['intake_screening'] = [
+              'privacy_screened' => ($blur_results[$media_uri]['processed'] ?? FALSE) === TRUE,
+              'processed' => ($blur_results[$media_uri]['processed'] ?? FALSE) === TRUE,
+              'blur_required' => BlurPolicy::isRequired($this->logger),
+              'origin' => 'vision',
+              'blurred' => $media_was_blurred,
+              'source_sha256' => $media_was_blurred && empty($blur_results[$media_uri]['persisted'])
+                ? hash('sha256', $blur_results[$media_uri]['contents'])
+                : $media_source_hashes[$media_uri],
+            ];
+          }
           $media_attribution = $privacy_attribution[$media->uuid()];
           $media_metadata['markaspot_privacy_escalation'] = [
             'mode' => $reblurred[$media_uri] ?? 'none',
@@ -458,14 +535,11 @@ class ImageProcessingController extends ControllerBase {
           if ($media_was_blurred) {
             // Refuse before keeping anything: a media pointing at someone
             // else's photo must not get a copy of its original either.
-            $this->imageProcessingService->assertOverwritable($media, $media_uri);
-            // Staff keep the unblurred original where the site opted in;
-            // the file on disk is still unblurred until the next line.
-            $this->originalImageStore?->retain($media, $media_uri);
-            $this->imageProcessingService->saveBlurredImage(
+            $this->imageProcessingService->persistBlurResult(
               $media,
-              $blur_results[$media_uri]['contents'],
+              $blur_results[$media_uri],
               $media_uri,
+              $this->originalImageStore,
             );
             // Response-only blurred thumbnail for the citizen upload preview.
             // These are the user's own, already-anonymised bytes (data URL),
@@ -506,12 +580,54 @@ class ImageProcessingController extends ControllerBase {
           // wins over (re-)screening, so a re-analysis must not flip the state
           // back. Fresh uploads have no such mark, so first-screen publishing
           // is unaffected.
-          $manual_publication = $this->keyValue('markaspot_open311.media_publication_manual');
-          if (!$manual_publication->get($media->id()) && !$privacy_held) {
-            $media->setPublished();
+          $publication_lock_name = 'markaspot_open311.media_publication.' . $media->id();
+          if ($this->operationLock && !$this->operationLock->acquire($publication_lock_name, 30)) {
+            throw new \RuntimeException('Media publication is being edited. Please retry analysis.');
           }
-
-          $media->save();
+          try {
+            if ($this->operationLock) {
+              $fresh = $media_storage->loadUnchanged($media->id());
+              if (!$fresh || $fresh->get('field_media_image')->target_id !== $media->get('field_media_image')->target_id) {
+                $media_source_changed = TRUE;
+                throw new \RuntimeException('The media source changed during analysis.');
+              }
+              $expected_hash = $media_metadata['intake_screening']['source_sha256'] ?? NULL;
+              if (!$media_was_skipped && (!$expected_hash || $expected_hash !== @hash_file('sha256', $media_uri))) {
+                $media_source_changed = TRUE;
+                throw new \RuntimeException('The media bytes changed during analysis.');
+              }
+              if ($fresh->isPublished()) {
+                $media->setPublished();
+              }
+              else {
+                $media->setUnpublished();
+              }
+            }
+            $manual_publication = $this->keyValueFactory->get('markaspot_open311.media_publication_manual');
+            if (!$manual_publication->get($media->id())) {
+              $can_publish = TRUE;
+              if ($intake_store->has($media->id())) {
+                $parents = $this->entityTypeManager()->getStorage('node');
+                $ids = $parents->getQuery()->accessCheck(FALSE)
+                  ->condition('type', 'service_request')
+                  ->condition('field_request_media', $media->id())->execute();
+                $can_publish = !empty($ids);
+                foreach ($parents->loadMultiple($ids) as $parent) {
+                  $can_publish = $can_publish && $parent->isPublished();
+                }
+              }
+              if (!$can_publish || $privacy_held) {
+                $media->setUnpublished();
+              }
+              else {
+                $media->setPublished();
+              }
+            }
+            $media->save();
+          }
+          finally {
+            $this->operationLock?->release($publication_lock_name);
+          }
           $this->logger->notice('AI results successfully saved for media entity @id.', [
             '@id' => $media->id(),
           ]);
@@ -521,7 +637,7 @@ class ImageProcessingController extends ControllerBase {
             '@id' => $media->id(),
             '@message' => $e->getMessage(),
           ]);
-          if (!empty($media_was_blurred)) {
+          if (!empty($media_was_blurred) || $media_source_changed) {
             throw $e;
           }
         }
@@ -565,7 +681,6 @@ class ImageProcessingController extends ControllerBase {
 
       // Record AI analysis for budget tracking, charged to the media tenant.
       if ($this->tierConfig && $jurisdictionId) {
-        $this->tierConfig->recordAIAnalysis($jurisdictionId);
         // Every privacy re-check is a model call of its own.
         for ($i = 0; $i < $escalation['rechecks']; $i++) {
           $this->tierConfig->recordAIAnalysis($jurisdictionId);
@@ -662,6 +777,14 @@ class ImageProcessingController extends ControllerBase {
     catch (\Exception $e) {
       $this->logger->error('Error in getAIResults: @message', ['@message' => $e->getMessage()]);
       return new JsonResponse(['error' => $this->t('An error occurred during image analysis.')], 500);
+    }
+    finally {
+      if ($budget_lock_name !== NULL) {
+        $this->operationLock?->release($budget_lock_name);
+      }
+      foreach (array_reverse($intake_locks) as $name) {
+        $this->operationLock?->release($name);
+      }
     }
   }
 
@@ -881,6 +1004,7 @@ class ImageProcessingController extends ControllerBase {
 
       $blur_results[$uri]['contents'] = $escalated;
       $blur_results[$uri]['blurred'] = TRUE;
+      unset($blur_results[$uri]['persisted']);
       $applied[$uri] = $mode;
       $this->logger->notice('GDPR audit: residual privacy finding on media @id covered by the @mode blur.', [
         '@id' => $media->id(),

@@ -66,6 +66,7 @@ services:
       - '@language_manager'
       - '@?markaspot_validation.boundary_validator'
       - '@?markaspot_group.hierarchy_resolver'
+      - '@?markaspot_vision.media_intake'
 
   # Shared fidelity / degradation checks: hook_requirements() and the
   # dashboard API's "fidelity" block consume the same answers (#482).

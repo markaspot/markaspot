@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_vision\Kernel;
 
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\file\Entity\File;
@@ -98,6 +100,11 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   private array $charges = [];
 
   /**
+   * Simulates an editorial publication while the model request is in flight.
+   */
+  private ?\Closure $duringAnalysis = NULL;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -116,6 +123,14 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
     $this->container->get('current_user')->setAccount($root);
 
     $this->createMediaType('image', ['id' => 'request_image', 'label' => 'Request image']);
+    // Exercise actual metadata and publication saves, rather than swallowing
+    // missing-field exceptions in the controller's per-media error handler.
+    $vision_config = new FileStorage(dirname(__DIR__, 3) . '/config/install');
+    foreach ($vision_config->listAll('field.storage.media.field_ai_') as $name) {
+      $definition = $vision_config->read($name);
+      FieldStorageConfig::create($definition)->save();
+      FieldConfig::create($vision_config->read('field.field.media.request_image.' . $definition['field_name']))->save();
+    }
     NodeType::create(['type' => 'service_request', 'name' => 'Service request'])->save();
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
     $relationship_types = $this->container->get('entity_type.manager')->getStorage('group_relationship_type');
@@ -633,6 +648,106 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
   }
 
   /**
+   * A queue budget reservation blocks the controller before any provider call.
+   */
+  public function testQueueAndControllerShareTheBudgetLock(): void {
+    $request = $this->anonymousUploadRequest('upload-budget-lock');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->exactly(2))->method('acquire')
+      ->with('markaspot_media_intake:budget:' . $this->tenantA->id(), 30)->willReturn(FALSE);
+    $this->assertStatus(429, $this->analyze($request, [$media], $this->tenantA->id(), TRUE, NULL, $lock));
+    $this->assertSame([], $this->providerCalls);
+    $this->assertSame([], $this->charges);
+  }
+
+  /**
+   * An active queue job excludes interactive blur and analysis of its image.
+   */
+  public function testIntakeLockPreventsConcurrentControllerAnalysis(): void {
+    $request = $this->anonymousUploadRequest('upload-intake-lock');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $this->container->get('keyvalue')->get('markaspot_vision.media_intake')->set($media->id(), ['status' => 'pending']);
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->once())->method('acquire')
+      ->with('markaspot_media_intake:' . $media->id(), 900)->willReturn(FALSE);
+    $this->assertStatus(409, $this->analyze($request, [$media], $this->tenantA->id(), FALSE, NULL, $lock));
+    $this->assertSame([], $this->providerCalls);
+    $this->assertSame([], $this->charges);
+  }
+
+  /**
+   * A tenant's other images can reserve budget while the provider is running.
+   */
+  public function testBudgetLockReleasedBeforeProviderCall(): void {
+    $request = $this->anonymousUploadRequest('upload-budget-release');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $released = FALSE;
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->method('acquire')->willReturn(TRUE);
+    $lock->method('release')->willReturnCallback(function (string $name) use (&$released): void {
+      if ($name === 'markaspot_media_intake:budget:' . $this->tenantA->id()) {
+        $released = TRUE;
+      }
+    });
+    $this->duringAnalysis = function () use (&$released): void {
+      $this->assertTrue($released, 'Only budget check and reservation hold the tenant lock.');
+      $this->assertSame([(int) $this->tenantA->id()], $this->charges);
+    };
+    $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantA->id(), TRUE, NULL, $lock));
+  }
+
+  /**
+   * A manual publication during analysis survives the controller's save.
+   */
+  public function testManualDecisionDuringControllerAnalysisIsPreserved(): void {
+    foreach ([TRUE, FALSE] as $published) {
+      $request = $this->anonymousUploadRequest('upload-editorial-' . (int) $published);
+      $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+      $this->duringAnalysis = function () use ($media, $published): void {
+        $fresh = $this->container->get('entity_type.manager')->getStorage('media')->loadUnchanged($media->id());
+        ($published ? $fresh->setPublished() : $fresh->setUnpublished())->save();
+        $this->container->get('keyvalue')->get('markaspot_open311.media_publication_manual')->set($media->id(), TRUE);
+      };
+      $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantA->id()));
+      $this->assertSame($published, Media::load($media->id())->isPublished());
+    }
+  }
+
+  /**
+   * Intake records are not editorial overrides and respect report status.
+   */
+  public function testImportedMediaPublicationRequiresPublishedReport(): void {
+    foreach ([TRUE, FALSE] as $published) {
+      $request = $this->anonymousUploadRequest('upload-imported-' . (int) $published);
+      $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+      $report = $this->createReport([$this->tenantA], [$media]);
+      ($published ? $report->setPublished() : $report->setUnpublished())->save();
+      $this->container->get('keyvalue')->get('markaspot_vision.media_intake')->set($media->id(), ['status' => 'pending']);
+      $this->assertStatus(200, $this->analyze($request, [$media], $this->tenantA->id()));
+      $fresh = $this->container->get('entity_type.manager')->getStorage('media')->loadUnchanged($media->id());
+      $this->assertSame($published, $fresh->isPublished());
+      $marker = json_decode($fresh->get('field_ai_metadata')->value, TRUE)['intake_screening'];
+      $this->assertFalse($marker['privacy_screened']);
+      $this->assertFalse($marker['processed']);
+    }
+  }
+
+  /**
+   * Same-file byte replacement during analysis cannot be marked or published.
+   */
+  public function testSourceBytesChangedDuringAnalysisFailClosed(): void {
+    $request = $this->anonymousUploadRequest('upload-replaced-bytes');
+    $media = $this->createUpload($request, NULL, (string) $this->tenantA->id());
+    $this->duringAnalysis = static function () use ($media): void {
+      file_put_contents($media->get('field_media_image')->entity->getFileUri(), 'Fictional replaced bytes');
+    };
+    $this->assertStatus(500, $this->analyze($request, [$media], $this->tenantA->id(), TRUE));
+    $this->assertFalse(Media::load($media->id())->isPublished());
+    $this->assertSame([(int) $this->tenantA->id()], $this->charges, 'The interrupted model call remains accounted for.');
+  }
+
+  /**
    * Runs the analysis endpoint with doubles for provider, policy and budget.
    *
    * @param \Symfony\Component\HttpFoundation\Request $context
@@ -645,8 +760,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
    *   Whether the SaaS budget ledger is installed.
    * @param \Drupal\markaspot_vision\Service\MediaTenantScopeResolver|null $resolver
    *   A resolver replacing the registered one.
+   * @param \Drupal\Core\Lock\LockBackendInterface|null $operationLock
+   *   Optional lock boundary for contention tests.
    */
-  private function analyze(Request $context, array $media, int|string|null $jurisdiction_id, bool $fastmap = FALSE, ?MediaTenantScopeResolver $resolver = NULL): JsonResponse {
+  private function analyze(Request $context, array $media, int|string|null $jurisdiction_id, bool $fastmap = FALSE, ?MediaTenantScopeResolver $resolver = NULL, ?LockBackendInterface $operationLock = NULL): JsonResponse {
     $body = ['media_ids' => array_map(static fn (MediaInterface $item): string => $item->uuid(), $media)];
     if ($jurisdiction_id !== NULL) {
       $body['jurisdiction_id'] = $jurisdiction_id;
@@ -657,9 +774,14 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       $request->setSession($context->getSession());
     }
 
-    $provider = $this->createMock(ImageProcessingService::class);
+    $methods = array_diff(get_class_methods(ImageProcessingService::class), ['__construct', 'processScreenedImages']);
+    $provider = $this->getMockBuilder(ImageProcessingService::class)
+      ->disableOriginalConstructor()->onlyMethods($methods)->getMock();
     $provider->method('processImages')->willReturnCallback(function (array $uris, ?string $langcode, ?int $jurisdiction): array {
       $this->providerCalls[] = $jurisdiction;
+      if ($this->duringAnalysis) {
+        ($this->duringAnalysis)();
+      }
       return [
         'ai_result' => json_encode(['privacy_flag' => FALSE, 'privacy_issues' => []]),
         'blur_results' => [],
@@ -690,7 +812,10 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       $this->guard(),
       $this->container->get('config.factory'),
       $resolver ?? $this->resolver(),
+      $this->container->get('keyvalue'),
       $tier,
+      NULL,
+      $operationLock ?? $this->container->get('lock'),
     );
     $controller->setStringTranslation($this->container->get('string_translation'));
     return $controller->getAIResults($request);

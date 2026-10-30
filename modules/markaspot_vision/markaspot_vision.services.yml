@@ -1,4 +1,20 @@
 services:
+  markaspot_vision.media_intake:
+    class: Drupal\markaspot_vision\Service\MediaIntakeScreening
+    arguments:
+      - '@queue'
+      - '@keyvalue'
+      - '@lock'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@datetime.time'
+      - '@markaspot_vision.image_processing'
+      - '@markaspot_vision.original_image_store'
+      - '@markaspot_vision.media_tenant_scope'
+      - '@markaspot_nuxt.feature_scope_resolver'
+      - '@logger.factory'
+      - '@?markaspot_fastmap.tier_config'
+      - '@?markaspot_ai.token_tracking'
   Drupal\markaspot_vision\Hook\HazardLevelHooks:
     class: Drupal\markaspot_vision\Hook\HazardLevelHooks
     public: true
@@ -51,5 +67,9 @@ services:
       - '@markaspot_vision.media_analysis_access_guard'
       - '@config.factory'
       - '@markaspot_vision.media_tenant_scope'
+      - '@keyvalue'
+      - '@?markaspot_fastmap.tier_config'
+      - '@markaspot_vision.original_image_store'
+      - '@lock'
     tags:
       - { name: controller.service_arguments }
