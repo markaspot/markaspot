@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.238](https://github.com/markaspot/markaspot/compare/11.9.237...11.9.238) (2026-10-31)
+
+### Bug Fixes
+
+* **fastmap:** issue the signup login token only to the browser that started the signup ([bbfc93f](https://github.com/markaspot/markaspot/commit/bbfc93f6711668a44542e57364a0a1ab5b7f5cf1))
+* **fastmap:** require the signup binding on every workspace login token and log foreign openers ([6497689](https://github.com/markaspot/markaspot/commit/64976890a94d41af72c2070d0dc01e852a08ab34))
+
 ## [11.9.237](https://github.com/markaspot/markaspot/compare/11.9.236...11.9.237) (2026-10-30)
 
 ### Features
