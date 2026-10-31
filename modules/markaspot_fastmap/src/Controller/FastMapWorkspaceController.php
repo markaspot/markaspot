@@ -93,6 +93,16 @@ class FastMapWorkspaceController extends ControllerBase {
   private const VERIFIED_TOKEN_RECOVERY_TTL = 86400;
 
   /**
+   * Header with the signup browser's binding nonce, set by the Nuxt proxy.
+   */
+  private const SIGNUP_BINDING_HEADER = 'X-Fastmap-Signup-Binding';
+
+  /**
+   * Keyvalue collection that binds a verify token to the signup browser.
+   */
+  private const SIGNUP_BINDING_COLLECTION = 'markaspot_fastmap_signup_binding';
+
+  /**
    * The database connection.
    *
    * @var \Drupal\Core\Database\Connection
@@ -429,6 +439,26 @@ class FastMapWorkspaceController extends ControllerBase {
         $this->fastmapLogger->error('Failed to store pending workspace: @msg', ['@msg' => $e->getMessage()]);
         return new JsonResponse(['error' => 'Failed to create pending workspace'], 500);
       }
+
+      // Only the browser that started the signup may log in automatically
+      // after verification. Without a binding the verify link still
+      // provisions, and the owner signs in with an email code.
+      $bindingHash = $this->requestBindingHash($request);
+      if ($bindingHash !== NULL) {
+        try {
+          $this->keyValueExpirable->get(self::SIGNUP_BINDING_COLLECTION)->setWithExpire(
+            hash('sha256', $token),
+            $bindingHash,
+            self::VERIFICATION_TTL + self::VERIFIED_TOKEN_RECOVERY_TTL
+          );
+        }
+        catch (\Exception $e) {
+          $this->fastmapLogger->warning('Could not store the signup binding for @slug: @msg', [
+            '@slug' => $slug,
+            '@msg' => $e->getMessage(),
+          ]);
+        }
+      }
     }
     finally {
       $this->lock->release($slugLockName);
@@ -463,6 +493,12 @@ class FastMapWorkspaceController extends ControllerBase {
       $this->database->delete('markaspot_fastmap_pending')
         ->condition('token', $token)
         ->execute();
+      try {
+        $this->keyValueExpirable->get(self::SIGNUP_BINDING_COLLECTION)->delete(hash('sha256', $token));
+      }
+      catch (\Exception) {
+        // The binding expires on its own; it is useless without the row.
+      }
 
       $this->fastmapLogger->error('Verification email failed for @email (slug: @slug). Pending row removed.', [
         '@email' => $email,
@@ -561,8 +597,9 @@ class FastMapWorkspaceController extends ControllerBase {
           $verifiedSlug = (string) $verified['slug'];
           $selectedTier = (string) ($verified['selected_tier'] ?? '');
           $baseUrl = $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
-          $loginToken = $this->canReissueVerifiedLoginToken($verified)
-            ? $this->createLoginTokenForVerifiedWorkspace($verifiedSlug, $token)
+          $bindingHash = $this->matchedSignupBinding($token);
+          $loginToken = $bindingHash !== NULL && $this->canReissueVerifiedLoginToken($verified)
+            ? $this->createLoginTokenForVerifiedWorkspace($verifiedSlug, $token, $bindingHash)
             : NULL;
 
           if ($baseUrl && !$wantsJsonResponse) {
@@ -652,7 +689,19 @@ class FastMapWorkspaceController extends ControllerBase {
       // automatically logged in after email verification.
       // Uses the same keyvalue.expirable store as the dev switch-token flow,
       // but with a production-safe 5-minute TTL and no devel-module guard.
-      $loginToken = $this->createWorkspaceLoginToken((int) $result['user_id'], $result['slug'], $token);
+      // Only the signup browser gets one: a mail link checker that opens the
+      // link first verifies the address but must not receive the session,
+      // and leaving the verified row unclaimed lets the owner's browser
+      // still mint the token through the recovery path afterwards.
+      $bindingHash = $this->matchedSignupBinding($token);
+      $loginToken = $bindingHash !== NULL
+        ? $this->createWorkspaceLoginToken((int) $result['user_id'], $result['slug'], $token, $bindingHash)
+        : NULL;
+      if ($bindingHash === NULL) {
+        $this->fastmapLogger->info('Workspace @slug verified outside the signup browser; no login token issued.', [
+          '@slug' => $result['slug'],
+        ]);
+      }
 
       // Redirect to workspace dashboard or return JSON.
       $baseUrl = $config->get('workspace_base_url');
@@ -748,15 +797,50 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
+   * Hashes a well-formed signup binding nonce from the request headers.
+   *
+   * The Nuxt proxy forwards the nonce from an httpOnly cookie it set in the
+   * signup browser. Only its hash is ever stored.
+   */
+  private function requestBindingHash(?Request $request): ?string {
+    $nonce = $request ? trim((string) $request->headers->get(self::SIGNUP_BINDING_HEADER, '')) : '';
+    return preg_match('/^[0-9a-f]{64}$/', $nonce) ? hash('sha256', $nonce) : NULL;
+  }
+
+  /**
+   * Returns the binding hash when the current request is the signup browser.
+   *
+   * NULL for any other opener of the verify link, for signups that never
+   * carried a binding and when the binding store is unavailable.
+   */
+  private function matchedSignupBinding(string $verifyToken): ?string {
+    $requestHash = $this->requestBindingHash($this->requestStack->getCurrentRequest());
+    if ($requestHash === NULL) {
+      return NULL;
+    }
+
+    try {
+      $storedHash = $this->keyValueExpirable->get(self::SIGNUP_BINDING_COLLECTION)->get(hash('sha256', $verifyToken));
+    }
+    catch (\Exception $e) {
+      $this->fastmapLogger->warning('Could not read the signup binding: @msg', ['@msg' => $e->getMessage()]);
+      return NULL;
+    }
+
+    return is_string($storedHash) && hash_equals($storedHash, $requestHash) ? $storedHash : NULL;
+  }
+
+  /**
    * Creates or recovers the original short-lived workspace login token.
    *
    * The verified row is claimed atomically at mint time. A separate recovery
    * entry indexed by the verification token's hash permits delivery retries
    * only while that same login token remains unconsumed. Neither retry nor
    * expiry permits a second mint or extends either entry's lifetime. No raw
-   * verification secret is stored in either keyvalue collection.
+   * verification secret is stored in either keyvalue collection. A binding
+   * hash ties the login token to the signup browser; the claim requires it.
    */
-  private function createWorkspaceLoginToken(int $uid, string $slug, ?string $verifyToken = NULL): ?string {
+  private function createWorkspaceLoginToken(int $uid, string $slug, ?string $verifyToken = NULL, ?string $bindingHash = NULL): ?string {
     try {
       $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
       $recoveryStore = NULL;
@@ -773,6 +857,7 @@ class FastMapWorkspaceController extends ControllerBase {
           return is_array($existingData)
             && ($existingData['uid'] ?? NULL) === $uid
             && ($existingData['slug'] ?? NULL) === $slug
+            && ($existingData['binding'] ?? NULL) === $bindingHash
               ? $existingToken : NULL;
         }
         if (!$this->markVerifiedTokenClaimed($verifyToken)) {
@@ -784,7 +869,7 @@ class FastMapWorkspaceController extends ControllerBase {
       $store->setWithExpire($loginToken, [
         'uid' => $uid,
         'slug' => $slug,
-      ], self::LOGIN_TOKEN_TTL);
+      ] + ($bindingHash !== NULL ? ['binding' => $bindingHash] : []), self::LOGIN_TOKEN_TTL);
       if ($recoveryStore !== NULL && $recoveryKey !== NULL) {
         $recoveryStore->setWithExpire($recoveryKey, $loginToken, self::LOGIN_TOKEN_TTL);
       }
@@ -832,13 +917,13 @@ class FastMapWorkspaceController extends ControllerBase {
   /**
    * Re-issues a login token for an already verified workspace when possible.
    */
-  private function createLoginTokenForVerifiedWorkspace(string $slug, string $verifyToken): ?string {
+  private function createLoginTokenForVerifiedWorkspace(string $slug, string $verifyToken, string $bindingHash): ?string {
     $userId = $this->resolveVerifiedWorkspaceUserId($slug);
     if (!$userId) {
       return NULL;
     }
 
-    return $this->createWorkspaceLoginToken($userId, $slug, $verifyToken);
+    return $this->createWorkspaceLoginToken($userId, $slug, $verifyToken, $bindingHash);
   }
 
   /**
@@ -955,6 +1040,13 @@ class FastMapWorkspaceController extends ControllerBase {
       $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
       $tokenData = $store->get($token);
       if (!$tokenData) {
+        return $this->sensitiveJsonResponse(['error' => 'Invalid or expired login token'], 401);
+      }
+      // A token bound to the signup browser is only valid from there. A
+      // mismatch looks like an unknown token and leaves it unconsumed, so the
+      // owner's browser can still claim it.
+      $binding = is_array($tokenData) ? ($tokenData['binding'] ?? NULL) : NULL;
+      if ($binding !== NULL && !hash_equals((string) $binding, (string) $this->requestBindingHash($request))) {
         return $this->sensitiveJsonResponse(['error' => 'Invalid or expired login token'], 401);
       }
       // Consume before any login side effects. Failures also stay single-use.

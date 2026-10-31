@@ -101,6 +101,29 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
   }
 
   /**
+   * A claim from another browser leaves a bound token for the signup browser.
+   */
+  public function testBoundTokenSurvivesForeignClaim(): void {
+    $database = $this->container->get('database');
+    $store = new DatabaseStorageExpirable('markaspot_fastmap_login_tokens', new PhpSerialize(), $database, $this->container->get('datetime.time'));
+    $nonce = bin2hex(random_bytes(32));
+    $token = bin2hex(random_bytes(32));
+    $store->setWithExpire($token, ['uid' => 42, 'slug' => 'synthetic-bound', 'binding' => hash('sha256', $nonce)], 300);
+    $controller = $this->controller($store, new DatabaseLockBackend($database), 1);
+
+    foreach ([NULL, bin2hex(random_bytes(32))] as $foreign) {
+      $response = $controller->claimLoginToken($this->request($token, $foreign));
+      $this->assertSame(401, $response->getStatusCode());
+      $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+      $this->assertIsArray($store->get($token));
+    }
+
+    // The signup browser still claims it; the blocked fixture stops the login.
+    $this->assertSame(403, $controller->claimLoginToken($this->request($token, $nonce))->getStatusCode());
+    $this->assertNull($store->get($token));
+  }
+
+  /**
    * Builds the real controller with isolated storage and a blocked account.
    */
   private function controller(DatabaseStorageExpirable $store, DatabaseLockBackend $lock, int $account_loads): FastMapWorkspaceController {
@@ -124,8 +147,12 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
   /**
    * Creates a synthetic request without any browser or runtime session.
    */
-  private function request(string $token): Request {
-    return Request::create('/api/fastmap/claim-login-token', 'POST', [], [], [], ['REMOTE_ADDR' => '192.0.2.1'], json_encode(['token' => $token], JSON_THROW_ON_ERROR));
+  private function request(string $token, ?string $binding = NULL): Request {
+    $server = ['REMOTE_ADDR' => '192.0.2.1'];
+    if ($binding !== NULL) {
+      $server['HTTP_X_FASTMAP_SIGNUP_BINDING'] = $binding;
+    }
+    return Request::create('/api/fastmap/claim-login-token', 'POST', [], [], [], $server, json_encode(['token' => $token], JSON_THROW_ON_ERROR));
   }
 
 }

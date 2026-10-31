@@ -45,6 +45,25 @@ require_once dirname(__DIR__, 3) . '/markaspot_fastmap.module';
 class FastMapWorkspaceControllerTest extends UnitTestCase {
 
   /**
+   * Binding nonce of the synthetic signup browser.
+   */
+  private const SIGNUP_NONCE = '5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de';
+
+  /**
+   * Signup bindings keyed by verify-token hash, as the controller stores them.
+   *
+   * @var array<string, string>
+   */
+  protected array $signupBindings = [];
+
+  /**
+   * Lifetimes the controller requested for the stored signup bindings.
+   *
+   * @var array<string, int>
+   */
+  protected array $signupBindingTtls = [];
+
+  /**
    * Keeps the plain hook_mail welcome fallback terminology-aware.
    */
   public function testWelcomeFallbackUsesNeutralLocalizedTermTail(): void {
@@ -227,8 +246,13 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     // Mock keyvalue.expirable: returns a store that silently ignores writes.
     $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
     $kvStore->method('setWithExpire')->willReturn(NULL);
+    // The default verify token was started in the synthetic signup browser.
+    $this->signupBindings = [hash('sha256', str_repeat('ef', 32)) => hash('sha256', self::SIGNUP_NONCE)];
+    $this->signupBindingTtls = [];
     $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
-    $this->keyValueExpirable->method('get')->willReturn($kvStore);
+    $this->keyValueExpirable->method('get')->willReturnCallback(
+      fn(string $collection) => $collection === 'markaspot_fastmap_signup_binding' ? $this->signupBindingStore() : $kvStore
+    );
 
     // Set up the Drupal container so ControllerBase::config() works.
     $container = new ContainerBuilder();
@@ -252,22 +276,40 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
+   * Returns a binding store backed by $this->signupBindings.
+   */
+  protected function signupBindingStore(): KeyValueStoreExpirableInterface {
+    $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $store->method('get')->willReturnCallback(fn(string $key) => $this->signupBindings[$key] ?? NULL);
+    $store->method('setWithExpire')->willReturnCallback(function (string $key, $value, int $ttl): void {
+      $this->signupBindings[$key] = $value;
+      $this->signupBindingTtls[$key] = $ttl;
+    });
+    $store->method('delete')->willReturnCallback(function (string $key): void {
+      unset($this->signupBindings[$key]);
+    });
+    return $store;
+  }
+
+  /**
    * Creates a request with JSON body.
    *
    * @param array $data
    *   The request body data.
+   * @param array $server
+   *   Optional additional server parameters (headers).
    *
    * @return \Symfony\Component\HttpFoundation\Request
    *   The request object.
    */
-  protected function createJsonRequest(array $data): Request {
+  protected function createJsonRequest(array $data, array $server = []): Request {
     return Request::create(
       '/api/fastmap/create-workspace',
       'POST',
       [],
       [],
       [],
-      ['CONTENT_TYPE' => 'application/json'],
+      ['CONTENT_TYPE' => 'application/json'] + $server,
       json_encode($data)
     );
   }
@@ -282,11 +324,16 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
   /**
    * Pushes the current request for controller methods that inspect headers.
+   *
+   * The request comes from the signup browser unless the caller overrides
+   * HTTP_X_FASTMAP_SIGNUP_BINDING.
    */
   protected function pushCurrentRequest(array $server = []): void {
     while ($this->requestStack->getCurrentRequest()) {
       $this->requestStack->pop();
     }
+
+    $server += ['HTTP_X_FASTMAP_SIGNUP_BINDING' => self::SIGNUP_NONCE];
 
     $this->requestStack->push(Request::create('/api/fastmap/verify/valid-token', 'GET', [], [], [], $server));
   }
@@ -1282,12 +1329,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       $recovery->expects($this->never())->method('setWithExpire');
       $login = $this->createMock(KeyValueStoreExpirableInterface::class);
       $login->method('get')->with($originalToken)
-        ->willReturn(['uid' => 123, 'slug' => 'verified-ws']);
+        ->willReturn(['uid' => 123, 'slug' => 'verified-ws', 'binding' => hash('sha256', self::SIGNUP_NONCE)]);
       $login->expects($this->never())->method('setWithExpire');
       $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
-      $factory->method('get')->willReturnCallback(fn(string $collection) =>
-        $collection === 'markaspot_fastmap_login_recovery' ? $recovery : $login
-      );
+      $factory->method('get')->willReturnCallback(fn(string $collection) => match ($collection) {
+        'markaspot_fastmap_login_recovery' => $recovery,
+        'markaspot_fastmap_signup_binding' => $this->signupBindingStore(),
+        default => $login,
+      });
       $container->set('keyvalue.expirable', $factory);
       $this->database->expects($this->never())->method('update');
       $this->provisioning->expects($this->never())->method('provisionWorkspace');
@@ -2365,6 +2414,300 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertNotNull($insertedData);
     $stored = json_decode($insertedData['workspace_data'], TRUE);
     $this->assertEquals(2000, mb_strlen($stored['ai_system_prompt']));
+  }
+
+  // =========================================================================
+  // Signup browser binding
+  // =========================================================================
+
+  /**
+   * Mocks a pending row that provisions successfully.
+   */
+  protected function mockProvisionablePending(string $slug): void {
+    $record = [
+      'id' => 1,
+      'token' => str_repeat('ef', 32),
+      'email' => 'user@example.com',
+      'workspace_data' => json_encode([
+        'name' => 'Bound Workspace',
+        'slug' => $slug,
+        'email' => 'user@example.com',
+        'categories' => ['Cat A'],
+      ]),
+      'created' => time() - 60,
+    ];
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn($record);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(1);
+    $merge = $this->createMock(Merge::class);
+    $merge->method('keys')->willReturnSelf();
+    $merge->method('fields')->willReturnSelf();
+    $merge->method('execute')->willReturn(Merge::STATUS_INSERT);
+    $this->database->method('select')->willReturn($select);
+    $this->database->method('delete')->willReturn($delete);
+    $this->database->method('merge')->willReturn($merge);
+    $this->provisioning->method('provisionWorkspace')->willReturn([
+      'group_id' => 42,
+      'slug' => $slug,
+      'name' => 'Bound Workspace',
+      'url' => '/' . $slug,
+      'categories' => 1,
+      'user_id' => 7,
+    ]);
+  }
+
+  /**
+   * Any other opener of the verify link provisions but gets no login token.
+   *
+   * @dataProvider foreignBrowserProvider
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceOutsideSignupBrowserIssuesNoLoginToken(string $binding): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_X_FASTMAP_RESPONSE_MODE' => 'json',
+      'HTTP_X_FASTMAP_SIGNUP_BINDING' => $binding,
+    ]);
+    $this->mockProvisionablePending('scanned-ws');
+    // The verified row stays unclaimed so the owner's browser can still mint.
+    $this->database->expects($this->never())->method('update');
+
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertSame(201, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame('scanned-ws', $data['slug']);
+    $this->assertSame('provisioned', $data['status']);
+    $this->assertArrayNotHasKey('login_token', $data);
+  }
+
+  /**
+   * The legacy redirect gives a foreign opener neither header nor fragment.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceRedirectOutsideSignupBrowserHasNoLoginToken(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_ACCEPT' => 'text/html',
+      'HTTP_X_FASTMAP_SIGNUP_BINDING' => '',
+    ]);
+    $this->mockProvisionablePending('scanned-ws');
+
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
+
+    $this->assertInstanceOf(TrustedRedirectResponse::class, $response);
+    $this->assertStringNotContainsString('login_token', (string) $response->headers->get('location'));
+    $this->assertFalse($response->headers->has('X-Login-Token'));
+  }
+
+  /**
+   * Missing, foreign and malformed binding nonces.
+   */
+  public static function foreignBrowserProvider(): array {
+    return [
+      'no binding' => [''],
+      'other browser' => [str_repeat('0', 64)],
+      'malformed' => ['not-a-nonce'],
+    ];
+  }
+
+  /**
+   * A signup without a binding never gets an automatic login.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceWithoutStoredBindingIssuesNoLoginToken(): void {
+    $this->signupBindings = [];
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest(['HTTP_X_FASTMAP_RESPONSE_MODE' => 'json']);
+    $this->mockProvisionablePending('legacy-ws');
+    $this->database->expects($this->never())->method('update');
+
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame('legacy-ws', $data['slug']);
+    $this->assertArrayNotHasKey('login_token', $data);
+  }
+
+  /**
+   * A foreign opener of a verified link never sees the recovered token.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifiedLinkOutsideSignupBrowserNeverReadsRecovery(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_X_FASTMAP_RESPONSE_MODE' => 'json',
+      'HTTP_X_FASTMAP_SIGNUP_BINDING' => str_repeat('0', 64),
+    ]);
+    $pendingStatement = $this->createMock(StatementInterface::class);
+    $pendingStatement->method('fetchAssoc')->willReturn(FALSE);
+    $verifiedStatement = $this->createMock(StatementInterface::class);
+    $verifiedStatement->method('fetchAssoc')->willReturn([
+      'slug' => 'verified-ws',
+      'selected_tier' => '',
+      'created' => time(),
+      'login_claimed' => 1,
+    ]);
+    $pendingSelect = $this->createMock(SelectInterface::class);
+    $pendingSelect->method('fields')->willReturnSelf();
+    $pendingSelect->method('condition')->willReturnSelf();
+    $pendingSelect->method('range')->willReturnSelf();
+    $pendingSelect->method('forUpdate')->willReturnSelf();
+    $pendingSelect->method('execute')->willReturn($pendingStatement);
+    $verifiedSelect = $this->createMock(SelectInterface::class);
+    $verifiedSelect->method('fields')->willReturnSelf();
+    $verifiedSelect->method('condition')->willReturnSelf();
+    $verifiedSelect->method('range')->willReturnSelf();
+    $verifiedSelect->method('execute')->willReturn($verifiedStatement);
+    $this->database->method('select')->willReturnOnConsecutiveCalls($pendingSelect, $verifiedSelect);
+
+    $recovery = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $recovery->expects($this->never())->method('get');
+    $login = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $login->expects($this->never())->method('get');
+    $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $factory->method('get')->willReturnCallback(fn(string $collection) => match ($collection) {
+      'markaspot_fastmap_login_recovery' => $recovery,
+      'markaspot_fastmap_signup_binding' => $this->signupBindingStore(),
+      default => $login,
+    });
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $factory);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
+
+    $this->assertSame(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame('verified-ws', $data['slug']);
+    $this->assertArrayNotHasKey('login_token', $data);
+  }
+
+  /**
+   * A bound token is not consumed by a claim from another browser.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenFromOtherBrowserLeavesTokenUnconsumed(): void {
+    $validToken = str_repeat('cd', 32);
+    $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $store->method('get')->with($validToken)
+      ->willReturn(['uid' => 99, 'slug' => 'test', 'binding' => hash('sha256', self::SIGNUP_NONCE)]);
+    // Only the signup browser's claim consumes the token.
+    $store->expects($this->once())->method('delete')->with($validToken);
+    $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $factory->method('get')->with('markaspot_fastmap_login_tokens')->willReturn($store);
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->expects($this->once())->method('load')->with(99)->willReturn(NULL);
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')->willReturn($userStorage);
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $factory);
+    $container->set('entity_type.manager', $entityTypeManager);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    foreach (['', str_repeat('0', 64), 'not-a-nonce'] as $binding) {
+      $request = $this->createClaimRequest(['token' => $validToken]);
+      $request->headers->set('X-Fastmap-Signup-Binding', $binding);
+      $response = $this->controller->claimLoginToken($request);
+      $this->assertSame(401, $response->getStatusCode());
+      $this->assertSame('Invalid or expired login token', json_decode($response->getContent(), TRUE)['error']);
+    }
+
+    $request = $this->createClaimRequest(['token' => $validToken]);
+    $request->headers->set('X-Fastmap-Signup-Binding', self::SIGNUP_NONCE);
+    // The fixture user is missing, so the claim stops after consumption.
+    $this->assertSame(403, $this->controller->claimLoginToken($request)->getStatusCode());
+  }
+
+  /**
+   * Workspace creation stores only the hash of the signup binding.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceStoresSignupBindingHash(): void {
+    $this->signupBindings = [];
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    $request = $this->createJsonRequest($this->validRequestData(), ['HTTP_X_FASTMAP_SIGNUP_BINDING' => self::SIGNUP_NONCE]);
+    $response = $this->controller->createWorkspace($request);
+
+    $this->assertSame(202, $response->getStatusCode());
+    $this->assertSame([hash('sha256', self::SIGNUP_NONCE)], array_values($this->signupBindings));
+    $this->assertStringNotContainsString(self::SIGNUP_NONCE, json_encode($this->signupBindings));
+    // The binding outlives verification plus the recovery window.
+    $this->assertSame([172800 + 86400], array_values($this->signupBindingTtls));
+  }
+
+  /**
+   * Workspace creation without a binding stores none.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceWithoutBindingStoresNone(): void {
+    $this->signupBindings = [];
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    $response = $this->controller->createWorkspace($this->createJsonRequest($this->validRequestData(), ['HTTP_X_FASTMAP_SIGNUP_BINDING' => 'not-a-nonce']));
+
+    $this->assertSame(202, $response->getStatusCode());
+    $this->assertSame([], $this->signupBindings);
+  }
+
+  /**
+   * A failed verification mail also drops the binding.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceEmailFailureDropsBinding(): void {
+    $this->signupBindings = [];
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => FALSE]);
+
+    $response = $this->controller->createWorkspace($this->createJsonRequest($this->validRequestData(), ['HTTP_X_FASTMAP_SIGNUP_BINDING' => self::SIGNUP_NONCE]));
+
+    $this->assertSame(503, $response->getStatusCode());
+    $this->assertSame([], $this->signupBindings);
+  }
+
+  /**
+   * The minted token carries the binding hash for the claim check.
+   *
+   * @covers ::createWorkspaceLoginToken
+   */
+  public function testMintedLoginTokenCarriesBinding(): void {
+    $storedPayloads = [];
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('setWithExpire')
+      ->willReturnCallback(function (string $key, $value) use (&$storedPayloads): void {
+        $storedPayloads[] = $value;
+      });
+    $kvFactory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $kvFactory->method('get')->willReturn($kvStore);
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $kvFactory);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $method = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
+    $binding = hash('sha256', self::SIGNUP_NONCE);
+    $token = $method->invoke($controller, 99, 'bound-ws', str_repeat('cd', 32), $binding);
+
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $token);
+    $this->assertSame(['uid' => 99, 'slug' => 'bound-ws', 'binding' => $binding], $storedPayloads[0]);
   }
 
 }
