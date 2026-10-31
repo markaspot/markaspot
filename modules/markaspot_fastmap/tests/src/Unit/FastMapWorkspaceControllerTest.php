@@ -1615,13 +1615,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
    * Creates a POST request for the claim endpoint.
    */
   protected function createClaimRequest(array $body): Request {
+    // Claims come from the signup browser unless a test overrides the header.
     return Request::create(
       '/api/fastmap/claim-login-token',
       'POST',
       [],
       [],
       [],
-      ['CONTENT_TYPE' => 'application/json'],
+      ['CONTENT_TYPE' => 'application/json', 'HTTP_X_FASTMAP_SIGNUP_BINDING' => self::SIGNUP_NONCE],
       json_encode($body)
     );
   }
@@ -1695,7 +1696,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       ->with($validToken)
       ->willReturnCallback(function () use (&$callCount) {
         return $callCount++ === 0
-          ? ['uid' => 99, 'slug' => 'test']
+          ? ['uid' => 99, 'slug' => 'test', 'binding' => hash('sha256', self::SIGNUP_NONCE)]
           : NULL;
       });
     $kvStore->expects($this->once())->method('delete')->with($validToken);
@@ -1972,7 +1973,11 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $validToken = str_repeat('ef', 32);
 
     $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
-    $kvStore->method('get')->with($validToken)->willReturn(['uid' => 5, 'slug' => 'ws']);
+    $kvStore->method('get')->with($validToken)->willReturn([
+      'uid' => 5,
+      'slug' => 'ws',
+      'binding' => hash('sha256', self::SIGNUP_NONCE),
+    ]);
     $kvStore->method('delete');
 
     $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
@@ -2067,7 +2072,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $method = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
     $method->setAccessible(TRUE);
-    $token = $method->invoke($controller, 42, 'verified-ws', $validVerifyToken);
+    $token = $method->invoke($controller, 42, 'verified-ws', $validVerifyToken, hash('sha256', self::SIGNUP_NONCE));
 
     $this->assertNull(
       $token,
@@ -2112,7 +2117,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $method = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
     $method->setAccessible(TRUE);
-    $token = $method->invoke($controller, 99, 'verified-ws', $validVerifyToken);
+    $token = $method->invoke($controller, 99, 'verified-ws', $validVerifyToken, hash('sha256', self::SIGNUP_NONCE));
 
     $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $token);
     $this->assertCount(2, $storedPayloads);
@@ -2169,9 +2174,9 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $mint = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
 
     // The first response is lost, but a retry receives precisely its token.
-    $token = $mint->invoke($controller, 99, 'recovery-ws', $verifyToken);
+    $token = $mint->invoke($controller, 99, 'recovery-ws', $verifyToken, hash('sha256', self::SIGNUP_NONCE));
     $clock = 1100;
-    $this->assertSame($token, $mint->invoke($controller, 99, 'recovery-ws', $verifyToken));
+    $this->assertSame($token, $mint->invoke($controller, 99, 'recovery-ws', $verifyToken, hash('sha256', self::SIGNUP_NONCE)));
     $this->assertCount(2, $writes);
     $this->assertSame(hash('sha256', $verifyToken), $writes[1][1]);
     $this->assertStringNotContainsString($verifyToken, json_encode($writes));
@@ -2184,13 +2189,13 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       $response = $controller->claimLoginToken($request);
       $this->assertSame(403, $response->getStatusCode());
       $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
-      $this->assertNull($mint->invoke($controller, 99, 'recovery-ws', $verifyToken));
+      $this->assertNull($mint->invoke($controller, 99, 'recovery-ws', $verifyToken, hash('sha256', self::SIGNUP_NONCE)));
       $this->assertSame(401, $controller->claimLoginToken($request)->getStatusCode());
     }
 
     // When both entries expire the atomic database claim still denies mint.
     $clock = 1300;
-    $this->assertNull($mint->invoke($controller, 99, 'recovery-ws', $verifyToken));
+    $this->assertNull($mint->invoke($controller, 99, 'recovery-ws', $verifyToken, hash('sha256', self::SIGNUP_NONCE)));
     $this->assertCount(2, $writes);
   }
 
@@ -2630,6 +2635,32 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $request->headers->set('X-Fastmap-Signup-Binding', self::SIGNUP_NONCE);
     // The fixture user is missing, so the claim stops after consumption.
     $this->assertSame(403, $this->controller->claimLoginToken($request)->getStatusCode());
+  }
+
+  /**
+   * A login token without a binding is never claimable.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenWithoutBindingIsRejected(): void {
+    $validToken = str_repeat('cd', 32);
+    $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $store->method('get')->with($validToken)->willReturn(['uid' => 99, 'slug' => 'unbound']);
+    $store->expects($this->never())->method('delete');
+    $factory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $factory->method('get')->with('markaspot_fastmap_login_tokens')->willReturn($store);
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->expects($this->never())->method('load');
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')->willReturn($userStorage);
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $factory);
+    $container->set('entity_type.manager', $entityTypeManager);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    $response = $this->controller->claimLoginToken($this->createClaimRequest(['token' => $validToken]));
+
+    $this->assertSame(401, $response->getStatusCode());
   }
 
   /**

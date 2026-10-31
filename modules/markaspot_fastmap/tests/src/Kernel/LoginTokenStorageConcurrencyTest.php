@@ -15,6 +15,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController;
 use Drupal\user\UserInterface;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -22,6 +23,11 @@ use Symfony\Component\HttpFoundation\Request;
  */
 #[Group('markaspot_fastmap')]
 final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
+
+  /**
+   * Binding nonce of the synthetic signup browser.
+   */
+  private const NONCE = '5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de5ad1c0de';
 
   /**
    * {@inheritdoc}
@@ -63,7 +69,11 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
     $first = $this->controller($first_store, $first_lock, 1);
     $second = $this->controller($second_store, $second_lock, 0);
     $token = bin2hex(random_bytes(32));
-    $first_store->setWithExpire($token, ['uid' => 42, 'slug' => 'synthetic-concurrency'], 300);
+    $first_store->setWithExpire($token, [
+      'uid' => 42,
+      'slug' => 'synthetic-concurrency',
+      'binding' => hash('sha256', self::NONCE),
+    ], 300);
     $competing_status = NULL;
     $first_store->afterRead = function () use ($second, $token, &$competing_status): void {
       $response = $second->claimLoginToken($this->request($token));
@@ -93,7 +103,7 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
     $database = $this->container->get('database');
     $store = new DatabaseStorageExpirable('markaspot_fastmap_login_tokens', new PhpSerialize(), $database, $this->container->get('datetime.time'));
     $token = bin2hex(random_bytes(32));
-    $store->setWithExpire($token, ['uid' => 42, 'slug' => 'synthetic-expired'], -1);
+    $store->setWithExpire($token, ['uid' => 42, 'slug' => 'synthetic-expired', 'binding' => hash('sha256', self::NONCE)], -1);
     $controller = $this->controller($store, new DatabaseLockBackend($database), 0);
     $response = $controller->claimLoginToken($this->request($token));
     $this->assertSame(401, $response->getStatusCode());
@@ -106,12 +116,11 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
   public function testBoundTokenSurvivesForeignClaim(): void {
     $database = $this->container->get('database');
     $store = new DatabaseStorageExpirable('markaspot_fastmap_login_tokens', new PhpSerialize(), $database, $this->container->get('datetime.time'));
-    $nonce = bin2hex(random_bytes(32));
     $token = bin2hex(random_bytes(32));
-    $store->setWithExpire($token, ['uid' => 42, 'slug' => 'synthetic-bound', 'binding' => hash('sha256', $nonce)], 300);
+    $store->setWithExpire($token, ['uid' => 42, 'slug' => 'synthetic-bound', 'binding' => hash('sha256', self::NONCE)], 300);
     $controller = $this->controller($store, new DatabaseLockBackend($database), 1);
 
-    foreach ([NULL, bin2hex(random_bytes(32))] as $foreign) {
+    foreach (['', bin2hex(random_bytes(32))] as $foreign) {
       $response = $controller->claimLoginToken($this->request($token, $foreign));
       $this->assertSame(401, $response->getStatusCode());
       $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
@@ -119,7 +128,7 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
     }
 
     // The signup browser still claims it; the blocked fixture stops the login.
-    $this->assertSame(403, $controller->claimLoginToken($this->request($token, $nonce))->getStatusCode());
+    $this->assertSame(403, $controller->claimLoginToken($this->request($token))->getStatusCode());
     $this->assertNull($store->get($token));
   }
 
@@ -138,7 +147,14 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
     $manager = $this->createMock(EntityTypeManagerInterface::class);
     $manager->method('getStorage')->with('user')->willReturn($storage);
     $controller = new FastMapWorkspaceController();
-    foreach (['keyValueExpirable' => $factory, 'lock' => $lock, 'flood' => $flood, 'entityTypeManager' => $manager] as $name => $value) {
+    $services = [
+      'keyValueExpirable' => $factory,
+      'lock' => $lock,
+      'flood' => $flood,
+      'entityTypeManager' => $manager,
+      'fastmapLogger' => new NullLogger(),
+    ];
+    foreach ($services as $name => $value) {
       (new \ReflectionProperty($controller, $name))->setValue($controller, $value);
     }
     return $controller;
@@ -147,11 +163,8 @@ final class LoginTokenStorageConcurrencyTest extends KernelTestBase {
   /**
    * Creates a synthetic request without any browser or runtime session.
    */
-  private function request(string $token, ?string $binding = NULL): Request {
-    $server = ['REMOTE_ADDR' => '192.0.2.1'];
-    if ($binding !== NULL) {
-      $server['HTTP_X_FASTMAP_SIGNUP_BINDING'] = $binding;
-    }
+  private function request(string $token, string $binding = self::NONCE): Request {
+    $server = ['REMOTE_ADDR' => '192.0.2.1', 'HTTP_X_FASTMAP_SIGNUP_BINDING' => $binding];
     return Request::create('/api/fastmap/claim-login-token', 'POST', [], [], [], $server, json_encode(['token' => $token], JSON_THROW_ON_ERROR));
   }
 

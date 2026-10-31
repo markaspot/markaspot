@@ -601,6 +601,11 @@ class FastMapWorkspaceController extends ControllerBase {
           $loginToken = $bindingHash !== NULL && $this->canReissueVerifiedLoginToken($verified)
             ? $this->createLoginTokenForVerifiedWorkspace($verifiedSlug, $token, $bindingHash)
             : NULL;
+          if ($bindingHash === NULL) {
+            $this->fastmapLogger->info('Verify link of @slug reopened outside the signup browser; no login token issued.', [
+              '@slug' => $verifiedSlug,
+            ]);
+          }
 
           if ($baseUrl && !$wantsJsonResponse) {
             return $this->buildWorkspaceRedirectResponse($verifiedSlug, NULL, $loginToken);
@@ -837,42 +842,37 @@ class FastMapWorkspaceController extends ControllerBase {
    * entry indexed by the verification token's hash permits delivery retries
    * only while that same login token remains unconsumed. Neither retry nor
    * expiry permits a second mint or extends either entry's lifetime. No raw
-   * verification secret is stored in either keyvalue collection. A binding
+   * verification secret is stored in either keyvalue collection. The binding
    * hash ties the login token to the signup browser; the claim requires it.
    */
-  private function createWorkspaceLoginToken(int $uid, string $slug, ?string $verifyToken = NULL, ?string $bindingHash = NULL): ?string {
+  private function createWorkspaceLoginToken(int $uid, string $slug, string $verifyToken, string $bindingHash): ?string {
     try {
+      if (!preg_match('/^[0-9a-f]{64}$/', $verifyToken)) {
+        return NULL;
+      }
       $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
-      $recoveryStore = NULL;
-      $recoveryKey = NULL;
-      if ($verifyToken !== NULL) {
-        if (!preg_match('/^[0-9a-f]{64}$/', $verifyToken)) {
-          return NULL;
-        }
-        $recoveryStore = $this->keyValueExpirable->get('markaspot_fastmap_login_recovery');
-        $recoveryKey = hash('sha256', $verifyToken);
-        $existingToken = $recoveryStore->get($recoveryKey);
-        if (is_string($existingToken)) {
-          $existingData = $store->get($existingToken);
-          return is_array($existingData)
-            && ($existingData['uid'] ?? NULL) === $uid
-            && ($existingData['slug'] ?? NULL) === $slug
-            && ($existingData['binding'] ?? NULL) === $bindingHash
-              ? $existingToken : NULL;
-        }
-        if (!$this->markVerifiedTokenClaimed($verifyToken)) {
-          return NULL;
-        }
+      $recoveryStore = $this->keyValueExpirable->get('markaspot_fastmap_login_recovery');
+      $recoveryKey = hash('sha256', $verifyToken);
+      $existingToken = $recoveryStore->get($recoveryKey);
+      if (is_string($existingToken)) {
+        $existingData = $store->get($existingToken);
+        return is_array($existingData)
+          && ($existingData['uid'] ?? NULL) === $uid
+          && ($existingData['slug'] ?? NULL) === $slug
+          && ($existingData['binding'] ?? NULL) === $bindingHash
+            ? $existingToken : NULL;
+      }
+      if (!$this->markVerifiedTokenClaimed($verifyToken)) {
+        return NULL;
       }
 
       $loginToken = bin2hex(random_bytes(32));
       $store->setWithExpire($loginToken, [
         'uid' => $uid,
         'slug' => $slug,
-      ] + ($bindingHash !== NULL ? ['binding' => $bindingHash] : []), self::LOGIN_TOKEN_TTL);
-      if ($recoveryStore !== NULL && $recoveryKey !== NULL) {
-        $recoveryStore->setWithExpire($recoveryKey, $loginToken, self::LOGIN_TOKEN_TTL);
-      }
+        'binding' => $bindingHash,
+      ], self::LOGIN_TOKEN_TTL);
+      $recoveryStore->setWithExpire($recoveryKey, $loginToken, self::LOGIN_TOKEN_TTL);
       return $loginToken;
     }
     catch (\Exception $e) {
@@ -1042,11 +1042,14 @@ class FastMapWorkspaceController extends ControllerBase {
       if (!$tokenData) {
         return $this->sensitiveJsonResponse(['error' => 'Invalid or expired login token'], 401);
       }
-      // A token bound to the signup browser is only valid from there. A
-      // mismatch looks like an unknown token and leaves it unconsumed, so the
-      // owner's browser can still claim it.
+      // Every workspace login token is bound to the signup browser and only
+      // valid from there. A mismatch looks like an unknown token and leaves it
+      // unconsumed, so the owner's browser can still claim it.
       $binding = is_array($tokenData) ? ($tokenData['binding'] ?? NULL) : NULL;
-      if ($binding !== NULL && !hash_equals((string) $binding, (string) $this->requestBindingHash($request))) {
+      if (!is_string($binding) || !hash_equals($binding, (string) $this->requestBindingHash($request))) {
+        $this->fastmapLogger->info('Login token claim for @slug rejected outside the signup browser.', [
+          '@slug' => is_array($tokenData) ? ($tokenData['slug'] ?? '?') : '?',
+        ]);
         return $this->sensitiveJsonResponse(['error' => 'Invalid or expired login token'], 401);
       }
       // Consume before any login side effects. Failures also stay single-use.
