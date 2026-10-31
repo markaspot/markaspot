@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.239](https://github.com/markaspot/markaspot/compare/11.9.238...11.9.239) (2026-10-31)
+
+### Features
+
+* **vision:** give staff their own analysis budget of 100 per hour ([61da02f](https://github.com/markaspot/markaspot/commit/61da02ff4155047e0812588600cb4c92e60ea3e9))
+
 ## [11.9.238](https://github.com/markaspot/markaspot/compare/11.9.237...11.9.238) (2026-10-31)
 
 ### Bug Fixes
