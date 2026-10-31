@@ -96,6 +96,16 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Use 0 for no Drupal-side Vision rate limit. Cloud deployments can override this with MARKASPOT_VISION_RATE_LIMIT_MAX.'),
     ];
 
+    $form['rate_limit']['rate_limit_max_staff'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Maximum requests per hour for staff'),
+      '#default_value' => $config->get('rate_limit_max_staff') ?? 100,
+      '#min' => 0,
+      '#step' => 1,
+      '#required' => TRUE,
+      '#description' => $this->t('Applies to authenticated dashboard staff sessions. Use 0 for no Drupal-side Vision rate limit for staff.'),
+    ];
+
     $form['blur'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Blur Preprocessing'),
@@ -357,6 +367,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
     $config
       ->set('multiple_uploads', $form_state->getValue('multiple_uploads'))
       ->set('rate_limit_max', max(0, (int) $form_state->getValue('rate_limit_max')))
+      ->set('rate_limit_max_staff', max(0, (int) $form_state->getValue('rate_limit_max_staff')))
       ->set('require_ai_screening', $form_state->getValue('require_ai_screening'))
       ->set('auth_type', $form_state->getValue('auth_type'))
       ->set('api_url', $form_state->getValue('api_url'))

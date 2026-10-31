@@ -17,6 +17,7 @@ use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
+use Drupal\markaspot_vision\Service\StaffAnalysisAccess;
 
 /**
  * Controller for processing images with AI vision services.
@@ -97,6 +98,8 @@ class ImageProcessingController extends ControllerBase {
    *   The configuration factory.
    * @param \Drupal\markaspot_vision\Service\MediaTenantScopeResolver $media_tenant_scope_resolver
    *   Resolves the tenant the analyzed media belong to.
+   * @param \Drupal\markaspot_vision\Service\StaffAnalysisAccess $staffAnalysisAccess
+   *   Resolves trusted staff sessions for the separate analysis budget.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
    * @param \Drupal\markaspot_vision\Service\OriginalImageStore|null $original_image_store
@@ -110,6 +113,7 @@ class ImageProcessingController extends ControllerBase {
     MediaAnalysisAccessGuard $media_analysis_access_guard,
     ConfigFactoryInterface $config_factory,
     MediaTenantScopeResolver $media_tenant_scope_resolver,
+    protected StaffAnalysisAccess $staffAnalysisAccess,
     ?TierConfigService $tier_config = NULL,
     ?OriginalImageStore $original_image_store = NULL,
   ) {
@@ -137,6 +141,7 @@ class ImageProcessingController extends ControllerBase {
       $container->get('markaspot_vision.media_analysis_access_guard'),
       $container->get('config.factory'),
       $container->get('markaspot_vision.media_tenant_scope'),
+      $container->get('markaspot_vision.staff_analysis_access'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
@@ -155,7 +160,10 @@ class ImageProcessingController extends ControllerBase {
    */
   // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public function getAIResults(Request $request): JsonResponse {
-    $rate_limit_max = $this->getRateLimitMax();
+    $staff_identifier = $this->staffAnalysisAccess->getRateLimitIdentifier($request);
+    $is_staff = $staff_identifier !== NULL;
+    $rate_limit_max = $this->getRateLimitMax($is_staff);
+    $event = $is_staff ? 'markaspot_vision.analyze_staff' : 'markaspot_vision.analyze';
 
     // A zero limit is an explicit operational kill switch for this limiter.
     if ($rate_limit_max > 0) {
@@ -163,15 +171,16 @@ class ImageProcessingController extends ControllerBase {
       // used by the media access guard. Falling back to the client IP keeps
       // non-browser integrations protected without grouping all users behind
       // the Nuxt or Kubernetes proxy into one shared bucket.
-      $identifier = $this->mediaAnalysisAccessGuard->getRateLimitIdentifier($request)
+      $identifier = $staff_identifier
+        ?? $this->mediaAnalysisAccessGuard->getRateLimitIdentifier($request)
         ?? 'ip:' . ($request->getClientIp() ?? 'unknown');
 
-      if (!$this->flood->isAllowed('markaspot_vision.analyze', $rate_limit_max, 3600, $identifier)) {
+      if (!$this->flood->isAllowed($event, $rate_limit_max, 3600, $identifier)) {
         return new JsonResponse([
           'error' => $this->t('Too many requests. Please try again later.'),
         ], 429);
       }
-      $this->flood->register('markaspot_vision.analyze', 3600, $identifier);
+      $this->flood->register($event, 3600, $identifier);
     }
 
     // Decode request body once for all subsequent checks.
@@ -668,20 +677,21 @@ class ImageProcessingController extends ControllerBase {
   /**
    * Returns a fail-safe configured maximum for the hourly Vision limiter.
    */
-  protected function getRateLimitMax(): int {
+  protected function getRateLimitMax(bool $staff = FALSE): int {
+    $default = $staff ? 100 : 10;
     $configured = $this->visionConfigFactory
       ->get('markaspot_vision.settings')
-      ->get('rate_limit_max');
+      ->get($staff ? 'rate_limit_max_staff' : 'rate_limit_max');
 
     if (is_int($configured)) {
-      return $configured >= 0 ? $configured : 10;
+      return $configured >= 0 ? $configured : $default;
     }
 
     if (is_string($configured) && ctype_digit($configured)) {
       return (int) $configured;
     }
 
-    return 10;
+    return $default;
   }
 
   /**

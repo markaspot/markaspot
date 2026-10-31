@@ -11,6 +11,7 @@ use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\file\Entity\File;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRole;
 use Drupal\group\Entity\GroupType;
 use Drupal\jsonapi\JsonApiResource\JsonApiDocumentTopLevel;
 use Drupal\KernelTests\KernelTestBase;
@@ -20,6 +21,7 @@ use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
+use Drupal\markaspot_vision\Service\StaffAnalysisAccess;
 use Drupal\media\Entity\Media;
 use Drupal\media\MediaInterface;
 use Drupal\node\Entity\Node;
@@ -34,6 +36,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Binds vision analysis scope and budget charging to the media tenant.
@@ -146,6 +149,40 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       ->addArgument(new Reference('keyvalue'))
       ->addArgument(new Reference('config.factory'))
       ->addArgument(new Reference('state'));
+  }
+
+  /**
+   * Real Group permissions distinguish dashboard staff from citizen members.
+   */
+  public function testStaffBudgetUsesRealJurisdictionPermissions(): void {
+    $access = new StaffAnalysisAccess(
+      $this->container->get('current_user'),
+      $this->container->get('config.factory'),
+      $this->container->get('entity_type.manager'),
+    );
+    $root = dirname(__DIR__, 5);
+    $roles = [
+      'jur-member' => FALSE,
+      'jur-org_member' => FALSE,
+      'jur-moderator' => TRUE,
+      'jur-editorial' => TRUE,
+      'jur-tenant_admin' => TRUE,
+    ];
+    foreach ($roles as $role_id => $expected) {
+      $values = Yaml::parseFile($root . '/modules/markaspot_group/config/install/group.role.' . $role_id . '.yml');
+      if (!GroupRole::load($role_id)) {
+        GroupRole::create($values)->save();
+      }
+      $user = User::create(['name' => $role_id, 'status' => 1]);
+      $user->save();
+      $this->tenantA->addMember($user, ['group_roles' => [$role_id]]);
+      $this->container->get('current_user')->setAccount($user);
+      $session = new Session(new MockArraySessionStorage());
+      $session->set('uid', $user->id());
+      $request = Request::create('/api/vision/analyze', 'POST');
+      $request->setSession($session);
+      $this->assertSame($expected, $access->getRateLimitIdentifier($request) !== NULL, $role_id);
+    }
   }
 
   /**
@@ -690,6 +727,11 @@ final class MediaTenantBindingKernelTest extends KernelTestBase {
       $this->guard(),
       $this->container->get('config.factory'),
       $resolver ?? $this->resolver(),
+      new StaffAnalysisAccess(
+        $this->container->get('current_user'),
+        $this->container->get('config.factory'),
+        $this->container->get('entity_type.manager'),
+      ),
       $tier,
     );
     $controller->setStringTranslation($this->container->get('string_translation'));

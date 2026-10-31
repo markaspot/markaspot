@@ -8,6 +8,9 @@ markaspot_vision.settings:
     rate_limit_max:
       type: integer
       label: 'Maximum vision analysis requests per hour'
+    rate_limit_max_staff:
+      type: integer
+      label: 'Maximum vision analysis requests per hour for staff'
     auth_type:
       type: string
       label: 'Authentication Type'

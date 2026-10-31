@@ -10,6 +10,8 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
@@ -17,6 +19,7 @@ use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 use Drupal\markaspot_vision\Service\MediaTenantScope;
 use Drupal\markaspot_vision\Service\MediaTenantScopeResolver;
 use Drupal\markaspot_vision\Service\OriginalImageStore;
+use Drupal\markaspot_vision\Service\StaffAnalysisAccess;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -24,6 +27,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
 
 require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/Service/FeatureScopeResolver.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/ImageProcessingController.php';
@@ -74,6 +78,21 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * Rate limit used by the mocked Vision configuration.
    */
   protected mixed $rateLimitMax = 10;
+
+  /**
+   * Staff maximum, absent on existing sites by default.
+   */
+  protected mixed $rateLimitMaxStaff = NULL;
+
+  /**
+   * Whether the test account is authenticated and has dashboard access.
+   */
+  protected bool $authenticated = FALSE;
+
+  /**
+   * Whether the test account has the existing dashboard permission.
+   */
+  protected bool $dashboardAccess = FALSE;
 
   /**
    * Configured residual_privacy_handling ('hold', 'reblur' or NULL).
@@ -152,6 +171,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $visionConfig->method('get')
       ->willReturnCallback(fn ($key) => match ($key) {
         'rate_limit_max' => $this->rateLimitMax,
+        'rate_limit_max_staff' => $this->rateLimitMaxStaff,
         'residual_privacy_handling' => $this->residualHandling,
         default => NULL,
       });
@@ -172,6 +192,14 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $scopeResolver = $this->createMock(MediaTenantScopeResolver::class);
     $scopeResolver->method('resolve')->willReturn(MediaTenantScope::unscoped());
 
+    new Settings(['hash_salt' => 'vision-budget-test-salt']);
+    $account = $this->createMock(AccountProxyInterface::class);
+    $account->method('isAuthenticated')->willReturnCallback(fn () => $this->authenticated);
+    $account->method('id')->willReturn(42);
+    $account->method('hasPermission')
+      ->willReturnCallback(fn ($permission) => $permission === 'access dashboard notifications' && $this->dashboardAccess);
+    $staffAccess = new StaffAnalysisAccess($account, $configFactory, $entityTypeManager);
+
     $this->controller = new ImageProcessingController(
       $this->imageProcessingService,
       $loggerFactory,
@@ -180,6 +208,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $this->mediaAnalysisAccessGuard,
       $configFactory,
       $scopeResolver,
+      $staffAccess,
     );
 
     // Inject entityTypeManager via reflection (ControllerBase stores it
@@ -427,6 +456,116 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $response = $this->controller->getAIResults($this->createJsonRequest([]));
     $this->assertEquals(429, $response->getStatusCode());
+  }
+
+  /**
+   * Makes a browser session bound to the test account.
+   */
+  protected function budgetRequest(string $sessionId = 'staff-session', int $uid = 42): Request {
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $session = $this->createMock(SessionInterface::class);
+    $session->method('getId')->willReturn($sessionId);
+    $session->method('get')->with('uid', 0)->willReturn($uid);
+    $request->setSession($session);
+    return $request;
+  }
+
+  /**
+   * Exercises the full controller with a stateful flood counter.
+   */
+  #[DataProvider('budgetProvider')]
+  public function testAnalysisBudget(bool $authenticated, bool $dashboard, mixed $configured, int $maximum): void {
+    $this->authenticated = $authenticated;
+    $this->dashboardAccess = $dashboard;
+    $this->rateLimitMaxStaff = $configured;
+    $request = $this->budgetRequest();
+    $event = $authenticated && $dashboard ? 'markaspot_vision.analyze_staff' : 'markaspot_vision.analyze';
+    $count = 0;
+    $this->flood->expects($this->exactly($maximum + 1))->method('isAllowed')
+      ->with($event, $maximum, 3600, $this->isType('string'))
+      ->willReturnCallback(function () use (&$count, $maximum) {
+        return $count < $maximum;
+      });
+    $this->flood->expects($this->exactly($maximum))->method('register')
+      ->with($event, 3600, $this->isType('string'))
+      ->willReturnCallback(function () use (&$count) {
+        $count++;
+      });
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $this->createMockMedia(1)]);
+    $this->imageProcessingService->expects($this->exactly($maximum))->method('processImages')
+      ->willReturn(['ai_result' => '{"privacy_flag":false,"privacy_issues":[]}']);
+
+    for ($i = 0; $i < $maximum; $i++) {
+      $this->assertSame(200, $this->controller->getAIResults($request)->getStatusCode());
+    }
+    $this->assertSame(429, $this->controller->getAIResults($request)->getStatusCode());
+  }
+
+  /**
+   * Existing sites, explicit configuration and citizen defaults.
+   */
+  public static function budgetProvider(): iterable {
+    yield 'staff default' => [TRUE, TRUE, 100, 100];
+    yield 'staff missing key' => [TRUE, TRUE, NULL, 100];
+    yield 'staff invalid negative' => [TRUE, TRUE, -1, 100];
+    yield 'staff invalid string' => [TRUE, TRUE, 'invalid', 100];
+    yield 'staff override' => [TRUE, TRUE, '25', 25];
+    yield 'citizen' => [TRUE, FALSE, 100, 10];
+    yield 'anonymous' => [FALSE, FALSE, 100, 10];
+    yield 'anonymous with permission' => [FALSE, TRUE, 100, 10];
+  }
+
+  /**
+   * Zero disables only the selected staff limiter.
+   */
+  public function testZeroStaffBudgetDisablesFloodChecks(): void {
+    $this->authenticated = TRUE;
+    $this->dashboardAccess = TRUE;
+    $this->rateLimitMaxStaff = 0;
+    $this->mediaStorage->method('loadByProperties')->willReturn([]);
+    $this->flood->expects($this->never())->method('isAllowed');
+    $this->flood->expects($this->never())->method('register');
+    $this->assertSame(500, $this->controller->getAIResults($this->budgetRequest())->getStatusCode());
+  }
+
+  /**
+   * Sessions and citizen/staff buckets stay separate, even on one proxy IP.
+   */
+  public function testStaffSessionsAndCitizenCountersAreIndependent(): void {
+    $this->authenticated = TRUE;
+    $this->dashboardAccess = TRUE;
+    $counts = [];
+    $this->mediaStorage->method('loadByProperties')->willReturn([]);
+    $this->flood->method('isAllowed')->willReturnCallback(
+      function ($event, $maximum, $window, $identifier) use (&$counts) {
+        $this->assertSame(3600, $window);
+        return ($counts[$event][$identifier] ?? 0) < $maximum;
+      });
+    $this->flood->method('register')->willReturnCallback(
+      function ($event, $window, $identifier) use (&$counts) {
+        $counts[$event][$identifier] = ($counts[$event][$identifier] ?? 0) + 1;
+      });
+    $first = $this->budgetRequest('first-session');
+    $second = $this->budgetRequest('second-session');
+    // Missing media reaches the limiter but avoids invoking the provider.
+    for ($i = 0; $i < 100; $i++) {
+      $this->assertSame(500, $this->controller->getAIResults($first)->getStatusCode());
+    }
+    $first->headers->set('X-CSRF-Token', 'changed-token');
+    $this->assertSame(429, $this->controller->getAIResults($first)->getStatusCode());
+    for ($i = 0; $i < 100; $i++) {
+      $this->assertSame(500, $this->controller->getAIResults($second)->getStatusCode());
+    }
+    $this->assertSame(429, $this->controller->getAIResults($second)->getStatusCode());
+    // Use precisely the same identifier to prove event-level isolation too.
+    $this->rateLimitIdentifier = 'sid:' . hash_hmac('sha256', 'first-session', 'vision-budget-test-salt');
+    $this->dashboardAccess = FALSE;
+    for ($i = 0; $i < 10; $i++) {
+      $this->assertSame(500, $this->controller->getAIResults($first)->getStatusCode());
+    }
+    $this->assertSame(429, $this->controller->getAIResults($first)->getStatusCode());
+    $this->assertCount(2, $counts['markaspot_vision.analyze_staff']);
+    $this->assertCount(1, $counts['markaspot_vision.analyze']);
   }
 
   /**
